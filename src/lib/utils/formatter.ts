@@ -11,6 +11,9 @@ export function formatResponse(responseText: string): string {
   // Convert newlines to <br> tags
   let formatted = responseText.replace(/\n/g, '<br>')
 
+  // Format inline markdown (bold, italic, code)
+  formatted = formatInlineMarkdown(formatted)
+
   // Format code blocks
   formatted = formatCodeBlocks(formatted)
 
@@ -24,6 +27,24 @@ export function formatResponse(responseText: string): string {
   formatted = highlightImportantSections(formatted)
 
   return formatted
+}
+
+/**
+ * Format inline markdown (bold, italic, code)
+ */
+function formatInlineMarkdown(text: string): string {
+  // Bold text: **text** or __text__
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  text = text.replace(/__(.*?)__/g, '<strong>$1</strong>')
+  
+  // Italic text: *text* or _text_
+  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>')
+  text = text.replace(/_(.*?)_/g, '<em>$1</em>')
+  
+  // Inline code: `code`
+  text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+  
+  return text
 }
 
 /**

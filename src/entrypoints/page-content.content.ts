@@ -1,5 +1,6 @@
 // src/entrypoints/page-content.content.ts
 // NO import for defineContentScript
+import { browser } from 'wxt/browser';
 
 export default defineContentScript({
   matches: ["<all_urls>"], // Allow content script on all HTTPS pages

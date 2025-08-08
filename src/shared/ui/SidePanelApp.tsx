@@ -1,22 +1,24 @@
 // src/shared/ui/SidePanelApp.tsx
 import React, { useState, useRef, useEffect } from "react";
 import { browser } from "wxt/browser";
-import { sendMessageToBackground } from "../../lib/utils/messaging";
+// import { sendMessageToBackground } from "../../lib/utils/messaging"; // unused
 import { processQuery, uploadData, QueryRequest, heartbeatSession } from "../../lib/api";
 import config from "../../config";
 import KnowledgeBaseView from "./KnowledgeBaseView";
 import { createSession } from "../../lib/api";
+import { formatResponse } from "../../lib/utils/formatter";
 
 export default function SidePanelApp() {
   const [activeTab, setActiveTab] = useState<'copilot' | 'kb'>('copilot');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Array<{ question?: string; response?: string; error?: boolean }>>([]);
+  const [conversation, setConversation] = useState<Array<{ question?: string; response?: string; error?: boolean; timestamp: string }>>([]);
   const [queryInput, setQueryInput] = useState("");
   const [textInput, setTextInput] = useState("");
-  const [pageContent, setPageContent] = useState<string | null>(null);
+  const [pageContent, setPageContent] = useState<string>("");
   const [fileSelected, setFileSelected] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [injectionStatus, setInjectionStatus] = useState({ message: "", type: "" as "success" | "error" | "" });
+  const [injectionStatus, setInjectionStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: "", type: "" });
+  const [showDataSection, setShowDataSection] = useState(true);
 
   const dataSourceRef = useRef<"text" | "file" | "page">("text");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +44,8 @@ export default function SidePanelApp() {
       }
     });
   }, []);
+
+  const addTimestamp = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const getSessionId = async () => {
     console.log("[SidePanelApp] Creating new session...");
@@ -84,7 +88,7 @@ export default function SidePanelApp() {
       setConversation([]);
       setQueryInput("");
       setTextInput("");
-      setPageContent(null);
+      setPageContent("");
       if (fileInputRef.current) fileInputRef.current.value = "";
       setFileSelected(false);
       
@@ -103,7 +107,7 @@ export default function SidePanelApp() {
   const getPageContent = async () => {
     console.log("[SidePanelApp] getPageContent called");
     setInjectionStatus({ message: "Analyzing page...", type: "success" });
-    setPageContent(null);
+    setPageContent("");
     try {
       const tabs = await browser.tabs.query({ active: true, currentWindow: true });
       const tab = tabs[0];
@@ -116,7 +120,7 @@ export default function SidePanelApp() {
       console.log("[SidePanelApp] getPageContent response from CS:", res);
       if (res?.status === "success") {
         setInjectionStatus({ message: `✅ Page selected (${res.url})`, type: "success" });
-        setPageContent(res.data);
+        setPageContent(res.data || "");
       } else {
         setInjectionStatus({ message: `⚠️ ${res?.message ?? "Error getting content."}`, type: "error" });
       }
@@ -131,7 +135,7 @@ export default function SidePanelApp() {
   };
 
   const addToConversation = (question?: string, response?: string, isError = false) => {
-    setConversation(prev => [...prev, { question, response, error: isError }]);
+    setConversation(prev => [...prev, { question, response, error: isError, timestamp: addTimestamp() }]);
     setTimeout(() => {
       if (conversationHistoryRef.current) {
         conversationHistoryRef.current.scrollTo({ top: conversationHistoryRef.current.scrollHeight, behavior: "smooth" });
@@ -172,11 +176,17 @@ export default function SidePanelApp() {
       
       // Format response with findings and recommendations if available
       let formattedResponse = response.response || "";
+      const toBullet = (item: any) => {
+        if (item == null) return "";
+        if (typeof item === 'string') return item;
+        if (typeof item === 'number' || typeof item === 'boolean') return String(item);
+        try { return JSON.stringify(item, null, 2); } catch { return String(item); }
+      };
       if (response.findings && response.findings.length > 0) {
-        formattedResponse += "\n\n**Findings:**\n" + response.findings.map(f => `• ${f}`).join('\n');
+        formattedResponse += "\n\n**Findings:**\n" + response.findings.map((f) => `• ${toBullet(f)}`).join('\n');
       }
       if (response.recommendations && response.recommendations.length > 0) {
-        formattedResponse += "\n\n**Recommendations:**\n" + response.recommendations.map(r => `• ${r}`).join('\n');
+        formattedResponse += "\n\n**Recommendations:**\n" + response.recommendations.map((r) => `• ${toBullet(r)}`).join('\n');
       }
       if (response.confidence_score !== undefined) {
         formattedResponse += `\n\n**Confidence:** ${Math.round(response.confidence_score * 100)}%`;
@@ -234,7 +244,7 @@ export default function SidePanelApp() {
         if (fileInputRef.current) fileInputRef.current.value = "";
         setFileSelected(false);
       } else if (dataSourceRef.current === "page") {
-        setPageContent(null);
+        setPageContent("");
       }
       
     } catch (e: any) {
@@ -262,7 +272,7 @@ export default function SidePanelApp() {
     setTextInput("");
     setFileSelected(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    setPageContent(null);
+    setPageContent("");
     forceUpdate({});
   };
 
@@ -270,29 +280,29 @@ export default function SidePanelApp() {
     !loading &&
     ((dataSourceRef.current === "text" && textInput.trim()) ||
     (dataSourceRef.current === "file" && fileSelected) ||
-    (dataSourceRef.current === "page" && !!pageContent?.trim()));
+    (dataSourceRef.current === "page" && !!pageContent.trim()));
 
   const renderCopilotTab = () => (
-    <div className="flex flex-col h-full space-y-3 overflow-y-auto">
-      <div id="conversation-history" ref={conversationHistoryRef} className="flex-grow overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-sm p-3 min-h-0">
-        {/* ... conversation mapping logic ... */}
+    <div className="flex flex-col h-full space-y-1 overflow-y-auto">
+      <div id="conversation-history" ref={conversationHistoryRef} className="flex-grow overflow-y-auto bg-white border border-gray-300 rounded-lg p-2 min-h-0">
         {conversation.map((item, index) => (
           <React.Fragment key={index}>
             {item.question && (
-              <div className="flex justify-end mb-2">
-                <div className="max-w-[80%] bg-blue-50 text-blue-800 rounded-lg px-3 py-2 shadow text-sm">
-                  <p className="font-semibold mb-0.5">You</p>
-                  <p className="break-words">{item.question}</p>
+              <div className="flex justify-end mb-1">
+                <div className="w-full mx-1 px-2 py-1 text-sm text-gray-900 bg-gray-100 rounded">
+                  <p className="break-words m-0">{item.question}</p>
+                  <div className="text-[10px] text-gray-400 mt-1">{item.timestamp}</div>
                 </div>
               </div>
             )}
             {item.response && (
-              <div className="flex justify-start mb-2">
-                <div className={`max-w-[80%] rounded-lg px-3 py-2 shadow text-sm ${item.error ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-800"}`}>
-                  <p className="font-semibold mb-0.5">AI</p>
-                  <div className="prose-sm prose-p:my-1 prose-ul:my-1 prose-ol:my-1 whitespace-pre-wrap break-words">
-                    {item.response}
-                  </div>
+              <div className="flex justify-end mb-1">
+                <div className={`w-full mx-1 px-2 py-1 text-sm ${item.error ? "text-red-700" : "text-gray-800"} border-t border-b border-gray-200 rounded`}> 
+                  <div
+                    className="prose-sm prose-p:my-1 prose-ul:my-1 prose-ol:my-1 break-words mb-1"
+                    dangerouslySetInnerHTML={{ __html: formatResponse(item.response) }}
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1">{item.timestamp}</div>
                 </div>
               </div>
             )}
@@ -315,17 +325,15 @@ export default function SidePanelApp() {
         </div>
       )}
 
-      {/* "Ask a Question" Section - MODIFIED */}
-      <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-4 shadow-sm space-y-2">
-        {/* Container for Title and New Chat button on the same line */}
-        <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-2">
+      {/* "Ask a Question" Section - text button retained */}
+      <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-2 shadow-sm space-y-1">
+        <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-1">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Ask a Question</h3>
           <button
-            id="new-chat-button" // Changed ID for clarity
+            id="new-chat-button"
             onClick={clearSession}
             disabled={loading}
-            className="py-1 px-2.5 text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-300 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-            // Smaller padding, smaller text, lighter colors for less prominence
+            className="py-0.5 px-2 text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-300 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
           >
             New Chat
           </button>
@@ -342,84 +350,99 @@ export default function SidePanelApp() {
         />
       </div>
 
-      {/* "Provide Data" Section */}
-      <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-4 shadow-sm space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600 border-b border-gray-200 pb-1 mb-2">Provide Data</h3>
-        <div className="flex justify-between items-start">
-          <div className="space-y-1 text-xs">
-            {["text", "file", "page"].map((value) => (
-              <label key={value} className="flex items-center gap-1 text-[11px] text-gray-700 cursor-pointer">
-                <input
-                  type="radio"
-                  name="data-source"
-                  value={value}
-                  checked={dataSourceRef.current === value}
-                  onChange={handleDataSourceChange}
-                  className="accent-blue-500"
-                  disabled={loading}
-                />
-                {value === "text" ? "Type or Paste Logs" : value === "file" ? "Upload a File" : "Analyze Page Content"}
-              </label>
-            ))}
-          </div>
-          {/* "Submit Data" button color reverted to green */}
+      {/* "Provide Data" Section with collapse/expand arrow */}
+      <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-2 shadow-sm space-y-2">
+        <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-1">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Provide Data</h3>
           <button
-            id="submit-data"
-            onClick={sendDataToFaultMaven}
-            disabled={!isSubmitEnabled || loading}
-            className="w-36 text-center py-1.5 px-3 text-xs font-medium bg-gray-200 text-gray-800 border border-gray-300 rounded hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            type="button"
+            onClick={() => setShowDataSection(!showDataSection)}
+            aria-label={showDataSection ? 'Collapse data section' : 'Expand data section'}
+            className="h-6 w-6 text-xs flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-gray-200"
+            title={showDataSection ? 'Collapse' : 'Expand'}
           >
-            Submit Data
+            {showDataSection ? '▼' : '▲'}
           </button>
         </div>
 
-        {dataSourceRef.current === "text" && (
-          <textarea
-            id="data-input"
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            placeholder="Paste logs, metrics, or monitoring data here..."
-            rows={3}
-            className="block w-full p-2 mt-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-            disabled={loading}
-          />
-        )}
+        {showDataSection && (
+          <>
+            <div className="flex justify-between items-start">
+              <div className="space-y-1 text-xs">
+                {["text", "file", "page"].map((value) => (
+                  <label key={value} className="flex items-center gap-1 text-[11px] text-gray-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="data-source"
+                      value={value}
+                      checked={dataSourceRef.current === value}
+                      onChange={handleDataSourceChange}
+                      className="accent-blue-500"
+                      disabled={loading}
+                    />
+                    {value === "text" ? "Type or Paste Logs" : value === "file" ? "Upload a File" : "Analyze Page Content"}
+                  </label>
+                ))}
+              </div>
+              <button
+                id="submit-data"
+                onClick={sendDataToFaultMaven}
+                disabled={!isSubmitEnabled || loading}
+                className="w-36 text-center py-1.5 px-3 text-xs font-medium bg-gray-200 text-gray-800 border border-gray-300 rounded hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Submit Data
+              </button>
+            </div>
 
-        {dataSourceRef.current === "file" && (
-          <input
-            type="file"
-            id="file-input"
-            ref={fileInputRef}
-            accept=".txt,.log,.json,.csv"
-            title="Supported formats: .txt, .log, .json, .csv"
-            onChange={(e) => setFileSelected(!!e.target.files?.length)}
-            className="block w-full mt-2 text-xs border rounded p-1.5 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
-            disabled={loading}
-          />
-        )}
+            {dataSourceRef.current === "text" && (
+              <textarea
+                id="data-input"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Paste logs, metrics, or monitoring data here..."
+                rows={3}
+                className="block w-full p-2 mt-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={loading}
+              />
+            )}
 
-        {dataSourceRef.current === "page" && (
-          <div className="mt-2 space-y-2">
-            <button
-              id="analyze-page-button"
-              onClick={getPageContent}
-              disabled={loading}
-              className="w-auto py-1.5 px-4 text-xs font-medium bg-gray-200 text-gray-700 border border-gray-300 rounded hover:bg-gray-300 transition-colors whitespace-nowrap"
-            >
-              Analyze Current Page
-            </button>
-            {injectionStatus.message && (
-              <div id="injection-status" className={`px-2 py-1 rounded text-xs ${
-                injectionStatus.type === "error"
-                  ? "text-red-700 bg-red-100"
-                  : injectionStatus.type === "success"
-                  ? "text-green-700 bg-green-100"
-                  : "text-gray-600"
-              }`}>
-                {injectionStatus.message}
+            {dataSourceRef.current === "file" && (
+              <input
+                type="file"
+                id="file-input"
+                ref={fileInputRef}
+                accept=".txt,.log,.json,.csv"
+                title="Supported formats: .txt, .log, .json, .csv"
+                onChange={(e) => setFileSelected(!!e.target.files?.length)}
+                className="block w-full mt-2 text-xs border rounded p-1.5 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                disabled={loading}
+              />
+            )}
+
+            {dataSourceRef.current === "page" && (
+              <div className="mt-2 space-y-2">
+                <button
+                  id="analyze-page-button"
+                  onClick={getPageContent}
+                  disabled={loading}
+                  className="w-auto py-1.5 px-4 text-xs font-medium bg-gray-200 text-gray-700 border border-gray-300 rounded hover:bg-gray-300 transition-colors whitespace-nowrap"
+                >
+                  Analyze Current Page
+                </button>
+                {injectionStatus.message && (
+                  <div id="injection-status" className={`px-2 py-1 rounded text-xs ${
+                    injectionStatus.type === "error"
+                      ? "text-red-700 bg-red-100"
+                      : injectionStatus.type === "success"
+                      ? "text-green-700 bg-green-100"
+                      : "text-gray-600"
+                  }`}>
+                    {injectionStatus.message}
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
       

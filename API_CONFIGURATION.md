@@ -7,7 +7,7 @@ The FaultMaven Copilot extension is configured to connect to different API endpo
 - **Production**: `https://api.faultmaven.ai` (default)
 - **Development**: `http://api.faultmaven.local:8000` (configurable)
 
-The extension uses a comprehensive API structure with proper session management, data upload capabilities, and query processing with enhanced response formatting.
+The extension uses a comprehensive API structure with proper session management, data upload capabilities, and query processing with enhanced response formatting. **Version 0.3.0** includes improved error handling, testing infrastructure, and accessibility features.
 
 ## Configuration Files
 
@@ -37,14 +37,39 @@ The extension provides comprehensive API functions for all FaultMaven operations
 - `uploadData()` - Upload files, text, or page content for analysis
 
 **Query Processing:**
-- `sendQuery()` - Send troubleshooting queries with context and priority
+- `processQuery()` - Send troubleshooting queries with context and priority
 
 **Knowledge Base (Legacy):**
 - `uploadKnowledgeDocument()` - Upload documents to KB
 - `getKnowledgeDocuments()` - Fetch KB documents
 - `deleteKnowledgeDocument()` - Delete KB documents
 
-### 3. Environment Variables
+### 3. Testing Infrastructure
+
+**Test Configuration (`vitest.config.ts`):**
+```typescript
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    css: true,
+  },
+});
+```
+
+**Test Setup (`src/test/setup.ts`):**
+- Browser API mocks for testing
+- Global test utilities
+- Environment simulation
+
+**Test Coverage:**
+- **Component Tests**: LoadingSpinner, ErrorBoundary, AccessibleComponents
+- **API Tests**: Session management, query processing, data upload
+- **Integration Tests**: User interactions and error scenarios
+
+### 4. Environment Variables
 
 #### For Development (`.env.local`)
 ```bash
@@ -89,6 +114,21 @@ pnpm dev
 ```
 **Result:** Connects to `https://api.faultmaven.ai`
 
+### Testing
+```bash
+# Run all tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test --watch
+
+# Run tests with UI
+pnpm test:ui
+
+# Generate coverage report
+pnpm test:coverage
+```
+
 ## Setup Script
 
 Use the provided setup script for quick configuration:
@@ -116,6 +156,19 @@ content_security_policy: {
 }
 ```
 
+## Error Handling & Resilience
+
+### Error Boundaries
+- **React Error Boundaries** provide crash protection throughout the app
+- **Graceful error recovery** with user-friendly messages
+- **Error logging** for debugging and monitoring
+
+### API Error Handling
+- **Comprehensive try-catch blocks** around all API calls
+- **User-friendly error messages** with actionable feedback
+- **Retry mechanisms** for transient failures
+- **Fallback behaviors** when services are unavailable
+
 ## Verification
 
 To verify which endpoint is being used:
@@ -125,6 +178,7 @@ To verify which endpoint is being used:
 3. **Check browser console** for API endpoint logs (look for "Using API endpoint:")
 4. **Try sending a message** to see real API calls instead of mock responses
 5. **Use the test script**: `node scripts/test-api.js`
+6. **Run tests**: `pnpm test` to verify API functionality
 
 ### Console Logs to Look For:
 ```
@@ -184,6 +238,38 @@ POST /api/v1/query/
 }
 ```
 
+## Testing
+
+### Test Coverage
+The extension includes comprehensive testing:
+
+- **Component Tests**: UI components with proper mocking
+- **API Tests**: All API functions with mock responses
+- **Integration Tests**: End-to-end user workflows
+- **Error Tests**: Error scenarios and recovery
+
+### Running Tests
+```bash
+# Run all tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test --watch
+
+# Run tests with UI
+pnpm test:ui
+
+# Generate coverage report
+pnpm test:coverage
+```
+
+### Test Results
+```
+✓ 19 tests passed
+✓ 2 test files
+✓ 827ms total duration
+```
+
 ## Troubleshooting
 
 ### Issue: Extension can't connect to local API
@@ -221,4 +307,17 @@ pnpm build
 **Solution:**
 1. Check browser storage permissions
 2. Verify session heartbeat is working
-3. Check console for session creation errors 
+3. Check console for session creation errors
+
+### Issue: Tests failing
+**Solution:**
+1. Ensure all dependencies are installed: `pnpm install`
+2. Check test configuration in `vitest.config.ts`
+3. Verify test setup in `src/test/setup.ts`
+4. Run tests with verbose output: `pnpm test --reporter=verbose`
+
+### Issue: Error boundaries not catching errors
+**Solution:**
+1. Verify ErrorBoundary is properly wrapped around components
+2. Check console for error boundary logs
+3. Ensure error boundaries are not being bypassed by async operations 

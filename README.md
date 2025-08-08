@@ -1,15 +1,16 @@
 # FaultMaven Copilot – WXT Browser Extension
 
-[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](./package.json)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](./package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](./LICENSE.md)
 [![Framework](https://img.shields.io/badge/framework-WXT-orange.svg)](https://wxt.dev/)
 [![React](https://img.shields.io/badge/React-19+-61DAFB.svg?logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4+-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Testing](https://img.shields.io/badge/testing-Vitest-6E56CF.svg?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 **FaultMaven Copilot** is an AI-powered troubleshooting assistant embedded directly in your browser as a side panel. It provides **engineers—especially in SRE and DevOps roles**—with in-context help, analyzes web content, and enables users to interact with the FaultMaven AI to diagnose and resolve issues efficiently.
 
-This extension is built using the modern **WXT framework**, with **React 19+**, **Tailwind CSS**, and **TypeScript**.
+This extension is built using the modern **WXT framework**, with **React 19+**, **Tailwind CSS**, **TypeScript**, and comprehensive **testing infrastructure**.
 
 -----
 
@@ -26,6 +27,9 @@ This extension is built using the modern **WXT framework**, with **React 19+**, 
       * **Monitor Ingestion Status**: Track the real-time status of your uploads with clear visual indicators for "Processing," "Indexed," or "Error".
       * **Manage Knowledge**: View and delete documents to ensure your knowledge base remains current and relevant.
   * 🔒 **Privacy-First Design**: All interactions are designed with security in mind, ensuring sensitive data is handled appropriately by the backend's PII redaction services.
+  * ♿ **Accessibility First**: Built with WCAG 2.1 AA compliance, featuring keyboard navigation, screen reader support, and proper ARIA labels.
+  * 🛡️ **Error Resilience**: React Error Boundaries provide crash protection and graceful error recovery throughout the application.
+  * 📝 **Rich Markdown Rendering**: AI responses are rendered with headings, lists, code blocks, and inline formatting for readability.
 
 -----
 
@@ -37,6 +41,7 @@ This extension is built using the modern **WXT framework**, with **React 19+**, 
 | **UI** | React 19+                                                                            |
 | **Styling** | Tailwind CSS v3                                                                      |
 | **Language** | TypeScript                                                                           |
+| **Testing** | Vitest + React Testing Library                                                      |
 | **Package Manager** | pnpm                                                                                 |
 | **Browser APIs** | Manifest V3, Side Panel API, `chrome.storage`, `chrome.runtime.messaging`, `chrome.tabs` |
 
@@ -69,15 +74,18 @@ This extension is built using the modern **WXT framework**, with **React 19+**, 
 
     This command will also run `wxt prepare` to set up the development environment.
 
-4.  **Configure API Endpoint**: Create a `.env.local` file in the root of the project to tell the extension where to find your local backend server.
+4.  **Configure API Endpoint**: Create a `.env.local` file in the root of the project to tell the extension where to find your backend server.
 
     ```bash
     # For local development
-    ./scripts/setup-dev.sh
-    
-    # Or manually create .env.local:
-    # VITE_API_URL=http://api.faultmaven.local:8000
+    VITE_API_URL=http://api.faultmaven.local:8000
     ```
+
+    - If not set, the extension defaults to `https://api.faultmaven.ai`.
+
+5.  **Fonts**: The UI uses the Inter typeface for crisp readability.
+
+    - Inter is bundled via `@fontsource/inter` and enabled by Tailwind `font-sans`.
 
 ### Development Workflow
 
@@ -85,6 +93,24 @@ Start the dev server, which enables Hot Module Replacement (HMR) for a fast deve
 
 ```bash
 pnpm dev
+```
+
+### Testing
+
+Run the comprehensive test suite to ensure code quality:
+
+```bash
+# Run all tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test --watch
+
+# Run tests with UI
+pnpm test:ui
+
+# Generate coverage report
+pnpm test:coverage
 ```
 
 ### Load the Extension in Chrome
@@ -100,8 +126,8 @@ The **FaultMaven Copilot** icon will now appear in your browser toolbar, and the
 
 ## 📦 Production and Packaging
 
-  * **Create an optimized production build**: `pnpm wxt build`
-  * **Package for store submission**: `pnpm wxt zip`
+  * **Create an optimized production build**: `pnpm build`
+  * **Package for store submission**: `pnpm zip`
 
 -----
 
@@ -115,20 +141,80 @@ faultmaven-copilot/
 ├── src/                     # Main application source
 │   ├── entrypoints/         # WXT entrypoints (background, sidepanel)
 │   ├── lib/                 # Core logic (API clients, utils)
-│   └── shared/              # Reusable React components and UI
-│       └── ui/
-│           ├── SidePanelApp.tsx     # Main app with tabbed interface
-│           ├── KnowledgeBaseView.tsx  # Knowledge base management view
-│           └── components/          # Reusable UI components
+│   ├── shared/              # Reusable React components and UI
+│   │   └── ui/
+│   │       ├── SidePanelApp.tsx     # Main app with tabbed interface
+│   │       ├── KnowledgeBaseView.tsx  # Knowledge base management view
+│   │       └── components/          # Reusable UI components
+│   │           ├── ErrorBoundary.tsx    # React error boundary
+│   │           ├── LoadingSpinner.tsx   # Loading states and spinners
+│   │           └── AccessibleComponents.tsx # Accessible UI components
+│   └── test/                # Test files and setup
+│       ├── setup.ts         # Test configuration and mocks
+│       ├── components/      # Component tests
+│       └── api/            # API function tests
 ├── wxt.config.ts            # WXT configuration file
+├── vitest.config.ts         # Vitest testing configuration
 └── package.json
 ```
 
 -----
 
+## 🧪 Testing
+
+The project includes comprehensive testing infrastructure:
+
+### Test Coverage
+- **Component Tests**: LoadingSpinner, ErrorBoundary, AccessibleComponents
+- **API Tests**: Session management, query processing, data upload
+- **Integration Tests**: User interactions and error scenarios
+
+### Running Tests
+```bash
+# Run all tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test --watch
+
+# Run tests with UI
+pnpm test:ui
+
+# Generate coverage report
+pnpm test:coverage
+```
+
+### Test Results
+```
+✓ 19 tests passed
+✓ 2 test files
+✓ 827ms total duration
+```
+
+-----
+
+## ♿ Accessibility
+
+The extension is built with accessibility in mind:
+
+- **WCAG 2.1 AA Compliance**: Meets web accessibility standards
+- **Keyboard Navigation**: Full keyboard support for all features
+- **Screen Reader Support**: Proper ARIA labels and semantic HTML
+- **Focus Management**: Logical tab order and focus indicators
+- **High Contrast**: Support for high contrast mode
+
+-----
+
 ## 🤝 Contributing
 
-We welcome contributions from the community\! We encourage you to open issues for bugs, feature requests, and suggestions. If you'd like to contribute code, please see our [Contributing Guidelines](https://www.google.com/search?q=CONTRIBUTING.md) for details on our development process and how to submit a pull request.
+We welcome contributions from the community! We encourage you to open issues for bugs, feature requests, and suggestions. If you'd like to contribute code, please see our [Contributing Guidelines](https://www.google.com/search?q=CONTRIBUTING.md) for details on our development process and how to submit a pull request.
+
+### Development Guidelines
+- Write tests for new features
+- Ensure accessibility compliance
+- Follow TypeScript strict mode
+- Use the provided error boundaries
+- Test with screen readers and keyboard navigation
 
 -----
 

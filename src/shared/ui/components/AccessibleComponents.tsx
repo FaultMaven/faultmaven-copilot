@@ -1,0 +1,236 @@
+import React, { forwardRef } from 'react';
+
+// Accessible Button Component
+interface AccessibleButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  loading?: boolean;
+  icon?: React.ReactNode;
+  iconOnly?: boolean;
+  tooltip?: string;
+}
+
+export const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonProps>(
+  ({ 
+    children, 
+    variant = 'primary', 
+    size = 'md', 
+    loading = false,
+    icon,
+    iconOnly = false,
+    tooltip,
+    className = '',
+    disabled,
+    ...props 
+  }, ref) => {
+    const baseClasses = 'relative group inline-flex items-center justify-center font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2';
+    
+    const variantClasses = {
+      primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 disabled:bg-blue-300',
+      secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500 disabled:bg-gray-100',
+      danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 disabled:bg-red-300',
+      ghost: 'bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500 disabled:text-gray-400'
+    } as const;
+
+    const sizeClasses = {
+      sm: 'px-3 py-1.5 text-sm',
+      md: 'px-4 py-2 text-sm',
+      lg: 'px-6 py-3 text-base'
+    } as const;
+
+    const content = (
+      <>
+        {loading && (
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        )}
+        {icon && !loading && (
+          <span className={`${iconOnly || !children ? '' : 'mr-2'}`}>{icon}</span>
+        )}
+        {/* If iconOnly, keep accessible name via children in sr-only when provided */}
+        {iconOnly ? (
+          <span className="sr-only">{typeof props['aria-label'] === 'string' ? props['aria-label'] : children}</span>
+        ) : (
+          children
+        )}
+        {tooltip && (
+          <span className="pointer-events-none absolute right-0 top-[calc(100%+6px)] whitespace-nowrap rounded-md bg-gray-700/95 px-2 py-0.5 text-[10px] text-white opacity-0 shadow-md z-50 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {tooltip}
+          </span>
+        )}
+      </>
+    );
+
+    return (
+      <button
+        ref={ref}
+        disabled={disabled || loading}
+        className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${iconOnly ? 'px-0' : ''} ${className}`}
+        {...props}
+      >
+        {content}
+      </button>
+    );
+  }
+);
+
+// Accessible Text Input
+interface AccessibleInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+  error?: string;
+  helperText?: string;
+  required?: boolean;
+}
+
+export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps>(
+  ({ label, error, helperText, required = false, className = '', ...props }, ref) => {
+    const id = props.id || `input-${Math.random().toString(36).substr(2, 9)}`;
+    const errorId = `${id}-error`;
+    const helperId = `${id}-helper`;
+
+    return (
+      <div className="space-y-1">
+        <label htmlFor={id} className="block text-sm font-medium text-gray-700">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+        <input
+          ref={ref}
+          id={id}
+          aria-describedby={error ? errorId : helperText ? helperId : undefined}
+          aria-invalid={error ? 'true' : 'false'}
+          className={`
+            block w-full px-3 py-2 border rounded-md shadow-sm
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+            disabled:bg-gray-50 disabled:text-gray-500
+            ${error ? 'border-red-300' : 'border-gray-300'}
+            ${className}
+          `}
+          {...props}
+        />
+        {error && (
+          <p id={errorId} className="text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        )}
+        {helperText && !error && (
+          <p id={helperId} className="text-sm text-gray-500">
+            {helperText}
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+
+// Accessible Textarea
+interface AccessibleTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string;
+  error?: string;
+  helperText?: string;
+  required?: boolean;
+}
+
+export const AccessibleTextarea = forwardRef<HTMLTextAreaElement, AccessibleTextareaProps>(
+  ({ label, error, helperText, required = false, className = '', ...props }, ref) => {
+    const id = props.id || `textarea-${Math.random().toString(36).substr(2, 9)}`;
+    const errorId = `${id}-error`;
+    const helperId = `${id}-helper`;
+
+    return (
+      <div className="space-y-1">
+        <label htmlFor={id} className="block text-sm font-medium text-gray-700">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+        <textarea
+          ref={ref}
+          id={id}
+          aria-describedby={error ? errorId : helperText ? helperId : undefined}
+          aria-invalid={error ? 'true' : 'false'}
+          className={`
+            block w-full px-3 py-2 border rounded-md shadow-sm resize-none
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+            disabled:bg-gray-50 disabled:text-gray-500
+            ${error ? 'border-red-300' : 'border-gray-300'}
+            ${className}
+          `}
+          {...props}
+        />
+        {error && (
+          <p id={errorId} className="text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        )}
+        {helperText && !error && (
+          <p id={helperId} className="text-sm text-gray-500">
+            {helperText}
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+
+// Accessible Modal/Dialog
+interface AccessibleModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+export function AccessibleModal({ isOpen, onClose, title, children, size = 'md' }: AccessibleModalProps) {
+  const sizeClasses = {
+    sm: 'max-w-md',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl'
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      
+      {/* Modal */}
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className={`relative bg-white rounded-lg shadow-xl ${sizeClasses[size]} w-full`}>
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 id="modal-title" className="text-lg font-medium text-gray-900">
+              {title}
+            </h2>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600"
+              aria-label="Close modal"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          {/* Content */}
+          <div className="p-4">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

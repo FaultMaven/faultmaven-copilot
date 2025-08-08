@@ -1,14 +1,13 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* Sidebar Container */
 #faultmaven-sidebar {
-  @apply bg-[#fdfbf8] font-sans text-sm; /* Example: only theming aspects */
-  /* REMOVE: fixed, top-0, right-0, w-[400px], z-[9999], border-l, shadow-md, h-screen, overflow-y-auto
-    These will be handled by utility classes on the JSX element itself.
-    h-screen and overflow-y-auto are already on your JSX.
-    */
+  @apply bg-[#fdfbf8] font-sans text-sm;
 }
 
 /* Sidebar Header */
