@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { browser } from "wxt/browser";
 import { sendMessageToBackground } from "../../lib/utils/messaging";
+import { processQuery, uploadData, QueryRequest } from "../../lib/api";
 import config from "../../config";
 import KnowledgeBaseView from "./KnowledgeBaseView";
 import { createSession, sendQuery, uploadData, heartbeatSession } from "../../lib/api";
@@ -139,10 +140,16 @@ export default function SidePanelApp() {
   };
 
   const sendToFaultMaven = async (query: string) => {
+    if (!sessionId) {
+      addToConversation(undefined, `<p><strong>Error:</strong> No session ID available. Please try refreshing the extension.</p>`, true);
+      return;
+    }
+
     setLoading(true);
     addToConversation(query, undefined);
     try {
       console.log("[SidePanelApp] Sending query to FaultMaven backend:", query, "Session:", sessionId);
+<<<<<<< Updated upstream
       console.log("[SidePanelApp] Using API endpoint:", config.apiUrl);
       
       if (!sessionId) {
@@ -176,6 +183,56 @@ export default function SidePanelApp() {
       }
       
       addToConversation(undefined, formattedResponse);
+=======
+      
+      const request: QueryRequest = {
+        session_id: sessionId,
+        query: query,
+        context: pageContent ? { page_content: pageContent } : undefined,
+      };
+
+      const response = await processQuery(request);
+      console.log("[SidePanelApp] Query response:", response);
+      
+      // Format the response for display
+      let responseText = `<div class="space-y-3">`;
+      
+      if (response.root_cause) {
+        responseText += `<div><strong>Root Cause:</strong> ${response.root_cause}</div>`;
+      }
+      
+      if (response.findings && response.findings.length > 0) {
+        responseText += `<div><strong>Findings:</strong><ul class="list-disc list-inside ml-2">`;
+        response.findings.forEach(finding => {
+          responseText += `<li><em>${finding.type}:</em> ${finding.message}</li>`;
+        });
+        responseText += `</ul></div>`;
+      }
+      
+      if (response.recommendations && response.recommendations.length > 0) {
+        responseText += `<div><strong>Recommendations:</strong><ul class="list-disc list-inside ml-2">`;
+        response.recommendations.forEach(rec => {
+          responseText += `<li>${rec}</li>`;
+        });
+        responseText += `</ul></div>`;
+      }
+      
+      if (response.next_steps && response.next_steps.length > 0) {
+        responseText += `<div><strong>Next Steps:</strong><ol class="list-decimal list-inside ml-2">`;
+        response.next_steps.forEach(step => {
+          responseText += `<li>${step}</li>`;
+        });
+        responseText += `</ol></div>`;
+      }
+      
+      if (response.confidence_score) {
+        responseText += `<div class="text-sm text-gray-600"><strong>Confidence:</strong> ${Math.round(response.confidence_score * 100)}%</div>`;
+      }
+      
+      responseText += `</div>`;
+      
+      addToConversation(undefined, responseText);
+>>>>>>> Stashed changes
     } catch (e: any) {
       console.error("[SidePanelApp] sendToFaultMaven error:", e);
       addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${e.message}</p>`, true);

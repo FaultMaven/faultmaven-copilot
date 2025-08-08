@@ -1,9 +1,9 @@
 // src/entrypoints/background.ts
-// NO import for defineBackground
+import { createSession, deleteSession } from '../lib/api';
 
 export default defineBackground({
   main() {
-    console.log("[background.ts] Init (Test B: Session Logic)");
+    console.log("[background.ts] Init (Fixed: Backend Session Logic)");
 
     const generateUUID = () =>
       "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -12,45 +12,99 @@ export default defineBackground({
         return v.toString(16);
       });
 
-    // === Refactored Session Logic Functions ===
-    function handleGetSessionId(requestAction: string, sendResponse: (response?: any) => void) {
+    // === Backend Session Logic Functions ===
+    async function handleGetSessionId(requestAction: string, sendResponse: (response?: any) => void) {
       console.log(`[background.ts] handleGetSessionId called for action: ${requestAction}`);
-      chrome.storage.local.get(["sessionId"], (result) => {
-        if (chrome.runtime.lastError) {
-          console.error("[background.ts] Error getting sessionId:", chrome.runtime.lastError.message);
-          sendResponse({ status: "error", message: "Failed to get session ID" });
-          return;
-        }
-        if (result.sessionId) {
-          console.log("[background.ts] Retrieved sessionId:", result.sessionId);
-          sendResponse({ sessionId: result.sessionId, status: "success" });
-        } else {
-          const newSessionId = generateUUID();
-          console.log("[background.ts] No sessionId found, generated new:", newSessionId);
-          chrome.storage.local.set({ sessionId: newSessionId }, () => {
-            if (chrome.runtime.lastError) {
-              console.error("[background.ts] Error setting new sessionId:", chrome.runtime.lastError.message);
-              sendResponse({ status: "error", message: "Failed to set new session ID" });
-            } else {
-              console.log("[background.ts] New sessionId stored:", newSessionId);
-              sendResponse({ sessionId: newSessionId, status: "success" });
-            }
-          });
-        }
-      });
+      
+      try {
+        // Check if we have a valid session stored locally
+        chrome.storage.local.get(["sessionId", "sessionCreatedAt"], async (result) => {
+          if (chrome.runtime.lastError) {
+            console.error("[background.ts] Error getting stored session:", chrome.runtime.lastError.message);
+            sendResponse({ status: "error", message: "Failed to get session ID" });
+            return;
+          }
+
+          // If we have a recent session (less than 30 minutes old), use it
+          const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+          const now = Date.now();
+          const sessionAge = result.sessionCreatedAt ? (now - result.sessionCreatedAt) : SESSION_TIMEOUT + 1;
+
+          if (result.sessionId && sessionAge < SESSION_TIMEOUT) {
+            console.log("[background.ts] Using existing valid session:", result.sessionId);
+            sendResponse({ sessionId: result.sessionId, status: "success" });
+            return;
+          }
+
+          // Create new backend session
+          console.log("[background.ts] Creating new backend session...");
+          try {
+            const session = await createSession();
+            console.log("[background.ts] Backend session created:", session.session_id);
+            
+            // Store the session locally with timestamp
+            chrome.storage.local.set({ 
+              sessionId: session.session_id, 
+              sessionCreatedAt: now 
+            }, () => {
+              if (chrome.runtime.lastError) {
+                console.error("[background.ts] Error storing session:", chrome.runtime.lastError.message);
+                sendResponse({ status: "error", message: "Failed to store session ID" });
+              } else {
+                console.log("[background.ts] Session stored locally:", session.session_id);
+                sendResponse({ sessionId: session.session_id, status: "success" });
+              }
+            });
+          } catch (apiError) {
+            console.error("[background.ts] Failed to create backend session:", apiError);
+            sendResponse({ status: "error", message: `Failed to create session: ${apiError.message}` });
+          }
+        });
+      } catch (error) {
+        console.error("[background.ts] Error in handleGetSessionId:", error);
+        sendResponse({ status: "error", message: "Session creation failed" });
+      }
     }
 
-    function handleClearSession(requestAction: string, sendResponse: (response?: any) => void) {
+    async function handleClearSession(requestAction: string, sendResponse: (response?: any) => void) {
       console.log(`[background.ts] handleClearSession called for action: ${requestAction}`);
-      chrome.storage.local.remove("sessionId", () => {
-        if (chrome.runtime.lastError) {
-          console.error("[background.ts] Error clearing session:", chrome.runtime.lastError.message);
-          sendResponse({ status: "error", message: "Failed to clear session." });
-        } else {
-          console.log("[background.ts] Session cleared.");
-          sendResponse({ status: "success" });
-        }
-      });
+      
+      try {
+        // Get current session to delete from backend
+        chrome.storage.local.get(["sessionId"], async (result) => {
+          if (chrome.runtime.lastError) {
+            console.error("[background.ts] Error getting session for deletion:", chrome.runtime.lastError.message);
+            sendResponse({ status: "error", message: "Failed to get session for deletion" });
+            return;
+          }
+
+          // Try to delete from backend if we have a session ID
+          if (result.sessionId) {
+            try {
+              console.log("[background.ts] Deleting backend session:", result.sessionId);
+              await deleteSession(result.sessionId);
+              console.log("[background.ts] Backend session deleted successfully");
+            } catch (apiError) {
+              console.warn("[background.ts] Failed to delete backend session (continuing anyway):", apiError);
+              // Continue with local cleanup even if backend deletion fails
+            }
+          }
+
+          // Clear local storage
+          chrome.storage.local.remove(["sessionId", "sessionCreatedAt"], () => {
+            if (chrome.runtime.lastError) {
+              console.error("[background.ts] Error clearing local session:", chrome.runtime.lastError.message);
+              sendResponse({ status: "error", message: "Failed to clear local session." });
+            } else {
+              console.log("[background.ts] Session cleared (local and backend).");
+              sendResponse({ status: "success" });
+            }
+          });
+        });
+      } catch (error) {
+        console.error("[background.ts] Error in handleClearSession:", error);
+        sendResponse({ status: "error", message: "Session clearing failed" });
+      }
     }
 
     // Expose test functions to globalThis for console testing
