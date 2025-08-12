@@ -102,7 +102,7 @@ describe('API Functions', () => {
       const result = await processQuery(mockRequest);
 
       expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/query/',
+        'https://api.faultmaven.ai/api/v1/agent/query',
         {
           method: 'POST',
           headers: {

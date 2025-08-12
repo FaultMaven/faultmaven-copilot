@@ -43,5 +43,5 @@ console.log('   4. Try sending a message to see real API calls');
 console.log('\n📋 Expected API Flow:');
 console.log('   1. POST /api/v1/sessions - Create session');
 console.log('   2. POST /api/v1/data/ - Upload data (optional)');
-console.log('   3. POST /api/v1/query/ - Send queries');
+console.log('   3. POST /api/v1/agent/query - Send queries');
 console.log('   4. POST /api/v1/sessions/{id}/heartbeat - Keep session alive'); 

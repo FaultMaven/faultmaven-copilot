@@ -1,17 +1,39 @@
 // src/shared/ui/SidePanelApp.tsx
 import React, { useState, useRef, useEffect } from "react";
 import { browser } from "wxt/browser";
+import DOMPurify from 'dompurify';
 // import { sendMessageToBackground } from "../../lib/utils/messaging"; // unused
 import { processQuery, uploadData, QueryRequest, heartbeatSession } from "../../lib/api";
 import config from "../../config";
 import KnowledgeBaseView from "./KnowledgeBaseView";
 import { createSession } from "../../lib/api";
 import { formatResponse } from "../../lib/utils/formatter";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
+// TypeScript interfaces for better type safety
+interface StorageResult {
+  sessionId?: string;
+  sessionCreatedAt?: number;
+}
+
+interface MessageResponse {
+  status: 'success' | 'error';
+  data?: string;
+  url?: string;
+  message?: string;
+}
+
+interface ConversationItem {
+  question?: string;
+  response?: string;
+  error?: boolean;
+  timestamp: string;
+}
 
 export default function SidePanelApp() {
   const [activeTab, setActiveTab] = useState<'copilot' | 'kb'>('copilot');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Array<{ question?: string; response?: string; error?: boolean; timestamp: string }>>([]);
+  const [conversation, setConversation] = useState<ConversationItem[]>([]);
   const [queryInput, setQueryInput] = useState("");
   const [textInput, setTextInput] = useState("");
   const [pageContent, setPageContent] = useState<string>("");
@@ -19,57 +41,63 @@ export default function SidePanelApp() {
   const [loading, setLoading] = useState(false);
   const [injectionStatus, setInjectionStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: "", type: "" });
   const [showDataSection, setShowDataSection] = useState(true);
+  const [dataSource, setDataSource] = useState<"text" | "file" | "page">("text");
 
-  const dataSourceRef = useRef<"text" | "file" | "page">("text");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const conversationHistoryRef = useRef<HTMLDivElement>(null);
-  const [, forceUpdate] = useState({}); // Helper to re-render on ref change
 
   useEffect(() => {
-    // Try to load existing session from storage
-    browser.storage.local.get(["sessionId"]).then((result: any) => {
-      if (result.sessionId) {
-        console.log("[SidePanelApp] Found existing session:", result.sessionId);
-        setSessionId(result.sessionId);
+    let heartbeatInterval: NodeJS.Timeout | null = null;
+    
+    const initializeSession = async () => {
+      try {
+        const result = await browser.storage.local.get(["sessionId"]) as StorageResult;
+        let currentSessionId = result.sessionId;
         
-        // Start heartbeat for existing session
-        setInterval(() => {
-          heartbeatSession(result.sessionId).catch(err => 
-            console.warn("[SidePanelApp] Heartbeat failed:", err)
-          );
-        }, 30000);
-      } else {
-        // Create new session if none exists
-        getSessionId();
+        if (currentSessionId) {
+          console.log("[SidePanelApp] Found existing session:", currentSessionId);
+          setSessionId(currentSessionId);
+        } else {
+          // Create new session if none exists
+          console.log("[SidePanelApp] Creating new session...");
+          const session = await createSession();
+          currentSessionId = session.session_id;
+          setSessionId(currentSessionId);
+          
+          // Store session ID in browser storage for persistence
+          await browser.storage.local.set({ sessionId: currentSessionId });
+        }
+        
+        // Start single heartbeat interval for the session
+        if (currentSessionId) {
+          heartbeatInterval = setInterval(() => {
+            heartbeatSession(currentSessionId).catch(err => 
+              console.warn("[SidePanelApp] Heartbeat failed:", err)
+            );
+          }, 30000);
+        }
+      } catch (err) {
+        console.error("[SidePanelApp] Session initialization error:", err);
+        setInjectionStatus({ message: "⚠️ Failed to initialize session. Please try again.", type: "error" });
       }
-    });
+    };
+    
+    initializeSession();
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+    };
   }, []);
 
   const addTimestamp = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const getSessionId = async () => {
-    console.log("[SidePanelApp] Creating new session...");
-    try {
-      const res = await createSession();
-      console.log("[SidePanelApp] createSession response:", res);
-      setSessionId(res.session_id);
-      
-      // Store session ID in browser storage for persistence
-      browser.storage.local.set({ sessionId: res.session_id });
-      
-      // Start heartbeat to keep session alive
-      setInterval(() => {
-        if (res.session_id) {
-          heartbeatSession(res.session_id).catch(err => 
-            console.warn("[SidePanelApp] Heartbeat failed:", err)
-          );
-        }
-      }, 30000); // Heartbeat every 30 seconds
-      
-    } catch (err) {
-      console.error("createSession error:", err);
-      setInjectionStatus({ message: "⚠️ Failed to create session. Please try again.", type: "error" });
-    }
+    // This function is now handled by the useEffect hook
+    // to prevent duplicate session creation
+    console.log("[SidePanelApp] getSessionId called - session managed by useEffect");
   };
 
   const clearSession = async () => {
@@ -116,7 +144,7 @@ export default function SidePanelApp() {
         setInjectionStatus({ message: "⚠️ Cannot analyze this type of page.", type: "error" });
         return;
       }
-      const res: any = await browser.tabs.sendMessage(tab.id!, { action: "getPageContent" });
+      const res = await browser.tabs.sendMessage(tab.id!, { action: "getPageContent" }) as MessageResponse;
       console.log("[SidePanelApp] getPageContent response from CS:", res);
       if (res?.status === "success") {
         setInjectionStatus({ message: `✅ Page selected (${res.url})`, type: "success" });
@@ -124,12 +152,13 @@ export default function SidePanelApp() {
       } else {
         setInjectionStatus({ message: `⚠️ ${res?.message ?? "Error getting content."}`, type: "error" });
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("[SidePanelApp] getPageContent catch error:", e);
-      if (e.message && (e.message.includes("Could not establish connection") || e.message.includes("No matching message handler"))) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      if (errorMessage && (errorMessage.includes("Could not establish connection") || errorMessage.includes("No matching message handler"))) {
         setInjectionStatus({ message: "⚠️ Failed to connect to page. Is it example.com? Try refreshing the page/extension.", type: "error" });
       } else {
-        setInjectionStatus({ message: `⚠️ ${e.message || "Unknown error analyzing page."}`, type: "error" });
+        setInjectionStatus({ message: `⚠️ ${errorMessage || "Unknown error analyzing page."}`, type: "error" });
       }
     }
   };
@@ -167,7 +196,7 @@ export default function SidePanelApp() {
           page_url: window.location.href,
           browser_info: navigator.userAgent,
           page_content: pageContent || undefined,
-          text_data: dataSourceRef.current === "text" ? textInput.trim() : undefined,
+          text_data: dataSource === "text" ? textInput.trim() : undefined,
         }
       };
 
@@ -193,9 +222,10 @@ export default function SidePanelApp() {
       }
       
       addToConversation(undefined, formattedResponse);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("[SidePanelApp] sendToFaultMaven error:", e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${e.message}</p>`, true);
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${errorMessage}</p>`, true);
     } finally {
       setLoading(false);
     }
@@ -204,25 +234,25 @@ export default function SidePanelApp() {
   const sendDataToFaultMaven = async () => {
     setLoading(true);
     let dataToSend: string | File | null = null;
-    if (dataSourceRef.current === "text") dataToSend = textInput.trim();
-    else if (dataSourceRef.current === "file" && fileInputRef.current?.files?.[0]) dataToSend = fileInputRef.current.files[0];
-    else if (dataSourceRef.current === "page") dataToSend = pageContent;
+    if (dataSource === "text") dataToSend = textInput.trim();
+    else if (dataSource === "file" && fileInputRef.current?.files?.[0]) dataToSend = fileInputRef.current.files[0];
+    else if (dataSource === "page") dataToSend = pageContent;
 
     if (!dataToSend) {
       addToConversation(undefined, "<p><strong>Error:</strong> No data to submit.</p>", true);
       setLoading(false);
       return;
     }
-    addToConversation(`Uploading ${dataSourceRef.current} data...`, undefined);
+    addToConversation(`Uploading ${dataSource} data...`, undefined);
     try {
-      console.log("[SidePanelApp] Uploading data to FaultMaven backend. Type:", dataSourceRef.current, "Session:", sessionId);
+      console.log("[SidePanelApp] Uploading data to FaultMaven backend. Type:", dataSource, "Session:", sessionId);
       console.log("[SidePanelApp] Using API endpoint:", config.apiUrl);
       
       if (!sessionId) {
         throw new Error("No session ID available");
       }
 
-      const response = await uploadData(sessionId, dataToSend, dataSourceRef.current);
+      const response = await uploadData(sessionId, dataToSend, dataSource);
 
       console.log("[SidePanelApp] Upload response:", response);
       
@@ -238,18 +268,19 @@ export default function SidePanelApp() {
       addToConversation(undefined, formattedResponse);
       
       // Clear the input after successful upload
-      if (dataSourceRef.current === "text") {
+      if (dataSource === "text") {
         setTextInput("");
-      } else if (dataSourceRef.current === "file") {
+      } else if (dataSource === "file") {
         if (fileInputRef.current) fileInputRef.current.value = "";
         setFileSelected(false);
-      } else if (dataSourceRef.current === "page") {
+      } else if (dataSource === "page") {
         setPageContent("");
       }
       
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("[SidePanelApp] sendDataToFaultMaven error:", e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to upload data: ${e.message}</p>`, true);
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      addToConversation(undefined, `<p><strong>Error:</strong> Failed to upload data: ${errorMessage}</p>`, true);
     } finally {
       setLoading(false);
     }
@@ -267,20 +298,20 @@ export default function SidePanelApp() {
 
   const handleDataSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value as "text" | "file" | "page";
-    dataSourceRef.current = value;
+    setDataSource(value);
     setInjectionStatus({ message: "", type: "" });
     setTextInput("");
     setFileSelected(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setPageContent("");
-    forceUpdate({});
+    // No need for force update with proper state management
   };
 
   const isSubmitEnabled =
     !loading &&
-    ((dataSourceRef.current === "text" && textInput.trim()) ||
-    (dataSourceRef.current === "file" && fileSelected) ||
-    (dataSourceRef.current === "page" && !!pageContent.trim()));
+    ((dataSource === "text" && textInput.trim()) ||
+    (dataSource === "file" && fileSelected) ||
+    (dataSource === "page" && !!pageContent.trim()));
 
   const renderCopilotTab = () => (
     <div className="flex flex-col h-full space-y-1 overflow-y-auto">
@@ -300,7 +331,7 @@ export default function SidePanelApp() {
                 <div className={`w-full mx-1 px-2 py-1 text-sm ${item.error ? "text-red-700" : "text-gray-800"} border-t border-b border-gray-200 rounded`}> 
                   <div
                     className="prose-sm prose-p:my-1 prose-ul:my-1 prose-ol:my-1 break-words mb-1"
-                    dangerouslySetInnerHTML={{ __html: formatResponse(item.response) }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(formatResponse(item.response || '')) }}
                   />
                   <div className="text-[10px] text-gray-400 mt-1">{item.timestamp}</div>
                 </div>
@@ -375,7 +406,7 @@ export default function SidePanelApp() {
                       type="radio"
                       name="data-source"
                       value={value}
-                      checked={dataSourceRef.current === value}
+                      checked={dataSource === value}
                       onChange={handleDataSourceChange}
                       className="accent-blue-500"
                       disabled={loading}
@@ -394,7 +425,7 @@ export default function SidePanelApp() {
               </button>
             </div>
 
-            {dataSourceRef.current === "text" && (
+            {dataSource === "text" && (
               <textarea
                 id="data-input"
                 value={textInput}
@@ -406,7 +437,7 @@ export default function SidePanelApp() {
               />
             )}
 
-            {dataSourceRef.current === "file" && (
+            {dataSource === "file" && (
               <input
                 type="file"
                 id="file-input"
@@ -419,7 +450,7 @@ export default function SidePanelApp() {
               />
             )}
 
-            {dataSourceRef.current === "page" && (
+            {dataSource === "page" && (
               <div className="mt-2 space-y-2">
                 <button
                   id="analyze-page-button"
@@ -451,35 +482,37 @@ export default function SidePanelApp() {
   );
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 text-gray-800 text-sm font-sans">
-      {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 bg-white">
-        <button 
-          onClick={() => setActiveTab('copilot')} 
-          className={`flex-1 py-1 px-4 text-sm transition-colors border-b-2 ${
-            activeTab === 'copilot' 
-              ? 'text-blue-600 border-blue-500 font-semibold' 
-              : 'text-gray-500 border-transparent font-medium hover:text-gray-700 hover:border-gray-300'
-          }`}
-        >
-          Copilot
-        </button>
-        <button 
-          onClick={() => setActiveTab('kb')} 
-          className={`flex-1 py-1 px-4 text-sm transition-colors border-b-2 ${
-            activeTab === 'kb' 
-              ? 'text-blue-600 border-blue-500 font-semibold' 
-              : 'text-gray-500 border-transparent font-medium hover:text-gray-700 hover:border-gray-300'
-          }`}
-        >
-          Knowledge Base
-        </button>
-      </div>
+    <ErrorBoundary>
+      <div className="flex flex-col h-screen bg-gray-50 text-gray-800 text-sm font-sans">
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-200 bg-white">
+          <button 
+            onClick={() => setActiveTab('copilot')} 
+            className={`flex-1 py-1 px-4 text-sm transition-colors border-b-2 ${
+              activeTab === 'copilot' 
+                ? 'text-blue-600 border-blue-500 font-semibold' 
+                : 'text-gray-500 border-transparent font-medium hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Copilot
+          </button>
+          <button 
+            onClick={() => setActiveTab('kb')} 
+            className={`flex-1 py-1 px-4 text-sm transition-colors border-b-2 ${
+              activeTab === 'kb' 
+                ? 'text-blue-600 border-blue-500 font-semibold' 
+                : 'text-gray-500 border-transparent font-medium hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Knowledge Base
+          </button>
+        </div>
 
-      {/* Tab Content */}
-      <div className="flex-1 p-3 overflow-hidden">
-        {activeTab === 'copilot' ? renderCopilotTab() : <KnowledgeBaseView />}
+        {/* Tab Content */}
+        <div className="flex-1 p-3 overflow-hidden">
+          {activeTab === 'copilot' ? renderCopilotTab() : <KnowledgeBaseView />}
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

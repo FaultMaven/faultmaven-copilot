@@ -2,7 +2,7 @@ import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
 // Mock browser APIs for testing
-global.browser = {
+(global as any).browser = {
   storage: {
     local: {
       get: vi.fn(),
@@ -36,7 +36,7 @@ global.browser = {
 global.fetch = vi.fn();
 
 // Mock chrome API (for backward compatibility)
-global.chrome = global.browser as any;
+(global as any).chrome = (global as any).browser;
 
 // Mock window.location
 Object.defineProperty(window, 'location', {

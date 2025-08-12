@@ -9,7 +9,7 @@ All notable changes to the FaultMaven Copilot extension will be documented in th
 - **Updated API endpoints** to use correct FaultMaven API structure:
   - `POST /api/v1/sessions` - Session creation
   - `POST /api/v1/data/` - Data upload
-  - `POST /api/v1/query/` - Query processing
+  - `POST /api/v1/agent/query` - Query processing
   - `POST /api/v1/sessions/{id}/heartbeat` - Session heartbeat
 - **Added proper request/response formats** matching API specification
 - **Implemented session management** with persistence and heartbeat
@@ -121,5 +121,5 @@ VITE_API_URL=http://api.faultmaven.local:8000
 **New Endpoints:**
 - `POST /api/v1/sessions` - Session creation
 - `POST /api/v1/data/` - Data upload
-- `POST /api/v1/query/` - Query processing
+- `POST /api/v1/agent/query` - Query processing
 - `POST /api/v1/sessions/{id}/heartbeat` - Session heartbeat 

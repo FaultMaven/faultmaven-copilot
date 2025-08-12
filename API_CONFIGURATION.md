@@ -192,7 +192,7 @@ To verify which endpoint is being used:
 ### API Endpoints Used:
 - `POST /api/v1/sessions` - Create troubleshooting session
 - `POST /api/v1/data/` - Upload files/logs for analysis  
-- `POST /api/v1/query/` - Send troubleshooting queries
+- `POST /api/v1/agent/query` - Send troubleshooting queries
 - `POST /api/v1/sessions/{id}/heartbeat` - Keep session alive
 
 ### Request/Response Flow:
@@ -217,7 +217,7 @@ FormData: { session_id, data_type, file/content }
 **3. Query Processing:**
 ```typescript
 // Request
-POST /api/v1/query/
+POST /api/v1/agent/query
 {
   session_id: "uuid",
   query: "Why is my service failing?",
@@ -288,7 +288,7 @@ VITE_API_URL=http://api.faultmaven.local:8000
 **Solution:**
 1. Verify session was created successfully
 2. Check that the session ID is being passed correctly
-3. Ensure the query endpoint `/api/v1/query/` is available
+3. Ensure the query endpoint `/api/v1/agent/query` is available
 
 ### Issue: Extension connects to wrong endpoint
 **Solution:** 

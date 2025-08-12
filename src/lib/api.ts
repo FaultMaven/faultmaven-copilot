@@ -134,7 +134,7 @@ export async function createSession(user_id?: string): Promise<Session> {
  * Process a query for troubleshooting
  */
 export async function processQuery(request: QueryRequest): Promise<TroubleshootingResponse> {
-  const response = await fetch(`${config.apiUrl}/api/v1/query/`, {
+  const response = await fetch(`${config.apiUrl}/api/v1/agent/query`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
