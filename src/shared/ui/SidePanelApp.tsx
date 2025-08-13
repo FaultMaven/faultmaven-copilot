@@ -203,41 +203,52 @@ export default function SidePanelApp() {
       const response = await processQuery(request);
       console.log("[SidePanelApp] API response:", response);
       
-      // Format response with findings and recommendations if available
+      // Display the main response naturally
       let formattedResponse = response.response || "";
-      const toBullet = (item: any) => {
+      
+      // Only add additional sections if they provide meaningful extra information
+      // that's not already contained in the main response
+      const formatAdditionalItem = (item: any): string => {
         if (item == null) return "";
         if (typeof item === 'string') return item;
         if (typeof item === 'number' || typeof item === 'boolean') return String(item);
         
-        // Handle finding objects with proper formatting
+        // Handle structured items (like finding objects)
         if (typeof item === 'object') {
-          // Extract the main message or description from finding objects
-          const message = item.message || item.description || item.details || "";
-          const severity = item.severity ? ` (${item.severity})` : "";
-          const confidence = item.confidence ? ` [${Math.round(item.confidence * 100)}% confidence]` : "";
+          if (item.message) return item.message;
+          if (item.description) return item.description;
+          if (item.details) return item.details;
+          if (item.title) return item.title;
+          if (item.name) return item.name;
           
-          if (message) {
-            return `${message}${severity}${confidence}`;
-          }
-          
-          // Fallback for other object types
-          if (item.title || item.name) {
-            return item.title || item.name;
-          }
+          // Log unknown structures for debugging
+          console.log("Unknown item structure:", item);
+          return JSON.stringify(item, null, 2);
         }
         
-        // Final fallback for unknown types
-        try { return JSON.stringify(item, null, 2); } catch { return String(item); }
+        return String(item);
       };
+
+      // Only show findings if they exist and contain useful additional information
       if (response.findings && response.findings.length > 0) {
-        formattedResponse += "\n\n**Findings:**\n" + response.findings.map((f) => `• ${toBullet(f)}`).join('\n');
+        const meaningfulFindings = response.findings
+          .map(formatAdditionalItem)
+          .filter(finding => finding.trim().length > 0);
+        
+        if (meaningfulFindings.length > 0) {
+          formattedResponse += "\n\n" + meaningfulFindings.map(f => `• ${f}`).join('\n');
+        }
       }
+      
+      // Only show recommendations if they exist and are meaningful
       if (response.recommendations && response.recommendations.length > 0) {
-        formattedResponse += "\n\n**Recommendations:**\n" + response.recommendations.map((r) => `• ${toBullet(r)}`).join('\n');
-      }
-      if (response.confidence_score !== undefined) {
-        formattedResponse += `\n\n**Confidence:** ${Math.round(response.confidence_score * 100)}%`;
+        const meaningfulRecommendations = response.recommendations
+          .map(formatAdditionalItem)
+          .filter(rec => rec.trim().length > 0);
+        
+        if (meaningfulRecommendations.length > 0) {
+          formattedResponse += "\n\n**Recommended actions:**\n" + meaningfulRecommendations.map(r => `• ${r}`).join('\n');
+        }
       }
       
       addToConversation(undefined, formattedResponse);

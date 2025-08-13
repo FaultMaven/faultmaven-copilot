@@ -8,6 +8,9 @@
 export function formatResponse(responseText: string): string {
   if (!responseText) return ''
 
+  // Detect response type and apply appropriate formatting
+  const responseType = detectResponseType(responseText)
+  
   // Convert newlines to <br> tags
   let formatted = responseText.replace(/\n/g, '<br>')
 
@@ -26,7 +29,41 @@ export function formatResponse(responseText: string): string {
   // Highlight important sections
   formatted = highlightImportantSections(formatted)
 
+  // Add response type wrapper for additional styling
+  if (responseType !== 'general') {
+    formatted = `<div class="response-type-${responseType}">${formatted}</div>`
+  }
+
   return formatted
+}
+
+/**
+ * Detect the type of response to apply appropriate formatting
+ */
+function detectResponseType(text: string): string {
+  const lowerText = text.toLowerCase()
+  
+  // Troubleshooting/diagnostic responses
+  if (lowerText.includes('error') || lowerText.includes('failed') || lowerText.includes('issue')) {
+    return 'diagnostic'
+  }
+  
+  // Step-by-step guides or procedures
+  if (lowerText.includes('step 1') || lowerText.includes('1.') || lowerText.includes('first,')) {
+    return 'procedure'
+  }
+  
+  // Code or technical responses
+  if (lowerText.includes('```') || lowerText.includes('command') || lowerText.includes('execute')) {
+    return 'technical'
+  }
+  
+  // Quick answers or definitions
+  if (text.length < 200 && !lowerText.includes('\n')) {
+    return 'quick-answer'
+  }
+  
+  return 'general'
 }
 
 /**
@@ -132,7 +169,7 @@ function formatTables(text: string): string {
  * Highlight important sections
  */
 function highlightImportantSections(text: string): string {
-  // Highlight warnings and errors
+  // Highlight warnings and errors with icons
   let formatted = text.replace(
     /(?:<br>|^)(Warning:.*?)(?:<br>|$)/gi,
     '<div class="warning-block">⚠️ $1</div>'
@@ -146,6 +183,52 @@ function highlightImportantSections(text: string): string {
   formatted = formatted.replace(
     /(?:<br>|^)(Solution:.*?)(?:<br>|$)/gi,
     '<div class="solution-block">💡 $1</div>'
+  )
+
+  // Highlight info/note sections
+  formatted = formatted.replace(
+    /(?:<br>|^)(Note:.*?)(?:<br>|$)/gi,
+    '<div class="info-block">ℹ️ $1</div>'
+  )
+  formatted = formatted.replace(
+    /(?:<br>|^)(Info:.*?)(?:<br>|$)/gi,
+    '<div class="info-block">ℹ️ $1</div>'
+  )
+
+  // Highlight action items
+  formatted = formatted.replace(
+    /(?:<br>|^)(Action:.*?)(?:<br>|$)/gi,
+    '<div class="action-item">🎯 $1</div>'
+  )
+  formatted = formatted.replace(
+    /(?:<br>|^)(Next step:.*?)(?:<br>|$)/gi,
+    '<div class="action-item">👉 $1</div>'
+  )
+
+  // Highlight step-by-step items
+  formatted = formatted.replace(
+    /(?:<br>|^)(Step \d+:.*?)(?:<br>|$)/gi,
+    '<div class="step-item">📋 $1</div>'
+  )
+
+  // Highlight terminal commands
+  formatted = formatted.replace(
+    /(?:<br>|^)(\$ .+?)(?:<br>|$)/g,
+    '<div class="terminal-block">$1</div>'
+  )
+
+  // Highlight severity levels
+  formatted = formatted.replace(
+    /(high severity|critical|urgent)/gi,
+    '<span class="severity-high">$1</span>'
+  )
+  formatted = formatted.replace(
+    /(medium severity|moderate)/gi,
+    '<span class="severity-medium">$1</span>'
+  )
+  formatted = formatted.replace(
+    /(low severity|minor)/gi,
+    '<span class="severity-low">$1</span>'
   )
 
   // Highlight headings

@@ -5,6 +5,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Response formatting styles */
+@import "./response-formatting.css";
+
 /* Sidebar Container */
 #faultmaven-sidebar {
   @apply bg-[#fdfbf8] font-sans text-sm;
