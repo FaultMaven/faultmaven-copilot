@@ -206,6 +206,10 @@ export default function SidePanelApp() {
       // Display the main response naturally
       let formattedResponse = response.response || "";
       
+      // Check if main response is minimal and we have richer content in findings
+      const hasMinimalResponse = !formattedResponse || formattedResponse.trim().length < 50;
+      let primaryContentFound = false;
+      
       // Only add additional sections if they provide meaningful extra information
       // that's not already contained in the main response
       const formatAdditionalItem = (item: any): string => {
@@ -215,9 +219,10 @@ export default function SidePanelApp() {
         
         // Handle structured items (like finding objects)
         if (typeof item === 'object') {
-          if (item.message) return item.message;
-          if (item.description) return item.description;
+          // Prioritize detailed content over brief messages
           if (item.details) return item.details;
+          if (item.description) return item.description;
+          if (item.message) return item.message;
           if (item.title) return item.title;
           if (item.name) return item.name;
           
@@ -236,7 +241,24 @@ export default function SidePanelApp() {
           .filter(finding => finding.trim().length > 0);
         
         if (meaningfulFindings.length > 0) {
-          formattedResponse += "\n\n" + meaningfulFindings.map(f => `• ${f}`).join('\n');
+          // If main response is minimal and we have detailed findings, use the detailed content as primary
+          if (hasMinimalResponse && meaningfulFindings.some(f => f.length > 100)) {
+            // Find the most detailed finding to use as primary content
+            const detailedFinding = meaningfulFindings.find(f => f.length > 100);
+            if (detailedFinding && !primaryContentFound) {
+              formattedResponse = detailedFinding;
+              primaryContentFound = true;
+              
+              // Add remaining findings as additional points if any
+              const remainingFindings = meaningfulFindings.filter(f => f !== detailedFinding);
+              if (remainingFindings.length > 0) {
+                formattedResponse += "\n\n" + remainingFindings.map(f => `• ${f}`).join('\n');
+              }
+            }
+          } else {
+            // Normal case: add findings as additional bullet points
+            formattedResponse += "\n\n" + meaningfulFindings.map(f => `• ${f}`).join('\n');
+          }
         }
       }
       

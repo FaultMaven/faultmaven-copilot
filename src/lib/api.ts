@@ -36,7 +36,11 @@ export interface QueryRequest {
 
 export interface TroubleshootingResponse {
   response: string;
-  findings?: string[];
+  findings?: Array<{
+    details?: string;
+    message?: string;
+    [key: string]: any;
+  }>;
   recommendations?: string[];
   confidence_score?: number;
   session_id: string;
