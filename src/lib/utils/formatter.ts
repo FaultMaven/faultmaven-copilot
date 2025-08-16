@@ -6,7 +6,11 @@
  * @returns {string} - HTML formatted response
  */
 export function formatResponse(responseText: string): string {
-  if (!responseText) return ''
+  // Defensive programming: ensure responseText is a string
+  if (!responseText || typeof responseText !== 'string') {
+    console.warn('[Formatter] Invalid response text:', typeof responseText, responseText);
+    return String(responseText || '');
+  }
 
   // Detect response type and apply appropriate formatting
   const responseType = detectResponseType(responseText)
@@ -140,7 +144,7 @@ function formatTables(text: string): string {
     const headerRow = rows[0]
     const headers = headerRow
       .split('|')
-      .filter((cell) => cell.trim())
+      .filter((cell) => cell && cell.trim())
 
     tableHtml += '<thead><tr>'
     headers.forEach((header) => {
@@ -152,7 +156,7 @@ function formatTables(text: string): string {
     tableHtml += '<tbody>'
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i]
-      const cells = row.split('|').filter((cell) => cell.trim())
+      const cells = row.split('|').filter((cell) => cell && cell.trim())
       tableHtml += '<tr>'
       cells.forEach((cell) => {
         tableHtml += `<td>${cell.trim()}</td>`

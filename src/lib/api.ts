@@ -8,6 +8,10 @@ export interface Session {
   status: 'active' | 'idle' | 'expired';
   last_activity?: string;
   metadata?: Record<string, any>;
+  // Additional fields that might be returned by backend
+  user_id?: string;
+  session_type?: string;
+  usage_type?: string;
 }
 
 export interface CreateSessionResponse {
@@ -63,7 +67,7 @@ export enum ResponseType {
 }
 
 export interface Source {
-  type: 'log_analysis' | 'knowledge_base' | 'user_input' | 'system_metrics' | 'external_api' | 'previous_investigation';
+  type: 'log_analysis' | 'knowledge_base' | 'user_input' | 'system_metrics' | 'external_api' | 'previous_case';
   content: string;
   confidence?: number;
   metadata?: Record<string, any>;
@@ -95,7 +99,7 @@ export interface AgentResponse {
   response_type: ResponseType;
   content: string;
   session_id: string;
-  investigation_id?: string;
+  case_id?: string;
   confidence_score?: number;
   sources?: Source[];
   plan?: PlanStep;
@@ -281,7 +285,9 @@ export async function getSessionData(sessionId: string, limit: number = 10, offs
     throw new Error(errorData.detail || `Failed to get session data: ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  // Ensure we always return an array
+  return Array.isArray(data) ? data : [];
 }
 
 /**
@@ -347,7 +353,9 @@ export async function getKnowledgeDocuments(
     throw new Error(errorData.detail || `Failed to fetch documents: ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  // Ensure we always return an array
+  return Array.isArray(data) ? data : [];
 }
 
 /**
@@ -397,7 +405,9 @@ export async function searchKnowledgeBase(
   }
 
   const result = await response.json();
-  return result.documents || result;
+  const documents = result.documents || result;
+  // Ensure we always return an array
+  return Array.isArray(documents) ? documents : [];
 }
 
 /**
@@ -554,6 +564,101 @@ export async function markCaseResolved(caseId: string): Promise<{
   }
 
   return response.json();
+}
+
+/**
+ * List sessions with optional filtering for multi-conversation support
+ */
+export async function listSessions(filters?: {
+  user_id?: string;
+  session_type?: string;
+  usage_type?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<Session[]> {
+  const url = new URL(`${config.apiUrl}/api/v1/sessions/`);
+  
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined) {
+        url.searchParams.append(key, String(value));
+      }
+    });
+  }
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData: APIError = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to list sessions: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Handle different possible response formats
+    let sessions: Session[] = [];
+    
+    if (Array.isArray(data)) {
+      sessions = data;
+    } else if (data && Array.isArray(data.sessions)) {
+      sessions = data.sessions;
+    } else if (data && Array.isArray(data.items)) {
+      sessions = data.items;
+    } else {
+      console.warn('[listSessions] Unexpected response format:', data);
+      return [];
+    }
+    
+    // Validate and sanitize session objects
+    return sessions.map(session => ({
+      session_id: session.session_id || '',
+      created_at: session.created_at || new Date().toISOString(),
+      status: session.status || 'active',
+      last_activity: session.last_activity,
+      metadata: session.metadata || {},
+      user_id: session.user_id,
+      session_type: session.session_type,
+      usage_type: session.usage_type
+    })).filter(session => session.session_id); // Filter out invalid sessions
+    
+  } catch (error) {
+    console.error('[listSessions] Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate AI-powered conversation title
+ */
+export async function generateConversationTitle(sessionId: string): Promise<{ title: string }> {
+  const response = await fetch(`${config.apiUrl}/api/v1/agent/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      query: "Please generate a concise, descriptive title (3-6 words) for this troubleshooting conversation based on the key issue or topic discussed. Return only the title without quotes or extra text.",
+      priority: "low",
+      context: {
+        is_title_generation: true
+      }
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to generate title: ${response.status}`);
+  }
+
+  const result: AgentResponse = await response.json();
+  return { title: result.content.trim() };
 }
 
 /**

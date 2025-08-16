@@ -228,7 +228,7 @@ describe('API Functions', () => {
       const mockResponse: UploadedData = {
         data_id: 'data-123',
         session_id: 'session-123',
-        data_type: 'text',
+        data_type: 'documentation',
         content: 'test log content',
         uploaded_at: '2024-01-01T00:00:00Z',
         processing_status: 'completed'

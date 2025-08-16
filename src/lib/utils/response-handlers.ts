@@ -65,9 +65,19 @@ export const RESPONSE_TYPE_INFO: Record<ResponseType, ResponseTypeInfo> = {
 };
 
 /**
- * Get formatted response type information
+ * Get formatted response type information with safety check
  */
 export function getResponseTypeInfo(responseType: ResponseType): ResponseTypeInfo {
+  if (!responseType || !RESPONSE_TYPE_INFO[responseType]) {
+    console.warn('[ResponseHandlers] Unknown response type:', responseType);
+    return {
+      label: 'Response',
+      emoji: '💬',
+      description: 'System response',
+      color: 'text-gray-600',
+      actionRequired: false
+    };
+  }
   return RESPONSE_TYPE_INFO[responseType];
 }
 
@@ -105,7 +115,7 @@ export function formatSource(source: Source): {
     'user_input': '👤',
     'system_metrics': '📊',
     'external_api': '🔗',
-    'previous_investigation': '🔍'
+    'previous_case': '🔍'
   };
 
   const sourceLabels: Record<string, string> = {
@@ -114,7 +124,7 @@ export function formatSource(source: Source): {
     'user_input': 'User Input',
     'system_metrics': 'System Metrics',
     'external_api': 'External API',
-    'previous_investigation': 'Previous Investigation'
+    'previous_case': 'Previous Case'
   };
 
   return {
@@ -150,7 +160,19 @@ export function formatPlanStep(step: PlanStep): {
  * Check if response requires user action
  */
 export function requiresUserAction(response: AgentResponse): boolean {
-  return RESPONSE_TYPE_INFO[response.response_type].actionRequired;
+  // Backend now sends spec-compliant UPPERCASE response types
+  if (!response || !response.response_type) {
+    console.warn('[ResponseHandlers] Missing response_type in response:', response);
+    return false;
+  }
+  
+  const typeInfo = RESPONSE_TYPE_INFO[response.response_type];
+  if (!typeInfo) {
+    console.warn('[ResponseHandlers] Unknown response_type:', response.response_type);
+    return false;
+  }
+  
+  return typeInfo.actionRequired;
 }
 
 /**
@@ -179,67 +201,17 @@ export function getNextActionHint(response: AgentResponse): string | null {
 }
 
 /**
- * Format the complete response for display
+ * Format the complete response for display with comprehensive error handling
  */
 export function formatResponseForDisplay(response: AgentResponse): string {
-  let formattedResponse = response.content || '';
-
-  // Add response type indicator
-  if (response.response_type !== ResponseType.ANSWER) {
-    const typeInfo = getResponseTypeInfo(response.response_type);
-    formattedResponse = `**${typeInfo.emoji} ${typeInfo.label}**\n\n${formattedResponse}`;
+  // Defensive programming: ensure response is valid
+  if (!response || typeof response !== 'object') {
+    console.error('[ResponseHandlers] Invalid response object:', response);
+    return 'Error: Invalid response received from server';
   }
-
-  // Add confidence score
-  if (response.confidence_score !== undefined) {
-    const confidence = formatConfidenceScore(response.confidence_score);
-    formattedResponse += `\n\n${confidence.emoji} **Confidence:** ${confidence.display}`;
-  }
-
-  // Add sources
-  if (response.sources && response.sources.length > 0) {
-    formattedResponse += '\n\n**Sources:**\n';
-    response.sources.forEach((source) => {
-      const formatted = formatSource(source);
-      formattedResponse += `${formatted.emoji} **${formatted.label}:** ${formatted.content}`;
-      if (formatted.confidence) {
-        formattedResponse += ` (${formatted.confidence})`;
-      }
-      formattedResponse += '\n';
-    });
-  }
-
-  // Add plan
-  if (response.plan) {
-    const formatted = formatPlanStep(response.plan);
-    formattedResponse += `\n\n**${formatted.stepNumber}: ${formatted.action}**\n`;
-    formattedResponse += `${formatted.description}`;
-    
-    if (formatted.estimatedTime) {
-      formattedResponse += `\n⏱️ **Estimated time:** ${formatted.estimatedTime}`;
-    }
-    
-    if (formatted.dependencies) {
-      formattedResponse += `\n🔗 **${formatted.dependencies}**`;
-    }
-    
-    if (formatted.requiredTools) {
-      formattedResponse += `\n🛠️ **${formatted.requiredTools}**`;
-    }
-  }
-
-  // Add next action hint
-  const nextAction = getNextActionHint(response);
-  if (nextAction) {
-    formattedResponse += `\n\n💡 **Next Action:** ${nextAction}`;
-  }
-
-  // Add estimated time to resolution
-  if (response.estimated_time_to_resolution) {
-    formattedResponse += `\n\n⏰ **Estimated Time to Resolution:** ${response.estimated_time_to_resolution}`;
-  }
-
-  return formattedResponse;
+  
+  // Return just the content without any formatting
+  return response.content || '';
 }
 
 /**

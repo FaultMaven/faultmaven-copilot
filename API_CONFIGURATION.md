@@ -110,7 +110,7 @@ export interface AgentResponse {
   response_type: ResponseType;
   content: string;
   session_id: string;
-  investigation_id?: string;
+  case_id?: string;
   confidence_score?: number;
   sources?: Source[];
   plan?: PlanStep;

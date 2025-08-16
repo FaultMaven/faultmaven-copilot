@@ -10,7 +10,12 @@ import {
   KbDocument
 } from "../../lib/api";
 
-export default function KnowledgeBaseView() {
+interface KnowledgeBaseViewProps {
+  serverError?: string | null;
+  onRetry?: () => void;
+}
+
+export default function KnowledgeBaseView({ serverError, onRetry }: KnowledgeBaseViewProps) {
   const [documents, setDocuments] = useState<KbDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,10 +29,12 @@ export default function KnowledgeBaseView() {
     setError(null);
     try {
       const docs = await getKnowledgeDocuments();
-      setDocuments(docs);
+      // Ensure docs is an array
+      setDocuments(Array.isArray(docs) ? docs : []);
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Error fetching documents:", err);
       setError('Could not load documents. Please check your connection and try again.');
+      setDocuments([]); // Reset to empty array on error
     } finally {
       setIsLoading(false);
     }
@@ -88,7 +95,7 @@ export default function KnowledgeBaseView() {
       await deleteKnowledgeDocument(id);
       setDocuments(prev => prev.filter(doc => doc.document_id !== id));
       // Also remove from search results if present
-      setSearchResults(prev => prev.filter(doc => doc.document_id !== id));
+      setSearchResults(prev => Array.isArray(prev) ? prev.filter(doc => doc && doc.document_id !== id) : []);
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Error deleting document:", err);
       setError(`Failed to delete document: ${err.message}`);
@@ -107,11 +114,13 @@ export default function KnowledgeBaseView() {
 
     try {
       const results = await searchKnowledgeBase(query, undefined, undefined, undefined, 20);
-      setSearchResults(results);
+      // Ensure results is an array
+      setSearchResults(Array.isArray(results) ? results : []);
       setShowSearchResults(true);
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Search error:", err);
       setError(`Search failed: ${err.message}`);
+      setSearchResults([]);
       setShowSearchResults(false);
     } finally {
       setIsSearching(false);
@@ -140,6 +149,31 @@ export default function KnowledgeBaseView() {
     setShowSearchResults(false);
     setSearchResults([]);
   };
+
+  // Show server error if present
+  if (serverError) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center max-w-md">
+          <div className="mb-4">
+            <svg className="w-12 h-12 text-red-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-red-600 font-medium mb-2">Server Connection Error</p>
+            <p className="text-sm text-gray-600 mb-4">{serverError}</p>
+            {onRetry && (
+              <button 
+                onClick={onRetry}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Retry Connection
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full space-y-4">

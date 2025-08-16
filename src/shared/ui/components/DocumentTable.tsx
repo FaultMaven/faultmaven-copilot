@@ -14,7 +14,10 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
     return null;
   }
 
-  if (documents.length === 0) {
+  // Defensive programming: ensure documents is an array
+  const documentList = Array.isArray(documents) ? documents : [];
+
+  if (documentList.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
         <div className="text-center">
@@ -46,7 +49,7 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
       {/* Table Header */}
       <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <h3 className="text-sm font-medium text-gray-700">Documents ({documents.length})</h3>
+        <h3 className="text-sm font-medium text-gray-700">Documents ({documentList.length})</h3>
       </div>
 
       {/* Table */}
@@ -75,7 +78,7 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {documents.map((document) => (
+            {documentList.filter(doc => doc && doc.document_id).map((document) => (
               <DocumentRow
                 key={document.document_id}
                 document={document}

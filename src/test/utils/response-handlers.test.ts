@@ -159,6 +159,30 @@ describe('Response Handlers', () => {
       
       expect(requiresUserAction(response)).toBe(true);
     });
+
+    it('returns false for null or undefined response', () => {
+      expect(requiresUserAction(null as any)).toBe(false);
+      expect(requiresUserAction(undefined as any)).toBe(false);
+    });
+
+    it('returns false for response without response_type', () => {
+      const response = {
+        content: 'This is a response',
+        session_id: 'session-123'
+      } as AgentResponse;
+      
+      expect(requiresUserAction(response)).toBe(false);
+    });
+
+    it('returns false for response with unknown response_type', () => {
+      const response = {
+        response_type: 'UNKNOWN_TYPE' as ResponseType,
+        content: 'This is a response',
+        session_id: 'session-123'
+      };
+      
+      expect(requiresUserAction(response)).toBe(false);
+    });
   });
 
   describe('getNextActionHint', () => {
@@ -194,8 +218,7 @@ describe('Response Handlers', () => {
       };
       
       const result = formatResponseForDisplay(response);
-      expect(result).toContain('Your service is failing because...');
-      expect(result).toContain('🟢 **Confidence:** 90%');
+      expect(result).toBe('Your service is failing because...');
     });
 
     it('formats PLAN_PROPOSAL response correctly', () => {
@@ -213,10 +236,28 @@ describe('Response Handlers', () => {
       };
       
       const result = formatResponseForDisplay(response);
-      expect(result).toContain('**📋 Troubleshooting Plan**');
-      expect(result).toContain('**Step 1: Check logs**');
-      expect(result).toContain('Review error logs');
-      expect(result).toContain('⏱️ **Estimated time:** 5 minutes');
+      expect(result).toBe('Here is a plan to fix the issue');
+    });
+
+    it('handles invalid response gracefully', () => {
+      const result1 = formatResponseForDisplay(null as any);
+      expect(result1).toBe('Error: Invalid response received from server');
+
+      const result2 = formatResponseForDisplay(undefined as any);
+      expect(result2).toBe('Error: Invalid response received from server');
+
+      const result3 = formatResponseForDisplay('invalid' as any);
+      expect(result3).toBe('Error: Invalid response received from server');
+    });
+
+    it('handles response with missing content gracefully', () => {
+      const response = {
+        response_type: ResponseType.ANSWER,
+        session_id: 'session-123'
+      } as AgentResponse;
+      
+      const result = formatResponseForDisplay(response);
+      expect(result).toBe(''); // Should return empty string for missing content
     });
   });
 

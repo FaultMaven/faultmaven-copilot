@@ -1,24 +1,14 @@
 // src/shared/ui/SidePanelApp.tsx
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { browser } from "wxt/browser";
-import DOMPurify from 'dompurify';
-// import { sendMessageToBackground } from "../../lib/utils/messaging"; // unused
 import { 
-  processQuery, 
-  uploadData, 
-  QueryRequest, 
   heartbeatSession, 
-  createSession,
-  AgentResponse,
-  ResponseType,
-  UploadedData,
-  getSessionData
+  createSession
 } from "../../lib/api";
-import { formatResponseForDisplay, requiresUserAction } from "../../lib/utils/response-handlers";
-import config from "../../config";
 import KnowledgeBaseView from "./KnowledgeBaseView";
-import { formatResponse } from "../../lib/utils/formatter";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import ConversationsList from "./components/ConversationsList";
+import { ChatWindow } from "./components/ChatWindow";
 
 // TypeScript interfaces for better type safety
 interface StorageResult {
@@ -26,51 +16,12 @@ interface StorageResult {
   sessionCreatedAt?: number;
 }
 
-interface MessageResponse {
-  status: 'success' | 'error';
-  data?: string;
-  url?: string;
-  message?: string;
-}
-
-interface ConversationItem {
-  question?: string;
-  response?: string;
-  error?: boolean;
-  timestamp: string;
-  responseType?: ResponseType;
-  confidenceScore?: number;
-  sources?: Array<{
-    type: string;
-    content: string;
-    confidence?: number;
-  }>;
-  plan?: {
-    step_number: number;
-    action: string;
-    description: string;
-    estimated_time?: string;
-  };
-  nextActionHint?: string;
-  requiresAction?: boolean;
-}
-
 export default function SidePanelApp() {
   const [activeTab, setActiveTab] = useState<'copilot' | 'kb'>('copilot');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<ConversationItem[]>([]);
-  const [queryInput, setQueryInput] = useState("");
-  const [textInput, setTextInput] = useState("");
-  const [pageContent, setPageContent] = useState<string>("");
-  const [fileSelected, setFileSelected] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [injectionStatus, setInjectionStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: "", type: "" });
-  const [showDataSection, setShowDataSection] = useState(true);
-  const [dataSource, setDataSource] = useState<"text" | "file" | "page">("text");
-  const [sessionData, setSessionData] = useState<UploadedData[]>([]);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const conversationHistoryRef = useRef<HTMLDivElement>(null);
+  const [conversationTitles, setConversationTitles] = useState<Record<string, string>>({});
+  const [showConversationsList, setShowConversationsList] = useState(true);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   useEffect(() => {
     let heartbeatInterval: NodeJS.Timeout | null = null;
@@ -80,33 +31,41 @@ export default function SidePanelApp() {
         const result = await browser.storage.local.get(["sessionId"]) as StorageResult;
         let currentSessionId = result.sessionId;
         
-        if (currentSessionId) {
+        // Validate the session ID format
+        if (currentSessionId && typeof currentSessionId === 'string' && currentSessionId.trim()) {
           console.log("[SidePanelApp] Found existing session:", currentSessionId);
           setSessionId(currentSessionId);
-          // Load session data
-          await loadSessionData(currentSessionId);
         } else {
-          // Create new session if none exists
+          // Create new session if none exists or invalid
           console.log("[SidePanelApp] Creating new session...");
           const session = await createSession();
-          currentSessionId = session.session_id;
-          setSessionId(currentSessionId);
           
-          // Store session ID in browser storage for persistence
-          await browser.storage.local.set({ sessionId: currentSessionId });
+          if (session && session.session_id) {
+            currentSessionId = session.session_id;
+            setSessionId(currentSessionId);
+            setServerError(null); // Clear any previous errors
+            
+            // Store session ID in browser storage for persistence
+            await browser.storage.local.set({ sessionId: currentSessionId });
+          } else {
+            console.error("[SidePanelApp] Failed to create session - invalid response:", session);
+            setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
+            return;
+          }
         }
         
         // Start single heartbeat interval for the session
-        if (currentSessionId) {
+        if (currentSessionId && typeof currentSessionId === 'string') {
           heartbeatInterval = setInterval(() => {
-            heartbeatSession(currentSessionId).catch(err => 
-              console.warn("[SidePanelApp] Heartbeat failed:", err)
-            );
+            heartbeatSession(currentSessionId).catch(err => {
+              console.warn("[SidePanelApp] Heartbeat failed:", err);
+              // If heartbeat fails repeatedly, we might need to create a new session
+            });
           }, 30000);
         }
       } catch (err) {
         console.error("[SidePanelApp] Session initialization error:", err);
-        setInjectionStatus({ message: "⚠️ Failed to initialize session. Please try again.", type: "error" });
+        setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
       }
     };
     
@@ -120,430 +79,172 @@ export default function SidePanelApp() {
     };
   }, []);
 
-  const loadSessionData = async (sessionId: string) => {
-    try {
-      const data = await getSessionData(sessionId, 50, 0);
-      setSessionData(data);
-    } catch (err) {
-      console.warn("[SidePanelApp] Failed to load session data:", err);
-    }
-  };
-
-  const addTimestamp = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  const getSessionId = async () => {
-    // This function is now handled by the useEffect hook
-    // to prevent duplicate session creation
-    console.log("[SidePanelApp] getSessionId called - session managed by useEffect");
-  };
-
-  const clearSession = async () => {
-    if (sessionId) {
-      try {
-        // Clear conversation
-        setConversation([]);
-        // Clear session data
-        setSessionData([]);
-        // Create new session
-        const newSession = await createSession();
-        const newSessionId = newSession.session_id;
-        setSessionId(newSessionId);
-        
-        // Update storage
-        await browser.storage.local.set({ sessionId: newSessionId });
-        
-        console.log("[SidePanelApp] New session created:", newSessionId);
-      } catch (err) {
-        console.error("[SidePanelApp] Failed to create new session:", err);
-        setInjectionStatus({ message: "⚠️ Failed to create new session. Please try again.", type: "error" });
-      }
-    }
-  };
-
-  const addToConversation = (question?: string, response?: string, error: boolean = false, responseData?: AgentResponse) => {
-    const newItem: ConversationItem = {
-      question,
-      response,
-      error,
-      timestamp: addTimestamp(),
-      responseType: responseData?.response_type,
-      confidenceScore: responseData?.confidence_score,
-      sources: responseData?.sources,
-      plan: responseData?.plan,
-      nextActionHint: responseData?.next_action_hint,
-      requiresAction: responseData ? requiresUserAction(responseData) : false
+  // Handle responsive design
+  useEffect(() => {
+    const handleResize = () => {
+      setShowConversationsList(window.innerWidth >= 600);
     };
     
-    setConversation(prev => [...prev, newItem]);
+    handleResize(); // Set initial state
+    window.addEventListener('resize', handleResize);
     
-    // Scroll to bottom after adding new item
-    setTimeout(() => {
-      if (conversationHistoryRef.current) {
-        conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
-      }
-    }, 100);
-  };
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-  const getPageContent = async () => {
-    try {
-      setInjectionStatus({ message: "🔄 Analyzing page content...", type: "" });
-      
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (!tab.id) {
-        throw new Error("No active tab found");
-      }
-
-      const response = await browser.tabs.sendMessage(tab.id, { action: "getPageContent" });
-      
-      if (response && response.content) {
-        setPageContent(response.content);
-        setInjectionStatus({ message: "✅ Page content captured successfully!", type: "success" });
-      } else {
-        throw new Error("Failed to capture page content");
-      }
-    } catch (err) {
-      console.error("[SidePanelApp] getPageContent error:", err);
-      setInjectionStatus({ 
-        message: "⚠️ Failed to capture page content. Please ensure the page is fully loaded.", 
-        type: "error" 
+  const handleSessionSelect = (selectedSessionId: string) => {
+    if (selectedSessionId && typeof selectedSessionId === 'string') {
+      setSessionId(selectedSessionId);
+      // Update storage to remember the last active session
+      browser.storage.local.set({ sessionId: selectedSessionId }).catch(err => {
+        console.warn('[SidePanelApp] Failed to save session to storage:', err);
       });
     }
   };
 
-  const sendToFaultMaven = async (query: string) => {
+  const handleNewSession = (newSessionId: string) => {
+    if (newSessionId && typeof newSessionId === 'string') {
+      setSessionId(newSessionId);
+      // Update storage
+      browser.storage.local.set({ sessionId: newSessionId }).catch(err => {
+        console.warn('[SidePanelApp] Failed to save new session to storage:', err);
+      });
+    }
+  };
+
+  const handleTitleGenerated = (sessionId: string, title: string) => {
+    setConversationTitles(prev => ({ ...prev, [sessionId]: title }));
+  };
+
+  const toggleConversationsList = () => {
+    setShowConversationsList(!showConversationsList);
+  };
+
+  const retryConnection = async () => {
+    setServerError(null);
+    try {
+      console.log("[SidePanelApp] Retrying server connection...");
+      const session = await createSession();
+      
+      if (session && session.session_id) {
+        setSessionId(session.session_id);
+        await browser.storage.local.set({ sessionId: session.session_id });
+      } else {
+        setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
+      }
+    } catch (err) {
+      console.error("[SidePanelApp] Retry connection error:", err);
+      setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
+    }
+  };
+
+
+
+
+
+
+  const renderCopilotTab = () => {
     if (!sessionId) {
-      addToConversation(undefined, "<p><strong>Error:</strong> No session available. Please refresh the page.</p>", true);
-      return;
-    }
-
-    addToConversation(query, undefined);
-    setLoading(true);
-
-    try {
-      const request: QueryRequest = {
-        session_id: sessionId,
-        query,
-        priority: "normal",
-        context: {
-          page_url: window.location.href,
-          browser_info: navigator.userAgent,
-          uploaded_data_ids: sessionData.map(d => d.data_id)
-        }
-      };
-
-      const response: AgentResponse = await processQuery(request);
-      console.log("[SidePanelApp] API response:", response);
-      
-      // Use the new response formatting utility
-      const formattedResponse = formatResponseForDisplay(response);
-      
-      addToConversation(undefined, formattedResponse, false, response);
-      
-      // Update session data if new data was uploaded
-      if (response.response_type === ResponseType.NEEDS_MORE_DATA) {
-        await loadSessionData(sessionId);
-      }
-      
-    } catch (e: unknown) {
-      console.error("[SidePanelApp] sendToFaultMaven error:", e);
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${errorMessage}</p>`, true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendDataToFaultMaven = async () => {
-    setLoading(true);
-    let dataToSend: string | File | null = null;
-    if (dataSource === "text") dataToSend = textInput.trim();
-    else if (dataSource === "file" && fileInputRef.current?.files?.[0]) dataToSend = fileInputRef.current.files[0];
-    else if (dataSource === "page") dataToSend = pageContent;
-
-    if (!dataToSend) {
-      addToConversation(undefined, "<p><strong>Error:</strong> No data to submit.</p>", true);
-      setLoading(false);
-      return;
-    }
-    addToConversation(`Uploading ${dataSource} data...`, undefined);
-    try {
-      console.log("[SidePanelApp] Uploading data to FaultMaven backend. Type:", dataSource, "Session:", sessionId);
-      console.log("[SidePanelApp] Using API endpoint:", config.apiUrl);
-      
-      if (!sessionId) {
-        throw new Error("No session ID available");
-      }
-
-      const response: UploadedData = await uploadData(sessionId, dataToSend, dataSource);
-
-      console.log("[SidePanelApp] Upload response:", response);
-      
-      // Format response with enhanced insights
-      let formattedResponse = `✅ Data uploaded successfully (ID: ${response.data_id})`;
-      
-      if (response.data_type && response.data_type !== 'unknown') {
-        formattedResponse += `\n\n**Data Type:** ${response.data_type.replace('_', ' ').toUpperCase()}`;
-      }
-      
-      if (response.file_name) {
-        formattedResponse += `\n\n**File:** ${response.file_name}`;
-      }
-      
-      if (response.file_size) {
-        formattedResponse += `\n\n**Size:** ${(response.file_size / 1024).toFixed(2)} KB`;
-      }
-      
-      if (response.insights) {
-        formattedResponse += `\n\n**Initial Insights:**\n${JSON.stringify(response.insights, null, 2)}`;
-      }
-      
-      addToConversation(undefined, formattedResponse);
-      
-      // Update session data
-      await loadSessionData(sessionId);
-      
-      // Clear the input after successful upload
-      if (dataSource === "text") {
-        setTextInput("");
-      } else if (dataSource === "file") {
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setFileSelected(false);
-      } else if (dataSource === "page") {
-        setPageContent("");
-      }
-      
-    } catch (e: unknown) {
-      console.error("[SidePanelApp] sendDataToFaultMaven error:", e);
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to upload data: ${errorMessage}</p>`, true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmitQuery = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (queryInput.trim() && !loading) {
-        sendToFaultMaven(queryInput.trim());
-        setQueryInput("");
-      }
-    }
-  };
-
-  const handleDataSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value as "text" | "file" | "page";
-    setDataSource(value);
-    setInjectionStatus({ message: "", type: "" });
-    setTextInput("");
-    setFileSelected(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setPageContent("");
-    // No need for force update with proper state management
-  };
-
-  const isSubmitEnabled =
-    !loading &&
-    ((dataSource === "text" && textInput.trim()) ||
-    (dataSource === "file" && fileSelected) ||
-    (dataSource === "page" && !!pageContent.trim()));
-
-  const renderCopilotTab = () => (
-    <div className="flex flex-col h-full space-y-1 overflow-y-auto">
-      <div id="conversation-history" ref={conversationHistoryRef} className="flex-grow overflow-y-auto bg-white border border-gray-300 rounded-lg p-2 min-h-0">
-        {conversation.map((item, index) => (
-          <React.Fragment key={index}>
-            {item.question && (
-              <div className="flex justify-end mb-1">
-                <div className="w-full mx-1 px-2 py-1 text-sm text-gray-900 bg-gray-100 rounded">
-                  <p className="break-words m-0">{item.question}</p>
-                  <div className="text-[10px] text-gray-400 mt-1">{item.timestamp}</div>
-                </div>
-              </div>
-            )}
-            {item.response && (
-              <div className="flex justify-end mb-1">
-                <div className={`w-full mx-1 px-2 py-1 text-sm ${item.error ? "text-red-700" : "text-gray-800"} border-t border-b border-gray-200 rounded`}> 
-                  <div
-                    className="prose-sm prose-p:my-1 prose-ul:my-1 prose-ol:my-1 break-words mb-1"
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(formatResponse(item.response || '')) }}
-                  />
-                  <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-                    <span>{item.timestamp}</span>
-                    {item.requiresAction && (
-                      <span className="text-orange-600 text-xs font-medium">⚠️ Action Required</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </React.Fragment>
-        ))}
-        {!conversation.length && !loading && (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4">
-            <h2 className="text-base font-semibold text-gray-800 mb-2">Welcome to FaultMaven Copilot!</h2>
-            <p className="text-sm text-gray-600 mb-4">Your AI troubleshooting partner.</p>
-            <p className="text-sm text-gray-500 bg-gray-100 p-3 rounded-md max-w-sm">
-              To get started, provide context using the options below or ask a question directly, like <em>"What's the runbook for a database failover?"</em>
-            </p>
-          </div>
-        )}
-      </div>
-
-      {loading && (
-        <div className="flex-shrink-0 text-center p-1 text-xs text-gray-600 my-1">
-          Thinking...
-        </div>
-      )}
-
-      {/* "Ask a Question" Section - text button retained */}
-      <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-2 shadow-sm space-y-1">
-        <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Ask a Question</h3>
-          <button
-            id="new-chat-button"
-            onClick={clearSession}
-            disabled={loading}
-            className="py-0.5 px-2 text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-300 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            New Chat
-          </button>
-        </div>
-        <textarea
-          id="query-input"
-          value={queryInput}
-          onChange={(e) => setQueryInput(e.target.value)}
-          onKeyDown={handleSubmitQuery}
-          placeholder="Type your question here and press Enter..."
-          rows={3}
-          className="block w-full p-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-          disabled={loading}
-        />
-      </div>
-
-      {/* "Provide Data" Section with collapse/expand arrow */}
-      <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-2 shadow-sm space-y-2">
-        <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Provide Data</h3>
-          <button
-            type="button"
-            onClick={() => setShowDataSection(!showDataSection)}
-            aria-label={showDataSection ? 'Collapse data section' : 'Expand data section'}
-            className="h-6 w-6 text-xs flex items-center justify-center rounded border border-gray-300 bg-gray-100 hover:bg-gray-200"
-            title={showDataSection ? 'Collapse' : 'Expand'}
-          >
-            {showDataSection ? '▼' : '▲'}
-          </button>
-        </div>
-
-        {showDataSection && (
-          <>
-            <div className="flex justify-between items-start">
-              <div className="space-y-1 text-xs">
-                {["text", "file", "page"].map((value) => (
-                  <label key={value} className="flex items-center gap-1 text-[11px] text-gray-700 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="data-source"
-                      value={value}
-                      checked={dataSource === value}
-                      onChange={handleDataSourceChange}
-                      className="accent-blue-500"
-                      disabled={loading}
-                    />
-                    {value === "text" ? "Type or Paste Logs" : value === "file" ? "Upload a File" : "Analyze Page Content"}
-                  </label>
-                ))}
-              </div>
-              <button
-                id="submit-data"
-                onClick={sendDataToFaultMaven}
-                disabled={!isSubmitEnabled || loading}
-                className="w-36 text-center py-1.5 px-3 text-xs font-medium bg-gray-200 text-gray-800 border border-gray-300 rounded hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Submit Data
-              </button>
-            </div>
-
-            {dataSource === "text" && (
-              <textarea
-                id="data-input"
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Paste logs, metrics, or monitoring data here..."
-                rows={3}
-                className="block w-full p-2 mt-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={loading}
-              />
-            )}
-
-            {dataSource === "file" && (
-              <input
-                type="file"
-                id="file-input"
-                ref={fileInputRef}
-                accept=".txt,.log,.json,.csv"
-                title="Supported formats: .txt, .log, .json, .csv"
-                onChange={(e) => setFileSelected(!!e.target.files?.length)}
-                className="block w-full mt-2 text-xs border rounded p-1.5 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
-                disabled={loading}
-              />
-            )}
-
-            {dataSource === "page" && (
-              <div className="mt-2 space-y-2">
-                <button
-                  id="analyze-page-button"
-                  onClick={getPageContent}
-                  disabled={loading}
-                  className="w-auto py-1.5 px-4 text-xs font-medium bg-gray-200 text-gray-700 border border-gray-300 rounded hover:bg-gray-300 transition-colors whitespace-nowrap"
+      if (serverError) {
+        return (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center max-w-md">
+              <div className="mb-4">
+                <svg className="w-12 h-12 text-red-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-red-600 font-medium mb-2">Server Connection Error</p>
+                <p className="text-sm text-gray-600 mb-4">{serverError}</p>
+                <button 
+                  onClick={retryConnection}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  Analyze Current Page
+                  Retry Connection
                 </button>
-                {injectionStatus.message && (
-                  <div id="injection-status" className={`px-2 py-1 rounded text-xs ${
-                    injectionStatus.type === "error"
-                      ? "text-red-700 bg-red-100"
-                      : injectionStatus.type === "success"
-                      ? "text-green-700 bg-green-100"
-                      : "text-gray-600"
-                  }`}>
-                    {injectionStatus.message}
-                  </div>
-                )}
               </div>
-            )}
-          </>
-        )}
-      </div>
-      
-      {/* Session Data Summary */}
-      {sessionData.length > 0 && (
-        <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-2 shadow-sm">
-          <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Session Data</h3>
-            <span className="text-xs text-gray-500">{sessionData.length} items</span>
+            </div>
           </div>
-          <div className="space-y-1 max-h-20 overflow-y-auto">
-            {sessionData.slice(0, 3).map((item, index) => (
-              <div key={index} className="text-xs text-gray-600 flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
-                <span className="truncate">{item.file_name || item.data_type}</span>
-                <span className="text-gray-400">({item.data_type})</span>
-              </div>
-            ))}
-            {sessionData.length > 3 && (
-              <div className="text-xs text-gray-400 italic">
-                +{sessionData.length - 3} more items
-              </div>
-            )}
+        );
+      }
+      
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-gray-600 mb-4">No session selected</p>
+            <p className="text-sm text-gray-500">Create a new conversation to get started</p>
           </div>
         </div>
-      )}
-      
-      {/* Old full-width "New Conversation" button at the bottom is removed */}
-    </div>
-  );
+      );
+    }
+
+    return (
+      <div className="flex h-full">
+        {/* Mobile hamburger menu button */}
+        {!showConversationsList && (
+          <button
+            onClick={toggleConversationsList}
+            className="md:hidden fixed top-4 left-4 z-10 p-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50"
+            aria-label="Show conversations list"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
+
+        {/* Conversations List - Left Pane */}
+        <div className={`${
+          showConversationsList 
+            ? 'w-80 flex-shrink-0' 
+            : 'hidden'
+        } bg-white border-r border-gray-200`}>
+          <ErrorBoundary
+            fallback={
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">Error loading conversations</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                >
+                  Retry
+                </button>
+              </div>
+            }
+          >
+            <ConversationsList
+              activeSessionId={sessionId}
+              onSessionSelect={handleSessionSelect}
+              onNewSession={handleNewSession}
+              conversationTitles={conversationTitles}
+              className="h-full"
+            />
+          </ErrorBoundary>
+        </div>
+
+        {/* Chat Window - Right Pane */}
+        <div className="flex-1 min-w-0">
+          <ErrorBoundary
+            fallback={
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">Error loading chat</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                >
+                  Retry
+                </button>
+              </div>
+            }
+          >
+            <ChatWindow
+              sessionId={sessionId}
+              onTitleGenerated={handleTitleGenerated}
+              className="h-full"
+            />
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <ErrorBoundary>
@@ -573,8 +274,28 @@ export default function SidePanelApp() {
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 p-3 overflow-hidden">
-          {activeTab === 'copilot' ? renderCopilotTab() : <KnowledgeBaseView />}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'copilot' ? (
+            renderCopilotTab()
+          ) : (
+            <div className="p-3 h-full">
+              <ErrorBoundary
+                fallback={
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">Error loading Knowledge Base</p>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                }
+              >
+                <KnowledgeBaseView serverError={serverError} onRetry={retryConnection} />
+              </ErrorBoundary>
+            </div>
+          )}
         </div>
       </div>
     </ErrorBoundary>
