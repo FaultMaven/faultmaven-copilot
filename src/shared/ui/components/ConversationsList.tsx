@@ -8,6 +8,8 @@ interface ConversationsListProps {
   onSessionSelect: (sessionId: string) => void;
   onNewSession: (sessionId: string) => void;
   conversationTitles?: Record<string, string>;
+  hasUnsavedNewChat?: boolean;
+  refreshTrigger?: number;
   className?: string;
 }
 
@@ -16,7 +18,9 @@ export function ConversationsList({
   onSessionSelect, 
   onNewSession,
   conversationTitles = {},
-  className = '' 
+  hasUnsavedNewChat = false,
+  refreshTrigger = 0,
+  className = ''
 }: ConversationsListProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,12 +28,19 @@ export function ConversationsList({
   const [creatingNew, setCreatingNew] = useState(false);
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({});
 
-  // Load sessions on component mount
+  // Load cases on component mount
   useEffect(() => {
-    loadSessions();
+    loadCases();
   }, []);
 
-  const loadSessions = async () => {
+  // Reload cases when refreshTrigger changes (e.g., when new session is created)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadCases();
+    }
+  }, [refreshTrigger]);
+
+  const loadCases = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -55,11 +66,11 @@ export function ConversationsList({
       
       setSessions(sortedSessions);
     } catch (err) {
-      console.error('[ConversationsList] Failed to load sessions:', err);
+      console.error('[ConversationsList] Failed to load cases:', err);
       // Store the full error message for debugging
       const fullError = err instanceof Error ? err.message : String(err);
       console.log('[ConversationsList] Full error details:', fullError);
-      setError(`Failed to list chats: ${fullError}`);
+      setError(`Failed to list cases: ${fullError}`);
       setSessions([]); // Reset to empty array on error
     } finally {
       setLoading(false);
@@ -67,26 +78,22 @@ export function ConversationsList({
   };
 
   const handleNewChat = async () => {
-    try {
-      setCreatingNew(true);
-      const newSession = await createSession();
-      
-      // Add to sessions list at the top
-      setSessions(prev => [newSession, ...prev]);
-      
-      // Notify parent about new session
-      onNewSession(newSession.session_id);
-      
-    } catch (err) {
-      console.error('[ConversationsList] Failed to create new session:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create new chat');
-    } finally {
-      setCreatingNew(false);
+    // Rule (5): Prevent multiple new chats - if there's already an unsaved new chat, don't create another
+    if (hasUnsavedNewChat) {
+      console.log('[ConversationsList] Cannot create new chat - unsaved new chat already exists');
+      return;
     }
+    
+    // Prepare for new chat input - clear any active session and show blank chat window
+    // Session will be created when user submits first query/data
+    console.log('[ConversationsList] Preparing for new chat (showing blank chat window)');
+    
+    // Clear any active session to show blank chat window ready for new input
+    onNewSession('');
   };
 
   const handleDeleteSession = async (sessionId: string) => {
-    if (!confirm('Are you sure you want to delete this chat?')) {
+    if (!confirm('Are you sure you want to delete this case? This will permanently remove the conversation history.')) {
       return;
     }
     
@@ -108,14 +115,15 @@ export function ConversationsList({
         if (remainingSessions.length > 0) {
           onSessionSelect(remainingSessions[0].session_id);
         } else {
-          // Create a new session if no sessions remain
-          handleNewChat();
+          // No sessions remain - DO NOT auto-create a new session
+          // User must explicitly click "New Chat" button
+          onSessionSelect(''); // Clear active session
         }
       }
       
     } catch (err) {
       console.error('[ConversationsList] Failed to delete session:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete chat');
+      setError(err instanceof Error ? err.message : 'Failed to delete case');
     }
   };
 
@@ -138,6 +146,13 @@ export function ConversationsList({
     setSessionTitles(prev => ({ ...prev, [sessionId]: title }));
   };
 
+  const handleRenameSession = (sessionId: string, newTitle: string) => {
+    // Update the local title cache
+    updateSessionTitle(sessionId, newTitle);
+    console.log('[ConversationsList] Renamed case:', sessionId, 'to:', newTitle);
+    // Note: We could also call a backend API here to persist the rename if needed
+  };
+
   if (loading && sessions.length === 0) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
@@ -154,9 +169,10 @@ export function ConversationsList({
       <div className="flex-shrink-0 p-4 border-b border-gray-200">
         <button
           onClick={handleNewChat}
-          disabled={creatingNew}
+          disabled={creatingNew || hasUnsavedNewChat}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Start new conversation"
+          title={hasUnsavedNewChat ? "Complete current new chat before starting another" : "Start new conversation"}
         >
           {creatingNew ? (
             <>
@@ -174,8 +190,8 @@ export function ConversationsList({
         </button>
       </div>
 
-      {/* Error Display */}
-      {error && (
+      {/* Error Display - hide when server is unreachable */}
+      {error && !error.includes('Failed to fetch') && (
         <div className="flex-shrink-0 p-3 mx-4 mt-2 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-xs text-red-700">{error}</p>
           <button
@@ -189,11 +205,11 @@ export function ConversationsList({
 
       {/* Conversations List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {sessions.length === 0 ? (
+        {sessions.length === 0 && !error?.includes('Failed to fetch') ? (
           <div className="text-center py-8">
-            <p className="text-sm text-gray-500 mb-3">No chats yet</p>
+            <p className="text-sm text-gray-500 mb-3">No cases yet</p>
             <p className="text-xs text-gray-400">
-              Click "New Chat" to start your first troubleshooting chat
+              Click "New Chat" to start your first troubleshooting case
             </p>
           </div>
         ) : (
@@ -203,8 +219,10 @@ export function ConversationsList({
               session={session}
               title={getSessionTitle(session)}
               isActive={session.session_id === activeSessionId}
+              isUnsavedNew={hasUnsavedNewChat && session.session_id === activeSessionId}
               onSelect={onSessionSelect}
               onDelete={handleDeleteSession}
+              onRename={handleRenameSession}
             />
           ))
         )}
@@ -213,7 +231,7 @@ export function ConversationsList({
       {/* Refresh Button */}
       <div className="flex-shrink-0 p-3 border-t border-gray-200">
         <button
-          onClick={loadSessions}
+          onClick={loadCases}
           disabled={loading}
           className="w-full py-2 px-3 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
           aria-label="Refresh chat list"

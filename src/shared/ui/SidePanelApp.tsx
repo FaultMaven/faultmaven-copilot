@@ -3,7 +3,8 @@ import React, { useState, useEffect } from "react";
 import { browser } from "wxt/browser";
 import { 
   heartbeatSession, 
-  createSession
+  createSession,
+  listSessions
 } from "../../lib/api";
 import KnowledgeBaseView from "./KnowledgeBaseView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -22,50 +23,61 @@ export default function SidePanelApp() {
   const [conversationTitles, setConversationTitles] = useState<Record<string, string>>({});
   const [showConversationsList, setShowConversationsList] = useState(true);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [hasUnsavedNewChat, setHasUnsavedNewChat] = useState(false);
+  const [availableSessions, setAvailableSessions] = useState<string[]>([]);
+  const [refreshSessions, setRefreshSessions] = useState(0);
 
   useEffect(() => {
     let heartbeatInterval: NodeJS.Timeout | null = null;
     
     const initializeSession = async () => {
       try {
-        const result = await browser.storage.local.get(["sessionId"]) as StorageResult;
-        let currentSessionId = result.sessionId;
+        // Only load existing sessions, do NOT create new ones automatically
+        // Sessions should only be created when user submits first query/data
         
-        // Validate the session ID format
-        if (currentSessionId && typeof currentSessionId === 'string' && currentSessionId.trim()) {
-          console.log("[SidePanelApp] Found existing session:", currentSessionId);
-          setSessionId(currentSessionId);
-        } else {
-          // Create new session if none exists or invalid
-          console.log("[SidePanelApp] Creating new session...");
-          const session = await createSession();
+        try {
+          const sessionList = await listSessions({ limit: 1, offset: 0 });
           
-          if (session && session.session_id) {
-            currentSessionId = session.session_id;
-            setSessionId(currentSessionId);
-            setServerError(null); // Clear any previous errors
+          if (Array.isArray(sessionList) && sessionList.length > 0) {
+            // Rule (4): Auto-load most recent chat if available
+            const mostRecentSession = sessionList[0];
+            setSessionId(mostRecentSession.session_id);
+            setHasUnsavedNewChat(false);
             
-            // Store session ID in browser storage for persistence
-            await browser.storage.local.set({ sessionId: currentSessionId });
+            // Store in browser storage
+            await browser.storage.local.set({ sessionId: mostRecentSession.session_id });
+            console.log("[SidePanelApp] Auto-loaded most recent session:", mostRecentSession.session_id);
+            
+            // Start heartbeat for the loaded session
+            if (mostRecentSession.session_id) {
+              heartbeatInterval = setInterval(() => {
+                heartbeatSession(mostRecentSession.session_id).catch(err => {
+                  console.warn("[SidePanelApp] Heartbeat failed:", err);
+                });
+              }, 300000); // 5 minutes (300000ms)
+            }
           } else {
-            console.error("[SidePanelApp] Failed to create session - invalid response:", session);
-            setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
-            return;
+            // No sessions available - show blank chat window ready for input
+            // DO NOT create session automatically - session created only when user submits first query/data
+            console.log("[SidePanelApp] No existing sessions found, showing blank chat window");
+            setSessionId(null); // No active session yet
+            setHasUnsavedNewChat(true); // Ready for new chat input
           }
+        } catch (sessionLoadError) {
+          console.warn("[SidePanelApp] Failed to load existing sessions:", sessionLoadError);
+          // Even if we can't load sessions, show blank chat window ready for input
+          // Session will be created when user submits first query/data
+          setSessionId(null);
+          setHasUnsavedNewChat(true);
         }
         
-        // Start single heartbeat interval for the session
-        if (currentSessionId && typeof currentSessionId === 'string') {
-          heartbeatInterval = setInterval(() => {
-            heartbeatSession(currentSessionId).catch(err => {
-              console.warn("[SidePanelApp] Heartbeat failed:", err);
-              // If heartbeat fails repeatedly, we might need to create a new session
-            });
-          }, 30000);
-        }
+        setServerError(null);
       } catch (err) {
         console.error("[SidePanelApp] Session initialization error:", err);
         setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
+        // When server is unreachable, still prepare for new chat input instead of showing welcome message
+        setSessionId(null);
+        setHasUnsavedNewChat(true);
       }
     };
     
@@ -93,22 +105,62 @@ export default function SidePanelApp() {
 
   const handleSessionSelect = (selectedSessionId: string) => {
     if (selectedSessionId && typeof selectedSessionId === 'string') {
+      // Rule (3): Selecting a chat loads that conversation
       setSessionId(selectedSessionId);
+      setHasUnsavedNewChat(false); // Clear new chat status when selecting existing chat
+      
       // Update storage to remember the last active session
       browser.storage.local.set({ sessionId: selectedSessionId }).catch(err => {
         console.warn('[SidePanelApp] Failed to save session to storage:', err);
       });
+      
+      console.log("[SidePanelApp] Selected existing session:", selectedSessionId);
     }
   };
 
-  const handleNewSession = (newSessionId: string) => {
-    if (newSessionId && typeof newSessionId === 'string') {
-      setSessionId(newSessionId);
-      // Update storage
-      browser.storage.local.set({ sessionId: newSessionId }).catch(err => {
-        console.warn('[SidePanelApp] Failed to save new session to storage:', err);
-      });
+  const handleNewSession = (newChatId: string) => {
+    if (typeof newChatId === 'string') {
+      if (newChatId === '') {
+        // User clicked "New Chat" - clear active session and prepare for new input
+        // No chat window shown until user submits first query/data
+        setSessionId(null);
+        setHasUnsavedNewChat(true); // Mark that we're ready for a new chat
+        console.log("[SidePanelApp] Prepared for new chat (no session or window yet)");
+      } else {
+        // Actual session ID provided (existing session selected)
+        setSessionId(newChatId);
+        setHasUnsavedNewChat(false);
+        
+        // Store real session IDs in browser storage
+        browser.storage.local.set({ sessionId: newChatId }).catch(err => {
+          console.warn('[SidePanelApp] Failed to save session to storage:', err);
+        });
+        
+        console.log("[SidePanelApp] Selected existing session:", newChatId);
+      }
     }
+  };
+
+  const handleChatSaved = () => {
+    // Called when the first query or data is submitted in a new chat
+    setHasUnsavedNewChat(false);
+    console.log("[SidePanelApp] New chat saved after first interaction");
+  };
+
+  const handleSessionCreated = (newSessionId: string) => {
+    // Called when ChatWindow creates a new session on first interaction
+    setSessionId(newSessionId);
+    setHasUnsavedNewChat(false); // Session is now created and saved
+    
+    // Update storage with real session ID
+    browser.storage.local.set({ sessionId: newSessionId }).catch(err => {
+      console.warn('[SidePanelApp] Failed to save new session to storage:', err);
+    });
+    
+    // Trigger refresh of sessions list so new session appears in left panel
+    setRefreshSessions(prev => prev + 1);
+    
+    console.log("[SidePanelApp] Session created by ChatWindow:", newSessionId);
   };
 
   const handleTitleGenerated = (sessionId: string, title: string) => {
@@ -123,11 +175,20 @@ export default function SidePanelApp() {
     setServerError(null);
     try {
       console.log("[SidePanelApp] Retrying server connection...");
-      const session = await createSession();
+      // Test connection by trying to list sessions instead of creating one
+      const sessionList = await listSessions({ limit: 1, offset: 0 });
       
-      if (session && session.session_id) {
-        setSessionId(session.session_id);
-        await browser.storage.local.set({ sessionId: session.session_id });
+      if (Array.isArray(sessionList)) {
+        // Connection successful - do not auto-create session
+        console.log("[SidePanelApp] Connection retry successful");
+        if (sessionList.length > 0) {
+          setSessionId(sessionList[0].session_id);
+          setHasUnsavedNewChat(false);
+          await browser.storage.local.set({ sessionId: sessionList[0].session_id });
+        } else {
+          setSessionId(null); // No sessions available, show blank chat window
+          setHasUnsavedNewChat(true); // Ready for new chat input
+        }
       } else {
         setServerError("Unable to connect to FaultMaven server. Please check your connection and try again.");
       }
@@ -143,7 +204,7 @@ export default function SidePanelApp() {
 
 
   const renderCopilotTab = () => {
-    if (!sessionId) {
+    if (!sessionId || sessionId === '') {
       if (serverError) {
         return (
           <div className="flex items-center justify-center h-full">
@@ -166,11 +227,95 @@ export default function SidePanelApp() {
         );
       }
       
+      // If user clicked "New Chat" and we're ready for input, show ChatWindow
+      // Otherwise show empty state
+      if (hasUnsavedNewChat) {
+        return (
+          <div className="flex h-full">
+            {/* Mobile hamburger menu button */}
+            {!showConversationsList && (
+              <button
+                onClick={toggleConversationsList}
+                className="md:hidden fixed top-4 left-4 z-10 p-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50"
+                aria-label="Show conversations list"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
+
+            {/* Conversations List - Left Pane */}
+            <div className={`${
+              showConversationsList 
+                ? 'w-80 flex-shrink-0' 
+                : 'hidden'
+            } bg-white border-r border-gray-200`}>
+              <ErrorBoundary
+                fallback={
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">Error loading conversations</p>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                }
+              >
+                <ConversationsList
+                  activeSessionId={sessionId || undefined}
+                  onSessionSelect={handleSessionSelect}
+                  onNewSession={handleNewSession}
+                  conversationTitles={conversationTitles}
+                  hasUnsavedNewChat={hasUnsavedNewChat}
+                  refreshTrigger={refreshSessions}
+                  className="h-full"
+                />
+              </ErrorBoundary>
+            </div>
+
+            {/* Chat Window - Right Pane (for new chat input) */}
+            <div className="flex-1 min-w-0">
+              <ErrorBoundary
+                fallback={
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">Error loading chat</p>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                }
+              >
+                <ChatWindow
+                  sessionId={sessionId}
+                  onTitleGenerated={handleTitleGenerated}
+                  onChatSaved={handleChatSaved}
+                  onSessionCreated={handleSessionCreated}
+                  isNewUnsavedChat={hasUnsavedNewChat}
+                  className="h-full"
+                />
+              </ErrorBoundary>
+            </div>
+          </div>
+        );
+      }
+      
       return (
         <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <p className="text-gray-600 mb-4">No session selected</p>
-            <p className="text-sm text-gray-500">Create a new conversation to get started</p>
+          <div className="text-center max-w-md p-6">
+            <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to troubleshoot?</h3>
+            <p className="text-gray-600 mb-4">Select an existing chat from the left panel or click "New Chat" to start fresh.</p>
+            <p className="text-sm text-gray-500">
+              You can type your question directly in any chat, and all your conversations will be saved automatically.
+            </p>
           </div>
         </div>
       );
@@ -211,10 +356,12 @@ export default function SidePanelApp() {
             }
           >
             <ConversationsList
-              activeSessionId={sessionId}
+              activeSessionId={sessionId || undefined}
               onSessionSelect={handleSessionSelect}
               onNewSession={handleNewSession}
               conversationTitles={conversationTitles}
+              hasUnsavedNewChat={hasUnsavedNewChat}
+              refreshTrigger={refreshSessions}
               className="h-full"
             />
           </ErrorBoundary>
@@ -238,6 +385,9 @@ export default function SidePanelApp() {
             <ChatWindow
               sessionId={sessionId}
               onTitleGenerated={handleTitleGenerated}
+              onChatSaved={handleChatSaved}
+              onSessionCreated={handleSessionCreated}
+              isNewUnsavedChat={hasUnsavedNewChat}
               className="h-full"
             />
           </ErrorBoundary>

@@ -2,6 +2,28 @@
 
 All notable changes to the FaultMaven Copilot extension will be documented in this file.
 
+## [0.3.1] - 2025-01-17
+
+### 🏷️ Terminology Clarification
+- **Aligned frontend terminology** with backend API schema to distinguish between "cases" (persistent troubleshooting conversations) and "sessions" (technical constructs)
+- **Updated user-facing labels** to use "case" terminology for better clarity:
+  - Accessibility labels: "Select case", "Rename case", "Delete case"
+  - Error messages: "Failed to list cases" instead of "Failed to list sessions"
+  - UI text: "No cases yet" for empty state
+- **Preserved technical accuracy** by keeping session terminology for API calls and backend communication
+- **Enhanced user experience** with clearer confirmation dialogs and status messages
+
+### 🐛 Bug Fixes
+- **Fixed timestamp refresh issue** where clicking "Refresh" button incorrectly updated all chat timestamps to "now"
+- **Fixed TypeScript compilation** error with null session ID handling in ConversationsList component
+- **Improved conversation context** management to maintain case continuity
+- **Enhanced server error handling** to hide "Failed to fetch" error messages when API server is unreachable and prevent showing welcome screen when server is down
+
+### 📚 Documentation
+- **Added comprehensive terminology documentation** in `TERMINOLOGY_CLARIFICATION.md`
+- **Updated existing documentation** with terminology clarification notes
+- **Maintained backward compatibility** while establishing clear conceptual framework
+
 ## [0.2.0] - 2024-01-XX
 
 ### 🔌 API Integration (Major)

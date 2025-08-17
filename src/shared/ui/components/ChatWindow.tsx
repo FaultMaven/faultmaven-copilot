@@ -10,7 +10,8 @@ import {
   ResponseType,
   UploadedData,
   getSessionData,
-  generateConversationTitle
+  generateConversationTitle,
+  createSession
 } from "../../../lib/api";
 import { formatResponseForDisplay, requiresUserAction } from "../../../lib/utils/response-handlers";
 import config from "../../../config";
@@ -40,12 +41,15 @@ interface ConversationItem {
 }
 
 interface ChatWindowProps {
-  sessionId: string;
+  sessionId: string | null; // Allow null when no session exists yet
   onTitleGenerated?: (sessionId: string, title: string) => void;
+  onChatSaved?: () => void;
+  onSessionCreated?: (sessionId: string) => void; // Callback when session is created
+  isNewUnsavedChat?: boolean;
   className?: string;
 }
 
-export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: ChatWindowProps) {
+export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSessionCreated, isNewUnsavedChat = false, className = '' }: ChatWindowProps) {
   const [conversation, setConversation] = useState<ConversationItem[]>([]);
   const [conversationCache, setConversationCache] = useState<Record<string, ConversationItem[]>>({});
   const [queryInput, setQueryInput] = useState("");
@@ -59,44 +63,52 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
   const [sessionData, setSessionData] = useState<UploadedData[]>([]);
   const [messageCount, setMessageCount] = useState(0);
   const [messageCountCache, setMessageCountCache] = useState<Record<string, number>>({});
+  const [titleGenerated, setTitleGenerated] = useState<Record<string, boolean>>({});
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const conversationHistoryRef = useRef<HTMLDivElement>(null);
 
   // Load session data when sessionId changes
   useEffect(() => {
-    if (sessionId) {
-      // Cache current conversation before switching
-      if (conversation.length > 0) {
-        const currentSessionId = Object.keys(conversationCache).find(id => 
-          conversationCache[id] === conversation
-        );
-        if (currentSessionId && currentSessionId !== sessionId) {
-          setConversationCache(prev => ({ ...prev, [currentSessionId]: conversation }));
-          setMessageCountCache(prev => ({ ...prev, [currentSessionId]: messageCount }));
-        }
+    // Cache current conversation before switching (only if we have a valid previous session)
+    if (conversation.length > 0) {
+      const currentSessionId = Object.keys(conversationCache).find(id => 
+        conversationCache[id] === conversation
+      );
+      if (currentSessionId && currentSessionId !== sessionId) {
+        setConversationCache(prev => ({ ...prev, [currentSessionId]: conversation }));
+        setMessageCountCache(prev => ({ ...prev, [currentSessionId]: messageCount }));
       }
-      
-      // Load cached conversation for the new session or start fresh
+    }
+    
+    if (sessionId) {
+      // Loading existing session - restore cached conversation
       const cachedConversation = conversationCache[sessionId] || [];
       const cachedMessageCount = messageCountCache[sessionId] || 0;
       
       setConversation(cachedConversation);
       setMessageCount(cachedMessageCount);
+      setHasInteracted(cachedMessageCount > 0);
       
       // Load session data
       loadSessionData(sessionId);
-      
-      // Reset form state
-      setQueryInput("");
-      setTextInput("");
-      setPageContent("");
-      setFileSelected(false);
-      setDataSource("text");
-      setShowDataSection(true);
-      setInjectionStatus({ message: "", type: "" });
+    } else if (isNewUnsavedChat) {
+      // New chat - start completely fresh
+      setConversation([]);
+      setMessageCount(0);
+      setHasInteracted(false);
     }
-  }, [sessionId]);
+    
+    // Reset form state regardless of session type
+    setQueryInput("");
+    setTextInput("");
+    setPageContent("");
+    setFileSelected(false);
+    setDataSource("text");
+    setShowDataSection(true);
+    setInjectionStatus({ message: "", type: "" });
+  }, [sessionId, isNewUnsavedChat]);
 
   // Auto-scroll to bottom when conversation updates
   useEffect(() => {
@@ -105,14 +117,20 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
     }
   }, [conversation]);
 
-  // Generate title after 2nd or 3rd turn
+  // Generate title after 2nd or 3rd turn (only once per session)
   useEffect(() => {
-    if (messageCount >= 2 && messageCount <= 3 && onTitleGenerated) {
+    if (messageCount >= 2 && messageCount <= 3 && onTitleGenerated && sessionId && !titleGenerated[sessionId]) {
       generateTitle();
     }
-  }, [messageCount, sessionId, onTitleGenerated]);
+  }, [messageCount, sessionId, onTitleGenerated, titleGenerated]);
 
   const loadSessionData = async (sessionId: string) => {
+    // Don't try to load session data if no session ID
+    if (!sessionId) {
+      setSessionData([]);
+      return;
+    }
+    
     try {
       const data = await getSessionData(sessionId, 50, 0);
       // Ensure data is an array
@@ -124,19 +142,29 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
   };
 
   const generateTitle = async () => {
+    // Don't generate title if no session ID
+    if (!sessionId) {
+      return;
+    }
+    
     try {
+      // Mark title as generated before making the call to prevent infinite loops
+      setTitleGenerated(prev => ({ ...prev, [sessionId]: true }));
+      
       const { title } = await generateConversationTitle(sessionId);
       if (onTitleGenerated) {
         onTitleGenerated(sessionId, title);
       }
     } catch (err) {
       console.warn("[ChatWindow] Failed to generate title:", err);
+      // Reset flag on error so title generation can be retried
+      setTitleGenerated(prev => ({ ...prev, [sessionId]: false }));
     }
   };
 
   const addTimestamp = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const addToConversation = (question?: string, response?: string, error: boolean = false, responseData?: AgentResponse) => {
+  const addToConversation = (question?: string, response?: string, error: boolean = false, responseData?: AgentResponse, targetSessionId?: string) => {
     let requiresAction = false;
     
     // Safe check for action requirement
@@ -168,10 +196,11 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
     setConversation(updatedConversation);
     setMessageCount(updatedMessageCount);
     
-    // Update cache for current session
-    if (sessionId) {
-      setConversationCache(prev => ({ ...prev, [sessionId]: updatedConversation }));
-      setMessageCountCache(prev => ({ ...prev, [sessionId]: updatedMessageCount }));
+    // Update cache for current session (use targetSessionId for new sessions)
+    const cacheSessionId = targetSessionId || sessionId;
+    if (cacheSessionId) {
+      setConversationCache(prev => ({ ...prev, [cacheSessionId]: updatedConversation }));
+      setMessageCountCache(prev => ({ ...prev, [cacheSessionId]: updatedMessageCount }));
     }
   };
 
@@ -202,16 +231,35 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
   };
 
   const sendToFaultMaven = async (query: string) => {
-    if (!sessionId) {
-      addToConversation(undefined, "<p><strong>Error:</strong> No session available. Please refresh the page.</p>", true);
-      return;
+    let currentSessionId = sessionId;
+    let isNewSession = false;
+    
+    // Create session if one doesn't exist (lazy creation on first interaction)
+    if (!currentSessionId) {
+      try {
+        console.log("[ChatWindow] Creating session for first interaction");
+        const newSession = await createSession();
+        currentSessionId = newSession.session_id;
+        isNewSession = true;
+        
+        // Notify parent component about the new session
+        if (onSessionCreated) {
+          onSessionCreated(currentSessionId);
+        }
+        
+        console.log("[ChatWindow] Session created:", currentSessionId);
+      } catch (error) {
+        console.error("[ChatWindow] Failed to create session:", error);
+        addToConversation(undefined, "<p><strong>Error:</strong> Failed to create session. Please try again.</p>", true);
+        return;
+      }
     }
 
     setLoading(true);
 
     try {
       const request: QueryRequest = {
-        session_id: sessionId,
+        session_id: currentSessionId,
         query,
         priority: "normal",
         context: {
@@ -236,23 +284,54 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
       });
       
       // Add both question and response in a single conversation item
-      addToConversation(query, responseContent, false, response);
+      // Pass currentSessionId to ensure proper caching for new sessions
+      addToConversation(query, responseContent, false, response, isNewSession ? currentSessionId : undefined);
+      
+      // Rule (2): Mark chat as saved on first interaction
+      if (isNewUnsavedChat && !hasInteracted && onChatSaved) {
+        onChatSaved();
+        setHasInteracted(true);
+      }
       
       // Update session data if new data was uploaded
       if (response.response_type === ResponseType.NEEDS_MORE_DATA) {
-        await loadSessionData(sessionId);
+        await loadSessionData(currentSessionId);
       }
       
     } catch (e: unknown) {
       console.error("[ChatWindow] sendToFaultMaven error:", e);
       const errorMessage = e instanceof Error ? e.message : String(e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${errorMessage}</p>`, true);
+      addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${errorMessage}</p>`, true, undefined, isNewSession ? currentSessionId : undefined);
     } finally {
       setLoading(false);
     }
   };
 
   const sendDataToFaultMaven = async () => {
+    let currentSessionId = sessionId;
+    let isNewSession = false;
+    
+    // Create session if one doesn't exist (lazy creation on first interaction)
+    if (!currentSessionId) {
+      try {
+        console.log("[ChatWindow] Creating session for first data upload");
+        const newSession = await createSession();
+        currentSessionId = newSession.session_id;
+        isNewSession = true;
+        
+        // Notify parent component about the new session
+        if (onSessionCreated) {
+          onSessionCreated(currentSessionId);
+        }
+        
+        console.log("[ChatWindow] Session created:", currentSessionId);
+      } catch (error) {
+        console.error("[ChatWindow] Failed to create session:", error);
+        addToConversation(undefined, "<p><strong>Error:</strong> Failed to create session. Please try again.</p>", true);
+        return;
+      }
+    }
+    
     setLoading(true);
     let dataToSend: string | File | null = null;
     if (dataSource === "text") dataToSend = textInput.trim();
@@ -260,14 +339,14 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
     else if (dataSource === "page") dataToSend = pageContent;
 
     if (!dataToSend) {
-      addToConversation(undefined, "<p><strong>Error:</strong> No data to submit.</p>", true);
+      addToConversation(undefined, "<p><strong>Error:</strong> No data to submit.</p>", true, undefined, isNewSession ? currentSessionId : undefined);
       setLoading(false);
       return;
     }
 
-    addToConversation(`Uploading ${dataSource} data...`, undefined);
+    addToConversation(`Uploading ${dataSource} data...`, undefined, false, undefined, isNewSession ? currentSessionId : undefined);
     try {
-      const response: UploadedData = await uploadData(sessionId, dataToSend, dataSource);
+      const response: UploadedData = await uploadData(currentSessionId, dataToSend, dataSource);
       
       // Format response with enhanced insights
       let formattedResponse = `✅ Data uploaded successfully (ID: ${response.data_id})`;
@@ -288,10 +367,16 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
         formattedResponse += `\n\n**Initial Insights:**\n${JSON.stringify(response.insights, null, 2)}`;
       }
       
-      addToConversation(undefined, formattedResponse);
+      addToConversation(undefined, formattedResponse, false, undefined, isNewSession ? currentSessionId : undefined);
+      
+      // Rule (2): Mark chat as saved on first interaction
+      if (isNewUnsavedChat && !hasInteracted && onChatSaved) {
+        onChatSaved();
+        setHasInteracted(true);
+      }
       
       // Update session data
-      await loadSessionData(sessionId);
+      await loadSessionData(currentSessionId);
       
       // Clear the input after successful upload
       if (dataSource === "text") {
@@ -306,7 +391,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
     } catch (e: unknown) {
       console.error("[ChatWindow] sendDataToFaultMaven error:", e);
       const errorMessage = e instanceof Error ? e.message : String(e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to upload data: ${errorMessage}</p>`, true);
+      addToConversation(undefined, `<p><strong>Error:</strong> Failed to upload data: ${errorMessage}</p>`, true, undefined, isNewSession ? currentSessionId : undefined);
     } finally {
       setLoading(false);
     }
@@ -371,8 +456,12 @@ export function ChatWindow({ sessionId, onTitleGenerated, className = '' }: Chat
         ))}
         {(!Array.isArray(conversation) || conversation.length === 0) && !loading && (
           <div className="h-full flex flex-col items-center justify-center text-center p-4">
-            <h2 className="text-base font-semibold text-gray-800 mb-2">Welcome to FaultMaven Copilot!</h2>
-            <p className="text-sm text-gray-600 mb-4">Your AI troubleshooting partner.</p>
+            <h2 className="text-base font-semibold text-gray-800 mb-2">
+              Welcome to FaultMaven Copilot!
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Your AI troubleshooting partner.
+            </p>
             <p className="text-sm text-gray-500 bg-gray-100 p-3 rounded-md max-w-sm">
               To get started, provide context using the options below or ask a question directly, like <em>"What's the runbook for a database failover?"</em>
             </p>
