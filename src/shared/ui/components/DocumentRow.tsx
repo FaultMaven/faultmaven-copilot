@@ -23,13 +23,16 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
   const getStatusBadge = (status: string) => {
     const baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
     
-    switch (status.toLowerCase()) {
+    // Handle undefined or null status
+    const safeStatus = status?.toLowerCase() || 'unknown';
+    
+    switch (safeStatus) {
       case 'indexed':
       case 'processed':
         return (
           <span className={`${baseClasses} bg-green-100 text-green-800`}>
             <div className="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
-            {status}
+            {status || 'Processed'}
           </span>
         );
       case 'processing':
@@ -50,7 +53,7 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
         return (
           <span className={`${baseClasses} bg-gray-100 text-gray-800`}>
             <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5"></div>
-            {status}
+            {status || 'Unknown'}
           </span>
         );
     }
@@ -68,7 +71,10 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
   };
 
   const getFileIcon = (documentType: string) => {
-    switch (documentType.toLowerCase()) {
+    // Handle undefined or null documentType  
+    const safeDocumentType = documentType?.toLowerCase() || 'unknown';
+    
+    switch (safeDocumentType) {
       case 'pdf':
         return (
           <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
@@ -105,6 +111,9 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
   };
 
   const formatDocumentType = (documentType: string) => {
+    // Handle undefined or null documentType
+    if (!documentType) return 'Unknown';
+    
     return documentType
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -114,69 +123,69 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
   return (
     <tr className="hover:bg-gray-50">
       {/* Title */}
-      <td className="px-4 py-3 whitespace-nowrap">
+      <td className="px-3 py-3" style={{ width: '200px', minWidth: '200px' }}>
         <div className="flex items-center">
-          <div className="flex-shrink-0 mr-3">
+          <div className="flex-shrink-0 mr-2">
             {getFileIcon(document.document_type)}
           </div>
-          <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+          <div className="text-sm font-medium text-gray-900 truncate">
             {document.title}
           </div>
         </div>
       </td>
 
       {/* Document Type */}
-      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-gray-500" style={{ width: '120px', minWidth: '120px' }}>
         {formatDocumentType(document.document_type)}
       </td>
 
       {/* Status */}
-      <td className="px-4 py-3 whitespace-nowrap">
+      <td className="px-2 py-3 whitespace-nowrap" style={{ width: '100px', minWidth: '100px' }}>
         {getStatusBadge(document.status)}
       </td>
 
       {/* Tags */}
-      <td className="px-4 py-3 whitespace-nowrap">
+      <td className="px-2 py-3 whitespace-nowrap" style={{ width: '120px', minWidth: '120px' }}>
         <div className="flex flex-wrap gap-1">
           {document.tags && document.tags.length > 0 ? (
-            document.tags.slice(0, 3).map((tag, index) => (
+            document.tags.slice(0, 1).map((tag, index) => (
               <span
                 key={index}
-                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+                className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
               >
                 {tag}
               </span>
             ))
           ) : (
-            <span className="text-xs text-gray-400">No tags</span>
+            <span className="text-xs text-gray-400">-</span>
           )}
-          {document.tags && document.tags.length > 3 && (
+          {document.tags && document.tags.length > 1 && (
             <span className="text-xs text-gray-500">
-              +{document.tags.length - 3} more
+              +{document.tags.length - 1}
             </span>
           )}
         </div>
       </td>
 
       {/* Date Added */}
-      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-gray-500" style={{ width: '140px', minWidth: '140px' }}>
         {formatDate(document.created_at)}
       </td>
 
-      {/* Actions */}
-      <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+      {/* Delete Button */}
+      <td className="px-2 py-3 whitespace-nowrap text-right" style={{ width: '120px', minWidth: '120px' }}>
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center px-2 py-1 border border-transparent text-xs leading-4 font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Delete document"
         >
           {isDeleting ? (
-            <div className="flex items-center space-x-1">
-              <div className="animate-spin rounded-full h-3 w-3 border-b border-red-600"></div>
-              <span>Deleting...</span>
-            </div>
+            <div className="animate-spin rounded-full h-3 w-3 border-b border-white"></div>
           ) : (
-            'Delete'
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
           )}
         </button>
       </td>

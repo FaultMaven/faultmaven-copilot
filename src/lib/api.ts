@@ -302,8 +302,52 @@ export async function uploadKnowledgeDocument(
   sourceUrl?: string,
   description?: string
 ): Promise<KbDocument> {
+  // Fix MIME type detection for common file extensions
+  // This maps file extensions to the exact MIME types expected by the backend
+  const getCorrectMimeType = (fileName: string, originalType: string): string => {
+    if (!fileName || typeof fileName !== 'string') {
+      return originalType;
+    }
+    
+    const extension = fileName.toLowerCase().split('.').pop();
+    if (!extension) {
+      return originalType;
+    }
+    
+    // Map file extensions to correct MIME types that backend accepts
+    // These MIME types come from backend error: "Allowed types: text/plain, text/markdown, etc."
+    const mimeTypeMap: Record<string, string> = {
+      'md': 'text/markdown',
+      'markdown': 'text/markdown', 
+      'txt': 'text/plain',
+      'log': 'text/plain',
+      'json': 'application/json',
+      'csv': 'text/csv',
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+    
+    const correctedType = mimeTypeMap[extension];
+    if (correctedType) {
+      if (correctedType !== originalType) {
+        console.log(`[API] Corrected MIME type for ${fileName}: ${originalType} → ${correctedType}`);
+      }
+      return correctedType;
+    }
+    
+    // If no extension mapping found, return original type
+    return originalType;
+  };
+
+  // Create a new File object with correct MIME type if needed
+  const correctMimeType = getCorrectMimeType(file.name, file.type);
+  const fileToUpload = correctMimeType !== file.type 
+    ? new File([file], file.name, { type: correctMimeType, lastModified: file.lastModified })
+    : file;
+
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('file', fileToUpload);
   formData.append('title', title);
   formData.append('document_type', documentType);
   
@@ -312,6 +356,10 @@ export async function uploadKnowledgeDocument(
   if (sourceUrl) formData.append('source_url', sourceUrl);
   if (description) formData.append('description', description);
 
+  console.log(`[API] Uploading knowledge document: ${title}`);
+  console.log(`[API] Original file type: ${file.type}, Corrected type: ${fileToUpload.type}`);
+  console.log(`[API] File name: ${file.name}, File size: ${file.size} bytes`);
+
   const response = await fetch(`${config.apiUrl}/api/v1/knowledge/documents`, {
     method: 'POST',
     body: formData,
@@ -319,10 +367,13 @@ export async function uploadKnowledgeDocument(
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
+    console.error('[API] Upload failed:', response.status, errorData);
     throw new Error(errorData.detail || `Upload failed: ${response.status}`);
   }
 
-  return response.json();
+  const uploadedDocument = await response.json();
+  console.log('[API] Document uploaded successfully:', uploadedDocument);
+  return uploadedDocument;
 }
 
 /**
@@ -341,6 +392,8 @@ export async function getKnowledgeDocuments(
   url.searchParams.append('limit', limit.toString());
   url.searchParams.append('offset', offset.toString());
 
+  console.log('[API] Fetching knowledge documents from:', url.toString());
+
   const response = await fetch(url.toString(), {
     method: 'GET',
     headers: {
@@ -350,12 +403,29 @@ export async function getKnowledgeDocuments(
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
+    console.error('[API] Failed to fetch documents:', response.status, errorData);
     throw new Error(errorData.detail || `Failed to fetch documents: ${response.status}`);
   }
 
   const data = await response.json();
-  // Ensure we always return an array
-  return Array.isArray(data) ? data : [];
+  console.log('[API] Received knowledge documents:', data);
+  
+  // Handle different possible response formats
+  let documents: KbDocument[] = [];
+  
+  if (Array.isArray(data)) {
+    documents = data;
+  } else if (data && Array.isArray(data.documents)) {
+    documents = data.documents;
+  } else if (data && Array.isArray(data.items)) {
+    documents = data.items;
+  } else {
+    console.warn('[API] Unexpected response format for documents:', data);
+    return [];
+  }
+  
+  console.log(`[API] Returning ${documents.length} documents`);
+  return documents;
 }
 
 /**

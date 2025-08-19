@@ -69,20 +69,19 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
   const fileInputRef = useRef<HTMLInputElement>(null);
   const conversationHistoryRef = useRef<HTMLDivElement>(null);
 
+  // Track previous sessionId to enable proper caching
+  const [previousSessionId, setPreviousSessionId] = useState<string | null>(null);
+
   // Load session data when sessionId changes
   useEffect(() => {
     // Cache current conversation before switching (only if we have a valid previous session)
-    if (conversation.length > 0) {
-      const currentSessionId = Object.keys(conversationCache).find(id => 
-        conversationCache[id] === conversation
-      );
-      if (currentSessionId && currentSessionId !== sessionId) {
-        setConversationCache(prev => ({ ...prev, [currentSessionId]: conversation }));
-        setMessageCountCache(prev => ({ ...prev, [currentSessionId]: messageCount }));
-      }
+    if (conversation.length > 0 && previousSessionId && previousSessionId !== sessionId) {
+      setConversationCache(prev => ({ ...prev, [previousSessionId]: conversation }));
+      setMessageCountCache(prev => ({ ...prev, [previousSessionId]: messageCount }));
+      console.log(`[ChatWindow] Cached conversation for session ${previousSessionId} (${conversation.length} items)`);
     }
     
-    if (sessionId) {
+    if (sessionId && sessionId !== previousSessionId) {
       // Loading existing session - restore cached conversation
       const cachedConversation = conversationCache[sessionId] || [];
       const cachedMessageCount = messageCountCache[sessionId] || 0;
@@ -91,23 +90,33 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
       setMessageCount(cachedMessageCount);
       setHasInteracted(cachedMessageCount > 0);
       
+      console.log(`[ChatWindow] Restored conversation for session ${sessionId} (${cachedConversation.length} items)`);
+      
       // Load session data
       loadSessionData(sessionId);
-    } else if (isNewUnsavedChat) {
-      // New chat - start completely fresh
+    } else if (!sessionId) {
+      // No session ID - either new chat or all chats deleted
       setConversation([]);
       setMessageCount(0);
       setHasInteracted(false);
+      
+      // Only reset form inputs for truly new chats, not when just switching tabs
+      if (isNewUnsavedChat) {
+        setQueryInput("");
+        setTextInput("");
+        setPageContent("");
+        setFileSelected(false);
+        setDataSource("text");
+        setShowDataSection(true);
+        setInjectionStatus({ message: "", type: "" });
+        console.log('[ChatWindow] Started new unsaved chat');
+      } else {
+        console.log('[ChatWindow] Cleared chat content (no active session)');
+      }
     }
     
-    // Reset form state regardless of session type
-    setQueryInput("");
-    setTextInput("");
-    setPageContent("");
-    setFileSelected(false);
-    setDataSource("text");
-    setShowDataSection(true);
-    setInjectionStatus({ message: "", type: "" });
+    // Update previous sessionId tracker
+    setPreviousSessionId(sessionId);
   }, [sessionId, isNewUnsavedChat]);
 
   // Auto-scroll to bottom when conversation updates
@@ -201,6 +210,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
     if (cacheSessionId) {
       setConversationCache(prev => ({ ...prev, [cacheSessionId]: updatedConversation }));
       setMessageCountCache(prev => ({ ...prev, [cacheSessionId]: updatedMessageCount }));
+      console.log(`[ChatWindow] Updated cache for session ${cacheSessionId} (${updatedConversation.length} items)`);
     }
   };
 
@@ -250,7 +260,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
         console.log("[ChatWindow] Session created:", currentSessionId);
       } catch (error) {
         console.error("[ChatWindow] Failed to create session:", error);
-        addToConversation(undefined, "<p><strong>Error:</strong> Failed to create session. Please try again.</p>", true);
+        addToConversation(undefined, "⚠️  Cannot reach server\n\nPlease check your connection and try again.", true);
         return;
       }
     }
@@ -301,7 +311,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
     } catch (e: unknown) {
       console.error("[ChatWindow] sendToFaultMaven error:", e);
       const errorMessage = e instanceof Error ? e.message : String(e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to process query: ${errorMessage}</p>`, true, undefined, isNewSession ? currentSessionId : undefined);
+      addToConversation(undefined, `❌  Query failed: ${errorMessage}`, true, undefined, isNewSession ? currentSessionId : undefined);
     } finally {
       setLoading(false);
     }
@@ -327,7 +337,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
         console.log("[ChatWindow] Session created:", currentSessionId);
       } catch (error) {
         console.error("[ChatWindow] Failed to create session:", error);
-        addToConversation(undefined, "<p><strong>Error:</strong> Failed to create session. Please try again.</p>", true);
+        addToConversation(undefined, "⚠️  Cannot reach server\n\nPlease check your connection and try again.", true);
         return;
       }
     }
@@ -339,7 +349,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
     else if (dataSource === "page") dataToSend = pageContent;
 
     if (!dataToSend) {
-      addToConversation(undefined, "<p><strong>Error:</strong> No data to submit.</p>", true, undefined, isNewSession ? currentSessionId : undefined);
+      addToConversation(undefined, "❌  No data to submit", true, undefined, isNewSession ? currentSessionId : undefined);
       setLoading(false);
       return;
     }
@@ -391,7 +401,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
     } catch (e: unknown) {
       console.error("[ChatWindow] sendDataToFaultMaven error:", e);
       const errorMessage = e instanceof Error ? e.message : String(e);
-      addToConversation(undefined, `<p><strong>Error:</strong> Failed to upload data: ${errorMessage}</p>`, true, undefined, isNewSession ? currentSessionId : undefined);
+      addToConversation(undefined, `❌  Upload failed: ${errorMessage}`, true, undefined, isNewSession ? currentSessionId : undefined);
     } finally {
       setLoading(false);
     }

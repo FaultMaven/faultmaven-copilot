@@ -25,9 +25,10 @@ export default function UploadArea({ onUpload }: UploadAreaProps) {
     
     const files = Array.from(e.dataTransfer.files);
     const validFiles = files.filter(file => {
-      const validTypes = ['.pdf', '.docx', '.md', '.txt', '.log', '.json', '.csv'];
+      // Backend supports these file types based on MIME type validation
+      const supportedTypes = ['.md', '.txt', '.log', '.json', '.csv', '.pdf', '.doc', '.docx'];
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-      return validTypes.includes(fileExtension);
+      return supportedTypes.includes(fileExtension);
     });
 
     if (validFiles.length > 0) {
@@ -109,7 +110,7 @@ export default function UploadArea({ onUpload }: UploadAreaProps) {
 
           {/* File Types */}
           <div className="text-xs text-gray-400">
-            Supported formats: PDF, DOCX, MD, TXT, LOG, JSON, CSV
+            Supported formats: MD, TXT, LOG, JSON, CSV, PDF, DOC, DOCX
           </div>
 
           {/* Upload Progress */}
@@ -127,7 +128,7 @@ export default function UploadArea({ onUpload }: UploadAreaProps) {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.docx,.md,.txt,.log,.json,.csv"
+        accept=".md,.txt,.log,.json,.csv,.pdf,.doc,.docx"
         onChange={handleFileSelect}
         className="hidden"
         disabled={isUploading}

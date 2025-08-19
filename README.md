@@ -23,7 +23,7 @@ This extension is built using the modern **WXT framework**, with **React 19+**, 
       * Upload files for immediate analysis with insights.
   * 🔄 **Session Management**: Maintain conversation context across browser sessions with automatic session persistence and heartbeat management.
   * 🗂️ **Centralized Knowledge Base**: The Copilot features a dedicated tab to build and manage your team's knowledge base.
-      * **Upload Documents**: Easily upload runbooks, post-mortems, and other documentation (PDF, DOCX, MD, TXT, and more) via drag-and-drop.
+      * **Upload Documents**: Easily upload runbooks, post-mortems, and other documentation (MD, TXT, LOG, JSON, CSV, PDF, DOC, DOCX) via drag-and-drop.
       * **Monitor Ingestion Status**: Track the real-time status of your uploads with clear visual indicators for "Processing," "Indexed," or "Error".
       * **Manage Knowledge**: View and delete documents to ensure your knowledge base remains current and relevant.
   * 🔒 **Privacy-First Design**: All interactions are designed with security in mind, ensuring sensitive data is handled appropriately by the backend's PII redaction services.

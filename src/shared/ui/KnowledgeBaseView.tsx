@@ -13,9 +13,10 @@ import {
 interface KnowledgeBaseViewProps {
   serverError?: string | null;
   onRetry?: () => void;
+  className?: string;
 }
 
-export default function KnowledgeBaseView({ serverError, onRetry }: KnowledgeBaseViewProps) {
+export default function KnowledgeBaseView({ serverError, onRetry, className = '' }: KnowledgeBaseViewProps) {
   const [documents, setDocuments] = useState<KbDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,12 +30,19 @@ export default function KnowledgeBaseView({ serverError, onRetry }: KnowledgeBas
     setError(null);
     try {
       const docs = await getKnowledgeDocuments();
-      // Ensure docs is an array
-      setDocuments(Array.isArray(docs) ? docs : []);
+      console.log('[KnowledgeBaseView] Fetched documents:', docs);
+      
+      // Ensure docs is an array and has valid content
+      if (Array.isArray(docs)) {
+        setDocuments(docs);
+      } else {
+        console.warn('[KnowledgeBaseView] API returned non-array response:', docs);
+        setDocuments([]);
+      }
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Error fetching documents:", err);
       setError('Could not load documents. Please check your connection and try again.');
-      setDocuments([]); // Reset to empty array on error
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }
@@ -46,10 +54,44 @@ export default function KnowledgeBaseView({ serverError, onRetry }: KnowledgeBas
 
   const handleUpload = async (files: File[]) => {
     setError(null);
+    
+    // Check for duplicate documents by title/filename
+    // Only check if we have loaded documents already
+    let filesToUpload: File[] = files;
+    if (documents && documents.length > 0) {
+      const existingTitles = new Set(documents.map(doc => doc.title?.toLowerCase()).filter(Boolean));
+      const filteredFiles: File[] = [];
+      const duplicateFiles: string[] = [];
+      
+      for (const file of files) {
+        if (existingTitles.has(file.name.toLowerCase())) {
+          duplicateFiles.push(file.name);
+        } else {
+          filteredFiles.push(file);
+        }
+      }
+      
+      // Show warning for duplicate files
+      if (duplicateFiles.length > 0) {
+        const message = duplicateFiles.length === 1 
+          ? `Document "${duplicateFiles[0]}" already exists in the knowledge base.`
+          : `The following documents already exist: ${duplicateFiles.join(', ')}`;
+        
+        setError(message);
+        
+        // If all files are duplicates, return early
+        if (filteredFiles.length === 0) {
+          return;
+        }
+      }
+      
+      filesToUpload = filteredFiles;
+    }
+    
     const newDocuments: KbDocument[] = [];
 
     // Optimistically add files with "Processing" status
-    for (const file of files) {
+    for (const file of filesToUpload) {
       const newDoc: KbDocument = {
         document_id: `temp-${Date.now()}-${Math.random()}`,
         title: file.name,
@@ -65,27 +107,73 @@ export default function KnowledgeBaseView({ serverError, onRetry }: KnowledgeBas
 
     setDocuments(prev => [...newDocuments, ...prev]);
 
-    // Upload each file
-    for (let i = 0; i < files.length; i++) {
+    // Track upload results
+    let hasError = false;
+    let successCount = 0;
+    const successfulUploads: KbDocument[] = [];
+
+    // Upload each file (only non-duplicates)
+    for (let i = 0; i < filesToUpload.length; i++) {
       try {
+        console.log(`[KnowledgeBaseView] Uploading file ${i+1}/${filesToUpload.length}: ${filesToUpload[i].name} (${filesToUpload[i].type})`);
         const uploadedDoc = await uploadKnowledgeDocument(
-          files[i],
-          files[i].name,
+          filesToUpload[i],
+          filesToUpload[i].name,
           'troubleshooting_guide'
         );
-        // Replace the temporary document with the real one
+        
+        // Store successful upload for final state update
+        successfulUploads.push(uploadedDoc);
+        
+        // Replace the temporary document with the real one immediately
         setDocuments(prev => prev.map(doc => 
           doc.document_id === newDocuments[i].document_id ? uploadedDoc : doc
         ));
+        successCount++;
       } catch (err: any) {
-        console.error(`[KnowledgeBaseView] Error uploading ${files[i].name}:`, err);
+        console.error(`[KnowledgeBaseView] Error uploading ${filesToUpload[i].name}:`, err);
+        hasError = true;
+        
         // Update the document status to Error
         setDocuments(prev => prev.map(doc => 
           doc.document_id === newDocuments[i].document_id 
             ? { ...doc, status: 'Error' }
             : doc
         ));
-        setError(`Failed to upload ${files[i].name}: ${err.message}`);
+        
+        // Set error message with full details for debugging
+        const errorMessage = err.message || err.toString();
+        
+        // Provide helpful guidance for common file type errors
+        let userFriendlyMessage = `Failed to upload ${filesToUpload[i].name}: ${errorMessage}`;
+        if (errorMessage.includes('UTF-8 text content')) {
+          userFriendlyMessage += '\n\nNote: PDFs and documents must contain extractable text content. Try text-based formats (TXT, MD, CSV, JSON) for guaranteed compatibility, or ensure your PDF was created with searchable text (not scanned images).';
+        } else if (errorMessage.includes('Unsupported file type')) {
+          userFriendlyMessage += '\n\nSupported file types: MD, TXT, LOG, JSON, CSV, PDF, DOC, DOCX. Make sure your file has the correct extension.';
+        }
+        
+        setError(userFriendlyMessage);
+      }
+    }
+
+    // After upload attempt, refresh the documents list to ensure consistency
+    if (successCount > 0) {
+      try {
+        const refreshedDocs = await getKnowledgeDocuments();
+        
+        // Simple validation: if we get a valid array response, use it
+        if (Array.isArray(refreshedDocs)) {
+          setDocuments(refreshedDocs);
+          console.log(`[KnowledgeBaseView] Successfully refreshed document list with ${refreshedDocs.length} documents`);
+        } else {
+          console.warn('[KnowledgeBaseView] API returned non-array response during refresh, keeping current state');
+        }
+      } catch (refreshErr) {
+        console.error('[KnowledgeBaseView] Error refreshing documents after upload:', refreshErr);
+        // Keep the current state which should have the uploaded documents
+        if (!hasError) {
+          setError('Upload completed but failed to refresh document list. Documents should still be visible.');
+        }
       }
     }
   };
@@ -176,7 +264,7 @@ export default function KnowledgeBaseView({ serverError, onRetry }: KnowledgeBas
   }
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className={`flex flex-col h-full space-y-4 overflow-y-auto overflow-x-hidden p-4 ${className}`}>
       {/* Header */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-2">Knowledge Base</h2>

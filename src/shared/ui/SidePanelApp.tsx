@@ -22,6 +22,7 @@ export default function SidePanelApp() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversationTitles, setConversationTitles] = useState<Record<string, string>>({});
   const [showConversationsList, setShowConversationsList] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [hasUnsavedNewChat, setHasUnsavedNewChat] = useState(false);
   const [availableSessions, setAvailableSessions] = useState<string[]>([]);
@@ -94,7 +95,9 @@ export default function SidePanelApp() {
   // Handle responsive design
   useEffect(() => {
     const handleResize = () => {
-      setShowConversationsList(window.innerWidth >= 600);
+      if (window.innerWidth < 600) {
+        setSidebarCollapsed(true);
+      }
     };
     
     handleResize(); // Set initial state
@@ -171,6 +174,31 @@ export default function SidePanelApp() {
     setShowConversationsList(!showConversationsList);
   };
 
+  const toggleSidebar = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + B to toggle sidebar
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+      // Ctrl/Cmd + Shift + N for new chat
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
+        e.preventDefault();
+        if (!hasUnsavedNewChat) {
+          handleNewSession('');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasUnsavedNewChat]);
+
   const retryConnection = async () => {
     setServerError(null);
     try {
@@ -203,57 +231,115 @@ export default function SidePanelApp() {
 
 
 
-  const renderCopilotTab = () => {
-    if (!sessionId || sessionId === '') {
-      if (serverError) {
-        return (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-md">
-              <div className="mb-4">
-                <svg className="w-12 h-12 text-red-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  // Render the collapsible sidebar
+  const renderSidebar = () => {
+    if (activeTab !== 'copilot') return null;
+
+    return (
+      <div className={`flex-shrink-0 bg-white border-r border-gray-200 transition-all duration-300 ${
+        sidebarCollapsed ? 'w-16' : 'w-auto min-w-80'
+      }`}>
+        {sidebarCollapsed ? (
+          // Collapsed sidebar - icons only
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="flex-shrink-0 p-4 border-b border-gray-200">
+              <div className="flex items-center justify-center">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Main actions */}
+            <div className="flex-1 p-3 space-y-3">
+              <button
+                onClick={() => handleNewSession('')}
+                disabled={hasUnsavedNewChat}
+                className="w-full h-10 flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                title="New Chat"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <p className="text-red-600 font-medium mb-2">Server Connection Error</p>
-                <p className="text-sm text-gray-600 mb-4">{serverError}</p>
-                <button 
-                  onClick={retryConnection}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Retry Connection
-                </button>
+              </button>
+
+              <button
+                onClick={toggleSidebar}
+                className="w-full h-10 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Expand Sidebar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* User section */}
+            <div className="flex-shrink-0 p-3 border-t border-gray-200">
+              <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center mx-auto">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
               </div>
             </div>
           </div>
-        );
-      }
-      
-      // If user clicked "New Chat" and we're ready for input, show ChatWindow
-      // Otherwise show empty state
-      if (hasUnsavedNewChat) {
-        return (
-          <div className="flex h-full">
-            {/* Mobile hamburger menu button */}
-            {!showConversationsList && (
+        ) : (
+          // Expanded sidebar - full content
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="flex-shrink-0 p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                  <h1 className="text-lg font-semibold text-gray-900">FaultMaven</h1>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={toggleSidebar}
+                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    title="Collapse Sidebar"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* New Chat Button */}
+            <div className="flex-shrink-0 p-4">
               <button
-                onClick={toggleConversationsList}
-                className="md:hidden fixed top-4 left-4 z-10 p-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50"
-                aria-label="Show conversations list"
+                onClick={() => handleNewSession('')}
+                disabled={hasUnsavedNewChat}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={hasUnsavedNewChat ? "Complete current new chat before starting another" : "Start new conversation"}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
+                <span className="text-sm font-medium">New chat</span>
               </button>
-            )}
+            </div>
 
-            {/* Conversations List - Left Pane */}
-            <div className={`${
-              showConversationsList 
-                ? 'w-80 flex-shrink-0' 
-                : 'hidden'
-            } bg-white border-r border-gray-200`}>
+            {/* Conversations List */}
+            <div className="flex-1 overflow-y-auto">
               <ErrorBoundary
                 fallback={
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg m-4">
                     <p className="text-sm text-red-700">Error loading conversations</p>
                     <button
                       onClick={() => window.location.reload()}
@@ -272,103 +358,21 @@ export default function SidePanelApp() {
                   hasUnsavedNewChat={hasUnsavedNewChat}
                   refreshTrigger={refreshSessions}
                   className="h-full"
-                />
-              </ErrorBoundary>
-            </div>
-
-            {/* Chat Window - Right Pane (for new chat input) */}
-            <div className="flex-1 min-w-0">
-              <ErrorBoundary
-                fallback={
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">Error loading chat</p>
-                    <button
-                      onClick={() => window.location.reload()}
-                      className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                }
-              >
-                <ChatWindow
-                  sessionId={sessionId}
-                  onTitleGenerated={handleTitleGenerated}
-                  onChatSaved={handleChatSaved}
-                  onSessionCreated={handleSessionCreated}
-                  isNewUnsavedChat={hasUnsavedNewChat}
-                  className="h-full"
+                  collapsed={false}
                 />
               </ErrorBoundary>
             </div>
           </div>
-        );
-      }
-      
-      return (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center max-w-md p-6">
-            <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to troubleshoot?</h3>
-            <p className="text-gray-600 mb-4">Select an existing chat from the left panel or click "New Chat" to start fresh.</p>
-            <p className="text-sm text-gray-500">
-              You can type your question directly in any chat, and all your conversations will be saved automatically.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex h-full">
-        {/* Mobile hamburger menu button */}
-        {!showConversationsList && (
-          <button
-            onClick={toggleConversationsList}
-            className="md:hidden fixed top-4 left-4 z-10 p-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50"
-            aria-label="Show conversations list"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
         )}
+      </div>
+    );
+  };
 
-        {/* Conversations List - Left Pane */}
-        <div className={`${
-          showConversationsList 
-            ? 'w-80 flex-shrink-0' 
-            : 'hidden'
-        } bg-white border-r border-gray-200`}>
-          <ErrorBoundary
-            fallback={
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700">Error loading conversations</p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
-                  Retry
-                </button>
-              </div>
-            }
-          >
-            <ConversationsList
-              activeSessionId={sessionId || undefined}
-              onSessionSelect={handleSessionSelect}
-              onNewSession={handleNewSession}
-              conversationTitles={conversationTitles}
-              hasUnsavedNewChat={hasUnsavedNewChat}
-              refreshTrigger={refreshSessions}
-              className="h-full"
-            />
-          </ErrorBoundary>
-        </div>
-
-        {/* Chat Window - Right Pane */}
-        <div className="flex-1 min-w-0">
+  const renderChatContent = () => {
+    if (!sessionId || sessionId === '') {
+      
+      if (hasUnsavedNewChat) {
+        return (
           <ErrorBoundary
             fallback={
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -391,44 +395,92 @@ export default function SidePanelApp() {
               className="h-full"
             />
           </ErrorBoundary>
+        );
+      }
+      
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center max-w-md p-6">
+            {/* FaultMaven Logo */}
+            <div className="mb-6">
+              <img 
+                src="/icon/square-light.svg" 
+                alt="FaultMaven Logo" 
+                className="w-20 h-20 mx-auto mb-4"
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      );
+    }
+
+    return (
+      <ErrorBoundary
+        fallback={
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700">Error loading chat</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+            >
+              Retry
+            </button>
+          </div>
+        }
+      >
+        <ChatWindow
+          sessionId={sessionId}
+          onTitleGenerated={handleTitleGenerated}
+          onChatSaved={handleChatSaved}
+          onSessionCreated={handleSessionCreated}
+          isNewUnsavedChat={hasUnsavedNewChat}
+          className="h-full"
+        />
+      </ErrorBoundary>
     );
   };
 
-  return (
-    <ErrorBoundary>
-      <div className="flex flex-col h-screen bg-gray-50 text-gray-800 text-sm font-sans">
-        {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200 bg-white">
-          <button 
-            onClick={() => setActiveTab('copilot')} 
-            className={`flex-1 py-1 px-4 text-sm transition-colors border-b-2 ${
-              activeTab === 'copilot' 
-                ? 'text-blue-600 border-blue-500 font-semibold' 
-                : 'text-gray-500 border-transparent font-medium hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Copilot
-          </button>
-          <button 
-            onClick={() => setActiveTab('kb')} 
-            className={`flex-1 py-1 px-4 text-sm transition-colors border-b-2 ${
-              activeTab === 'kb' 
-                ? 'text-blue-600 border-blue-500 font-semibold' 
-                : 'text-gray-500 border-transparent font-medium hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Knowledge Base
-          </button>
-        </div>
+  const renderMainContent = () => {
+    return (
+      <div className="flex w-full h-full">
+        {/* Collapsible Sidebar */}
+        {renderSidebar()}
 
-        {/* Tab Content */}
-        <div className="flex-1 overflow-hidden">
-          {activeTab === 'copilot' ? (
-            renderCopilotTab()
-          ) : (
-            <div className="p-3 h-full">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 max-w-none">
+          {/* Tab Navigation */}
+          <div className="flex bg-white border-b border-gray-200 flex-shrink-0">
+            <button
+              onClick={() => setActiveTab('copilot')}
+              className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'copilot'
+                  ? 'border-blue-500 text-blue-600 bg-blue-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Copilot
+            </button>
+            <button
+              onClick={() => setActiveTab('kb')}
+              className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'kb'
+                  ? 'border-blue-500 text-blue-600 bg-blue-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Knowledge Base
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto">
+            {/* Copilot Tab - Always rendered but hidden when not active */}
+            <div className={`h-full ${activeTab === 'copilot' ? 'block' : 'hidden'}`}>
+              {renderChatContent()}
+            </div>
+            
+            {/* Knowledge Base Tab - Always rendered but hidden when not active */}
+            <div className={`h-full ${activeTab === 'kb' ? 'block' : 'hidden'}`}>
               <ErrorBoundary
                 fallback={
                   <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -442,11 +494,19 @@ export default function SidePanelApp() {
                   </div>
                 }
               >
-                <KnowledgeBaseView serverError={serverError} onRetry={retryConnection} />
+                <KnowledgeBaseView className="h-full" />
               </ErrorBoundary>
             </div>
-          )}
+          </div>
         </div>
+      </div>
+    );
+  };
+
+  return (
+    <ErrorBoundary>
+      <div className="flex h-screen bg-gray-50 text-gray-800 text-sm font-sans">
+        {renderMainContent()}
       </div>
     </ErrorBoundary>
   );

@@ -11,6 +11,7 @@ interface ConversationsListProps {
   hasUnsavedNewChat?: boolean;
   refreshTrigger?: number;
   className?: string;
+  collapsed?: boolean;
 }
 
 export function ConversationsList({ 
@@ -20,7 +21,8 @@ export function ConversationsList({
   conversationTitles = {},
   hasUnsavedNewChat = false,
   refreshTrigger = 0,
-  className = ''
+  className = '',
+  collapsed = false
 }: ConversationsListProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,9 +117,9 @@ export function ConversationsList({
         if (remainingSessions.length > 0) {
           onSessionSelect(remainingSessions[0].session_id);
         } else {
-          // No sessions remain - DO NOT auto-create a new session
-          // User must explicitly click "New Chat" button
-          onSessionSelect(''); // Clear active session
+          // No sessions remain - prepare for new chat
+          // Use onNewSession instead of onSessionSelect to properly set hasUnsavedNewChat flag
+          onNewSession(''); // Clear active session and prepare for new chat
         }
       }
       
@@ -153,6 +155,63 @@ export function ConversationsList({
     // Note: We could also call a backend API here to persist the rename if needed
   };
 
+  // Group sessions by time periods
+  const groupSessionsByTime = (sessions: Session[]) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const groups = {
+      today: [] as Session[],
+      sevenDays: [] as Session[],
+      thirtyDays: [] as Session[],
+      older: [] as Session[]
+    };
+
+    sessions.filter(session => session && session.session_id).forEach(session => {
+      const sessionDate = new Date(session.last_activity || session.created_at || 0);
+      
+      if (sessionDate >= today) {
+        groups.today.push(session);
+      } else if (sessionDate >= sevenDaysAgo) {
+        groups.sevenDays.push(session);
+      } else if (sessionDate >= thirtyDaysAgo) {
+        groups.thirtyDays.push(session);
+      } else {
+        groups.older.push(session);
+      }
+    });
+
+    return groups;
+  };
+
+  const renderSessionGroup = (title: string, sessions: Session[]) => {
+    if (sessions.length === 0) return null;
+
+    return (
+      <div key={title} className="space-y-1">
+        <h3 className="text-xs font-medium text-gray-500 px-3 py-2 uppercase tracking-wider">
+          {title}
+        </h3>
+        <div className="space-y-1">
+          {sessions.map((session) => (
+            <ConversationItem
+              key={session.session_id}
+              session={session}
+              title={getSessionTitle(session)}
+              isActive={session.session_id === activeSessionId}
+              isUnsavedNew={hasUnsavedNewChat && session.session_id === activeSessionId}
+              onSelect={onSessionSelect}
+              onDelete={handleDeleteSession}
+              onRename={handleRenameSession}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   if (loading && sessions.length === 0) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
@@ -163,36 +222,13 @@ export function ConversationsList({
     );
   }
 
-  return (
-    <div className={`flex flex-col h-full bg-white border-r border-gray-200 ${className}`}>
-      {/* Header with New Chat Button */}
-      <div className="flex-shrink-0 p-4 border-b border-gray-200">
-        <button
-          onClick={handleNewChat}
-          disabled={creatingNew || hasUnsavedNewChat}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Start new conversation"
-          title={hasUnsavedNewChat ? "Complete current new chat before starting another" : "Start new conversation"}
-        >
-          {creatingNew ? (
-            <>
-              <LoadingSpinner size="sm" color="white" />
-              <span className="text-sm font-medium">Creating...</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span className="text-sm font-medium">New Chat</span>
-            </>
-          )}
-        </button>
-      </div>
+  const sessionGroups = groupSessionsByTime(sessions);
 
+  return (
+    <div className={`flex flex-col h-full ${className}`}>
       {/* Error Display - hide when server is unreachable */}
       {error && !error.includes('Failed to fetch') && (
-        <div className="flex-shrink-0 p-3 mx-4 mt-2 bg-red-50 border border-red-200 rounded-lg">
+        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-xs text-red-700">{error}</p>
           <button
             onClick={() => setError(null)}
@@ -204,40 +240,22 @@ export function ConversationsList({
       )}
 
       {/* Conversations List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto">
         {sessions.length === 0 && !error?.includes('Failed to fetch') ? (
-          <div className="text-center py-8">
-            <p className="text-sm text-gray-500 mb-3">No cases yet</p>
+          <div className="text-center py-8 px-4">
+            <p className="text-sm text-gray-500 mb-3">No conversations yet</p>
             <p className="text-xs text-gray-400">
-              Click "New Chat" to start your first troubleshooting case
+              Click "New chat" to start your first conversation
             </p>
           </div>
         ) : (
-          sessions.filter(session => session && session.session_id).map((session) => (
-            <ConversationItem
-              key={session.session_id}
-              session={session}
-              title={getSessionTitle(session)}
-              isActive={session.session_id === activeSessionId}
-              isUnsavedNew={hasUnsavedNewChat && session.session_id === activeSessionId}
-              onSelect={onSessionSelect}
-              onDelete={handleDeleteSession}
-              onRename={handleRenameSession}
-            />
-          ))
+          <div className="space-y-4 pb-4">
+            {renderSessionGroup('Today', sessionGroups.today)}
+            {renderSessionGroup('7 Days', sessionGroups.sevenDays)}
+            {renderSessionGroup('30 Days', sessionGroups.thirtyDays)}
+            {renderSessionGroup('Older', sessionGroups.older)}
+          </div>
         )}
-      </div>
-
-      {/* Refresh Button */}
-      <div className="flex-shrink-0 p-3 border-t border-gray-200">
-        <button
-          onClick={loadCases}
-          disabled={loading}
-          className="w-full py-2 px-3 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
-          aria-label="Refresh chat list"
-        >
-          {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
       </div>
     </div>
   );
