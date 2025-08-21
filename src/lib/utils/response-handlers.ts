@@ -127,10 +127,12 @@ export function formatSource(source: Source): {
     'previous_case': 'Previous Case'
   };
 
+  const content = source.content;
+
   return {
     emoji: sourceEmojis[source.type] || '📄',
     label: sourceLabels[source.type] || source.type,
-    content: source.content,
+    content: content,
     confidence: source.confidence ? `${Math.round(source.confidence * 100)}%` : undefined
   };
 }
@@ -160,7 +162,6 @@ export function formatPlanStep(step: PlanStep): {
  * Check if response requires user action
  */
 export function requiresUserAction(response: AgentResponse): boolean {
-  // Backend now sends spec-compliant UPPERCASE response types
   if (!response || !response.response_type) {
     console.warn('[ResponseHandlers] Missing response_type in response:', response);
     return false;

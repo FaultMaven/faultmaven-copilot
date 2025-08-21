@@ -18,6 +18,8 @@ import { formatResponseForDisplay, requiresUserAction } from "../../../lib/utils
 import config from "../../../config";
 import LoadingSpinner from "./LoadingSpinner";
 import SourcesDisplay from "./SourcesDisplay";
+import MarkdownRenderer from "./MarkdownRenderer";
+import InlineSourcesRenderer from "./InlineSourcesRenderer";
 
 // TypeScript interfaces
 interface ConversationItem {
@@ -472,9 +474,12 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
                 <div className={`w-full mx-1 ${item.error ? "text-red-700" : "text-gray-800"}`}> 
                   {/* Response content */}
                   <div className="px-2 py-1 text-sm border-t border-b border-gray-200 rounded">
-                    <pre className="break-words mb-1 whitespace-pre-wrap font-sans text-sm text-gray-800 leading-relaxed">
-                      {item.response || ''}
-                    </pre>
+                    <InlineSourcesRenderer 
+                      content={item.response || ''} 
+                      sources={item.sources}
+                      onDocumentView={onDocumentView}
+                      className="break-words"
+                    />
                     <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
                       <span>{item.timestamp}</span>
                       {item.requiresAction && (
@@ -482,14 +487,6 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
                       )}
                     </div>
                   </div>
-                  
-                  {/* Sources display */}
-                  {item.sources && item.sources.length > 0 && (
-                    <SourcesDisplay 
-                      sources={item.sources}
-                      onDocumentView={onDocumentView}
-                    />
-                  )}
                 </div>
               </div>
             )}
