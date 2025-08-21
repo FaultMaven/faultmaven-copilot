@@ -135,17 +135,27 @@ export function ConversationItem({
               onChange={(e) => setEditTitle(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={handleSaveRename}
-              className="text-sm w-full bg-white border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              className="text-sm w-full min-w-0 bg-white border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
               autoFocus
               onClick={(e) => e.stopPropagation()}
+              maxLength={50}
             />
           ) : (
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm truncate font-normal">
-                {displayTitle}
-              </h3>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="relative min-w-0 flex-1">
+                <h3 className="text-sm font-normal truncate" title={displayTitle}>
+                  {displayTitle}
+                </h3>
+                {displayTitle.length > 25 && (
+                  <div className={`absolute top-0 right-0 w-4 h-full bg-gradient-to-l pointer-events-none ${
+                    isActive 
+                      ? 'from-gray-200 via-gray-200/80 to-transparent' 
+                      : 'from-white via-white/80 to-transparent group-hover:from-gray-100 group-hover:via-gray-100/80'
+                  }`}></div>
+                )}
+              </div>
               {isUnsavedNew && (
-                <span className="text-xs text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded-full font-medium">
+                <span className="text-xs text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
                   New
                 </span>
               )}
@@ -153,7 +163,7 @@ export function ConversationItem({
           )}
         </div>
         
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0">
           {onRename && (
             <button
               onClick={handleRename}

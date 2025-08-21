@@ -1,13 +1,20 @@
-import React, { useState, useEffect } from "react";
-import UploadArea from "./components/UploadArea";
-import DocumentTable from "./components/DocumentTable";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { ErrorState } from "./components/ErrorState";
+import UploadPanel from "./components/UploadPanel";
+import DocumentsListView from "./components/DocumentsListView";
+import EditMetadataModal from "./components/EditMetadataModal";
+import DocumentDetailsModal from "./components/DocumentDetailsModal";
+import SearchPanel from "./components/SearchPanel";
 import { 
   uploadKnowledgeDocument, 
   getKnowledgeDocuments, 
   deleteKnowledgeDocument,
+  updateKnowledgeDocument,
+  getKnowledgeDocument,
   searchKnowledgeBase,
-  KbDocument
+  KnowledgeDocument,
+  DocumentListResponse,
+  DocumentType
 } from "../../lib/api";
 
 interface KnowledgeBaseViewProps {
@@ -17,225 +24,257 @@ interface KnowledgeBaseViewProps {
 }
 
 export default function KnowledgeBaseView({ serverError, onRetry, className = '' }: KnowledgeBaseViewProps) {
-  const [documents, setDocuments] = useState<KbDocument[]>([]);
+  // Main state
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<KbDocument[]>([]);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(50);
+  
+  // Filter state
+  const [filters, setFilters] = useState<{
+    documentType?: DocumentType;
+    tags?: string[];
+    textSearch?: string;
+  }>({});
+  
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // Modal state
+  const [editingDocument, setEditingDocument] = useState<KnowledgeDocument | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<KnowledgeDocument | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isEditLoading, setIsEditLoading] = useState(false);
+  
+  // Search state
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [activeTab, setActiveTab] = useState<'upload' | 'documents' | 'search'>('upload');
 
+  // Fetch documents with filters and pagination
   const fetchDocuments = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const docs = await getKnowledgeDocuments();
-      console.log('[KnowledgeBaseView] Fetched documents:', docs);
+      const tagsParam = filters.tags?.join(',') || undefined;
+      const offset = (currentPage - 1) * pageSize;
       
-      // Ensure docs is an array and has valid content
-      if (Array.isArray(docs)) {
-        setDocuments(docs);
-      } else {
-        console.warn('[KnowledgeBaseView] API returned non-array response:', docs);
-        setDocuments([]);
-      }
+      const response: DocumentListResponse = await getKnowledgeDocuments(
+        filters.documentType,
+        tagsParam,
+        pageSize,
+        offset
+      );
+      
+      console.log('[KnowledgeBaseView] Fetched documents response:', response);
+      
+      setDocuments(response.documents || []);
+      setTotalCount(response.total_count || 0);
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Error fetching documents:", err);
       setError('Could not load documents. Please check your connection and try again.');
       setDocuments([]);
+      setTotalCount(0);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Fetch documents when switching to documents tab or when filters/pagination change
   useEffect(() => {
-    fetchDocuments();
-  }, []);
+    if (activeTab === 'documents') {
+      fetchDocuments();
+    }
+  }, [
+    activeTab, 
+    filters.documentType, 
+    JSON.stringify(filters.tags), // Stringify array to avoid reference comparison issues
+    filters.textSearch, 
+    currentPage, 
+    pageSize
+  ]);
 
-  const handleUpload = async (files: File[]) => {
+  // Handle upload with enhanced metadata
+  const handleUpload = async (uploadData: {
+    file: File;
+    title: string;
+    documentType: DocumentType;
+    tags: string;
+    category?: string;
+    sourceUrl?: string;
+    description?: string;
+  }) => {
+    setIsUploading(true);
     setError(null);
     
-    // Check for duplicate documents by title/filename
-    // Only check if we have loaded documents already
-    let filesToUpload: File[] = files;
-    if (documents && documents.length > 0) {
-      const existingTitles = new Set(documents.map(doc => doc.title?.toLowerCase()).filter(Boolean));
-      const filteredFiles: File[] = [];
-      const duplicateFiles: string[] = [];
+    try {
+      console.log('[KnowledgeBaseView] Uploading document:', uploadData.title);
       
-      for (const file of files) {
-        if (existingTitles.has(file.name.toLowerCase())) {
-          duplicateFiles.push(file.name);
-        } else {
-          filteredFiles.push(file);
-        }
+      const uploadedDoc = await uploadKnowledgeDocument(
+        uploadData.file,
+        uploadData.title,
+        uploadData.documentType,
+        uploadData.category,
+        uploadData.tags,
+        uploadData.sourceUrl,
+        uploadData.description
+      );
+      
+      console.log('[KnowledgeBaseView] Document uploaded successfully:', uploadedDoc);
+      
+      // Refresh documents to show the new upload
+      await fetchDocuments();
+      
+      // Switch to documents tab to show the upload
+      setActiveTab('documents');
+      
+    } catch (err: any) {
+      console.error('[KnowledgeBaseView] Upload failed:', err);
+      const errorMessage = err.message || err.toString();
+      
+      // Provide helpful guidance for common errors
+      let userFriendlyMessage = `Failed to upload "${uploadData.title}": ${errorMessage}`;
+      if (errorMessage.includes('UTF-8 text content')) {
+        userFriendlyMessage += '\n\nNote: PDFs and documents must contain extractable text content. Try text-based formats (TXT, MD, CSV, JSON) for guaranteed compatibility.';
+      } else if (errorMessage.includes('Unsupported file type')) {
+        userFriendlyMessage += '\n\nSupported file types: MD, TXT, LOG, JSON, CSV, PDF, DOC, DOCX. Make sure your file has the correct extension.';
       }
       
-      // Show warning for duplicate files
-      if (duplicateFiles.length > 0) {
-        const message = duplicateFiles.length === 1 
-          ? `Document "${duplicateFiles[0]}" already exists in the knowledge base.`
-          : `The following documents already exist: ${duplicateFiles.join(', ')}`;
-        
-        setError(message);
-        
-        // If all files are duplicates, return early
-        if (filteredFiles.length === 0) {
-          return;
-        }
-      }
-      
-      filesToUpload = filteredFiles;
-    }
-    
-    const newDocuments: KbDocument[] = [];
-
-    // Optimistically add files with "Processing" status
-    for (const file of filesToUpload) {
-      const newDoc: KbDocument = {
-        document_id: `temp-${Date.now()}-${Math.random()}`,
-        title: file.name,
-        content: '', // Will be populated by the API
-        document_type: 'troubleshooting_guide',
-        status: 'Processing',
-        tags: [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      newDocuments.push(newDoc);
-    }
-
-    setDocuments(prev => [...newDocuments, ...prev]);
-
-    // Track upload results
-    let hasError = false;
-    let successCount = 0;
-    const successfulUploads: KbDocument[] = [];
-
-    // Upload each file (only non-duplicates)
-    for (let i = 0; i < filesToUpload.length; i++) {
-      try {
-        console.log(`[KnowledgeBaseView] Uploading file ${i+1}/${filesToUpload.length}: ${filesToUpload[i].name} (${filesToUpload[i].type})`);
-        const uploadedDoc = await uploadKnowledgeDocument(
-          filesToUpload[i],
-          filesToUpload[i].name,
-          'troubleshooting_guide'
-        );
-        
-        // Store successful upload for final state update
-        successfulUploads.push(uploadedDoc);
-        
-        // Replace the temporary document with the real one immediately
-        setDocuments(prev => prev.map(doc => 
-          doc.document_id === newDocuments[i].document_id ? uploadedDoc : doc
-        ));
-        successCount++;
-      } catch (err: any) {
-        console.error(`[KnowledgeBaseView] Error uploading ${filesToUpload[i].name}:`, err);
-        hasError = true;
-        
-        // Update the document status to Error
-        setDocuments(prev => prev.map(doc => 
-          doc.document_id === newDocuments[i].document_id 
-            ? { ...doc, status: 'Error' }
-            : doc
-        ));
-        
-        // Set error message with full details for debugging
-        const errorMessage = err.message || err.toString();
-        
-        // Provide helpful guidance for common file type errors
-        let userFriendlyMessage = `Failed to upload ${filesToUpload[i].name}: ${errorMessage}`;
-        if (errorMessage.includes('UTF-8 text content')) {
-          userFriendlyMessage += '\n\nNote: PDFs and documents must contain extractable text content. Try text-based formats (TXT, MD, CSV, JSON) for guaranteed compatibility, or ensure your PDF was created with searchable text (not scanned images).';
-        } else if (errorMessage.includes('Unsupported file type')) {
-          userFriendlyMessage += '\n\nSupported file types: MD, TXT, LOG, JSON, CSV, PDF, DOC, DOCX. Make sure your file has the correct extension.';
-        }
-        
-        setError(userFriendlyMessage);
-      }
-    }
-
-    // After upload attempt, refresh the documents list to ensure consistency
-    if (successCount > 0) {
-      try {
-        const refreshedDocs = await getKnowledgeDocuments();
-        
-        // Simple validation: if we get a valid array response, use it
-        if (Array.isArray(refreshedDocs)) {
-          setDocuments(refreshedDocs);
-          console.log(`[KnowledgeBaseView] Successfully refreshed document list with ${refreshedDocs.length} documents`);
-        } else {
-          console.warn('[KnowledgeBaseView] API returned non-array response during refresh, keeping current state');
-        }
-      } catch (refreshErr) {
-        console.error('[KnowledgeBaseView] Error refreshing documents after upload:', refreshErr);
-        // Keep the current state which should have the uploaded documents
-        if (!hasError) {
-          setError('Upload completed but failed to refresh document list. Documents should still be visible.');
-        }
-      }
+      setError(userFriendlyMessage);
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  // Handle document deletion
+  const handleDelete = async (documentId: string) => {
     try {
-      await deleteKnowledgeDocument(id);
-      setDocuments(prev => prev.filter(doc => doc.document_id !== id));
-      // Also remove from search results if present
-      setSearchResults(prev => Array.isArray(prev) ? prev.filter(doc => doc && doc.document_id !== id) : []);
+      await deleteKnowledgeDocument(documentId);
+      await fetchDocuments(); // Refresh list
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Error deleting document:", err);
       setError(`Failed to delete document: ${err.message}`);
     }
   };
 
-  const handleSearch = async (query: string) => {
-    if (!query.trim()) {
-      setShowSearchResults(false);
-      setSearchResults([]);
-      return;
-    }
+  // Handle document editing
+  const handleEdit = (document: KnowledgeDocument) => {
+    setEditingDocument(document);
+    setIsEditModalOpen(true);
+  };
 
+  const handleSaveEdit = async (documentId: string, updates: any) => {
+    setIsEditLoading(true);
+    try {
+      await updateKnowledgeDocument(documentId, updates);
+      await fetchDocuments(); // Refresh list
+      setIsEditModalOpen(false);
+      setEditingDocument(null);
+    } catch (err: any) {
+      console.error("[KnowledgeBaseView] Error updating document:", err);
+      setError(`Failed to update document: ${err.message}`);
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  // Handle document viewing
+  const handleView = async (document: KnowledgeDocument) => {
+    try {
+      // Fetch full document details if content is not available
+      const fullDocument = document.content 
+        ? document 
+        : await getKnowledgeDocument(document.document_id);
+      
+      setViewingDocument(fullDocument);
+      setIsViewModalOpen(true);
+    } catch (err: any) {
+      console.error("[KnowledgeBaseView] Error fetching document details:", err);
+      setError(`Failed to load document details: ${err.message}`);
+    }
+  };
+
+  // Handle pagination
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
+
+  // Handle filters change
+  const handleFiltersChange = useCallback((newFilters: {
+    documentType?: DocumentType;
+    tags?: string[];
+    textSearch?: string;
+  }) => {
+    setFilters(newFilters);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, []);
+
+  // Handle search
+  const handleSearch = async (query: string, searchFilters?: {
+    documentType?: DocumentType;
+    category?: string;
+    similarityThreshold?: number;
+    limit?: number;
+  }) => {
     setIsSearching(true);
     setError(null);
 
     try {
-      const results = await searchKnowledgeBase(query, undefined, undefined, undefined, 20);
-      // Ensure results is an array
-      setSearchResults(Array.isArray(results) ? results : []);
-      setShowSearchResults(true);
+      const result = await searchKnowledgeBase(
+        query,
+        searchFilters?.limit || 10,
+        true,
+        searchFilters?.similarityThreshold || 0.7,
+        {
+          category: searchFilters?.category,
+          document_type: searchFilters?.documentType
+        }
+      );
+      
+      setSearchResults(result.results || []);
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Search error:", err);
       setError(`Search failed: ${err.message}`);
       setSearchResults([]);
-      setShowSearchResults(false);
     } finally {
       setIsSearching(false);
     }
   };
 
-  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    
-    // Debounced search
-    const timeoutId = setTimeout(() => {
-      if (query.trim()) {
-        handleSearch(query);
-      } else {
-        setShowSearchResults(false);
-        setSearchResults([]);
-      }
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
+  // Handle opening document from search results
+  const handleOpenDocument = async (documentId: string) => {
+    try {
+      const document = await getKnowledgeDocument(documentId);
+      setViewingDocument(document);
+      setIsViewModalOpen(true);
+    } catch (err: any) {
+      console.error("[KnowledgeBaseView] Error opening document:", err);
+      setError(`Failed to open document: ${err.message}`);
+    }
   };
 
-  const clearSearch = () => {
-    setSearchQuery("");
-    setShowSearchResults(false);
-    setSearchResults([]);
+  // Handle duplicate checking for upload
+  const handleCheckDuplicates = async (title: string, documentType: DocumentType): Promise<KnowledgeDocument[]> => {
+    try {
+      // First, get all documents of the same type
+      const response = await getKnowledgeDocuments(documentType, undefined, 200, 0);
+      
+      // Filter for exact title matches (case-insensitive)
+      const duplicates = response.documents.filter(doc => 
+        doc.title.toLowerCase().trim() === title.toLowerCase().trim() &&
+        doc.document_type === documentType
+      );
+      
+      return duplicates;
+    } catch (err: any) {
+      console.warn("[KnowledgeBaseView] Error checking duplicates:", err);
+      return []; // Return empty array on error to avoid blocking upload
+    }
   };
 
   // Show server error if present
@@ -264,105 +303,143 @@ export default function KnowledgeBaseView({ serverError, onRetry, className = ''
   }
 
   return (
-    <div className={`flex flex-col h-full space-y-4 overflow-y-auto overflow-x-hidden p-4 ${className}`}>
+    <div className={`flex flex-col h-full overflow-hidden ${className}`}>
       {/* Header */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 p-4">
         <h2 className="text-lg font-semibold text-gray-800 mb-2">Knowledge Base</h2>
         <p className="text-sm text-gray-600">
           Upload documents to build your offline knowledge base for AI-powered troubleshooting.
         </p>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search knowledge base..."
-            value={searchQuery}
-            onChange={handleSearchInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          {searchQuery && (
-            <button
-              onClick={clearSearch}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          )}
+      {/* Tab Navigation */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('upload')}
+            className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'upload'
+                ? 'border-blue-500 text-blue-600 bg-blue-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Upload
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'documents'
+                ? 'border-blue-500 text-blue-600 bg-blue-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Documents ({totalCount})
+          </button>
+          <button
+            onClick={() => setActiveTab('search')}
+            className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'search'
+                ? 'border-blue-500 text-blue-600 bg-blue-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Search
+          </button>
         </div>
-        {isSearching && (
-          <div className="mt-2 text-sm text-gray-600 flex items-center gap-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-            Searching...
-          </div>
-        )}
       </div>
 
-      {/* Upload Area */}
-      <UploadArea onUpload={handleUpload} />
-
-      {/* Document Table or Error State */}
-      <div className="flex-1 min-h-0">
-        {isLoading ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-            <div className="flex items-center justify-center space-x-2">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              <span className="text-sm text-gray-600">Loading documents...</span>
-            </div>
+      {/* Tab Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Upload Tab */}
+        {activeTab === 'upload' && (
+          <div className="space-y-4">
+            <UploadPanel 
+              onUpload={handleUpload} 
+              isUploading={isUploading}
+              onCheckDuplicates={handleCheckDuplicates}
+            />
+            {error && (
+              <ErrorState 
+                message={error} 
+                onRetry={() => setError(null)}
+                title="Upload Error"
+              />
+            )}
           </div>
-        ) : error ? (
-          <ErrorState 
-            message={error} 
-            onRetry={fetchDocuments}
-            title="Could not load documents"
-          />
-        ) : (
-          <>
-            {showSearchResults && searchResults.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-sm font-semibold text-gray-700">
-                    Search Results ({searchResults.length})
-                  </h3>
-                  <button
-                    onClick={clearSearch}
-                    className="text-xs text-gray-500 hover:text-gray-700"
-                  >
-                    Clear Search
-                  </button>
-                </div>
-                <DocumentTable 
-                  documents={searchResults} 
-                  onDelete={handleDelete}
-                  loading={false}
+        )}
+
+        {/* Documents Tab */}
+        {activeTab === 'documents' && (
+          <div>
+            {error && (
+              <div className="mb-4">
+                <ErrorState 
+                  message={error} 
+                  onRetry={fetchDocuments}
+                  title="Could not load documents"
                 />
               </div>
             )}
-            
-            {!showSearchResults && (
-              <DocumentTable 
-                documents={documents} 
-                onDelete={handleDelete}
-                loading={false}
+            <DocumentsListView
+              documents={documents}
+              totalCount={totalCount}
+              loading={isLoading}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+              onFiltersChange={handleFiltersChange}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onView={handleView}
+            />
+          </div>
+        )}
+
+        {/* Search Tab */}
+        {activeTab === 'search' && (
+          <div className="space-y-4">
+            <SearchPanel
+              onSearch={handleSearch}
+              searchResults={searchResults}
+              isSearching={isSearching}
+              onOpenDocument={handleOpenDocument}
+            />
+            {error && (
+              <ErrorState 
+                message={error} 
+                onRetry={() => setError(null)}
+                title="Search Error"
               />
             )}
-            
-            {showSearchResults && searchResults.length === 0 && !isSearching && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm text-center">
-                <p className="text-sm text-gray-600">No documents found matching "{searchQuery}"</p>
-                <button
-                  onClick={clearSearch}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
-                >
-                  View all documents
-                </button>
-              </div>
-            )}
-          </>
+          </div>
         )}
       </div>
+
+      {/* Modals */}
+      <EditMetadataModal
+        document={editingDocument}
+        isOpen={isEditModalOpen}
+        isLoading={isEditLoading}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingDocument(null);
+        }}
+        onSave={handleSaveEdit}
+      />
+
+      <DocumentDetailsModal
+        document={viewingDocument}
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setViewingDocument(null);
+        }}
+        onEdit={(doc) => {
+          setIsViewModalOpen(false);
+          setViewingDocument(null);
+          handleEdit(doc);
+        }}
+      />
     </div>
   );
 } 

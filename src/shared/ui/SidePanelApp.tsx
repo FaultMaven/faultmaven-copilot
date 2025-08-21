@@ -10,6 +10,8 @@ import KnowledgeBaseView from "./KnowledgeBaseView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import ConversationsList from "./components/ConversationsList";
 import { ChatWindow } from "./components/ChatWindow";
+import { KnowledgeDocument, getKnowledgeDocument } from "../../lib/api";
+import DocumentDetailsModal from "./components/DocumentDetailsModal";
 
 // TypeScript interfaces for better type safety
 interface StorageResult {
@@ -27,6 +29,10 @@ export default function SidePanelApp() {
   const [hasUnsavedNewChat, setHasUnsavedNewChat] = useState(false);
   const [availableSessions, setAvailableSessions] = useState<string[]>([]);
   const [refreshSessions, setRefreshSessions] = useState(0);
+  
+  // Document viewing state
+  const [viewingDocument, setViewingDocument] = useState<KnowledgeDocument | null>(null);
+  const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
 
   useEffect(() => {
     let heartbeatInterval: NodeJS.Timeout | null = null;
@@ -169,6 +175,21 @@ export default function SidePanelApp() {
   const handleTitleGenerated = (sessionId: string, title: string) => {
     setConversationTitles(prev => ({ ...prev, [sessionId]: title }));
   };
+  
+  // Handle document viewing from sources
+  const handleDocumentView = async (documentId: string) => {
+    try {
+      const document = await getKnowledgeDocument(documentId);
+      setViewingDocument(document);
+      setIsDocumentModalOpen(true);
+      
+      // Switch to Knowledge Base tab to provide context
+      setActiveTab('kb');
+    } catch (error) {
+      console.error('[SidePanelApp] Failed to load document:', error);
+      // Show error toast or notification here if needed
+    }
+  };
 
   const toggleConversationsList = () => {
     setShowConversationsList(!showConversationsList);
@@ -237,7 +258,7 @@ export default function SidePanelApp() {
 
     return (
       <div className={`flex-shrink-0 bg-white border-r border-gray-200 transition-all duration-300 ${
-        sidebarCollapsed ? 'w-16' : 'w-auto min-w-80'
+        sidebarCollapsed ? 'w-16' : 'w-80 max-w-80'
       }`}>
         {sidebarCollapsed ? (
           // Collapsed sidebar - icons only
@@ -391,6 +412,7 @@ export default function SidePanelApp() {
               onTitleGenerated={handleTitleGenerated}
               onChatSaved={handleChatSaved}
               onSessionCreated={handleSessionCreated}
+              onDocumentView={handleDocumentView}
               isNewUnsavedChat={hasUnsavedNewChat}
               className="h-full"
             />
@@ -433,6 +455,7 @@ export default function SidePanelApp() {
           onTitleGenerated={handleTitleGenerated}
           onChatSaved={handleChatSaved}
           onSessionCreated={handleSessionCreated}
+          onDocumentView={handleDocumentView}
           isNewUnsavedChat={hasUnsavedNewChat}
           className="h-full"
         />
@@ -508,6 +531,22 @@ export default function SidePanelApp() {
       <div className="flex h-screen bg-gray-50 text-gray-800 text-sm font-sans">
         {renderMainContent()}
       </div>
+      
+      {/* Document Details Modal */}
+      <DocumentDetailsModal
+        document={viewingDocument}
+        isOpen={isDocumentModalOpen}
+        onClose={() => {
+          setIsDocumentModalOpen(false);
+          setViewingDocument(null);
+        }}
+        onEdit={(doc) => {
+          // TODO: Implement edit functionality if needed
+          console.log('Edit document:', doc);
+          setIsDocumentModalOpen(false);
+          setViewingDocument(null);
+        }}
+      />
     </ErrorBoundary>
   );
 }

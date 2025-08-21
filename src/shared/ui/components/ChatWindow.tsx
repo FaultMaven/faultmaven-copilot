@@ -11,25 +11,24 @@ import {
   UploadedData,
   getSessionData,
   generateConversationTitle,
-  createSession
+  createSession,
+  Source
 } from "../../../lib/api";
 import { formatResponseForDisplay, requiresUserAction } from "../../../lib/utils/response-handlers";
 import config from "../../../config";
 import LoadingSpinner from "./LoadingSpinner";
+import SourcesDisplay from "./SourcesDisplay";
 
 // TypeScript interfaces
 interface ConversationItem {
+  id: string; // Unique identifier for React keys
   question?: string;
   response?: string;
   error?: boolean;
   timestamp: string;
   responseType?: ResponseType;
   confidenceScore?: number;
-  sources?: Array<{
-    type: string;
-    content: string;
-    confidence?: number;
-  }>;
+  sources?: Source[];
   plan?: {
     step_number: number;
     action: string;
@@ -45,11 +44,12 @@ interface ChatWindowProps {
   onTitleGenerated?: (sessionId: string, title: string) => void;
   onChatSaved?: () => void;
   onSessionCreated?: (sessionId: string) => void; // Callback when session is created
+  onDocumentView?: (documentId: string) => void; // Callback for viewing documents from sources
   isNewUnsavedChat?: boolean;
   className?: string;
 }
 
-export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSessionCreated, isNewUnsavedChat = false, className = '' }: ChatWindowProps) {
+export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSessionCreated, onDocumentView, isNewUnsavedChat = false, className = '' }: ChatWindowProps) {
   const [conversation, setConversation] = useState<ConversationItem[]>([]);
   const [conversationCache, setConversationCache] = useState<Record<string, ConversationItem[]>>({});
   const [queryInput, setQueryInput] = useState("");
@@ -161,17 +161,36 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
       setTitleGenerated(prev => ({ ...prev, [sessionId]: true }));
       
       const { title } = await generateConversationTitle(sessionId);
-      if (onTitleGenerated) {
+      
+      // Additional validation - ensure we don't use problematic titles
+      if (title && title.length > 0 && title.length < 100 && onTitleGenerated) {
         onTitleGenerated(sessionId, title);
+      } else {
+        // Use fallback title if generated title is invalid
+        const fallbackTitle = `Chat ${new Date().toLocaleDateString()}`;
+        console.warn("[ChatWindow] Generated title invalid, using fallback:", title);
+        if (onTitleGenerated) {
+          onTitleGenerated(sessionId, fallbackTitle);
+        }
       }
     } catch (err) {
       console.warn("[ChatWindow] Failed to generate title:", err);
+      
+      // Use fallback title on error
+      const fallbackTitle = `Chat ${new Date().toLocaleDateString()}`;
+      if (onTitleGenerated) {
+        onTitleGenerated(sessionId, fallbackTitle);
+      }
+      
       // Reset flag on error so title generation can be retried
       setTitleGenerated(prev => ({ ...prev, [sessionId]: false }));
     }
   };
 
   const addTimestamp = (): string => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  // Generate unique ID for conversation items
+  const generateConversationId = (): string => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   const addToConversation = (question?: string, response?: string, error: boolean = false, responseData?: AgentResponse, targetSessionId?: string) => {
     let requiresAction = false;
@@ -187,6 +206,7 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
     }
     
     const newItem: ConversationItem = {
+      id: generateConversationId(),
       question,
       response,
       error,
@@ -437,8 +457,8 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
     <div className={`flex flex-col h-full space-y-1 overflow-y-auto ${className}`}>
       {/* Conversation History */}
       <div id="conversation-history" ref={conversationHistoryRef} className="flex-grow overflow-y-auto bg-white border border-gray-300 rounded-lg p-2 min-h-0">
-        {Array.isArray(conversation) && conversation.map((item, index) => (
-          <React.Fragment key={index}>
+        {Array.isArray(conversation) && conversation.map((item) => (
+          <React.Fragment key={item.id}>
             {item.question && (
               <div className="flex justify-end mb-1">
                 <div className="w-full mx-1 px-2 py-1 text-sm text-gray-900 bg-gray-100 rounded">
@@ -448,17 +468,28 @@ export function ChatWindow({ sessionId, onTitleGenerated, onChatSaved, onSession
               </div>
             )}
             {item.response && (
-              <div className="flex justify-end mb-1">
-                <div className={`w-full mx-1 px-2 py-1 text-sm ${item.error ? "text-red-700" : "text-gray-800"} border-t border-b border-gray-200 rounded`}> 
-                  <pre className="break-words mb-1 whitespace-pre-wrap font-sans text-sm text-gray-800 leading-relaxed">
-                    {item.response || ''}
-                  </pre>
-                  <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-                    <span>{item.timestamp}</span>
-                    {item.requiresAction && (
-                      <span className="text-orange-600 text-xs font-medium">⚠️ Action Required</span>
-                    )}
+              <div className="flex justify-end mb-2">
+                <div className={`w-full mx-1 ${item.error ? "text-red-700" : "text-gray-800"}`}> 
+                  {/* Response content */}
+                  <div className="px-2 py-1 text-sm border-t border-b border-gray-200 rounded">
+                    <pre className="break-words mb-1 whitespace-pre-wrap font-sans text-sm text-gray-800 leading-relaxed">
+                      {item.response || ''}
+                    </pre>
+                    <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
+                      <span>{item.timestamp}</span>
+                      {item.requiresAction && (
+                        <span className="text-orange-600 text-xs font-medium">⚠️ Action Required</span>
+                      )}
+                    </div>
                   </div>
+                  
+                  {/* Sources display */}
+                  {item.sources && item.sources.length > 0 && (
+                    <SourcesDisplay 
+                      sources={item.sources}
+                      onDocumentView={onDocumentView}
+                    />
+                  )}
                 </div>
               </div>
             )}

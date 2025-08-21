@@ -109,6 +109,24 @@ export interface AgentResponse {
   metadata?: Record<string, any>;
 }
 
+// New dedicated title generation interfaces
+export interface TitleGenerateRequest {
+  session_id: string;
+  context?: {
+    last_user_message?: string;
+    summary?: string;
+    messages?: string;
+    notes?: string;
+  };
+  max_words?: number; // 3-12, default 8
+}
+
+export interface TitleResponse {
+  schema_version: string;
+  title: string;
+  view_state?: ViewState;
+}
+
 // Enhanced troubleshooting response for backward compatibility
 export interface TroubleshootingResponse {
   response: string;
@@ -122,19 +140,38 @@ export interface TroubleshootingResponse {
   session_id: string;
 }
 
-// Enhanced knowledge base document structure
-export interface KbDocument {
+// Enhanced knowledge base document structure with canonical document types
+export type DocumentType = 'playbook' | 'troubleshooting_guide' | 'reference' | 'how_to';
+
+export interface KnowledgeDocument {
   document_id: string;
   title: string;
-  content: string;
-  document_type: string;
+  content?: string;           // only present for GET by id or search snippet
+  document_type: DocumentType;
   category?: string;
-  status: string;
   tags: string[];
   source_url?: string;
-  created_at: string;
-  updated_at: string;
+  description?: string;
+  status?: string;
+  created_at?: string;        // ISO UTC
+  updated_at?: string;        // ISO UTC
   metadata?: Record<string, any>;
+}
+
+export interface DocumentListResponse {
+  documents: KnowledgeDocument[];
+  total_count: number;
+  limit: number;
+  offset: number;
+  filters: { document_type?: string; tags?: string[] };
+}
+
+// Legacy interface for backward compatibility
+export interface KbDocument extends KnowledgeDocument {
+  content: string;  // Make content required for legacy compatibility
+  status: string;   // Make status required for legacy compatibility
+  created_at: string; // Make created_at required for legacy compatibility
+  updated_at: string; // Make updated_at required for legacy compatibility
 }
 
 // New error response structure
@@ -291,17 +328,17 @@ export async function getSessionData(sessionId: string, limit: number = 10, offs
 }
 
 /**
- * Enhanced knowledge base document upload
+ * Enhanced knowledge base document upload matching API spec
  */
 export async function uploadKnowledgeDocument(
   file: File,
   title: string,
-  documentType: string = 'troubleshooting_guide',
+  documentType: DocumentType, // Required, no default
   category?: string,
-  tags?: string[],
+  tags?: string,
   sourceUrl?: string,
   description?: string
-): Promise<KbDocument> {
+): Promise<KnowledgeDocument> {
   // Fix MIME type detection for common file extensions
   // This maps file extensions to the exact MIME types expected by the backend
   const getCorrectMimeType = (fileName: string, originalType: string): string => {
@@ -352,7 +389,7 @@ export async function uploadKnowledgeDocument(
   formData.append('document_type', documentType);
   
   if (category) formData.append('category', category);
-  if (tags) formData.append('tags', tags.join(','));
+  if (tags) formData.append('tags', tags);  // Already comma-separated string from UI
   if (sourceUrl) formData.append('source_url', sourceUrl);
   if (description) formData.append('description', description);
 
@@ -377,18 +414,18 @@ export async function uploadKnowledgeDocument(
 }
 
 /**
- * Enhanced knowledge base document retrieval
+ * Enhanced knowledge base document retrieval with proper response handling
  */
 export async function getKnowledgeDocuments(
   documentType?: string,
-  tags?: string[],
+  tags?: string,
   limit: number = 50,
   offset: number = 0
-): Promise<KbDocument[]> {
+): Promise<DocumentListResponse> {
   const url = new URL(`${config.apiUrl}/api/v1/knowledge/documents`);
   
   if (documentType) url.searchParams.append('document_type', documentType);
-  if (tags) url.searchParams.append('tags', tags.join(','));
+  if (tags) url.searchParams.append('tags', tags);
   url.searchParams.append('limit', limit.toString());
   url.searchParams.append('offset', offset.toString());
 
@@ -410,22 +447,89 @@ export async function getKnowledgeDocuments(
   const data = await response.json();
   console.log('[API] Received knowledge documents:', data);
   
-  // Handle different possible response formats
-  let documents: KbDocument[] = [];
-  
-  if (Array.isArray(data)) {
-    documents = data;
-  } else if (data && Array.isArray(data.documents)) {
-    documents = data.documents;
-  } else if (data && Array.isArray(data.items)) {
-    documents = data.items;
+  // Handle different possible response formats and return proper DocumentListResponse
+  if (data && typeof data === 'object' && data.documents && Array.isArray(data.documents)) {
+    // New API format with metadata
+    const response: DocumentListResponse = {
+      documents: data.documents,
+      total_count: data.total_count || data.documents.length,
+      limit: data.limit || limit,
+      offset: data.offset || offset,
+      filters: data.filters || {}
+    };
+    console.log(`[API] Returning ${response.documents.length} documents with metadata`);
+    return response;
+  } else if (Array.isArray(data)) {
+    // Legacy format - just array of documents
+    const response: DocumentListResponse = {
+      documents: data,
+      total_count: data.length,
+      limit: limit,
+      offset: offset,
+      filters: {}
+    };
+    console.log(`[API] Returning ${response.documents.length} documents (legacy format)`);
+    return response;
   } else {
     console.warn('[API] Unexpected response format for documents:', data);
-    return [];
+    return {
+      documents: [],
+      total_count: 0,
+      limit: limit,
+      offset: offset,
+      filters: {}
+    };
   }
-  
-  console.log(`[API] Returning ${documents.length} documents`);
-  return documents;
+}
+
+/**
+ * Get individual knowledge base document by ID
+ */
+export async function getKnowledgeDocument(documentId: string): Promise<KnowledgeDocument> {
+  const response = await fetch(`${config.apiUrl}/api/v1/knowledge/documents/${documentId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to get document: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update knowledge base document metadata
+ */
+export async function updateKnowledgeDocument(
+  documentId: string,
+  updates: {
+    title?: string;
+    content?: string;
+    tags?: string;
+    document_type?: DocumentType;
+    category?: string;
+    version?: string;
+    description?: string;
+  }
+): Promise<KnowledgeDocument> {
+  const response = await fetch(`${config.apiUrl}/api/v1/knowledge/documents/${documentId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to update document: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 /**
@@ -446,15 +550,30 @@ export async function deleteKnowledgeDocument(documentId: string): Promise<void>
 }
 
 /**
- * Search knowledge base documents
+ * Search knowledge base documents matching API spec
  */
 export async function searchKnowledgeBase(
   query: string,
-  documentType?: string,
-  category?: string,
-  tags?: string[],
-  limit: number = 10
-): Promise<KbDocument[]> {
+  limit: number = 10,
+  includeMetadata: boolean = true,
+  similarityThreshold: number = 0.7,
+  filters?: { category?: string; document_type?: DocumentType }
+): Promise<{
+  query: string;
+  total_results: number;
+  results: Array<{
+    document_id: string;
+    content: string;
+    metadata: {
+      title: string;
+      document_type: DocumentType;
+      category?: string;
+      tags: string[];
+      priority?: number;
+    };
+    similarity_score: number;
+  }>;
+}> {
   const response = await fetch(`${config.apiUrl}/api/v1/knowledge/search`, {
     method: 'POST',
     headers: {
@@ -462,10 +581,10 @@ export async function searchKnowledgeBase(
     },
     body: JSON.stringify({
       query,
-      document_type: documentType,
-      category,
-      tags: tags ? tags.join(',') : undefined,
       limit,
+      include_metadata: includeMetadata,
+      similarity_threshold: similarityThreshold,
+      filters: filters || {}
     }),
   });
 
@@ -474,10 +593,7 @@ export async function searchKnowledgeBase(
     throw new Error(errorData.detail || `Search failed: ${response.status}`);
   }
 
-  const result = await response.json();
-  const documents = result.documents || result;
-  // Ensure we always return an array
-  return Array.isArray(documents) ? documents : [];
+  return response.json();
 }
 
 /**
@@ -704,31 +820,88 @@ export async function listSessions(filters?: {
 }
 
 /**
- * Generate AI-powered conversation title
+ * Generate AI-powered conversation title using the new dedicated endpoint
  */
-export async function generateConversationTitle(sessionId: string): Promise<{ title: string }> {
-  const response = await fetch(`${config.apiUrl}/api/v1/agent/query`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+export async function generateConversationTitle(sessionId: string, lastUserMessage?: string): Promise<{ title: string }> {
+  try {
+    // Try the new dedicated endpoint first
+    const request: TitleGenerateRequest = {
       session_id: sessionId,
-      query: "Please generate a concise, descriptive title (3-6 words) for this troubleshooting conversation based on the key issue or topic discussed. Return only the title without quotes or extra text.",
-      priority: "low",
-      context: {
-        is_title_generation: true
-      }
-    }),
-  });
+      max_words: 8, // Backend default; server-side bounded to 3-12 range
+    };
+    
+    // Add context if available - don't send prompt-like text, just provide context
+    if (lastUserMessage) {
+      request.context = {
+        last_user_message: lastUserMessage
+      };
+    }
 
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to generate title: ${response.status}`);
+    const response = await fetch(`${config.apiUrl}/api/v1/agent/title`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-ID': sessionId, // Add session header for consistency
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      // If new endpoint fails, fall back to legacy approach
+      console.warn('[API] New title endpoint failed, falling back to legacy approach');
+      return generateConversationTitleLegacy(sessionId);
+    }
+
+    const result: TitleResponse = await response.json();
+    
+    // Backend guarantees: single-line title text, sanitized, capped to max_words
+    // Returns "Troubleshooting Session" safely when context empty or LLM fails
+    return { title: result.title || `Chat ${new Date().toLocaleDateString()}` };
+    
+  } catch (error) {
+    console.warn('[API] Title generation with new endpoint failed:', error);
+    // Fall back to legacy approach
+    return generateConversationTitleLegacy(sessionId);
   }
+}
 
-  const result: AgentResponse = await response.json();
-  return { title: result.content.trim() };
+/**
+ * Legacy title generation using the old query endpoint (backward compatibility)
+ */
+async function generateConversationTitleLegacy(sessionId: string): Promise<{ title: string }> {
+  try {
+    const response = await fetch(`${config.apiUrl}/api/v1/agent/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-ID': sessionId,
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        query: "Please generate a concise title",
+        context: {
+          is_title_generation: true
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Legacy title generation failed: ${response.status}`);
+    }
+
+    const result: AgentResponse = await response.json();
+    
+    // For backward compatibility: read title from content, ignore response_type
+    // Backend shim handles title generation properly
+    const title = result.content?.trim() || `Chat ${new Date().toLocaleDateString()}`;
+    
+    return { title };
+    
+  } catch (error) {
+    console.error('[API] Legacy title generation failed:', error);
+    // Final fallback
+    return { title: `Chat ${new Date().toLocaleDateString()}` };
+  }
 }
 
 /**
