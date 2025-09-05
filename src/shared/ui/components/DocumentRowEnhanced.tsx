@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { KnowledgeDocument } from "../../../lib/api";
+import { normalizeTags } from "../../../lib/utils/safe-tags";
 
 interface DocumentRowEnhancedProps {
   document: KnowledgeDocument;
@@ -129,29 +130,46 @@ export default function DocumentRowEnhanced({
       {/* Tags */}
       <td className="px-2 py-3 whitespace-nowrap" style={{ width: '120px', minWidth: '120px' }}>
         <div className="flex flex-wrap gap-1">
-          {document.tags && document.tags.length > 0 ? (
-            <>
-              {document.tags.slice(0, 2).map((tag, index) => (
-                <span
-                  key={index}
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
-                  title={tag}
-                >
-                  {tag.length > 10 ? `${tag.substring(0, 10)}...` : tag}
-                </span>
-              ))}
-              {document.tags.length > 2 && (
-                <span 
-                  className="text-xs text-gray-500"
-                  title={`Additional tags: ${document.tags.slice(2).join(', ')}`}
-                >
-                  +{document.tags.length - 2}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-xs text-gray-400">-</span>
-          )}
+          {(() => {
+            const tags = normalizeTags(document.tags);
+            const isStringTags = typeof document.tags === 'string' && document.tags.trim();
+            
+            return tags.length > 0 ? (
+              <>
+                {tags.slice(0, 2).map((tag, index) => (
+                  <span
+                    key={index}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                      isStringTags 
+                        ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}
+                    title={isStringTags ? `${tag} (API inconsistency: tags returned as string)` : tag}
+                  >
+                    {tag.length > 10 ? `${tag.substring(0, 10)}...` : tag}
+                  </span>
+                ))}
+                {tags.length > 2 && (
+                  <span 
+                    className="text-xs text-gray-500"
+                    title={`Additional tags: ${tags.slice(2).join(', ')}`}
+                  >
+                    +{tags.length - 2}
+                  </span>
+                )}
+                {isStringTags && (
+                  <span 
+                    className="text-xs text-yellow-600 ml-1"
+                    title="Backend API inconsistency: tags returned as string instead of array"
+                  >
+                    ⚠️
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-xs text-gray-400">-</span>
+            );
+          })()}
         </div>
       </td>
 

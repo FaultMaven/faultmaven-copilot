@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { DocumentType } from "../../../lib/api";
+import { normalizeTags } from "../../../lib/utils/safe-tags";
 
 interface SearchResult {
   document_id: string;
@@ -245,23 +246,26 @@ export default function SearchPanel({
                   {truncateContent(result.content)}
                 </p>
 
-                {result.metadata.tags && result.metadata.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {result.metadata.tags.slice(0, 3).map((tag, index) => (
-                      <span
-                        key={index}
-                        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {result.metadata.tags.length > 3 && (
-                      <span className="text-xs text-gray-500">
-                        +{result.metadata.tags.length - 3} more
-                      </span>
-                    )}
-                  </div>
-                )}
+                {(() => {
+                  const tags = normalizeTags(result.metadata.tags);
+                  return tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {tags.slice(0, 3).map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {tags.length > 3 && (
+                        <span className="text-xs text-gray-500">
+                          +{tags.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
               </div>
             ))}
           </div>

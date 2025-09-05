@@ -78,7 +78,14 @@ export default function EditMetadataModal({
     
     if (!document || isLoading) return;
 
-    const tagsString = tags.join(',');
+    // Add any pending tag input to the tags array before submitting
+    const finalTags = [...tags];
+    const trimmedTagInput = tagInput.trim();
+    if (trimmedTagInput && !finalTags.includes(trimmedTagInput)) {
+      finalTags.push(trimmedTagInput);
+    }
+    
+    const tagsString = finalTags.join(',');
 
     const updates = {
       title: title.trim() !== document.title ? title.trim() : undefined,
@@ -97,6 +104,8 @@ export default function EditMetadataModal({
     if (Object.keys(cleanUpdates).length > 0) {
       try {
         await onSave(document.document_id, cleanUpdates);
+        // Clear pending tag input after successful save
+        setTagInput("");
         onClose();
       } catch (error) {
         console.error("Failed to update document:", error);
@@ -215,9 +224,12 @@ export default function EditMetadataModal({
                       value={tagInput}
                       onChange={(e) => setTagInput(e.target.value)}
                       onKeyDown={handleTagAdd}
-                      className="flex-1 min-w-0 border-none outline-none text-sm"
-                      placeholder={tags.length === 0 ? "Add tags (press Enter or comma)" : ""}
+                      className={`flex-1 min-w-0 border-none outline-none text-sm ${
+                        tagInput.trim() ? 'bg-yellow-50 text-yellow-800' : ''
+                      }`}
+                      placeholder={tags.length === 0 ? "Add tags (press Enter or comma)" : "Add more tags..."}
                       disabled={isLoading}
+                      title={tagInput.trim() ? `Press Enter to add "${tagInput.trim()}"` : "Type a tag and press Enter"}
                     />
                   </div>
                 </div>

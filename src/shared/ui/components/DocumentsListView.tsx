@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { KnowledgeDocument, DocumentType } from "../../../lib/api";
+import { normalizeTags } from "../../../lib/utils/safe-tags";
 import DocumentRowEnhanced from "./DocumentRowEnhanced";
 
 interface DocumentsListViewProps {
@@ -47,9 +48,7 @@ export default function DocumentsListView({
   useEffect(() => {
     const tagSet = new Set<string>();
     documents.forEach(doc => {
-      if (doc.tags && Array.isArray(doc.tags)) {
-        doc.tags.forEach(tag => tagSet.add(tag));
-      }
+      normalizeTags(doc.tags).forEach(tag => tagSet.add(tag));
     });
     setAvailableTags(Array.from(tagSet).sort());
   }, [documents]);

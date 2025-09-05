@@ -1,5 +1,6 @@
 import React from "react";
 import { KnowledgeDocument } from "../../../lib/api";
+import { normalizeTags } from "../../../lib/utils/safe-tags";
 
 interface DocumentDetailsModalProps {
   document: KnowledgeDocument | null;
@@ -100,21 +101,24 @@ export default function DocumentDetailsModal({
               )}
 
               {/* Tags */}
-              {document.tags && document.tags.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">Tags</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {document.tags.map((tag, index) => (
-                      <span
-                        key={index}
-                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+              {(() => {
+                const tags = normalizeTags(document.tags);
+                return tags.length > 0 ? (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Tags</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null;
+              })()}
 
               {/* Source URL */}
               {document.source_url && (

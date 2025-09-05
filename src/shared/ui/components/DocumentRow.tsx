@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { KbDocument } from "../../../lib/api";
+import { normalizeTags } from "../../../lib/utils/safe-tags";
 
 interface DocumentRowProps {
   document: KbDocument;
@@ -147,23 +148,28 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
       {/* Tags */}
       <td className="px-2 py-3 whitespace-nowrap" style={{ width: '120px', minWidth: '120px' }}>
         <div className="flex flex-wrap gap-1">
-          {document.tags && document.tags.length > 0 ? (
-            document.tags.slice(0, 1).map((tag, index) => (
-              <span
-                key={index}
-                className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
-              >
-                {tag}
-              </span>
-            ))
-          ) : (
-            <span className="text-xs text-gray-400">-</span>
-          )}
-          {document.tags && document.tags.length > 1 && (
-            <span className="text-xs text-gray-500">
-              +{document.tags.length - 1}
-            </span>
-          )}
+          {(() => {
+            const tags = normalizeTags(document.tags);
+            return tags.length > 0 ? (
+              <>
+                {tags.slice(0, 1).map((tag, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+                  >
+                    {tag}
+                  </span>
+                ))}
+                {tags.length > 1 && (
+                  <span className="text-xs text-gray-500">
+                    +{tags.length - 1}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-xs text-gray-400">-</span>
+            );
+          })()}
         </div>
       </td>
 

@@ -39,6 +39,10 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
     duplicates: any[];
     action: 'upload' | 'edit' | 'cancel' | null;
   }>({ show: false, duplicates: [], action: null });
+  const [validationErrors, setValidationErrors] = useState<{
+    title?: string;
+    file?: string;
+  }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-infer title from file content or filename
@@ -63,13 +67,18 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
   const handleFileSelect = useCallback(async (selectedFile: File) => {
     setFile(selectedFile);
     
+    // Clear file validation errors when file is selected
+    if (validationErrors.file) {
+      setValidationErrors(prev => ({ ...prev, file: undefined }));
+    }
+    
     // Auto-infer title
     const inferredTitle = await inferTitleFromFile(selectedFile);
     setTitle(inferredTitle);
     
     // Announce file selection
     setAriaMessage(`File selected: ${selectedFile.name}. Title auto-filled as: ${inferredTitle}`);
-  }, []);
+  }, [validationErrors.file]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -147,6 +156,11 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
   const handleTitleChange = (value: string) => {
     setTitle(value);
     
+    // Clear validation errors when user starts typing
+    if (validationErrors.title) {
+      setValidationErrors(prev => ({ ...prev, title: undefined }));
+    }
+    
     // Clear any existing duplicate warning if title is empty
     if (!value.trim()) {
       setDuplicateWarning({ show: false, duplicates: [], action: null });
@@ -177,10 +191,28 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
 
   const isFormValid = file && title.trim() && documentType;
 
+  // Validate form and set error messages
+  const validateForm = () => {
+    const errors: { title?: string; file?: string } = {};
+    
+    if (!file) {
+      errors.file = "Please select a file to upload";
+    }
+    
+    if (!title.trim()) {
+      errors.title = "Please enter a title for the document";
+    } else if (title.trim().length < 3) {
+      errors.title = "Title must be at least 3 characters long";
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isFormValid || isUploading) return;
+    if (!validateForm() || isUploading) return;
 
     // If there are duplicates and no action has been chosen, show warning
     if (duplicateWarning.show && !duplicateWarning.action) {
@@ -192,7 +224,14 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
       return;
     }
 
-    const tagsString = tags.join(',');
+    // Add any pending tag input to the tags array before submitting
+    const finalTags = [...tags];
+    const trimmedTagInput = tagInput.trim();
+    if (trimmedTagInput && !finalTags.includes(trimmedTagInput)) {
+      finalTags.push(trimmedTagInput);
+    }
+    
+    const tagsString = finalTags.join(',');
 
     try {
       await onUpload({
@@ -257,7 +296,9 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
           </label>
           <div
             className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-              isDragOver
+              validationErrors.file
+                ? 'border-red-300 bg-red-50'
+                : isDragOver
                 ? 'border-blue-400 bg-blue-50'
                 : 'border-gray-300 hover:border-gray-400'
             }`}
@@ -310,6 +351,11 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
             className="hidden"
             disabled={isUploading}
           />
+          {validationErrors.file && (
+            <p className="mt-1 text-sm text-red-600" role="alert">
+              {validationErrors.file}
+            </p>
+          )}
         </div>
 
         {/* Title */}
@@ -322,10 +368,19 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
             type="text"
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+              validationErrors.title ? 'border-red-300 bg-red-50' : 'border-gray-300'
+            }`}
             placeholder="Document title"
             disabled={isUploading}
+            aria-invalid={!!validationErrors.title}
+            aria-describedby={validationErrors.title ? 'title-error' : undefined}
           />
+          {validationErrors.title && (
+            <p id="title-error" className="mt-1 text-sm text-red-600" role="alert">
+              {validationErrors.title}
+            </p>
+          )}
         </div>
 
         {/* Document Type */}
@@ -377,9 +432,12 @@ export default function UploadPanel({ onUpload, isUploading = false, onCheckDupl
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={handleTagAdd}
-                className="flex-1 min-w-0 border-none outline-none text-sm"
-                placeholder={tags.length === 0 ? "Add tags (press Enter or comma)" : ""}
+                className={`flex-1 min-w-0 border-none outline-none text-sm ${
+                  tagInput.trim() ? 'bg-yellow-50 text-yellow-800' : ''
+                }`}
+                placeholder={tags.length === 0 ? "Add tags (press Enter or comma)" : "Add more tags..."}
                 disabled={isUploading}
+                title={tagInput.trim() ? `Press Enter to add "${tagInput.trim()}"` : "Type a tag and press Enter"}
               />
             </div>
           </div>
