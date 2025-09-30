@@ -1,26 +1,21 @@
 // src/shared/ui/SidePanelApp.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { browser } from "wxt/browser";
+import { debounce } from "../../lib/utils/debounce";
 import {
-  heartbeatSession,
   getKnowledgeDocument,
   devLogin,
   logoutAuth,
-  AuthTokenResponse,
   UserCase,
   UploadedData,
   createCase,
-  CreateCaseRequest,
   createSession,
   submitQueryToCase,
   uploadDataToCase,
-  deleteSession,
   getUserCases,
   getCaseConversation,
   updateCaseTitle,
   QueryRequest,
-  AgentResponse,
-  Source,
   authManager,
   AuthenticationError
 } from "../../lib/api";
@@ -34,19 +29,13 @@ import {
   OptimisticUserCase,
   OptimisticConversationItem,
   PendingOperation,
-  ConversationItem,
-  TitleSource,
-  IdMapping,
   IdMappingState,
   ConflictDetectionResult,
-  ConflictResolutionStrategy,
   MergeResult,
   MergeContext
 } from "../../lib/optimistic";
 import {
   validateStateIntegrity,
-  sanitizeBackendCases,
-  sanitizeOptimisticCases,
   isOptimisticId,
   isRealId,
   debugDataSeparation
@@ -59,6 +48,7 @@ import { ChatWindow } from "./components/ChatWindow";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
+import { memoryManager } from "../../lib/utils/memory-manager";
 
 // Make PersistenceManager available globally for debugging
 if (typeof window !== 'undefined') {
@@ -86,6 +76,7 @@ export default function SidePanelApp() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [hasUnsavedNewChat, setHasUnsavedNewChat] = useState(false);
   const [refreshSessions, setRefreshSessions] = useState(0);
+  const [pinnedCases, setPinnedCases] = useState<Set<string>>(new Set());
   // Removed pendingCases - no longer using pending mechanism
 
   // SINGLE SOURCE OF TRUTH: Conversation and case state (with optimistic updates)
@@ -278,7 +269,8 @@ export default function SidePanelApp() {
           'conversations',
           'pendingOperations',
           'optimisticCases',
-          'idMappings'
+          'idMappings',
+          'pinnedCases'
         ]);
         console.log('[SidePanelApp] 📄 Retrieved from storage:', {
           titleCount: stored.conversationTitles ? Object.keys(stored.conversationTitles).length : 0,
@@ -318,6 +310,12 @@ export default function SidePanelApp() {
         if (stored.optimisticCases) {
           console.log('[SidePanelApp] 🔧 Loading optimistic cases:', stored.optimisticCases.length);
           setOptimisticCases(stored.optimisticCases);
+        }
+
+        // Load pinned cases
+        if (stored.pinnedCases && Array.isArray(stored.pinnedCases)) {
+          console.log('[SidePanelApp] 📌 Loading pinned cases:', stored.pinnedCases.length);
+          setPinnedCases(new Set(stored.pinnedCases));
         }
 
         // Load ID mappings
@@ -438,6 +436,17 @@ export default function SidePanelApp() {
     }
   }, [optimisticCases]);
 
+  // Persistence: Save pinned cases when they change
+  useEffect(() => {
+    const pinnedArray = Array.from(pinnedCases);
+    console.log('[SidePanelApp] 📌 Saving pinned cases to storage:', pinnedArray.length);
+    browser.storage.local.set({ pinnedCases: pinnedArray }).then(() => {
+      console.log('[SidePanelApp] ✅ Pinned cases saved successfully');
+    }).catch((error) => {
+      console.error('[SidePanelApp] ❌ Failed to save pinned cases:', error);
+    });
+  }, [pinnedCases]);
+
   // Persistence: Save ID mappings when they change
   useEffect(() => {
     const mappings = idMappingManager.getState();
@@ -550,6 +559,54 @@ export default function SidePanelApp() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // PERFORMANCE OPTIMIZATION: Periodic memory cleanup
+  // Runs every 5 minutes to clean up old conversations and prevent memory leaks
+  useEffect(() => {
+    const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+    const cleanupInterval = setInterval(() => {
+      console.log('[SidePanelApp] 🧹 Running periodic memory cleanup...');
+
+      // Get cases with failed operations (never delete these)
+      const failedOps = pendingOpsManager.getByStatus('failed');
+      const casesWithFailedOps = new Set(
+        failedOps.map(op => op.optimisticData?.caseId || op.optimisticData?.case_id).filter(Boolean)
+      );
+
+      // Clean up conversations
+      setConversations(prev => {
+        // Get memory stats before cleanup
+        const statsBefore = memoryManager.getMemoryStats(prev);
+        console.log('[SidePanelApp] Memory stats before cleanup:', statsBefore);
+
+        // Clean up old conversations
+        const cleanedConversations = memoryManager.cleanupConversations(
+          prev,
+          activeCaseId,
+          casesWithFailedOps
+        );
+
+        // Clean up messages in remaining conversations
+        const finalCleaned: Record<string, OptimisticConversationItem[]> = {};
+        Object.keys(cleanedConversations).forEach(caseId => {
+          finalCleaned[caseId] = memoryManager.cleanupConversation(cleanedConversations[caseId]);
+        });
+
+        // Get stats after cleanup
+        const statsAfter = memoryManager.getMemoryStats(finalCleaned);
+        console.log('[SidePanelApp] Memory stats after cleanup:', statsAfter);
+        console.log('[SidePanelApp] ✅ Memory cleanup complete:', {
+          conversationsRemoved: statsBefore.totalConversations - statsAfter.totalConversations,
+          messagesRemoved: statsBefore.totalMessages - statsAfter.totalMessages
+        });
+
+        return finalCleaned;
+      });
+    }, CLEANUP_INTERVAL);
+
+    return () => clearInterval(cleanupInterval);
+  }, [activeCaseId]); // Re-create interval when active case changes
+
   const handleLogin = async () => {
     setAuthError(null);
     if (!loginUsername || loginUsername.trim().length < 3) {
@@ -615,6 +672,7 @@ export default function SidePanelApp() {
   const handleCaseSelect = async (caseId: string) => {
     setActiveCaseId(caseId);
     setHasUnsavedNewChat(false);
+    setActiveTab('copilot'); // Switch to copilot view when selecting a conversation
 
     try {
       // ARCHITECTURAL FIX: Resolve optimistic IDs to real IDs for API calls
@@ -944,8 +1002,9 @@ export default function SidePanelApp() {
 
     pendingOpsManager.add(pendingOperation);
 
-    // Background sync (non-blocking)
-    syncTitleToBackgroundInBackground(caseId, newTitle, operationId);
+    // Background sync (non-blocking) with debouncing for performance
+    // This prevents excessive API calls during rapid title edits
+    debouncedTitleSync(caseId, newTitle, operationId);
   };
 
   // Background title sync function
@@ -967,6 +1026,16 @@ export default function SidePanelApp() {
       // and users expect their title changes to persist
     }
   };
+
+  // PERFORMANCE OPTIMIZATION: Debounced title sync for rapid edits
+  // Creates a debounced version that waits 1 second after the last edit
+  // This prevents excessive API calls when user is typing rapidly
+  const debouncedTitleSync = useRef(
+    debounce(syncTitleToBackgroundInBackground, {
+      wait: 1000, // Wait 1 second after last change
+      maxWait: 3000 // Force sync after 3 seconds max
+    })
+  ).current;
   
   // OPTIMISTIC CASE DELETION: Clean up all state immediately
   const handleAfterDelete = (deletedCaseId: string, remaining: Array<{ case_id: string; updated_at?: string; created_at?: string }>) => {
@@ -997,6 +1066,13 @@ export default function SidePanelApp() {
     // Clean up optimistic cases
     setOptimisticCases(prev => prev.filter(c => c.case_id !== deletedCaseId));
 
+    // Clean up pinned state for deleted case
+    setPinnedCases(prev => {
+      const updated = new Set(prev);
+      updated.delete(deletedCaseId);
+      return updated;
+    });
+
     // Clean up any pending operations for this case
     const currentOperations = pendingOpsManager.getAll();
     Object.values(currentOperations).forEach((operation: PendingOperation) => {
@@ -1025,6 +1101,22 @@ export default function SidePanelApp() {
 
     setRefreshSessions(prev => prev + 1);
     console.log('[SidePanelApp] ✅ Case deletion cleanup completed');
+  };
+
+  // PIN/UNPIN: Toggle pin state for a case
+  const handlePinToggle = (caseId: string) => {
+    console.log('[SidePanelApp] 📌 Toggling pin for case:', caseId);
+    setPinnedCases(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(caseId)) {
+        newSet.delete(caseId);
+        console.log('[SidePanelApp] 📍 Unpinned case:', caseId);
+      } else {
+        newSet.add(caseId);
+        console.log('[SidePanelApp] 📌 Pinned case:', caseId);
+      }
+      return newSet;
+    });
   };
 
   // Removed handleCaseActivated and handleCaseCommitted - no longer using pending mechanism
@@ -1178,7 +1270,7 @@ export default function SidePanelApp() {
     const aiThinkingMessage: OptimisticConversationItem = {
       id: aiMessageId,
       question: '',
-      response: '🤔 Thinking...',
+      response: '',  // Empty - visual indicator shows "Thinking..." dynamically
       error: false,
       timestamp: messageTimestamp,
       optimistic: true,
@@ -1653,28 +1745,26 @@ export default function SidePanelApp() {
 
   // Render the collapsible sidebar
   const renderSidebar = () => {
-    if (activeTab !== 'copilot') return null;
-
     return (
       <div className={`flex-shrink-0 bg-white border-r border-gray-200 transition-all duration-300 ${
-        sidebarCollapsed ? 'w-16' : 'w-80 max-w-80'
+        sidebarCollapsed ? 'w-16' : 'w-72 max-w-72'
       }`}>
         {sidebarCollapsed ? (
           <div className="flex flex-col h-full">
             <div className="flex-shrink-0 p-4 border-b border-gray-200">
               <div className="flex items-center justify-center">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
+                <img
+                  src="/icon/design-light.svg"
+                  alt="FaultMaven Logo"
+                  className="h-8 w-auto"
+                />
               </div>
             </div>
             <div className="flex-1 p-3 space-y-3">
               <button
                 onClick={() => handleNewSession('')}
                 disabled={hasUnsavedNewChat}
-                className="w-full h-10 flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="w-full h-10 flex items-center justify-center bg-blue-300 text-white rounded-lg hover:bg-blue-400 transition-colors disabled:opacity-50"
                 title="New Chat"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1704,46 +1794,59 @@ export default function SidePanelApp() {
             <div className="flex-shrink-0 p-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
+                  <img
+                    src="/icon/design-light.svg"
+                    alt="FaultMaven Logo"
+                    className="h-8 w-auto"
+                  />
                   <h1 className="text-lg font-semibold text-gray-900">FaultMaven</h1>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleLogout}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="Logout"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={toggleSidebar}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="Collapse Sidebar"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                </div>
+                <button
+                  onClick={toggleSidebar}
+                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Collapse Sidebar"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
               </div>
 
             </div>
-            <div className="flex-shrink-0 p-4">
+            <div className="flex-shrink-0 px-4 py-2 space-y-2">
               <button
-                onClick={() => handleNewSession('')}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={hasUnsavedNewChat ? "Complete current new chat before starting another" : "Start new conversation"}
+                onClick={() => {
+                  setActiveTab('kb');
+                  setHasUnsavedNewChat(false);
+                }}
+                className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors ${
+                  activeTab === 'kb'
+                    ? 'bg-blue-300 text-white hover:bg-blue-400'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title="Knowledge Base"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                <span className="text-sm font-medium">Knowledge Base</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('copilot');
+                  handleNewSession('');
+                }}
+                className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors ${
+                  activeTab === 'copilot'
+                    ? 'bg-blue-300 text-white hover:bg-blue-400'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title="Start new conversation"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span className="text-sm font-medium">New chat</span>
+                <span className="text-sm font-medium">New Chat</span>
               </button>
             </div>
             <div className="flex-1 overflow-y-auto">
@@ -1799,8 +1902,22 @@ export default function SidePanelApp() {
                     console.log('[SidePanelApp] 🚀 User title change - using optimistic update:', { caseId, newTitle });
                     handleOptimisticTitleUpdate(caseId, newTitle);
                   }}
+                  pinnedCases={pinnedCases}
+                  onPinToggle={handlePinToggle}
                 />
               </ErrorBoundary>
+            </div>
+            <div className="flex-shrink-0 p-4 border-t border-gray-200">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 py-2.5 px-4 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Logout"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="text-sm font-medium">Logout</span>
+              </button>
             </div>
           </div>
         )}
@@ -1913,28 +2030,6 @@ export default function SidePanelApp() {
       <div className="flex w-full h-full">
         {renderSidebar()}
         <div className="flex-1 flex flex-col min-w-0 max-w-none">
-          <div className="flex bg-white border-b border-gray-200 flex-shrink-0">
-            <button
-              onClick={() => setActiveTab('copilot')}
-              className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'copilot'
-                  ? 'border-blue-500 text-blue-600 bg-blue-50'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              Copilot
-            </button>
-            <button
-              onClick={() => setActiveTab('kb')}
-              className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'kb'
-                  ? 'border-blue-500 text-blue-600 bg-blue-50'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              Knowledge Base
-            </button>
-          </div>
           <div className="flex-1 overflow-y-auto">
             <div className={`h-full ${activeTab === 'copilot' ? 'block' : 'hidden'}`}>
               {renderChatContent()}

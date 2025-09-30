@@ -31,6 +31,8 @@ interface ConversationsListProps {
   onCasesLoaded?: (cases: UserCase[]) => void;
   pendingCases?: UserCase[];
   onCaseTitleChange?: (caseId: string, newTitle: string) => void;
+  pinnedCases?: Set<string>;
+  onPinToggle?: (caseId: string) => void;
 }
 
 export function ConversationsList({
@@ -48,7 +50,9 @@ export function ConversationsList({
   onAfterDelete,
   onCasesLoaded,
   pendingCases = [],
-  onCaseTitleChange
+  onCaseTitleChange,
+  pinnedCases = new Set(),
+  onPinToggle
 }: ConversationsListProps) {
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
@@ -276,8 +280,21 @@ export function ConversationsList({
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const groups = { today: [] as UserCase[], sevenDays: [] as UserCase[], thirtyDays: [] as UserCase[], older: [] as UserCase[] };
+    const groups = {
+      pinned: [] as UserCase[],
+      today: [] as UserCase[],
+      sevenDays: [] as UserCase[],
+      thirtyDays: [] as UserCase[],
+      older: [] as UserCase[]
+    };
+
     items.filter(c => c && c.case_id).forEach(c => {
+      // Pinned cases go to their own group
+      if (pinnedCases.has(c.case_id)) {
+        groups.pinned.push(c);
+        return;
+      }
+
       const d = new Date(c.updated_at || c.created_at || 0);
       if (d >= today) groups.today.push(c);
       else if (d >= sevenDaysAgo) groups.sevenDays.push(c);
@@ -303,6 +320,10 @@ export function ConversationsList({
       .map(pc => pc.case_id)
   );
 
+  const handlePinToggle = (caseId: string) => {
+    onPinToggle?.(caseId);
+  };
+
   const renderCaseGroup = (title: string, items: UserCase[]) => {
     if (items.length === 0) return null;
     return (
@@ -316,10 +337,13 @@ export function ConversationsList({
               title={pendingIdSet.has(c.case_id) ? `${getCaseTitle(c)} (pending)` : getCaseTitle(c)}
               isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
               isUnsavedNew={false}
+              isPinned={pinnedCases.has(c.case_id)}
+              isPending={pendingIdSet.has(c.case_id)}
               onSelect={(id) => onCaseSelect && onCaseSelect(id)}
               onDelete={(id) => handleDeleteCase(id)}
               onRename={(id, t) => handleRenameCase(id, t)}
               onGenerateTitle={(id) => handleGenerateTitle(id, (c as any).session_id || activeSessionId)}
+              onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
             />
           ))}
         </div>
@@ -404,6 +428,7 @@ export function ConversationsList({
           </div>
         ) : (
           <div className="space-y-4 pb-4">
+            {renderCaseGroup('Pinned', caseGroups.pinned)}
             {renderCaseGroup('Today', caseGroups.today)}
             {renderCaseGroup('7 Days', caseGroups.sevenDays)}
             {renderCaseGroup('30 Days', caseGroups.thirtyDays)}

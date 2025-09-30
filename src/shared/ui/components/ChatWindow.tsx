@@ -1,8 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, memo, useCallback } from "react";
 import { browser } from "wxt/browser";
 import DOMPurify from 'dompurify';
 import { UploadedData, Source } from "../../../lib/api";
-import LoadingSpinner from "./LoadingSpinner";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
 
 // TypeScript interfaces
@@ -23,6 +22,11 @@ interface ConversationItem {
   };
   nextActionHint?: string;
   requiresAction?: boolean;
+  // Optimistic update metadata
+  optimistic?: boolean;
+  loading?: boolean;
+  failed?: boolean;
+  pendingOperationId?: string;
 }
 
 interface UserCase {
@@ -53,7 +57,9 @@ interface ChatWindowProps {
   onDocumentView?: (documentId: string) => void;
 }
 
-export function ChatWindow({
+// PERFORMANCE OPTIMIZATION: Memoized component to prevent unnecessary re-renders
+// Only re-renders when conversation, activeCase, loading, or other props actually change
+const ChatWindowComponent = function ChatWindow({
   conversation,
   activeCase,
   loading,
@@ -175,16 +181,30 @@ export function ChatWindow({
           <React.Fragment key={item.id}>
             {item.question && (
               <div className="flex justify-end mb-1">
-                <div className="w-full mx-1 px-2 py-1 text-sm text-gray-900 bg-gray-100 rounded">
+                <div className={`w-full mx-1 px-2 py-1 text-sm text-gray-900 rounded relative ${
+                  item.optimistic ? 'bg-blue-50 border border-blue-200' : 'bg-gray-100'
+                }`}>
                   <p className="break-words m-0">{item.question}</p>
-                  <div className="text-[10px] text-gray-400 mt-1">{item.timestamp}</div>
+                  <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-2">
+                    <span>{item.timestamp}</span>
+                    {item.failed && (
+                      <span className="text-red-600 flex items-center gap-1" title="Failed to process">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        Failed
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
-            {item.response && (
+            {(item.response || (item.optimistic && item.loading)) && (
               <div className="flex justify-end mb-2">
                 <div className={`w-full mx-1 ${item.error ? "text-red-700" : "text-gray-800"}`}>
-                  <div className="px-2 py-1 text-sm border-t border-b border-gray-200 rounded">
+                  <div className={`px-2 py-1 text-sm border-t border-b rounded ${
+                    item.optimistic ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'
+                  }`}>
                     <InlineSourcesRenderer
                       content={item.response || ''}
                       sources={item.sources}
@@ -192,7 +212,25 @@ export function ChatWindow({
                       className="break-words"
                     />
                     <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-                      <span>{item.timestamp}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{item.timestamp}</span>
+                        {item.optimistic && item.loading && !item.failed && (
+                          <span className="text-blue-600 flex items-center gap-1" title="Processing...">
+                            <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Thinking...
+                          </span>
+                        )}
+                        {item.failed && (
+                          <span className="text-red-600 flex items-center gap-1" title="Failed to process">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                            Failed
+                          </span>
+                        )}
+                      </div>
                       {item.requiresAction && (
                         <span className="text-orange-600 text-xs font-medium">⚠️ Action Required</span>
                       )}
@@ -221,13 +259,6 @@ export function ChatWindow({
       {!canInteract && (
         <div className="flex-shrink-0 text-center p-1 text-xs text-gray-600 my-1">
           <span className="text-gray-600">Start a new chat to begin.</span>
-        </div>
-      )}
-
-      {loading && (
-        <div className="flex-shrink-0 text-center p-1 text-xs text-gray-600 my-1">
-          <LoadingSpinner size="sm" />
-          <span className="ml-2">Thinking...</span>
         </div>
       )}
 
@@ -371,4 +402,22 @@ export function ChatWindow({
       )}
     </div>
   );
-}
+};
+
+// Export memoized component with custom comparison
+// Re-renders only when these props change significantly
+export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
+  // Custom comparison to avoid unnecessary re-renders
+  return (
+    prevProps.conversation === nextProps.conversation &&
+    prevProps.activeCase?.case_id === nextProps.activeCase?.case_id &&
+    prevProps.loading === nextProps.loading &&
+    prevProps.submitting === nextProps.submitting &&
+    prevProps.sessionId === nextProps.sessionId &&
+    prevProps.sessionData === nextProps.sessionData &&
+    prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat
+  );
+});
+
+// Default export for backward compatibility
+export default ChatWindow;
