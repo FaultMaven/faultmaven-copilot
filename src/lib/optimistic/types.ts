@@ -39,6 +39,8 @@ export interface ConversationItem {
   optimistic?: boolean;
   failed?: boolean;
   originalId?: string;
+  errorMessage?: string; // User-friendly error message
+  onRetry?: (itemId: string) => void | Promise<void>; // Retry callback
 }
 
 /**

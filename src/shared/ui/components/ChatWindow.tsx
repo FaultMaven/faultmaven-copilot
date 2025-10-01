@@ -201,10 +201,34 @@ const ChatWindowComponent = function ChatWindow({
             )}
             {(item.response || (item.optimistic && item.loading)) && (
               <div className="flex justify-end mb-2">
-                <div className={`w-full mx-1 ${item.error ? "text-red-700" : "text-gray-800"}`}>
+                <div className={`w-full mx-1 ${item.error || item.failed ? "text-red-700" : "text-gray-800"}`}>
                   <div className={`px-2 py-1 text-sm border-t border-b rounded ${
+                    item.failed ? 'border-red-200 bg-red-50/30' :
                     item.optimistic ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'
                   }`}>
+                    {/* Error banner for failed messages */}
+                    {item.failed && item.errorMessage && (
+                      <div className="mb-2 p-2 bg-red-100 border border-red-300 rounded text-xs">
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                          <div className="flex-1">
+                            <p className="text-red-800 font-medium">Message could not be sent</p>
+                            <p className="text-red-700 mt-0.5">{item.errorMessage}</p>
+                          </div>
+                        </div>
+                        {item.onRetry && (
+                          <button
+                            onClick={() => item.onRetry?.(item.id)}
+                            className="mt-2 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors font-medium"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     <InlineSourcesRenderer
                       content={item.response || ''}
                       sources={item.sources}
@@ -223,7 +247,7 @@ const ChatWindowComponent = function ChatWindow({
                           </span>
                         )}
                         {item.failed && (
-                          <span className="text-red-600 flex items-center gap-1" title="Failed to process">
+                          <span className="text-red-600 flex items-center gap-1" title={item.errorMessage || "Failed to process"}>
                             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                             </svg>
