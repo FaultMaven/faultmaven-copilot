@@ -379,10 +379,19 @@ export async function uploadData(sessionId: string, data: File | string, dataTyp
     formData.append('file', file);
   }
 
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/data/upload`, {
+  // Get auth headers but exclude Content-Type for FormData
+  const authHeaders = await getAuthHeaders();
+  const { 'Content-Type': _, ...headersWithoutContentType } = authHeaders as any;
+
+  const response = await fetch(`${config.apiUrl}/api/v1/data/upload`, {
     method: 'POST',
+    headers: headersWithoutContentType,
     body: formData,
   });
+
+  if (response.status === 401) {
+    await handleAuthError();
+  }
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
@@ -813,7 +822,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
     let delay = POLL_INITIAL_MS;
     let elapsed = 0;
     for (let i = 0; elapsed <= POLL_MAX_TOTAL_MS; i++) {
-      const res = await fetch(jobUrl, { method: 'GET', credentials: 'include' });
+      const res = await authenticatedFetch(jobUrl, { method: 'GET', credentials: 'include' });
       const lcorr = res.headers.get('x-correlation-id') || res.headers.get('X-Correlation-ID');
       if (lcorr) console.log('[API] poll job', { i, correlationId: lcorr, status: res.status });
       if (res.status >= 500) {
@@ -823,7 +832,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
         const finalLoc = res.headers.get('Location');
         if (!finalLoc) throw new Error('Missing final resource Location');
         const finalUrl = new URL(finalLoc, config.apiUrl).toString();
-        const finalRes = await fetch(finalUrl, { method: 'GET', credentials: 'include' });
+        const finalRes = await authenticatedFetch(finalUrl, { method: 'GET', credentials: 'include' });
         const fcorr = finalRes.headers.get('x-correlation-id') || finalRes.headers.get('X-Correlation-ID');
         if (fcorr) console.log('[API] poll final', { correlationId: fcorr, status: finalRes.status });
         if (finalRes.status >= 500) {
@@ -884,7 +893,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
       let elapsed = 0;
       for (let i = 0; elapsed <= POLL_MAX_TOTAL_MS; i++) {
         console.log('[API] DEBUG: Polling attempt', i, 'to', createdUrl);
-        const createdRes = await fetch(createdUrl, { method: 'GET', credentials: 'include' });
+        const createdRes = await authenticatedFetch(createdUrl, { method: 'GET', credentials: 'include' });
         const ccorr = createdRes.headers.get('x-correlation-id') || createdRes.headers.get('X-Correlation-ID');
         if (ccorr) console.log('[API] poll created', { i, correlationId: ccorr, status: createdRes.status });
         if (createdRes.status >= 500) {
@@ -894,7 +903,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
           const finalLoc = createdRes.headers.get('Location');
           if (!finalLoc) throw new Error('Missing final resource Location');
           const finalUrl = new URL(finalLoc, config.apiUrl).toString();
-          const finalRes = await fetch(finalUrl, { method: 'GET', credentials: 'include' });
+          const finalRes = await authenticatedFetch(finalUrl, { method: 'GET', credentials: 'include' });
           const fcorr = finalRes.headers.get('x-correlation-id') || finalRes.headers.get('X-Correlation-ID');
           if (fcorr) console.log('[API] poll final', { correlationId: fcorr, status: finalRes.status });
           if (finalRes.status >= 500) {
@@ -1006,7 +1015,7 @@ export async function uploadDataToCase(
     const jobLocation = response.headers.get('Location');
     if (!jobLocation) throw new Error('Missing job Location header');
     for (let i = 0; i < 20; i++) {
-      const jobRes = await fetch(jobLocation, { method: 'GET' });
+      const jobRes = await authenticatedFetch(jobLocation, { method: 'GET', credentials: 'include' });
       const jobJson = await jobRes.json();
       if (jobJson.status === 'completed' && jobJson.result) return jobJson.result;
       if (jobJson.status === 'failed') throw new Error(jobJson.error?.message || 'Upload job failed');
