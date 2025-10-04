@@ -103,7 +103,6 @@ function SidePanelAppContent() {
   const [optimisticCases, setOptimisticCases] = useState<OptimisticUserCase[]>([]); // Track optimistic cases for ConversationsList
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false); // For input locking during message submission
-  const [sessionData, setSessionData] = useState<UploadedData[]>([]);
   
   // Document viewing state
   const [viewingDocument, setViewingDocument] = useState<any | null>(null);
@@ -1417,9 +1416,7 @@ function SidePanelAppContent() {
         session_id: currentSessionId,
         query: query.trim(),
         priority: 'low',
-        context: {
-          uploaded_data_ids: sessionData.map(d => d.data_id)
-        }
+        context: {}
       };
 
       const response = await submitQueryToCase(resolvedCaseId, queryRequest);
@@ -1714,23 +1711,84 @@ function SidePanelAppContent() {
     }
   };
 
-  const handleDataUpload = async (data: string | File, dataSource: "text" | "file" | "page") => {
+  // Helper function to format file size in human-readable format
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  };
+
+  const handleDataUpload = async (
+    data: string | File,
+    dataSource: "text" | "file" | "page"
+  ): Promise<{ success: boolean; message: string }> => {
     try {
       setLoading(true);
 
-      // If we have an active case and a file, upload to that case
-      if (activeCaseId && sessionId && data instanceof File) {
-        const uploadResponse = await uploadDataToCase(activeCaseId, sessionId, data);
-        // Update session data
-        setSessionData(prev => [...prev, uploadResponse]);
-      } else {
-        // For text/page data or no active case, store locally until we have a case
-        console.log('[SidePanelApp] Data will be attached to next query');
+      if (!activeCaseId || !sessionId) {
+        return {
+          success: false,
+          message: "Please create a case first"
+        };
       }
 
-      console.log('[SidePanelApp] Data upload prepared successfully');
+      // Convert text/page data to File if needed
+      let fileToUpload: File;
+      if (data instanceof File) {
+        fileToUpload = data;
+      } else {
+        // Convert string data to File
+        const blob = new Blob([data], { type: 'text/plain' });
+        const filename = dataSource === 'page' ? 'page-content.txt' : 'text-data.txt';
+        fileToUpload = new File([blob], filename, { type: 'text/plain' });
+      }
+
+      // Upload to backend
+      const uploadResponse = await uploadDataToCase(activeCaseId, sessionId, fileToUpload);
+
+      // Generate user upload message
+      const userMessage: OptimisticConversationItem = {
+        id: `upload-${Date.now()}`,
+        question: `📎 Uploaded: ${uploadResponse.file_name || fileToUpload.name} (${formatBytes(uploadResponse.file_size || 0)})`,
+        timestamp: new Date().toISOString(),
+        optimistic: false
+      };
+
+      // Generate AI response from backend (or fallback message)
+      const aiMessage: OptimisticConversationItem = {
+        id: `response-${Date.now()}`,
+        response: uploadResponse.agent_response?.content || "Data uploaded and processed successfully.",
+        timestamp: new Date().toISOString(),
+        responseType: uploadResponse.agent_response?.response_type,
+        confidenceScore: uploadResponse.agent_response?.confidence_score,
+        sources: uploadResponse.agent_response?.sources,
+        optimistic: false
+      };
+
+      // Update conversation with both messages
+      setConversations(prev => ({
+        ...prev,
+        [activeCaseId]: [...(prev[activeCaseId] || []), userMessage, aiMessage]
+      }));
+
+      console.log('[SidePanelApp] Data upload completed with conversation messages:', {
+        userMessage: userMessage.question,
+        aiResponse: aiMessage.response?.substring(0, 100)
+      });
+
+      return {
+        success: true,
+        message: ""  // No toast message needed - feedback is in conversation
+      };
     } catch (error) {
       console.error('[SidePanelApp] Data upload error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Upload failed';
+      return {
+        success: false,
+        message: `Upload failed: ${errorMsg}`
+      };
     } finally {
       setLoading(false);
     }
@@ -2066,7 +2124,6 @@ function SidePanelAppContent() {
               loading={loading}
               submitting={submitting}
               sessionId={sessionId}
-              sessionData={sessionData}
               isNewUnsavedChat={hasUnsavedNewChat}
               onQuerySubmit={handleQuerySubmit}
               onDataUpload={handleDataUpload}

@@ -197,6 +197,7 @@ export interface UploadedData {
   uploaded_at: string;
   processing_status: string;
   insights?: Record<string, any>;
+  agent_response?: AgentResponse;  // NEW: AI analysis from backend
 }
 
 export interface DataUploadResponse {

@@ -48,7 +48,6 @@ interface ChatWindowProps {
   loading: boolean;
   submitting: boolean; // For input locking during message submission
   sessionId: string | null;
-  sessionData: UploadedData[];
 
   // UI state
   isNewUnsavedChat?: boolean;
@@ -56,7 +55,7 @@ interface ChatWindowProps {
 
   // Action callbacks only (no state management)
   onQuerySubmit: (query: string) => void;
-  onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => void;
+  onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
   onDocumentView?: (documentId: string) => void;
 }
 
@@ -68,7 +67,6 @@ const ChatWindowComponent = function ChatWindow({
   loading,
   submitting,
   sessionId,
-  sessionData,
   isNewUnsavedChat = false,
   className = '',
   onQuerySubmit,
@@ -148,7 +146,7 @@ const ChatWindowComponent = function ChatWindow({
     setPageContent("");
   };
 
-  const handleDataSubmit = () => {
+  const handleDataSubmit = async () => {
     let dataToSend: string | File | null = null;
     if (dataSource === "text") dataToSend = textInput.trim();
     else if (dataSource === "file" && fileInputRef.current?.files?.[0]) dataToSend = fileInputRef.current.files[0];
@@ -159,15 +157,27 @@ const ChatWindowComponent = function ChatWindow({
       return;
     }
 
-    onDataUpload(dataToSend, dataSource);
+    // Show uploading status
+    setInjectionStatus({ message: "🔄 Uploading data...", type: "" });
 
-    // Clear inputs after successful submit
-    if (dataSource === "text") setTextInput("");
-    else if (dataSource === "file") {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setFileSelected(false);
+    // Call upload handler and wait for result
+    const result = await onDataUpload(dataToSend, dataSource);
+
+    // Show result to user
+    setInjectionStatus({
+      message: result.success ? `✅ ${result.message}` : `❌ ${result.message}`,
+      type: result.success ? "success" : "error"
+    });
+
+    // Clear inputs only on success
+    if (result.success) {
+      if (dataSource === "text") setTextInput("");
+      else if (dataSource === "file") {
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        setFileSelected(false);
+      }
+      else if (dataSource === "page") setPageContent("");
     }
-    else if (dataSource === "page") setPageContent("");
   };
 
   const isSubmitEnabled =
@@ -403,30 +413,6 @@ const ChatWindowComponent = function ChatWindow({
           </>
         )}
       </div>
-
-      {/* Session Data Summary */}
-      {sessionData.length > 0 && (
-        <div className="flex-shrink-0 bg-white rounded-lg border border-gray-200 p-2 shadow-sm">
-          <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">Session Data</h3>
-            <span className="text-xs text-gray-500">{sessionData.length} items</span>
-          </div>
-          <div className="space-y-1 max-h-20 overflow-y-auto">
-            {Array.isArray(sessionData) && sessionData.slice(0, 3).map((item, index) => (
-              <div key={index} className="text-xs text-gray-600 flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
-                <span className="truncate">{item.file_name || item.data_type}</span>
-                <span className="text-gray-400">({item.data_type})</span>
-              </div>
-            ))}
-            {Array.isArray(sessionData) && sessionData.length > 3 && (
-              <div className="text-xs text-gray-400 italic">
-                +{sessionData.length - 3} more items
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -441,7 +427,6 @@ export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
     prevProps.loading === nextProps.loading &&
     prevProps.submitting === nextProps.submitting &&
     prevProps.sessionId === nextProps.sessionId &&
-    prevProps.sessionData === nextProps.sessionData &&
     prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat
   );
 });
