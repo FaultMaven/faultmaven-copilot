@@ -397,10 +397,16 @@ export async function createFreshSession(metadata?: Record<string, any>): Promis
 /**
  * Enhanced data upload with new endpoint and response structure
  */
-export async function uploadData(sessionId: string, data: File | string, dataType: 'file' | 'text' | 'page'): Promise<UploadedData> {
+export async function uploadData(
+  sessionId: string,
+  caseId: string,
+  data: File | string,
+  dataType: 'file' | 'text' | 'page'
+): Promise<UploadedData> {
   const formData = new FormData();
   formData.append('session_id', sessionId);
-  
+  formData.append('case_id', caseId);
+
   if (data instanceof File) {
     formData.append('file', data);
   } else {
@@ -426,6 +432,12 @@ export async function uploadData(sessionId: string, data: File | string, dataTyp
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
+
+    // Handle 422 validation error for missing case_id
+    if (response.status === 422 && errorData.detail?.includes('case_id')) {
+      throw new Error('Please select or create a case before uploading data');
+    }
+
     throw new Error(errorData.detail || `Failed to upload data: ${response.status}`);
   }
 

@@ -124,22 +124,20 @@ describe('API Functions', () => {
         json: () => Promise.resolve(mockResponse)
       });
 
-      const result = await uploadData('session-123', mockFile, 'file');
+      const result = await uploadData('session-123', 'case-456', mockFile, 'file');
 
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/data/upload',
         expect.objectContaining({
           method: 'POST',
-          body: expect.any(FormData),
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json'
-          })
+          body: expect.any(FormData)
         })
       );
 
       // Verify FormData contents
       const formData = (fetch as any).mock.calls[0][1].body;
       expect(formData.get('session_id')).toBe('session-123');
+      expect(formData.get('case_id')).toBe('case-456');
       expect(formData.get('file')).toBe(mockFile);
 
       expect(result).toEqual(mockResponse);
@@ -161,10 +159,11 @@ describe('API Functions', () => {
         json: () => Promise.resolve(mockResponse)
       });
 
-      await uploadData('session-123', 'test log content', 'text');
+      await uploadData('session-123', 'case-456', 'test log content', 'text');
 
       const formData = (fetch as any).mock.calls[0][1].body;
       expect(formData.get('session_id')).toBe('session-123');
+      expect(formData.get('case_id')).toBe('case-456');
       expect(formData.get('file')).toBeDefined();
     });
 
@@ -183,10 +182,11 @@ describe('API Functions', () => {
         json: () => Promise.resolve(mockResponse)
       });
 
-      await uploadData('session-123', 'page content', 'page');
+      await uploadData('session-123', 'case-456', 'page content', 'page');
 
       const formData = (fetch as any).mock.calls[0][1].body;
       expect(formData.get('session_id')).toBe('session-123');
+      expect(formData.get('case_id')).toBe('case-456');
       expect(formData.get('file')).toBeDefined();
     });
   });

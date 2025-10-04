@@ -465,7 +465,7 @@ describe('Authentication API', () => {
 
       const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
       const { uploadData } = await import('../../lib/api');
-      await uploadData('session-123', mockFile, 'file');
+      await uploadData('session-123', 'case-456', mockFile, 'file');
 
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/data/upload',
