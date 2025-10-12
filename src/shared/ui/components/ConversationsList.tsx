@@ -93,14 +93,14 @@ export function ConversationsList({
       'ConversationsList'
     );
 
-    // Log merge statistics
-    console.log('[ConversationsList] STRICT MERGE result:', {
-      totalCases: mergeResult.cases.length,
-      realCases: mergeResult.realCount,
-      optimisticCases: mergeResult.optimisticCount,
-      violations: mergeResult.violations.length,
-      caseIds: mergeResult.cases.map(c => `${c.case_id} (${c.source})`)
-    });
+    // Log merge statistics (commented out to reduce console noise)
+    // console.log('[ConversationsList] STRICT MERGE result:', {
+    //   totalCases: mergeResult.cases.length,
+    //   realCases: mergeResult.realCount,
+    //   optimisticCases: mergeResult.optimisticCount,
+    //   violations: mergeResult.violations.length,
+    //   caseIds: mergeResult.cases.map(c => `${c.case_id} (${c.source})`)
+    // });
 
     // Report violations
     if (mergeResult.violations.length > 0) {
@@ -352,15 +352,15 @@ export function ConversationsList({
   validateStateIntegrity(currentState, 'ConversationsList');
 
   // DEBUG: Enhanced logging with data separation info
-  console.log('[ConversationsList] 🔍 COMPONENT STATE:', {
-    realCasesInState: cases.length,
-    optimisticCasesInProps: pendingCases?.length || 0,
-    mergedCasesTotal: mergedCases.length,
-    refreshTrigger,
-    loading
-  });
-
-  debugDataSeparation(mergedCases, 'MergedCases');
+  // Debug logging removed to prevent console spam - enable only when debugging
+  // console.log('[ConversationsList] 🔍 COMPONENT STATE:', {
+  //   realCasesInState: cases.length,
+  //   optimisticCasesInProps: pendingCases?.length || 0,
+  //   mergedCasesTotal: mergedCases.length,
+  //   refreshTrigger,
+  //   loading
+  // });
+  // debugDataSeparation(mergedCases, 'MergedCases');
 
   if (loading && mergedCases.length === 0) {
     return (

@@ -1,8 +1,28 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from "react";
 import { browser } from "wxt/browser";
 import DOMPurify from 'dompurify';
-import { UploadedData, Source } from "../../../lib/api";
+import {
+  UploadedData,
+  Source,
+  SuggestedAction,
+  EvidenceRequest,
+  InvestigationMode,
+  CaseStatus,
+  InvestigationProgress,
+  CommandSuggestion,
+  CommandValidation,
+  ScopeAssessment
+} from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
+import { InvestigationProgressIndicator } from "./InvestigationProgressIndicator";
+import { HypothesisTracker } from "./HypothesisTracker";
+import { EvidenceProgressBar } from "./EvidenceProgressBar";
+import { AnomalyAlert } from "./AnomalyAlert";
+import { SuggestedCommands } from "./SuggestedCommands";
+import { ClarifyingQuestions } from "./ClarifyingQuestions";
+import { CommandValidationDisplay } from "./CommandValidationDisplay";
+import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
+import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
 
 // TypeScript interfaces
 interface ConversationItem {
@@ -12,15 +32,33 @@ interface ConversationItem {
   error?: boolean;
   timestamp: string;
   responseType?: string;
-  confidenceScore?: number;
+  confidenceScore?: number | null;
   sources?: Source[];
+
+  // v3.1.0 Evidence-centric fields
+  evidenceRequests?: EvidenceRequest[];
+  investigationMode?: InvestigationMode;
+  caseStatus?: CaseStatus;
+
+  // v3.0.0 fields (RE-ENABLED in v3.2.0)
+  suggestedActions?: SuggestedAction[] | null;
+
+  // v3.2.0 OODA Response Format fields
+  clarifyingQuestions?: string[];
+  suggestedCommands?: CommandSuggestion[];
+  commandValidation?: CommandValidation | null;
+  problemDetected?: boolean;
+  problemSummary?: string | null;
+  severity?: 'low' | 'medium' | 'high' | 'critical' | null;
+  scopeAssessment?: ScopeAssessment | null;
+
   plan?: {
     step_number: number;
     action: string;
     description: string;
     estimated_time?: string;
-  };
-  nextActionHint?: string;
+  } | null;
+  nextActionHint?: string | null;
   requiresAction?: boolean;
   // Optimistic update metadata
   optimistic?: boolean;
@@ -53,6 +91,9 @@ interface ChatWindowProps {
   isNewUnsavedChat?: boolean;
   className?: string;
 
+  // OODA Framework v3.2.0
+  investigationProgress?: InvestigationProgress | null;
+
   // Action callbacks only (no state management)
   onQuerySubmit: (query: string) => void;
   onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
@@ -69,6 +110,7 @@ const ChatWindowComponent = function ChatWindow({
   sessionId,
   isNewUnsavedChat = false,
   className = '',
+  investigationProgress,
   onQuerySubmit,
   onDataUpload,
   onDocumentView
@@ -188,6 +230,24 @@ const ChatWindowComponent = function ChatWindow({
 
   return (
     <div className={`flex flex-col h-full space-y-1 overflow-y-auto ${className}`}>
+      {/* OODA Investigation Progress (v3.2.0) */}
+      {investigationProgress && (
+        <div className="ooda-investigation-panel px-2 py-1">
+          <InvestigationProgressIndicator progress={investigationProgress} />
+
+          <HypothesisTracker hypotheses={investigationProgress.hypotheses} />
+
+          <EvidenceProgressBar
+            collected={investigationProgress.evidence_collected}
+            requested={investigationProgress.evidence_requested}
+          />
+
+          {investigationProgress.anomaly_frame && (
+            <AnomalyAlert anomaly={investigationProgress.anomaly_frame} />
+          )}
+        </div>
+      )}
+
       {/* Conversation History */}
       <div id="conversation-history" ref={conversationHistoryRef} className="flex-grow overflow-y-auto bg-white border border-gray-300 rounded-lg p-2 min-h-0">
         {Array.isArray(conversation) && conversation.map((item) => (
@@ -245,9 +305,48 @@ const ChatWindowComponent = function ChatWindow({
                     <InlineSourcesRenderer
                       content={item.response || ''}
                       sources={item.sources}
+                      evidenceRequests={item.evidenceRequests}
                       onDocumentView={onDocumentView}
                       className="break-words"
                     />
+
+                    {/* OODA v3.2.0 Response Format Components */}
+                    {item.problemDetected && item.problemSummary && item.severity && (
+                      <ProblemDetectedAlert
+                        problemSummary={item.problemSummary}
+                        severity={item.severity}
+                      />
+                    )}
+
+                    {item.scopeAssessment && (
+                      <ScopeAssessmentDisplay assessment={item.scopeAssessment} />
+                    )}
+
+                    {item.clarifyingQuestions && item.clarifyingQuestions.length > 0 && (
+                      <ClarifyingQuestions
+                        questions={item.clarifyingQuestions}
+                        onQuestionClick={(question) => {
+                          if (canInteract && !loading && !submitting) {
+                            onQuerySubmit(question);
+                          }
+                        }}
+                      />
+                    )}
+
+                    {item.suggestedCommands && item.suggestedCommands.length > 0 && (
+                      <SuggestedCommands
+                        commands={item.suggestedCommands}
+                        onCommandClick={(command) => {
+                          navigator.clipboard.writeText(command);
+                          setInjectionStatus({ message: "✅ Command copied to clipboard!", type: "success" });
+                        }}
+                      />
+                    )}
+
+                    {item.commandValidation && (
+                      <CommandValidationDisplay validation={item.commandValidation} />
+                    )}
+
                     <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span>{item.timestamp}</span>

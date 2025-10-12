@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { 
-  getResponseTypeInfo, 
-  formatConfidenceScore, 
-  formatSource, 
+import {
+  getResponseTypeInfo,
+  formatConfidenceScore,
+  formatSource,
   formatPlanStep,
   requiresUserAction,
   getNextActionHint,
@@ -10,7 +10,27 @@ import {
   extractActionableItems,
   RESPONSE_TYPE_INFO
 } from '../../lib/utils/response-handlers';
-import { ResponseType, AgentResponse, Source, PlanStep } from '../../lib/api';
+import {
+  ResponseType,
+  AgentResponse,
+  Source,
+  PlanStep,
+  InvestigationMode,
+  CaseStatus
+} from '../../lib/api';
+
+// Test helper: Create minimal AgentResponse with required v3.1.0 fields
+function createTestResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
+  return {
+    response_type: ResponseType.ANSWER,
+    content: 'Test response',
+    session_id: 'test-session-123',
+    evidence_requests: [],
+    investigation_mode: InvestigationMode.ACTIVE_INCIDENT,
+    case_status: CaseStatus.IN_PROGRESS,
+    ...overrides
+  };
+}
 
 describe('Response Handlers', () => {
   describe('RESPONSE_TYPE_INFO', () => {
@@ -141,22 +161,20 @@ describe('Response Handlers', () => {
 
   describe('requiresUserAction', () => {
     it('returns false for ANSWER response type', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.ANSWER,
-        content: 'This is an answer',
-        session_id: 'session-123'
-      };
-      
+        content: 'This is an answer'
+      });
+
       expect(requiresUserAction(response)).toBe(false);
     });
 
     it('returns true for CLARIFICATION_REQUEST response type', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.CLARIFICATION_REQUEST,
-        content: 'I need more information',
-        session_id: 'session-123'
-      };
-      
+        content: 'I need more information'
+      });
+
       expect(requiresUserAction(response)).toBe(true);
     });
 
@@ -175,57 +193,52 @@ describe('Response Handlers', () => {
     });
 
     it('returns false for response with unknown response_type', () => {
-      const response = {
+      const response = createTestResponse({
         response_type: 'UNKNOWN_TYPE' as ResponseType,
-        content: 'This is a response',
-        session_id: 'session-123'
-      };
-      
+        content: 'This is a response'
+      });
+
       expect(requiresUserAction(response)).toBe(false);
     });
   });
 
   describe('getNextActionHint', () => {
     it('returns custom hint when provided', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.CLARIFICATION_REQUEST,
         content: 'Need more details',
-        session_id: 'session-123',
         next_action_hint: 'Please provide error logs'
-      };
-      
+      });
+
       expect(getNextActionHint(response)).toBe('Please provide error logs');
     });
 
     it('returns default hint for CLARIFICATION_REQUEST', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.CLARIFICATION_REQUEST,
-        content: 'Need more details',
-        session_id: 'session-123'
-      };
-      
+        content: 'Need more details'
+      });
+
       expect(getNextActionHint(response)).toBe('Please provide more details about your issue');
     });
   });
 
   describe('formatResponseForDisplay', () => {
     it('formats ANSWER response correctly', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.ANSWER,
         content: 'Your service is failing because...',
-        session_id: 'session-123',
         confidence_score: 0.9
-      };
-      
+      });
+
       const result = formatResponseForDisplay(response);
       expect(result).toBe('Your service is failing because...');
     });
 
     it('formats PLAN_PROPOSAL response correctly', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.PLAN_PROPOSAL,
         content: 'Here is a plan to fix the issue',
-        session_id: 'session-123',
         plan: {
           step_number: 1,
           action: 'Check logs',
@@ -233,8 +246,8 @@ describe('Response Handlers', () => {
           estimated_time: '5 minutes'
         },
         confidence_score: 0.9
-      };
-      
+      });
+
       const result = formatResponseForDisplay(response);
       expect(result).toBe('Here is a plan to fix the issue');
     });
@@ -263,12 +276,11 @@ describe('Response Handlers', () => {
 
   describe('extractActionableItems', () => {
     it('extracts upload action for NEEDS_MORE_DATA', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.NEEDS_MORE_DATA,
-        content: 'Need more data',
-        session_id: 'session-123'
-      };
-      
+        content: 'Need more data'
+      });
+
       const items = extractActionableItems(response);
       expect(items).toHaveLength(1);
       expect(items[0].type).toBe('upload');
@@ -276,12 +288,11 @@ describe('Response Handlers', () => {
     });
 
     it('extracts confirm action for CONFIRMATION_REQUEST', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.CONFIRMATION_REQUEST,
-        content: 'Please confirm',
-        session_id: 'session-123'
-      };
-      
+        content: 'Please confirm'
+      });
+
       const items = extractActionableItems(response);
       expect(items).toHaveLength(1);
       expect(items[0].type).toBe('confirm');
@@ -289,12 +300,11 @@ describe('Response Handlers', () => {
     });
 
     it('extracts implement action for SOLUTION_READY', () => {
-      const response: AgentResponse = {
+      const response = createTestResponse({
         response_type: ResponseType.SOLUTION_READY,
-        content: 'Solution ready',
-        session_id: 'session-123'
-      };
-      
+        content: 'Solution ready'
+      });
+
       const items = extractActionableItems(response);
       expect(items).toHaveLength(1);
       expect(items[0].type).toBe('implement');

@@ -200,7 +200,8 @@ export interface UploadedData {
   agent_response?: AgentResponse;  // NEW: AI analysis from backend
 }
 
-export interface DataUploadResponse {
+// Legacy DataUploadResponse (deprecated - use v3.1.0 version below)
+export interface LegacyDataUploadResponse {
   data_id: string;
   filename?: string;
   insights?: string;
@@ -220,6 +221,93 @@ export interface QueryRequest {
     text_data?: string;
     [key: string]: any;
   };
+}
+
+// ===== Evidence-Centric API v3.1.0 Enums =====
+
+/**
+ * Categories of diagnostic evidence
+ */
+export enum EvidenceCategory {
+  SYMPTOMS = 'symptoms',
+  TIMELINE = 'timeline',
+  CHANGES = 'changes',
+  CONFIGURATION = 'configuration',
+  SCOPE = 'scope',
+  METRICS = 'metrics',
+  ENVIRONMENT = 'environment'
+}
+
+/**
+ * Status of evidence request fulfillment
+ */
+export enum EvidenceStatus {
+  PENDING = 'pending',
+  PARTIAL = 'partial',
+  COMPLETE = 'complete',
+  BLOCKED = 'blocked',
+  OBSOLETE = 'obsolete'
+}
+
+/**
+ * Investigation approach - speed vs depth
+ */
+export enum InvestigationMode {
+  ACTIVE_INCIDENT = 'active_incident',
+  POST_MORTEM = 'post_mortem'
+}
+
+/**
+ * Current case investigation state
+ */
+export enum CaseStatus {
+  INTAKE = 'intake',
+  IN_PROGRESS = 'in_progress',
+  RESOLVED = 'resolved',
+  MITIGATED = 'mitigated',
+  STALLED = 'stalled',
+  ABANDONED = 'abandoned',
+  CLOSED = 'closed'
+}
+
+/**
+ * How well evidence answers specific request(s)
+ * over_complete means satisfies >1 request
+ */
+export enum CompletenessLevel {
+  PARTIAL = 'partial',
+  COMPLETE = 'complete',
+  OVER_COMPLETE = 'over_complete'
+}
+
+/**
+ * How evidence was submitted
+ */
+export enum EvidenceForm {
+  USER_INPUT = 'user_input',
+  DOCUMENT = 'document'
+}
+
+/**
+ * How evidence relates to current hypotheses
+ */
+export enum EvidenceType {
+  SUPPORTIVE = 'supportive',
+  REFUTING = 'refuting',
+  NEUTRAL = 'neutral',
+  ABSENCE = 'absence'
+}
+
+/**
+ * User's intent when submitting input
+ */
+export enum UserIntent {
+  PROVIDING_EVIDENCE = 'providing_evidence',
+  ASKING_QUESTION = 'asking_question',
+  REPORTING_UNAVAILABLE = 'reporting_unavailable',
+  REPORTING_STATUS = 'reporting_status',
+  CLARIFYING = 'clarifying',
+  OFF_TOPIC = 'off_topic'
 }
 
 // New response types based on v3.1.0 API
@@ -249,7 +337,134 @@ export interface PlanStep {
   required_tools?: string[];
 }
 
+/**
+ * Investigation phase information (OODA Framework v3.2.0)
+ */
+export interface InvestigationPhase {
+  /** Phase name (e.g., "INTAKE", "HYPOTHESIS", "VALIDATION") */
+  current: string;
+  /** Phase number (0-6) */
+  number: number;
+}
+
+/**
+ * Hypothesis tracking (OODA Framework v3.2.0)
+ */
+export interface HypothesesSummary {
+  /** Total number of active hypotheses */
+  total: number;
+  /** Validated hypothesis statement (null if none validated) */
+  validated: string | null;
+  /** Confidence score for validated hypothesis (0.0-1.0) */
+  validated_confidence: number | null;
+}
+
+/**
+ * Anomaly frame information (OODA Framework v3.2.0)
+ */
+export interface AnomalyFrame {
+  /** Anomaly statement */
+  statement: string;
+  /** Severity level */
+  severity: string;
+  /** List of affected components */
+  affected_components: string[];
+}
+
+/**
+ * OODA Framework investigation progress (v3.2.0)
+ */
+export interface InvestigationProgress {
+  /** Current investigation phase */
+  phase: InvestigationPhase;
+  /** Engagement mode: "consultant" or "lead_investigator" */
+  engagement_mode: "consultant" | "lead_investigator";
+  /** Current OODA iteration within phase */
+  ooda_iteration: number;
+  /** Total conversation turns */
+  turn_count: number;
+  /** Case status */
+  case_status: CaseStatus;
+  /** Hypothesis tracking */
+  hypotheses: HypothesesSummary;
+  /** Number of evidence items collected */
+  evidence_collected: number;
+  /** Number of pending evidence requests */
+  evidence_requested: number;
+  /** Anomaly frame (optional) */
+  anomaly_frame?: AnomalyFrame;
+}
+
+/**
+ * User information from backend
+ */
+export interface User {
+  user_id: string;
+  username: string;
+  email: string;
+  display_name: string;
+  is_dev_user: boolean;
+  is_active: boolean;
+}
+
+/**
+ * Case information from backend
+ */
+export interface Case {
+  case_id: string;
+  title: string;
+  status: CaseStatus;
+  created_at: string;
+  updated_at: string;
+  description?: string;
+  priority?: string;
+  resolved_at?: string;
+  message_count?: number;
+}
+
+/**
+ * Message information from backend
+ */
+export interface Message {
+  message_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  metadata?: Record<string, any>;
+}
+
+/**
+ * COMPLETE ViewState matching backend schema (v3.2.0)
+ */
 export interface ViewState {
+  /** Session identifier */
+  session_id: string;
+  /** User context */
+  user: User;
+  /** Currently active case */
+  active_case?: Case | null;
+  /** All user's cases */
+  cases: Case[];
+  /** Messages for active case */
+  messages: Message[];
+  /** Uploaded data for active case */
+  uploaded_data: UploadedData[];
+  /** UI hint: show case selector */
+  show_case_selector: boolean;
+  /** UI hint: show data upload option */
+  show_data_upload: boolean;
+  /** Optional loading message */
+  loading_state?: string | null;
+  /** Agent memory context */
+  memory_context?: Record<string, any> | null;
+  /** Agent planning state */
+  planning_state?: Record<string, any> | null;
+
+  // ===== OODA FRAMEWORK (v3.2.0) =====
+  /** Investigation progress tracking */
+  investigation_progress?: InvestigationProgress | null;
+
+  // ===== Legacy UI hints (backward compatibility) =====
   show_upload_button?: boolean;
   show_plan_actions?: boolean;
   show_confirmation_dialog?: boolean;
@@ -261,19 +476,292 @@ export interface ViewState {
   }>;
 }
 
-// New enhanced AgentResponse based on v3.1.0 API
-export interface AgentResponse {
-  response_type: ResponseType;
+// ===== Evidence-Centric API v3.1.0 Interfaces =====
+
+/**
+ * Instructions for obtaining diagnostic evidence
+ */
+export interface AcquisitionGuidance {
+  /** Shell commands to run (max 3) */
+  commands: string[];
+  /** File paths to check (max 3) */
+  file_locations: string[];
+  /** UI navigation paths (max 3) */
+  ui_locations: string[];
+  /** Alternative methods to obtain evidence (max 3) */
+  alternatives: string[];
+  /** Requirements to obtain evidence (max 2) */
+  prerequisites: string[];
+  /** What the user should expect to see (max 200 chars) */
+  expected_output?: string | null;
+}
+
+/**
+ * Structured request for diagnostic evidence with acquisition guidance
+ */
+export interface EvidenceRequest {
+  /** Unique identifier for this evidence request */
+  request_id: string;
+  /** Brief title for the request (max 100 chars) */
+  label: string;
+  /** What evidence is needed and why (max 500 chars) */
+  description: string;
+  /** Category of evidence */
+  category: EvidenceCategory;
+  /** How to obtain the evidence */
+  guidance: AcquisitionGuidance;
+  /** Current status of request */
+  status: EvidenceStatus;
+  /** Turn number when request was created */
+  created_at_turn: number;
+  /** Turn number when last updated */
+  updated_at_turn?: number | null;
+  /** Fulfillment completeness score (0.0 to 1.0) */
+  completeness: number;
+  /** Additional context */
+  metadata: Record<string, any>;
+}
+
+/**
+ * Metadata for uploaded files (documents, log excerpts)
+ */
+export interface FileMetadata {
+  /** Original filename */
+  filename: string;
+  /** MIME type (e.g., text/plain, application/json) */
+  content_type: string;
+  /** File size in bytes */
+  size_bytes: number;
+  /** When file was uploaded (ISO 8601) */
+  upload_timestamp: string;
+  /** Storage reference ID */
+  file_id: string;
+}
+
+/**
+ * Detection of refuting evidence
+ */
+export interface ConflictDetection {
+  /** Which hypothesis is contradicted */
+  contradicted_hypothesis: string;
+  /** Why this is a conflict */
+  reason: string;
+  /** User must confirm refutation */
+  confirmation_required: true;
+}
+
+/**
+ * Immediate feedback after file upload
+ */
+export interface ImmediateAnalysis {
+  /** Evidence request IDs this data satisfies */
+  matched_requests: string[];
+  /** Map of request_id to completeness score (0.0 to 1.0) */
+  completeness_scores: Record<string, number>;
+  /** Top findings from the uploaded data (max 5) */
+  key_findings: string[];
+  /** How evidence relates to hypotheses */
+  evidence_type: EvidenceType;
+  /** What the agent will do next */
+  next_steps: string;
+}
+
+/**
+ * Response from data upload with immediate analysis
+ */
+export interface DataUploadResponse {
+  /** Unique identifier for uploaded data */
+  data_id: string;
+  /** Original filename */
+  filename: string;
+  /** File metadata */
+  file_metadata: FileMetadata;
+  /** Immediate analysis results */
+  immediate_analysis: ImmediateAnalysis;
+  /** Present only if refuting evidence detected */
+  conflict_detected?: ConflictDetection | null;
+}
+
+/**
+ * Record of evidence user provided
+ */
+export interface EvidenceProvided {
+  /** Unique evidence ID */
+  evidence_id: string;
+  /** Turn number when submitted */
+  turn_number: number;
+  /** When submitted (ISO 8601) */
+  timestamp: string;
+  /** How evidence was submitted */
+  form: EvidenceForm;
+  /** Text or file reference/path */
   content: string;
-  session_id: string;
-  case_id?: string;
-  confidence_score?: number;
-  sources?: Source[];
-  plan?: PlanStep;
-  estimated_time_to_resolution?: string;
-  next_action_hint?: string;
-  view_state?: ViewState;
+  /** Populated when form == document */
+  file_metadata?: FileMetadata | null;
+  /** Evidence request IDs this satisfies */
+  addresses_requests: string[];
+  /** How well it answers requests */
+  completeness: CompletenessLevel;
+  /** How it relates to hypotheses */
+  evidence_type: EvidenceType;
+  /** User's intent */
+  user_intent: UserIntent;
+  /** Key findings extracted */
+  key_findings: string[];
+  /** Confidence impact (-1.0 to 1.0) */
+  confidence_impact?: number | null;
+}
+
+// ===== OODA v3.2.0: Enhanced Action Interfaces =====
+
+/**
+ * Suggested action for user guidance (RE-ENABLED in v3.2.0)
+ */
+export interface SuggestedAction {
+  label: string;
+  type: 'question_template' | 'command' | 'upload_data' | 'transition' | 'create_runbook';
+  payload: string;
+  icon?: string | null;
   metadata?: Record<string, any>;
+}
+
+/**
+ * Diagnostic command suggestion with safety classification (v3.2.0)
+ */
+export interface CommandSuggestion {
+  command: string;
+  description: string;
+  why: string;
+  safety: 'safe' | 'read_only' | 'caution';
+  expected_output?: string | null;
+}
+
+/**
+ * Command validation response (v3.2.0)
+ */
+export interface CommandValidation {
+  command: string;
+  is_safe: boolean;
+  safety_level: 'safe' | 'read_only' | 'caution' | 'dangerous';
+  explanation: string;
+  concerns: string[];
+  safer_alternative?: string | null;
+  conditions_for_safety: string[];
+  should_diagnose_first: boolean;
+}
+
+/**
+ * Root cause hypothesis with testing strategy (v3.2.0)
+ */
+export interface Hypothesis {
+  statement: string;
+  likelihood: number; // 0.0 to 1.0
+  supporting_evidence: string[];
+  category: 'configuration' | 'code' | 'infrastructure' | 'dependency' | 'data';
+  testing_strategy: string;
+  status: 'pending' | 'testing' | 'validated' | 'refuted';
+}
+
+/**
+ * Hypothesis validation test result (v3.2.0)
+ */
+export interface TestResult {
+  test_description: string;
+  outcome: 'supports' | 'refutes' | 'inconclusive';
+  confidence_impact: number; // -1.0 to 1.0
+  evidence_summary: string;
+}
+
+/**
+ * Blast radius assessment (Phase 1) (v3.2.0)
+ */
+export interface ScopeAssessment {
+  affected_scope: 'all_users' | 'user_subset' | 'specific_users' | 'unknown';
+  affected_components: string[];
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  impact_percentage?: number | null;
+  impact_description?: string | null;
+}
+
+// Enhanced AgentResponse based on v3.2.0 API (OODA Response Formats)
+export interface AgentResponse {
+  // ===== CORE FIELDS (Always Present) =====
+  /** Schema version */
+  schema_version?: string;
+  /** Agent's conversational response */
+  content: string;
+  /** Response classification */
+  response_type: ResponseType;
+  /** Session identifier */
+  session_id: string;
+  /** Case identifier */
+  case_id?: string | null;
+  /** Confidence in response (0.0 to 1.0) */
+  confidence_score?: number | null;
+  /** Source references */
+  sources?: Source[];
+  /** Plan step information */
+  plan?: PlanStep | null;
+  /** Estimated resolution time */
+  estimated_time_to_resolution?: string;
+  /** Hint for next user action */
+  next_action_hint?: string | null;
+  /** UI state hints */
+  view_state?: ViewState | null;
+  /** Additional metadata */
+  metadata?: Record<string, any>;
+
+  // ===== v3.1.0 FIELDS (Evidence-Centric) =====
+  /** Active evidence requests for this turn */
+  evidence_requests: EvidenceRequest[];
+  /** Current investigation approach (speed vs depth) */
+  investigation_mode: InvestigationMode;
+  /** Current case investigation state */
+  case_status: CaseStatus;
+
+  // ===== v3.2.0 NEW FIELDS (OODA Response Formats) =====
+
+  // GUIDANCE FIELDS
+  /** Clarifying questions to better understand user intent (max 3) */
+  clarifying_questions?: string[];
+  /** Clickable action suggestions (RE-ENABLED in v3.2.0) */
+  suggested_actions?: SuggestedAction[];
+  /** Diagnostic commands user can run (troubleshooting mode) */
+  suggested_commands?: CommandSuggestion[];
+  /** Command validation response */
+  command_validation?: CommandValidation | null;
+
+  // PROBLEM DETECTION (Phase 0)
+  /** Whether problem signals detected in user query */
+  problem_detected?: boolean;
+  /** Brief problem summary if detected */
+  problem_summary?: string | null;
+  /** Problem severity if detected */
+  severity?: 'low' | 'medium' | 'high' | 'critical' | null;
+
+  // PHASE CONTROL
+  /** Whether current phase objectives are met */
+  phase_complete?: boolean;
+  /** Whether to advance to next phase */
+  should_advance?: boolean;
+
+  // HYPOTHESIS TRACKING (Phase 3-4)
+  /** New hypotheses generated this turn (Phase 3) */
+  new_hypotheses?: Hypothesis[];
+  /** Hypothesis being tested (Phase 4 - Validation) */
+  hypothesis_tested?: string | null;
+  /** Test result with outcome and confidence impact */
+  test_result?: TestResult | null;
+
+  // SCOPE ASSESSMENT (Phase 1)
+  /** Blast radius assessment */
+  scope_assessment?: ScopeAssessment | null;
+
+  // METADATA
+  /** Response generation timestamp */
+  timestamp?: string;
+  /** Additional response metadata */
+  response_metadata?: Record<string, any>;
 }
 
 // New dedicated title generation interfaces
@@ -1026,18 +1514,20 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
     throw new Error('Backend API contract violation: Expected AgentResponse format but received OpenAI completion format. Please check backend implementation.');
   }
 
-  // Validate required AgentResponse fields
-  if (!json.content || !json.response_type) {
+  // Validate required AgentResponse fields per OpenAPI spec
+  // Note: session_id is required at root level, not just in view_state
+  if (!json.content || !json.response_type || !json.session_id) {
     console.error('[API] CONTRACT VIOLATION: Invalid AgentResponse format', {
       received: json,
       missing: {
         content: !json.content,
-        response_type: !json.response_type
+        response_type: !json.response_type,
+        session_id: !json.session_id
       },
       correlationId: response.headers.get('x-correlation-id'),
       caseId
     });
-    throw new Error('Backend API contract violation: AgentResponse missing required fields (content, response_type)');
+    throw new Error('Backend API contract violation: AgentResponse missing required fields (content, response_type, session_id)');
   }
 
   console.log('[API] DEBUG: Valid AgentResponse received:', { content: json.content?.substring(0, 100), response_type: json.response_type });

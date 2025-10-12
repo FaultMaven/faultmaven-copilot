@@ -7,11 +7,17 @@
 // Re-export from PendingOperationsManager for convenience
 export type { PendingOperation } from './PendingOperationsManager';
 
-// Import Source type from API
-import { Source } from '../api';
+// Import types from API (v3.1.0 evidence-centric)
+import {
+  Source,
+  SuggestedAction,
+  EvidenceRequest,
+  InvestigationMode,
+  CaseStatus
+} from '../api';
 
 /**
- * Base conversation item interface - matches ChatWindow.clean.tsx
+ * Base conversation item interface - matches ChatWindow.tsx (v3.1.0)
  */
 export interface ConversationItem {
   id: string;
@@ -20,15 +26,24 @@ export interface ConversationItem {
   error?: boolean;
   timestamp: string;
   responseType?: string;
-  confidenceScore?: number;
+  confidenceScore?: number | null;
   sources?: Source[];
+
+  // v3.1.0 Evidence-centric fields
+  evidenceRequests?: EvidenceRequest[];
+  investigationMode?: InvestigationMode;
+  caseStatus?: CaseStatus;
+
+  // DEPRECATED v3.0.0 fields (kept for backward compatibility)
+  suggestedActions?: SuggestedAction[] | null;
+
   plan?: {
     step_number: number;
     action: string;
     description: string;
     estimated_time?: string;
-  };
-  nextActionHint?: string;
+  } | null;
+  nextActionHint?: string | null;
   requiresAction?: boolean;
 
   // Additional properties for optimistic updates (optional in base)

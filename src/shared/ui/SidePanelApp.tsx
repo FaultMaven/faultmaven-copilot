@@ -103,6 +103,9 @@ function SidePanelAppContent() {
   const [optimisticCases, setOptimisticCases] = useState<OptimisticUserCase[]>([]); // Track optimistic cases for ConversationsList
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false); // For input locking during message submission
+
+  // OODA Framework v3.2.0: Investigation progress tracking
+  const [investigationProgress, setInvestigationProgress] = useState<Record<string, any>>({});
   
   // Document viewing state
   const [viewingDocument, setViewingDocument] = useState<any | null>(null);
@@ -1422,6 +1425,15 @@ function SidePanelAppContent() {
       const response = await submitQueryToCase(resolvedCaseId, queryRequest);
       console.log('[SidePanelApp] ✅ Query submitted successfully, response type:', response.response_type);
 
+      // Update investigation progress from view_state (OODA Framework v3.2.0)
+      if (response.view_state && response.view_state.investigation_progress) {
+        setInvestigationProgress(prev => ({
+          ...prev,
+          [resolvedCaseId]: response.view_state!.investigation_progress
+        }));
+        console.log('[SidePanelApp] 🔍 Investigation progress updated:', response.view_state.investigation_progress);
+      }
+
       // Update conversations: replace optimistic messages with real data
       setConversations(prev => {
         const currentConversation = prev[caseId] || [];
@@ -1441,6 +1453,21 @@ function SidePanelAppContent() {
               responseType: response.response_type,
               confidenceScore: response.confidence_score,
               sources: response.sources,
+              // v3.1.0 Evidence-centric fields
+              evidenceRequests: response.evidence_requests,
+              investigationMode: response.investigation_mode,
+              caseStatus: response.case_status,
+              // v3.0.0 fields (RE-ENABLED in v3.2.0)
+              suggestedActions: response.suggested_actions,
+              // v3.2.0 OODA Response Format fields
+              clarifyingQuestions: response.clarifying_questions,
+              suggestedCommands: response.suggested_commands,
+              commandValidation: response.command_validation,
+              problemDetected: response.problem_detected,
+              problemSummary: response.problem_summary,
+              severity: response.severity,
+              scopeAssessment: response.scope_assessment,
+              // Legacy fields
               plan: response.plan,
               nextActionHint: response.next_action_hint,
               requiresAction: response.response_type === 'CONFIRMATION_REQUEST' || response.response_type === 'CLARIFICATION_REQUEST',
@@ -1764,6 +1791,12 @@ function SidePanelAppContent() {
         responseType: uploadResponse.agent_response?.response_type,
         confidenceScore: uploadResponse.agent_response?.confidence_score,
         sources: uploadResponse.agent_response?.sources,
+        // v3.1.0 Evidence-centric fields
+        evidenceRequests: uploadResponse.agent_response?.evidence_requests,
+        investigationMode: uploadResponse.agent_response?.investigation_mode,
+        caseStatus: uploadResponse.agent_response?.case_status,
+        // DEPRECATED v3.0.0 (backward compatibility)
+        suggestedActions: uploadResponse.agent_response?.suggested_actions,
         optimistic: false
       };
 
@@ -2002,14 +2035,7 @@ function SidePanelAppContent() {
                       return filtered;
                     });
                   }}
-                  pendingCases={(() => {
-                    console.log('[SidePanelApp] DEBUG: Rendering ConversationsList with:', {
-                      optimisticCases: optimisticCases.map(c => c.case_id),
-                      conversationTitles: Object.keys(conversationTitles),
-                      refreshSessions
-                    });
-                    return optimisticCases;
-                  })()}
+                  pendingCases={optimisticCases}
                   onCaseTitleChange={(caseId, newTitle) => {
                     console.log('[SidePanelApp] 🚀 User title change - using optimistic update:', { caseId, newTitle });
                     handleOptimisticTitleUpdate(caseId, newTitle);
@@ -2125,6 +2151,7 @@ function SidePanelAppContent() {
               submitting={submitting}
               sessionId={sessionId}
               isNewUnsavedChat={hasUnsavedNewChat}
+              investigationProgress={activeCaseId ? investigationProgress[activeCaseId] : null}
               onQuerySubmit={handleQuerySubmit}
               onDataUpload={handleDataUpload}
               onDocumentView={handleDocumentView}
