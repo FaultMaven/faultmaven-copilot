@@ -187,6 +187,17 @@ export interface Session {
 }
 
 // New enhanced data structures based on OpenAPI spec
+
+/**
+ * Source metadata for data uploads - provides context about where data originated
+ */
+export interface SourceMetadata {
+  source_type: "file_upload" | "text_paste" | "page_capture";
+  source_url?: string;  // URL if from page capture
+  captured_at?: string;  // ISO 8601 timestamp if from page capture
+  user_description?: string;  // User's description of the data
+}
+
 export interface UploadedData {
   data_id: string;
   session_id: string;
@@ -1538,12 +1549,14 @@ export async function uploadDataToCase(
   caseId: string,
   sessionId: string,
   file: File,
-  metadata?: Record<string, any>
+  sourceMetadata?: SourceMetadata,
+  description?: string
 ): Promise<UploadedData> {
   const form = new FormData();
   form.append('session_id', sessionId);
   form.append('file', file);
-  if (metadata) form.append('description', JSON.stringify(metadata));
+  if (description) form.append('description', description);
+  if (sourceMetadata) form.append('source_metadata', JSON.stringify(sourceMetadata));
   const response = await authenticatedFetch(`${config.apiUrl}/api/v1/cases/${caseId}/data`, { method: 'POST', body: form, credentials: 'include' });
   if (response.status === 202) {
     const jobLocation = response.headers.get('Location');

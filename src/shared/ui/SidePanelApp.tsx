@@ -17,7 +17,8 @@ import {
   updateCaseTitle,
   QueryRequest,
   authManager,
-  AuthenticationError
+  AuthenticationError,
+  SourceMetadata
 } from "../../lib/api";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { retryWithBackoff } from "../../lib/utils/retry";
@@ -1772,8 +1773,26 @@ function SidePanelAppContent() {
         fileToUpload = new File([blob], filename, { type: 'text/plain' });
       }
 
-      // Upload to backend
-      const uploadResponse = await uploadDataToCase(activeCaseId, sessionId, fileToUpload);
+      // Create source metadata based on data source
+      const sourceMetadata: SourceMetadata = {
+        source_type: dataSource === 'file' ? 'file_upload'
+                   : dataSource === 'page' ? 'page_capture'
+                   : 'text_paste'
+      };
+
+      // For page captures, we could enhance this with URL capture in the future
+      // if (dataSource === 'page' && currentPageUrl) {
+      //   sourceMetadata.source_url = currentPageUrl;
+      //   sourceMetadata.captured_at = new Date().toISOString();
+      // }
+
+      // Upload to backend with source metadata
+      const uploadResponse = await uploadDataToCase(
+        activeCaseId,
+        sessionId,
+        fileToUpload,
+        sourceMetadata
+      );
 
       // Generate user upload message
       const userMessage: OptimisticConversationItem = {
