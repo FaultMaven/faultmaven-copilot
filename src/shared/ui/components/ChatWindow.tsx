@@ -98,6 +98,7 @@ interface ChatWindowProps {
   onQuerySubmit: (query: string) => void;
   onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
   onDocumentView?: (documentId: string) => void;
+  onGenerateReports?: () => void;  // FR-CM-006: Trigger report generation for resolved cases
 }
 
 // PERFORMANCE OPTIMIZATION: Memoized component to prevent unnecessary re-renders
@@ -113,7 +114,8 @@ const ChatWindowComponent = function ChatWindow({
   investigationProgress,
   onQuerySubmit,
   onDataUpload,
-  onDocumentView
+  onDocumentView,
+  onGenerateReports
 }: ChatWindowProps) {
   const MAX_QUERY_LENGTH = 4000;
 
@@ -245,6 +247,24 @@ const ChatWindowComponent = function ChatWindow({
           {investigationProgress.anomaly_frame && (
             <AnomalyAlert anomaly={investigationProgress.anomaly_frame} />
           )}
+        </div>
+      )}
+
+      {/* Report Generation Button for Resolved Cases (FR-CM-006) */}
+      {activeCase && activeCase.status === 'resolved' && onGenerateReports && (
+        <div className="px-2 py-2 bg-green-50 border border-green-200 rounded-lg mx-2">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-green-900">✅ Case Resolved</p>
+              <p className="text-xs text-green-700">Generate documentation reports for this case</p>
+            </div>
+            <button
+              onClick={onGenerateReports}
+              className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+            >
+              📄 Generate Reports
+            </button>
+          </div>
         </div>
       )}
 

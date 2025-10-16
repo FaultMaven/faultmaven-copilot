@@ -53,6 +53,7 @@ import ConversationsList from "./components/ConversationsList";
 import { ChatWindow } from "./components/ChatWindow";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
+import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { memoryManager } from "../../lib/utils/memory-manager";
 
@@ -126,6 +127,9 @@ function SidePanelAppContent() {
     localData: null,
     remoteData: null
   });
+
+  // Report generation dialog state (FR-CM-006)
+  const [showReportDialog, setShowReportDialog] = useState(false);
 
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -2174,6 +2178,7 @@ function SidePanelAppContent() {
               onQuerySubmit={handleQuerySubmit}
               onDataUpload={handleDataUpload}
               onDocumentView={handleDocumentView}
+              onGenerateReports={() => setShowReportDialog(true)}
               className="h-full"
             />
           </div>
@@ -2268,6 +2273,21 @@ function SidePanelAppContent() {
         onResolve={handleConflictResolution}
         onCancel={cancelConflictResolution}
       />
+
+      {/* Report Generation Dialog (FR-CM-006) */}
+      {showReportDialog && activeCaseId && (
+        <ReportGenerationDialog
+          caseId={activeCaseId}
+          caseTitle={activeCase?.title || 'Untitled Case'}
+          isOpen={showReportDialog}
+          onClose={() => setShowReportDialog(false)}
+          onReportsGenerated={(reports) => {
+            console.log('[SidePanelApp] Reports generated:', reports);
+            // Optionally update case status or show notification
+            setShowReportDialog(false);
+          }}
+        />
+      )}
     </ErrorBoundary>
   );
 }

@@ -123,6 +123,22 @@ async function authenticatedFetch(url: string, options: RequestInit = {}): Promi
   try {
     const headers = await getAuthHeaders();
 
+    // IMPORTANT: For binary data (FormData, Blob, File, ArrayBuffer), we must NOT set Content-Type
+    // The browser will automatically set the correct Content-Type with proper boundaries/encoding
+    const isBinaryData = options.body instanceof FormData ||
+                        options.body instanceof Blob ||
+                        options.body instanceof File ||
+                        options.body instanceof ArrayBuffer ||
+                        (options.body && (options.body as any) instanceof Uint8Array);
+
+    if (isBinaryData) {
+      // Remove Content-Type to let browser handle it automatically
+      // - FormData: multipart/form-data with boundary
+      // - Blob/File: Uses Blob.type or defaults to application/octet-stream
+      // - ArrayBuffer/TypedArray: application/octet-stream
+      delete (headers as any)['Content-Type'];
+    }
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -232,6 +248,80 @@ export interface QueryRequest {
     text_data?: string;
     [key: string]: any;
   };
+}
+
+// ===== Report Generation Models (FR-CM-006) =====
+
+export type ReportType = "incident_report" | "runbook" | "post_mortem";
+export type ReportStatus = "generating" | "completed" | "failed";
+export type RunbookSource = "incident_driven" | "document_driven";
+
+export interface RunbookMetadata {
+  source: RunbookSource;
+  case_context?: Record<string, any>;
+  document_title?: string;
+  original_document_id?: string;
+  domain: string;
+  tags: string[];
+  llm_model?: string;
+  embedding_model?: string;
+}
+
+export interface CaseReport {
+  report_id: string;
+  case_id: string;
+  report_type: ReportType;
+  title: string;
+  content: string;
+  format: "markdown";
+  generation_status: ReportStatus;
+  generated_at: string;
+  generation_time_ms: number;
+  is_current: boolean;
+  version: number;
+  linked_to_closure: boolean;
+  metadata?: RunbookMetadata;
+}
+
+export interface SimilarRunbook {
+  runbook: CaseReport;
+  similarity_score: number;
+  case_title: string;
+  case_id: string;
+}
+
+export interface RunbookRecommendation {
+  action: "reuse" | "review_or_generate" | "generate";
+  existing_runbook?: CaseReport;
+  similarity_score?: number;
+  reason: string;
+}
+
+export interface ReportRecommendation {
+  case_id: string;
+  available_for_generation: ReportType[];
+  runbook_recommendation: RunbookRecommendation;
+}
+
+export interface ReportGenerationRequest {
+  report_types: ReportType[];
+}
+
+export interface ReportGenerationResponse {
+  case_id: string;
+  reports: CaseReport[];
+  remaining_regenerations: number;
+}
+
+export interface CaseClosureRequest {
+  closure_note?: string;
+}
+
+export interface CaseClosureResponse {
+  case_id: string;
+  closed_at: string;
+  archived_reports: CaseReport[];
+  download_available_until: string;
 }
 
 // ===== Evidence-Centric API v3.1.0 Enums =====
@@ -916,19 +1006,11 @@ export async function uploadData(
     formData.append('file', file);
   }
 
-  // Get auth headers but exclude Content-Type for FormData
-  const authHeaders = await getAuthHeaders();
-  const { 'Content-Type': _, ...headersWithoutContentType } = authHeaders as any;
-
-  const response = await fetch(`${config.apiUrl}/api/v1/data/upload`, {
+  // Use authenticatedFetch which automatically handles FormData Content-Type
+  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/data/upload`, {
     method: 'POST',
-    headers: headersWithoutContentType,
     body: formData,
   });
-
-  if (response.status === 401) {
-    await handleAuthError();
-  }
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
@@ -1574,6 +1656,126 @@ export async function uploadDataToCase(
     const errorData: APIError = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || `Failed to upload data to case: ${response.status}`);
   }
+  return response.json();
+}
+
+// ===== Report Generation API Functions (FR-CM-006) =====
+
+/**
+ * Get intelligent report recommendations for a resolved case
+ */
+export async function getReportRecommendations(caseId: string): Promise<ReportRecommendation> {
+  const response = await authenticatedFetch(
+    `${config.apiUrl}/api/v1/cases/${caseId}/report-recommendations`,
+    {
+      method: 'GET',
+      credentials: 'include'
+    }
+  );
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to get report recommendations: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Generate reports for a case
+ */
+export async function generateReports(
+  caseId: string,
+  request: ReportGenerationRequest
+): Promise<ReportGenerationResponse> {
+  const response = await authenticatedFetch(
+    `${config.apiUrl}/api/v1/cases/${caseId}/reports`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      credentials: 'include'
+    }
+  );
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to generate reports: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * List all reports for a case
+ */
+export async function getCaseReports(
+  caseId: string,
+  includeHistory: boolean = false
+): Promise<CaseReport[]> {
+  const url = new URL(`${config.apiUrl}/api/v1/cases/${caseId}/reports`);
+  if (includeHistory) {
+    url.searchParams.append('include_history', 'true');
+  }
+
+  const response = await authenticatedFetch(url.toString(), {
+    method: 'GET',
+    credentials: 'include'
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to get case reports: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Download a specific report
+ */
+export async function downloadReport(
+  caseId: string,
+  reportId: string
+): Promise<Blob> {
+  const response = await authenticatedFetch(
+    `${config.apiUrl}/api/v1/cases/${caseId}/reports/${reportId}/download`,
+    {
+      method: 'GET',
+      credentials: 'include'
+    }
+  );
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to download report: ${response.status}`);
+  }
+
+  return response.blob();
+}
+
+/**
+ * Close a case and finalize reports
+ */
+export async function closeCase(
+  caseId: string,
+  request: CaseClosureRequest
+): Promise<CaseClosureResponse> {
+  const response = await authenticatedFetch(
+    `${config.apiUrl}/api/v1/cases/${caseId}/close`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      credentials: 'include'
+    }
+  );
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to close case: ${response.status}`);
+  }
+
   return response.json();
 }
 
