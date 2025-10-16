@@ -21,7 +21,8 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status?: string) => {
+    if (!status) return <span className="text-xs text-gray-400">-</span>;
     const baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
     
     // Handle undefined or null status
@@ -60,7 +61,8 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '-';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
       month: 'short',

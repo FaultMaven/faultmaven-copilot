@@ -18,7 +18,10 @@ import {
   QueryRequest,
   authManager,
   AuthenticationError,
-  SourceMetadata
+  SourceMetadata,
+  formatFileSize,
+  formatDataType,
+  formatCompression
 } from "../../lib/api";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { retryWithBackoff } from "../../lib/utils/retry";
@@ -1743,15 +1746,6 @@ function SidePanelAppContent() {
     }
   };
 
-  // Helper function to format file size in human-readable format
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-  };
-
   const handleDataUpload = async (
     data: string | File,
     dataSource: "text" | "file" | "page"
@@ -1784,13 +1778,19 @@ function SidePanelAppContent() {
                    : 'text_paste'
       };
 
-      // For page captures, we could enhance this with URL capture in the future
-      // if (dataSource === 'page' && currentPageUrl) {
-      //   sourceMetadata.source_url = currentPageUrl;
-      //   sourceMetadata.captured_at = new Date().toISOString();
-      // }
+      // Capture page URL for page-based uploads
+      if (dataSource === 'page') {
+        try {
+          const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+          if (tab?.url) {
+            sourceMetadata.source_url = tab.url;
+            sourceMetadata.captured_at = new Date().toISOString();
+          }
+        } catch (err) {
+          console.warn('[SidePanelApp] Could not capture page URL:', err);
+        }
+      }
 
-      // Upload to backend with source metadata
       const uploadResponse = await uploadDataToCase(
         activeCaseId,
         sessionId,
@@ -1798,11 +1798,18 @@ function SidePanelAppContent() {
         sourceMetadata
       );
 
-      // Generate user upload message
+      // Generate user upload message with data type badge
+      const dataTypeBadge = uploadResponse.data_type
+        ? ` [${uploadResponse.data_type}]`
+        : '';
+      const compressionInfo = uploadResponse.classification?.compression_ratio
+        ? ` (${uploadResponse.classification.compression_ratio.toFixed(1)}x compressed)`
+        : '';
+
       const userMessage: OptimisticConversationItem = {
         id: `upload-${Date.now()}`,
-        question: `📎 Uploaded: ${uploadResponse.file_name || fileToUpload.name} (${formatBytes(uploadResponse.file_size || 0)})`,
-        timestamp: new Date().toISOString(),
+        question: `📎 Uploaded: ${uploadResponse.file_name || fileToUpload.name} (${formatFileSize(uploadResponse.file_size || 0)})${dataTypeBadge}${compressionInfo}`,
+        timestamp: uploadResponse.uploaded_at || new Date().toISOString(),
         optimistic: false
       };
 
@@ -1818,7 +1825,7 @@ function SidePanelAppContent() {
         evidenceRequests: uploadResponse.agent_response?.evidence_requests,
         investigationMode: uploadResponse.agent_response?.investigation_mode,
         caseStatus: uploadResponse.agent_response?.case_status,
-        // DEPRECATED v3.0.0 (backward compatibility)
+        // v3.2.0 OODA framework fields
         suggestedActions: uploadResponse.agent_response?.suggested_actions,
         optimistic: false
       };
@@ -1840,10 +1847,37 @@ function SidePanelAppContent() {
       };
     } catch (error) {
       console.error('[SidePanelApp] Data upload error:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Upload failed';
+
+      // Enhanced error handling for v3.1.0
+      let errorMessage = "Upload failed";
+      let errorDetails = error instanceof Error ? error.message : "Unknown error occurred";
+
+      // Parse backend error responses
+      if (error && typeof error === 'object' && 'response' in error) {
+        const responseError = error as any;
+        if (responseError.response?.data?.detail) {
+          errorDetails = responseError.response.data.detail;
+        }
+      }
+
+      // Handle specific error cases
+      if (errorDetails.includes("File too large")) {
+        errorMessage = "File too large";
+        errorDetails = "Maximum file size is 50MB";
+      } else if (errorDetails.includes("Unable to decode") || errorDetails.includes("decode")) {
+        errorMessage = "Invalid file format";
+        errorDetails = "Please upload text-based files only";
+      } else if (errorDetails.includes("Case not found")) {
+        errorMessage = "Case not found";
+        errorDetails = "Please refresh and try again";
+      } else if (errorDetails.includes("session")) {
+        errorMessage = "Session error";
+        errorDetails = "Please refresh the page and try again";
+      }
+
       return {
         success: false,
-        message: `Upload failed: ${errorMsg}`
+        message: `${errorMessage}: ${errorDetails}`
       };
     } finally {
       setLoading(false);

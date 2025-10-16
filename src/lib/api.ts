@@ -225,14 +225,10 @@ export interface UploadedData {
   processing_status: string;
   insights?: Record<string, any>;
   agent_response?: AgentResponse;  // NEW: AI analysis from backend
-}
 
-// Legacy DataUploadResponse (deprecated - use v3.1.0 version below)
-export interface LegacyDataUploadResponse {
-  data_id: string;
-  filename?: string;
-  insights?: string;
-  status: string;
+  // v3.1.0: Working Memory classification
+  classification?: ClassificationMetadata;
+  schema_version?: string;
 }
 
 // Enhanced query request with new fields
@@ -565,16 +561,6 @@ export interface ViewState {
   /** Investigation progress tracking */
   investigation_progress?: InvestigationProgress | null;
 
-  // ===== Legacy UI hints (backward compatibility) =====
-  show_upload_button?: boolean;
-  show_plan_actions?: boolean;
-  show_confirmation_dialog?: boolean;
-  highlighted_sections?: string[];
-  custom_actions?: Array<{
-    label: string;
-    action: string;
-    style?: string;
-  }>;
 }
 
 // ===== Evidence-Centric API v3.1.0 Interfaces =====
@@ -667,20 +653,45 @@ export interface ImmediateAnalysis {
   next_steps: string;
 }
 
+// ===== Working Memory v3.1.0: Data Classification & Source Metadata =====
+
 /**
- * Response from data upload with immediate analysis
+ * Data type classification (7 types)
+ * Matches backend DataType enum
  */
-export interface DataUploadResponse {
-  /** Unique identifier for uploaded data */
-  data_id: string;
-  /** Original filename */
-  filename: string;
-  /** File metadata */
-  file_metadata: FileMetadata;
-  /** Immediate analysis results */
-  immediate_analysis: ImmediateAnalysis;
-  /** Present only if refuting evidence detected */
-  conflict_detected?: ConflictDetection | null;
+export type DataType =
+  | "logs_and_errors"
+  | "unstructured_text"
+  | "structured_config"
+  | "metrics_and_performance"
+  | "source_code"
+  | "visual_evidence"
+  | "unanalyzable";
+
+/**
+ * Processing status for uploads
+ */
+export type ProcessingStatus = "pending" | "processing" | "completed" | "failed";
+
+/**
+ * Source metadata - where the data came from
+ * NEW: Enables richer AI context
+ */
+export interface SourceMetadata {
+  source_type: "file_upload" | "text_paste" | "page_capture";
+  source_url?: string;           // URL if from page capture
+  captured_at?: string;          // ISO 8601 timestamp for page capture
+  user_description?: string;     // User's description of the data
+}
+
+/**
+ * Classification metadata returned from backend
+ */
+export interface ClassificationMetadata {
+  data_type: DataType;
+  confidence: number;           // 0.0 to 1.0
+  compression_ratio?: number;   // How much data was compressed
+  processing_time_ms: number;   // Time taken to process
 }
 
 /**
@@ -883,8 +894,6 @@ export interface TitleResponse {
   view_state?: ViewState;
 }
 
-// Legacy troubleshooting types removed. Use `AgentResponse` for current workflows.
-
 // Enhanced knowledge base document structure with canonical document types
 export type DocumentType = 'playbook' | 'troubleshooting_guide' | 'reference' | 'how_to';
 
@@ -903,20 +912,15 @@ export interface KnowledgeDocument {
   metadata?: Record<string, any>;
 }
 
+// Type alias for UI components
+export type KbDocument = KnowledgeDocument;
+
 export interface DocumentListResponse {
   documents: KnowledgeDocument[];
   total_count: number;
   limit: number;
   offset: number;
   filters: { document_type?: string; tags?: string[] };
-}
-
-// Legacy interface for backward compatibility
-export interface KbDocument extends KnowledgeDocument {
-  content: string;  // Make content required for legacy compatibility
-  status: string;   // Make status required for legacy compatibility
-  created_at: string; // Make created_at required for legacy compatibility
-  updated_at: string; // Make updated_at required for legacy compatibility
 }
 
 // New error response structure
@@ -977,12 +981,6 @@ export async function createFreshSession(metadata?: Record<string, any>): Promis
 
   return response.json();
 }
-
-/**
- * Enhanced query processing with new response types
- */
-// Legacy agent routes removed. Frontend must use case-scoped APIs such as
-// `submitQueryToCase(caseId, request)` which returns an `AgentResponse`.
 
 /**
  * Enhanced data upload with new endpoint and response structure
@@ -1201,27 +1199,17 @@ export async function getKnowledgeDocuments(
     };
     console.log(`[API] Returning ${response.documents.length} documents with metadata`);
     return response;
-  } else if (Array.isArray(data)) {
-    // Legacy format - just array of documents
-    const response: DocumentListResponse = {
-      documents: data,
-      total_count: data.length,
-      limit: limit,
-      offset: offset,
-      filters: {}
-    };
-    console.log(`[API] Returning ${response.documents.length} documents (legacy format)`);
-    return response;
-  } else {
-    console.warn('[API] Unexpected response format for documents:', data);
-    return {
-      documents: [],
-      total_count: 0,
-      limit: limit,
-      offset: offset,
-      filters: {}
-    };
   }
+
+  // Unexpected format
+  console.warn('[API] Unexpected response format for documents:', data);
+  return {
+    documents: [],
+    total_count: 0,
+    limit: limit,
+    offset: offset,
+    filters: {}
+  };
 }
 
 /**
@@ -1790,9 +1778,9 @@ export async function heartbeatSession(sessionId: string): Promise<void> {
   }
 }
 
-// Legacy conversation title helpers removed. Use `generateCaseTitle(caseId, options)`
-// to generate case-scoped titles via the backend.
-// Case-scoped title generation aligned with case-centric API
+/**
+ * Case-scoped title generation
+ */
 export async function generateCaseTitle(
   caseId: string,
   options?: { max_words?: number; hint?: string }
@@ -1843,23 +1831,6 @@ export interface AuthTokenResponse {
   user: UserProfile;
 }
 
-// Legacy auth response structure (for backward compatibility)
-export interface AuthViewState {
-  session_id: string;
-  user: AuthUser;
-  active_case?: any;
-  cases?: any[];
-  messages?: any[];
-  uploaded_data?: any[];
-  show_case_selector?: boolean;
-  show_data_upload?: boolean;
-}
-
-export interface AuthResponse {
-  schema_version: string;
-  success: boolean;
-  view_state: AuthViewState;
-}
 
 export async function devLogin(
   username: string,
@@ -1912,7 +1883,7 @@ export async function devLogin(
 
 // TODO: Backend endpoint /api/v1/auth/session/{session_id} not implemented yet
 // This function is kept for future implementation when session verification is available
-export async function verifyAuthSession(sessionId: string): Promise<AuthResponse> {
+export async function verifyAuthSession(sessionId: string): Promise<never> {
   throw new Error('Session verification endpoint not implemented in backend yet');
 
   // Future implementation:
@@ -2116,4 +2087,44 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
   }
 
   return data;
-} 
+}
+
+// ===== Working Memory v3.1.0: Utility Functions =====
+
+/**
+ * Format data type for display with emoji
+ */
+export function formatDataType(dataType: DataType | string): string {
+  const labels: Record<DataType, string> = {
+    logs_and_errors: "📋 Logs & Errors",
+    unstructured_text: "📝 Text",
+    structured_config: "⚙️ Configuration",
+    metrics_and_performance: "📊 Metrics",
+    source_code: "💻 Source Code",
+    visual_evidence: "🖼️ Screenshot",
+    unanalyzable: "❓ Unknown Format"
+  };
+
+  return labels[dataType as DataType] || dataType;
+}
+
+/**
+ * Format compression ratio for display
+ */
+export function formatCompression(ratio?: number): string {
+  if (!ratio || ratio < 1.5) return "";
+  return `(${ratio.toFixed(1)}x compressed)`;
+}
+
+/**
+ * Format file size in human-readable format
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+ 
