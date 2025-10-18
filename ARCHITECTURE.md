@@ -6,11 +6,16 @@ FaultMaven Copilot is a browser extension providing AI-powered troubleshooting a
 
 ### Core Design Principles
 
-1. **Optimistic Updates**: Instant UI response (0ms) with background API synchronization
-2. **Session Persistence**: Client-based session management with automatic recovery
-3. **Privacy-First**: All data sanitized through backend PII redaction before LLM processing
-4. **Multi-Browser Support**: Chrome (Manifest V3) and Firefox compatibility
-5. **Accessible**: WCAG 2.1 AA compliant with keyboard navigation and screen reader support
+1. **Optimistic Message UI**: Instant message feedback (0ms) with background API synchronization
+   - ✅ Messages show immediately (optimistic IDs for UX)
+   - ❌ Cases created synchronously via session endpoint (no optimistic case IDs)
+2. **Session-Based Case Management**: Lazy case creation on first user action
+   - Cases created via `POST /api/v1/cases/sessions/{session_id}/case`
+   - One case per session (idempotent, prevents duplicates)
+3. **Session Persistence**: Client-based session management with automatic recovery
+4. **Privacy-First**: All data sanitized through backend PII redaction before LLM processing
+5. **Multi-Browser Support**: Chrome (Manifest V3) and Firefox compatibility
+6. **Accessible**: WCAG 2.1 AA compliant with keyboard navigation and screen reader support
 
 ### Technology Stack
 
@@ -112,6 +117,60 @@ DELETE /api/v1/sessions/{session_id}
 
 Response: 200 OK
 ```
+
+#### Case Management
+
+**Session-Based Lazy Case Creation**
+
+Cases are created lazily on the user's first action (query or data upload) using the session endpoint. This pattern prevents duplicate cases and eliminates the need for optimistic case IDs.
+
+**Create/Get Case for Session**
+```
+POST /api/v1/cases/sessions/{session_id}/case
+Content-Type: application/json
+idempotency-key: case_{session_id}_{timestamp}
+
+Query Parameters:
+- force_new: boolean (default: false)
+
+Response:
+{
+  "case_id": "uuid-v4-string",
+  "title": "Auto-generated title",
+  "created_new": boolean,
+  "success": true
+}
+```
+
+**Behavior**:
+- Returns existing case if session already has one
+- Creates new case if session has no case
+- `force_new=true`: Always creates new case (for explicit "New Chat" action)
+- Idempotency: Duplicate requests with same `idempotency-key` return same case
+
+**Frontend Flow**:
+```typescript
+// User submits query or uploads data
+if (!activeCaseId) {
+  // Synchronously create case via session endpoint
+  const { case_id } = await POST('/cases/sessions/{session_id}/case', {
+    headers: { 'idempotency-key': `case_${sessionId}_${Date.now()}` }
+  });
+
+  // Update UI with real UUID (no optimistic ID needed)
+  setActiveCaseId(case_id);
+}
+
+// Then submit query or upload data to the real case_id
+await POST(`/cases/${case_id}/queries`, queryRequest);
+```
+
+**Key Benefits**:
+- ✅ No phantom empty chats (case creation is synchronous)
+- ✅ No ID reconciliation needed (real UUIDs from start)
+- ✅ No 404 errors (cases exist before data/queries posted)
+- ✅ Clear error handling (401/403/500 errors shown immediately)
+- ✅ Idempotent (safe retries via idempotency-key)
 
 #### Troubleshooting Queries
 

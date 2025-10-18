@@ -1193,114 +1193,113 @@ function SidePanelAppContent() {
       return;
     }
 
-    console.log('[SidePanelApp] 🚀 OPTIMISTIC MESSAGE SUBMISSION START');
+    console.log('[SidePanelApp] 🚀 MESSAGE SUBMISSION START (session-based lazy case creation)');
 
     // LOCK INPUT: Prevent multiple submissions (immediate feedback)
     setSubmitting(true);
 
-    // OPTIMISTIC MESSAGE SUBMISSION: Immediate UI updates (0ms response)
+    // SESSION-BASED CASE CREATION + OPTIMISTIC MESSAGE UI: Immediate UI updates (0ms response)
 
     // Generate optimistic message IDs
     const userMessageId = OptimisticIdGenerator.generateMessageId();
     const aiMessageId = OptimisticIdGenerator.generateMessageId();
     const messageTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Ensure we have an active case (create optimistically if needed)
+    // Step 1: Ensure case exists using session-based lazy creation
     let targetCaseId = activeCaseId;
 
-    // If we're in "new unsaved chat" mode, create optimistic case immediately
-    if (!targetCaseId && hasUnsavedNewChat) {
-      console.log('[SidePanelApp] 🆕 Creating optimistic case for new unsaved chat with first question');
+    if (!targetCaseId) {
+      console.log('[SidePanelApp] No active case, creating case via session endpoint');
 
-      // Generate optimistic case ID and timestamp title immediately
-      const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
-      const chatTitle = IdUtils.generateChatTitle();
-      const caseTimestamp = new Date().toISOString();
+      try {
+        // Call session endpoint to get or create case
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const url = `${baseUrl}/api/v1/cases/sessions/${sessionId}/case`;
 
-      // Create optimistic case object
-      const optimisticCase: OptimisticUserCase = {
-        case_id: optimisticCaseId,
-        title: chatTitle,
-        status: 'active',
-        created_at: caseTimestamp,
-        updated_at: caseTimestamp,
-        message_count: 0,
-        optimistic: true,
-        failed: false,
-        pendingOperationId: optimisticCaseId,
-        originalId: optimisticCaseId
-      };
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'idempotency-key': `case_${sessionId}_${Date.now()}`
+          },
+          credentials: 'include'
+        });
 
-      // IMMEDIATE UI UPDATE: Create optimistic case (0ms response)
-      setActiveCaseId(optimisticCaseId);
-      setActiveCase(optimisticCase);
-      setOptimisticCases(prev => [...prev, optimisticCase]); // Add to optimistic cases list for ConversationsList
-      setConversationTitles(prev => ({
-        ...prev,
-        [optimisticCaseId]: chatTitle
-      }));
-      setTitleSources(prev => ({
-        ...prev,
-        [optimisticCaseId]: 'system'
-      }));
-      setConversations(prev => ({
-        ...prev,
-        [optimisticCaseId]: [] // Empty conversation initially
-      }));
-      setHasUnsavedNewChat(false); // No longer "unsaved" - we have optimistic case
+        if (!response.ok) {
+          // Handle specific HTTP status codes with user-friendly messages
+          let errorMessage = 'Failed to create case';
 
-      targetCaseId = optimisticCaseId;
+          if (response.status === 401) {
+            errorMessage = 'Authentication failed. Please log in again.';
+          } else if (response.status === 403) {
+            errorMessage = 'You do not have permission to create cases.';
+          } else if (response.status === 500) {
+            errorMessage = 'Server error. Please try again later.';
+          } else {
+            // Try to get error details from response
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.detail || errorData.message || `Case creation failed (${response.status})`;
+            } catch {
+              errorMessage = `Case creation failed (${response.status})`;
+            }
+          }
 
-      // Register case creation operation for rollback/retry tracking
-      const caseCreationOperation: PendingOperation = {
-        id: optimisticCaseId,
-        type: 'create_case',
-        status: 'pending',
-        optimisticData: { case_id: optimisticCaseId, title: chatTitle, timestamp: caseTimestamp },
-        rollbackFn: () => {
-          console.log('[SidePanelApp] 🔄 Rolling back failed case creation');
-          // Remove optimistic case from all state
-          setActiveCaseId(undefined);
-          setActiveCase(null);
-          setOptimisticCases(prev => prev.filter(c => c.case_id !== optimisticCaseId)); // Remove from optimistic cases
-          setConversationTitles(prev => {
-            const updated = { ...prev };
-            delete updated[optimisticCaseId];
-            return updated;
-          });
-          setTitleSources(prev => {
-            const updated = { ...prev };
-            delete updated[optimisticCaseId];
-            return updated;
-          });
-          setConversations(prev => {
-            const updated = { ...prev };
-            delete updated[optimisticCaseId];
-            return updated;
-          });
-          // Clear ID mapping
-          idMappingManager.removeMapping(optimisticCaseId);
-          // Return to "unsaved new chat" state
-          setHasUnsavedNewChat(true);
-        },
-        retryFn: async () => {
-          console.log('[SidePanelApp] 🔄 Retrying case creation');
-          await createOptimisticCaseInBackground(optimisticCaseId, chatTitle);
-        },
-        createdAt: Date.now()
-      };
+          throw new Error(errorMessage);
+        }
 
-      pendingOpsManager.add(caseCreationOperation);
+        const caseData = await response.json();
+        const newCaseId = caseData.case_id;
 
-      // Background API call (non-blocking) - will reconcile IDs later
-      createOptimisticCaseInBackground(optimisticCaseId, chatTitle);
+        if (!newCaseId) {
+          throw new Error('Backend response missing case_id');
+        }
 
-      console.log('[SidePanelApp] ✅ Optimistic case created for new chat:', optimisticCaseId);
+        targetCaseId = newCaseId;
+
+        // Update UI with real case ID and initialize case in sidebar
+        setActiveCaseId(newCaseId);
+        setHasUnsavedNewChat(false);
+
+        // Initialize conversation for this case (empty initially)
+        setConversations(prev => ({
+          ...prev,
+          [newCaseId]: []
+        }));
+
+        // Set title from backend response (will be auto-generated by backend)
+        // Note: Frontend doesn't control case title - backend generates it
+        if (caseData.title) {
+          setConversationTitles(prev => ({
+            ...prev,
+            [newCaseId]: caseData.title
+          }));
+          setTitleSources(prev => ({
+            ...prev,
+            [newCaseId]: 'backend'
+          }));
+        }
+
+        // Store in localStorage for persistence
+        await browser.storage.local.set({ active_case_id: targetCaseId });
+
+        // Trigger ConversationsList refresh to load new case from backend
+        setRefreshSessions(prev => prev + 1);
+
+        console.log('[SidePanelApp] ✅ Case created via session endpoint:', targetCaseId);
+      } catch (error) {
+        console.error('[SidePanelApp] Failed to create case:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create case. Please try again.';
+        showError(errorMessage);
+        setSubmitting(false);
+        return;
+      }
     }
 
+    // Safety check
     if (!targetCaseId) {
-      console.log('[SidePanelApp] No active case and not in new chat mode');
-      showError('Please click "New Chat" first');
+      console.error('[SidePanelApp] CRITICAL: No case ID available');
+      showError('No active case. Please try again.');
       setSubmitting(false);
       return;
     }
@@ -1340,6 +1339,9 @@ function SidePanelAppContent() {
       ...prev,
       [targetCaseId]: [...(prev[targetCaseId] || []), userMessage, aiThinkingMessage]
     }));
+
+    // Focus/highlight the active case in the sidebar (important for existing cases)
+    setActiveCaseId(targetCaseId);
 
     console.log('[SidePanelApp] ✅ Messages added to UI immediately - 0ms response time');
 
@@ -1395,33 +1397,8 @@ function SidePanelAppContent() {
         console.log('[SidePanelApp] ✅ New session created:', currentSessionId);
       }
 
-      // Resolve optimistic ID to real ID if needed
-      let resolvedCaseId = caseId;
-      if (OptimisticIdGenerator.isOptimistic(caseId)) {
-        console.log('[SidePanelApp] 🔄 Optimistic ID detected, waiting for reconciliation...', caseId);
-
-        // Wait for ID reconciliation (with timeout)
-        let attempts = 0;
-        const maxAttempts = 30; // 15 seconds max wait (500ms * 30)
-
-        while (attempts < maxAttempts) {
-          const realId = idMappingManager.getRealId(caseId);
-          if (realId) {
-            resolvedCaseId = realId;
-            console.log('[SidePanelApp] ✅ ID reconciliation found:', { optimistic: caseId, real: realId });
-            break;
-          }
-          await new Promise(resolve => setTimeout(resolve, 500));
-          attempts++;
-        }
-
-        if (OptimisticIdGenerator.isOptimistic(resolvedCaseId)) {
-          throw new Error('Timeout waiting for case ID reconciliation');
-        }
-      }
-
-      // Submit query to case via API using real ID
-      console.log('[SidePanelApp] 📡 Submitting query to case via API...', { caseId: resolvedCaseId, sessionId: currentSessionId });
+      // Submit query to case via API (backend will auto-create case if needed)
+      console.log('[SidePanelApp] 📡 Submitting query to case via API...', { caseId, sessionId: currentSessionId });
 
       const queryRequest: QueryRequest = {
         session_id: currentSessionId,
@@ -1430,14 +1407,16 @@ function SidePanelAppContent() {
         context: {}
       };
 
-      const response = await submitQueryToCase(resolvedCaseId, queryRequest);
+      const response = await submitQueryToCase(caseId, queryRequest);
+
+      // No ID reconciliation needed - caseId is already the real UUID from session endpoint
       console.log('[SidePanelApp] ✅ Query submitted successfully, response type:', response.response_type);
 
       // Update investigation progress from view_state (OODA Framework v3.2.0)
       if (response.view_state && response.view_state.investigation_progress) {
         setInvestigationProgress(prev => ({
           ...prev,
-          [resolvedCaseId]: response.view_state!.investigation_progress
+          [caseId]: response.view_state!.investigation_progress
         }));
         console.log('[SidePanelApp] 🔍 Investigation progress updated:', response.view_state.investigation_progress);
       }
@@ -1487,206 +1466,16 @@ function SidePanelAppContent() {
           return item;
         });
 
-        // Handle ID reconciliation: move conversation from optimistic to real ID if needed
-        if (resolvedCaseId !== caseId) {
-          console.log('[SidePanelApp] 🔄 Moving conversation from optimistic ID to real ID:', { from: caseId, to: resolvedCaseId });
-
-          // CONFLICT DETECTION: Check for potential conflicts during ID reconciliation
-          const currentPendingOps = pendingOpsManager.getAll();
-          const conflict = conflictResolver.detectConflict(
-            { conversations: prev[caseId], caseId },
-            { conversations: updated, caseId: resolvedCaseId },
-            {
-              caseId: resolvedCaseId,
-              operationType: 'id_reconciliation',
-              pendingOperations: Object.values(currentPendingOps)
-            }
-          );
-
-          if (conflict.hasConflict) {
-            console.warn('[SidePanelApp] ⚠️ Conflict detected during ID reconciliation:', conflict);
-
-            // Create backup before reconciliation
-            const backupId = conflictResolver.createBackup(
-              { optimistic: prev[caseId], real: updated },
-              conflict
-            );
-
-            // Get resolution strategy
-            const strategy = conflictResolver.getResolutionStrategy(conflict);
-
-            if (strategy.strategy === 'backup_and_retry') {
-              console.log('[SidePanelApp] 🔄 Applying backup_and_retry strategy for conflict resolution');
-
-              // Use merge strategies to intelligently combine the data
-              const mergeContext: MergeContext = {
-                caseId: resolvedCaseId,
-                timestamp: Date.now(),
-                source: 'optimistic'
-              };
-
-              const mergeResult = MergeStrategies.mergeConversations(
-                prev[caseId] || [],
-                updated || [],
-                mergeContext
-              );
-
-              if (mergeResult.requiresUserInput) {
-                console.warn('[SidePanelApp] ⚠️ Merge requires user input - showing conflict resolution modal');
-
-                // Show conflict resolution modal and wait for user choice
-                showConflictResolution(conflict, prev[caseId], updated, mergeResult)
-                  .then((resolution) => {
-                    console.log('[SidePanelApp] ✅ User selected resolution:', resolution);
-
-                    // Apply the user's choice
-                    setConversations(currentPrev => {
-                      let finalData: OptimisticConversationItem[] = (updated || []).map(item => ({
-                        ...item,
-                        optimistic: false,
-                        loading: false,
-                        failed: false,
-                        originalId: item.id
-                      }));
-
-                      switch (resolution.choice) {
-                        case 'keep_local':
-                          finalData = prev[caseId] || [];
-                          break;
-                        case 'accept_remote':
-                          finalData = (updated || []).map(item => ({
-                            ...item,
-                            optimistic: false,
-                            loading: false,
-                            failed: false,
-                            originalId: item.id
-                          }));
-                          break;
-                        case 'use_merged':
-                          finalData = (mergeResult.merged || []).map(item => ({
-                            ...item,
-                            optimistic: false,
-                            loading: false,
-                            failed: false,
-                            originalId: item.id
-                          }));
-                          break;
-                        case 'restore_backup':
-                          if (resolution.backupId) {
-                            const restoredData = conflictResolver.restoreFromBackup(resolution.backupId);
-                            if (restoredData) finalData = restoredData;
-                          }
-                          break;
-                      }
-
-                      // Apply the ID reconciliation with chosen data
-                      const newState = { ...currentPrev };
-                      newState[resolvedCaseId] = finalData;
-                      if (currentPrev[caseId]) {
-                        delete newState[caseId];
-                      }
-                      return newState;
-                    });
-
-                    // Also update activeCaseId and titles
-                    setActiveCaseId(resolvedCaseId);
-                    setConversationTitles(titlePrev => {
-                      if (titlePrev[caseId]) {
-                        const titleUpdated = { ...titlePrev };
-                        titleUpdated[resolvedCaseId] = titlePrev[caseId];
-                        delete titleUpdated[caseId];
-                        return titleUpdated;
-                      }
-                      return titlePrev;
-                    });
-
-                    setTitleSources(sourcePrev => {
-                      if (sourcePrev[caseId]) {
-                        const sourceUpdated = { ...sourcePrev };
-                        sourceUpdated[resolvedCaseId] = sourcePrev[caseId];
-                        delete sourceUpdated[caseId];
-                        return sourceUpdated;
-                      }
-                      return sourcePrev;
-                    });
-                  });
-
-                return prev; // Return current state while modal is shown
-              }
-
-              console.log('[SidePanelApp] ✅ Automatic merge successful:', mergeResult);
-              // Use merged conversation data
-              const mergedData = mergeResult.merged.map(item => ({
-                ...item,
-                optimistic: false,
-                loading: false,
-                failed: false,
-                originalId: item.id
-              }));
-              updated = mergedData as any; // Temporarily cast for compatibility
-
-            } else if (!conflict.autoResolvable) {
-              console.warn('[SidePanelApp] ⚠️ Manual conflict resolution required');
-              showError(`Data conflict detected: ${strategy.userPrompt || 'Please refresh to resolve.'}`);
-              return prev; // Abort reconciliation for manual resolution
-            }
-          }
-
-          // Move conversation data
-          const newState = { ...prev };
-          newState[resolvedCaseId] = updated;
-          if (prev[caseId]) {
-            delete newState[caseId]; // Remove optimistic entry
-          }
-
-          // Update activeCaseId to real ID now that conversation is moved
-          setActiveCaseId(resolvedCaseId);
-
-          // Note: Don't remove optimistic case here - let backend-based cleanup handle it
-          // to avoid timing gaps where no cases are visible in ConversationsList
-
-          // Also move titles and title sources
-
-          setConversationTitles(titlePrev => {
-            if (titlePrev[caseId]) {
-              const titleUpdated = { ...titlePrev };
-              let titleToMove = titlePrev[caseId];
-
-              // Simple ID reconciliation - title should already be correct
-
-              titleUpdated[resolvedCaseId] = titleToMove;
-              delete titleUpdated[caseId];
-              return titleUpdated;
-            }
-            return titlePrev;
-          });
-
-          setTitleSources(sourcePrev => {
-            if (sourcePrev[caseId]) {
-              const sourceUpdated = { ...sourcePrev };
-              const sourceToMove = sourcePrev[caseId];
-
-              sourceUpdated[resolvedCaseId] = sourceToMove;
-              delete sourceUpdated[caseId];
-              return sourceUpdated;
-            }
-            return sourcePrev;
-          });
-
-          return newState;
-        } else {
-          // No ID reconciliation needed - title should already be correct
-
-          return {
-            ...prev,
-            [resolvedCaseId]: updated
-          };
-        }
+        // No ID reconciliation needed - using real case ID from session endpoint
+        return {
+          ...prev,
+          [caseId]: updated
+        };
       });
 
       // Update case title if backend provides one (but respect local titles)
       if (response.metadata?.case_title) {
-        handleTitleGenerated(resolvedCaseId, response.metadata.case_title, 'backend');
+        handleTitleGenerated(caseId, response.metadata.case_title, 'backend');
       }
 
       // Mark operation as completed
@@ -1694,6 +1483,9 @@ function SidePanelAppContent() {
 
       console.log('[SidePanelApp] ✅ Message submission completed and UI updated');
 
+      // REMOVED OLD REDUNDANT RECONCILIATION BLOCK
+      // ID reconciliation is now done immediately after response (lines 1418-1466)
+      // This eliminates polling/waiting for ID mappings and complex conflict detection
       // Note: Optimistic case cleanup is handled by the onCasesLoaded callback
       // This ensures cleanup only happens AFTER the real case appears in backend response
       // to prevent timing gaps where no cases are visible in ConversationsList
@@ -1746,6 +1538,29 @@ function SidePanelAppContent() {
     }
   };
 
+  // Helper: Generate timestamp for filenames (e.g., "20251018-030542")
+  const generateTimestamp = (): string => {
+    const now = new Date();
+    return now.toISOString()
+      .replace(/[-:]/g, '')
+      .replace('T', '-')
+      .substring(0, 15); // YYYYMMDD-HHMMSS
+  };
+
+  // Helper: Extract short URL identifier from full URL
+  const extractShortUrl = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      // Get hostname without www prefix
+      const hostname = urlObj.hostname.replace(/^www\./, '');
+      // Take first 20 chars to keep filename reasonable
+      return hostname.substring(0, 20).replace(/\./g, '-');
+    } catch (error) {
+      // If URL parsing fails, return generic identifier
+      return 'webpage';
+    }
+  };
+
   const handleDataUpload = async (
     data: string | File,
     dataSource: "text" | "file" | "page"
@@ -1760,112 +1575,141 @@ function SidePanelAppContent() {
         };
       }
 
-      // Ensure we have an active case (create optimistically if needed)
+      // Step 1: Ensure case exists using session-based lazy creation
+      // If no active case, call backend to get/create case for this session
       let targetCaseId = activeCaseId;
 
-      // If we're in "new unsaved chat" mode, create optimistic case immediately
-      if (!targetCaseId && hasUnsavedNewChat) {
-        console.log('[SidePanelApp] 🆕 Creating optimistic case for new chat with first data upload');
+      if (!targetCaseId) {
+        console.log('[SidePanelApp] No active case, creating case via session endpoint');
 
-        // Generate optimistic case ID and timestamp title immediately
-        const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
-        const chatTitle = IdUtils.generateChatTitle();
-        const caseTimestamp = new Date().toISOString();
+        try {
+          // Call session endpoint to get or create case
+          const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const url = `${baseUrl}/api/v1/cases/sessions/${sessionId}/case`;
 
-        // Create optimistic case object
-        const optimisticCase: OptimisticUserCase = {
-          case_id: optimisticCaseId,
-          title: chatTitle,
-          status: 'active',
-          created_at: caseTimestamp,
-          updated_at: caseTimestamp,
-          message_count: 0,
-          optimistic: true,
-          failed: false,
-          pendingOperationId: optimisticCaseId,
-          originalId: optimisticCaseId
-        };
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'idempotency-key': `case_${sessionId}_${Date.now()}`
+            },
+            credentials: 'include'
+          });
 
-        // IMMEDIATE UI UPDATE: Create optimistic case (0ms response)
-        setActiveCaseId(optimisticCaseId);
-        setActiveCase(optimisticCase);
-        setOptimisticCases(prev => [...prev, optimisticCase]);
-        setConversationTitles(prev => ({
-          ...prev,
-          [optimisticCaseId]: chatTitle
-        }));
-        setTitleSources(prev => ({
-          ...prev,
-          [optimisticCaseId]: 'system'
-        }));
-        setConversations(prev => ({
-          ...prev,
-          [optimisticCaseId]: []
-        }));
-        setHasUnsavedNewChat(false);
+          if (!response.ok) {
+            // Handle specific HTTP status codes with user-friendly messages
+            let errorMessage = 'Failed to create case';
 
-        targetCaseId = optimisticCaseId;
+            if (response.status === 401) {
+              errorMessage = 'Authentication failed. Please log in again.';
+            } else if (response.status === 403) {
+              errorMessage = 'You do not have permission to create cases.';
+            } else if (response.status === 500) {
+              errorMessage = 'Server error. Please try again later.';
+            } else {
+              // Try to get error details from response
+              try {
+                const errorData = await response.json();
+                errorMessage = errorData.detail || errorData.message || `Case creation failed (${response.status})`;
+              } catch {
+                errorMessage = `Case creation failed (${response.status})`;
+              }
+            }
 
-        // Register case creation operation for rollback/retry tracking
-        const caseCreationOperation: PendingOperation = {
-          id: optimisticCaseId,
-          type: 'create_case',
-          status: 'pending',
-          optimisticData: { case_id: optimisticCaseId, title: chatTitle, timestamp: caseTimestamp },
-          rollbackFn: () => {
-            console.log('[SidePanelApp] 🔄 Rolling back failed case creation from data upload');
-            setActiveCaseId(undefined);
-            setActiveCase(null);
-            setOptimisticCases(prev => prev.filter(c => c.case_id !== optimisticCaseId));
-            setConversationTitles(prev => {
-              const updated = { ...prev };
-              delete updated[optimisticCaseId];
-              return updated;
-            });
-            setTitleSources(prev => {
-              const updated = { ...prev };
-              delete updated[optimisticCaseId];
-              return updated;
-            });
-            setConversations(prev => {
-              const updated = { ...prev };
-              delete updated[optimisticCaseId];
-              return updated;
-            });
-            idMappingManager.removeMapping(optimisticCaseId);
-            setHasUnsavedNewChat(true);
-          },
-          retryFn: async () => {
-            console.log('[SidePanelApp] 🔄 Retrying case creation from data upload');
-            await createOptimisticCaseInBackground(optimisticCaseId, chatTitle);
-          },
-          createdAt: Date.now()
-        };
+            throw new Error(errorMessage);
+          }
 
-        pendingOpsManager.add(caseCreationOperation);
+          const caseData = await response.json();
+          const newCaseId = caseData.case_id;
 
-        // Background API call (non-blocking) - will reconcile IDs later
-        createOptimisticCaseInBackground(optimisticCaseId, chatTitle);
+          if (!newCaseId) {
+            throw new Error('Backend response missing case_id');
+          }
 
-        console.log('[SidePanelApp] ✅ Optimistic case created for data upload:', optimisticCaseId);
+          targetCaseId = newCaseId;
+
+          // Update UI with real case ID and initialize case in sidebar
+          setActiveCaseId(newCaseId);
+          setHasUnsavedNewChat(false);
+
+          // Initialize conversation for this case (empty initially)
+          setConversations(prev => ({
+            ...prev,
+            [newCaseId]: []
+          }));
+
+          // Set title from backend response (will be auto-generated by backend)
+          // Note: Frontend doesn't control case title - backend generates it
+          if (caseData.title) {
+            setConversationTitles(prev => ({
+              ...prev,
+              [newCaseId]: caseData.title
+            }));
+            setTitleSources(prev => ({
+              ...prev,
+              [newCaseId]: 'backend'
+            }));
+          }
+
+          // Store in localStorage for persistence
+          await browser.storage.local.set({ active_case_id: targetCaseId });
+
+          // Trigger ConversationsList refresh to load new case from backend
+          setRefreshSessions(prev => prev + 1);
+
+          console.log('[SidePanelApp] ✅ Case created via session endpoint:', targetCaseId);
+        } catch (error) {
+          console.error('[SidePanelApp] Failed to create case:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Failed to create case. Please try again.';
+          return {
+            success: false,
+            message: errorMessage
+          };
+        }
       }
 
+      // Safety check: Ensure we have a case ID at this point
       if (!targetCaseId) {
-        console.log('[SidePanelApp] No active case and not in new chat mode');
+        console.error('[SidePanelApp] CRITICAL: No case ID available');
         return {
           success: false,
-          message: 'Please click "New Chat" first'
+          message: 'No active case. Please try again.'
         };
+      }
+
+      // Capture page URL FIRST (needed for filename generation)
+      let capturedUrl: string | undefined;
+      if (dataSource === 'page') {
+        try {
+          const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+          if (tab?.url) {
+            capturedUrl = tab.url;
+          }
+        } catch (err) {
+          console.warn('[SidePanelApp] Could not capture page URL:', err);
+        }
       }
 
       // Convert text/page data to File if needed
       let fileToUpload: File;
       if (data instanceof File) {
+        // File upload: keep original filename (no change)
         fileToUpload = data;
       } else {
-        // Convert string data to File
+        // Text paste or page capture: generate improved filename
         const blob = new Blob([data], { type: 'text/plain' });
-        const filename = dataSource === 'page' ? 'page-content.txt' : 'text-data.txt';
+        const timestamp = generateTimestamp();
+
+        let filename: string;
+        if (dataSource === 'page') {
+          // Web page: page-content-<short-url>.html
+          const shortUrl = capturedUrl ? extractShortUrl(capturedUrl) : 'webpage';
+          filename = `page-content-${shortUrl}.html`;
+        } else {
+          // Text paste: text-data-<timestamp>.txt
+          filename = `text-data-${timestamp}.txt`;
+        }
+
         fileToUpload = new File([blob], filename, { type: 'text/plain' });
       }
 
@@ -1876,25 +1720,22 @@ function SidePanelAppContent() {
                    : 'text_paste'
       };
 
-      // Capture page URL for page-based uploads
-      if (dataSource === 'page') {
-        try {
-          const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-          if (tab?.url) {
-            sourceMetadata.source_url = tab.url;
-            sourceMetadata.captured_at = new Date().toISOString();
-          }
-        } catch (err) {
-          console.warn('[SidePanelApp] Could not capture page URL:', err);
-        }
+      // Add captured URL to metadata
+      if (capturedUrl) {
+        sourceMetadata.source_url = capturedUrl;
+        sourceMetadata.captured_at = new Date().toISOString();
       }
 
+      // Step 2: Upload data to the case (now that we have a real case ID)
       const uploadResponse = await uploadDataToCase(
         targetCaseId,
         sessionId,
         fileToUpload,
         sourceMetadata
       );
+
+      // No ID reconciliation needed - targetCaseId is already the real UUID from backend
+      console.log('[SidePanelApp] ✅ Data uploaded successfully to case:', targetCaseId);
 
       // Generate user upload message with data type badge
       const dataTypeBadge = uploadResponse.data_type
@@ -1933,6 +1774,9 @@ function SidePanelAppContent() {
         ...prev,
         [targetCaseId]: [...(prev[targetCaseId] || []), userMessage, aiMessage]
       }));
+
+      // Focus/highlight the active case in the sidebar (important for existing cases)
+      setActiveCaseId(targetCaseId);
 
       console.log('[SidePanelApp] Data upload completed with conversation messages:', {
         userMessage: userMessage.question,
