@@ -1214,9 +1214,11 @@ function SidePanelAppContent() {
       try {
         // Call session endpoint to get or create case
         const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const url = `${baseUrl}/api/v1/cases/sessions/${sessionId}/case`;
+        const caseTitle = IdUtils.generateChatTitle();
+        const url = new URL(`${baseUrl}/api/v1/cases/sessions/${sessionId}/case`);
+        url.searchParams.set('title', caseTitle);
 
-        const response = await fetch(url, {
+        const response = await fetch(url.toString(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1585,9 +1587,11 @@ function SidePanelAppContent() {
         try {
           // Call session endpoint to get or create case
           const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-          const url = `${baseUrl}/api/v1/cases/sessions/${sessionId}/case`;
+          const caseTitle = IdUtils.generateChatTitle();
+          const url = new URL(`${baseUrl}/api/v1/cases/sessions/${sessionId}/case`);
+          url.searchParams.set('title', caseTitle);
 
-          const response = await fetch(url, {
+          const response = await fetch(url.toString(), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1711,7 +1715,10 @@ function SidePanelAppContent() {
         }
 
         fileToUpload = new File([blob], filename, { type: 'text/plain' });
+        console.log(`[SidePanelApp] Generated filename for ${dataSource}:`, filename);
       }
+
+      console.log('[SidePanelApp] Uploading file:', fileToUpload.name);
 
       // Create source metadata based on data source
       const sourceMetadata: SourceMetadata = {
@@ -1736,6 +1743,8 @@ function SidePanelAppContent() {
 
       // No ID reconciliation needed - targetCaseId is already the real UUID from backend
       console.log('[SidePanelApp] ✅ Data uploaded successfully to case:', targetCaseId);
+      console.log('[SidePanelApp] Backend returned filename:', uploadResponse.file_name);
+      console.log('[SidePanelApp] Frontend sent filename:', fileToUpload.name);
 
       // Generate user upload message with data type badge
       const dataTypeBadge = uploadResponse.data_type
