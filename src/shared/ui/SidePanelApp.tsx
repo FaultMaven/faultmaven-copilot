@@ -1263,6 +1263,17 @@ function SidePanelAppContent() {
         setActiveCaseId(newCaseId);
         setHasUnsavedNewChat(false);
 
+        // Set activeCase to enable input (critical for canInteract check in ChatWindow)
+        setActiveCase({
+          case_id: newCaseId,
+          session_id: sessionId,  // Use the sessionId state variable
+          title: caseData.title || IdUtils.generateChatTitle(),
+          status: 'active',
+          created_at: caseData.created_at || new Date().toISOString(),
+          updated_at: caseData.updated_at || new Date().toISOString(),
+          message_count: 0
+        });
+
         // Initialize conversation for this case (empty initially)
         setConversations(prev => ({
           ...prev,
@@ -1536,7 +1547,7 @@ function SidePanelAppContent() {
     } finally {
       // UNLOCK INPUT: Always unlock input when submission completes (success or failure)
       setSubmitting(false);
-      console.log('[SidePanelApp] 🔓 Input unlocked - submission completed');
+      console.log('[SidePanelApp] 🔓 Input unlocked - response received');
     }
   };
 
@@ -1635,6 +1646,17 @@ function SidePanelAppContent() {
           // Update UI with real case ID and initialize case in sidebar
           setActiveCaseId(newCaseId);
           setHasUnsavedNewChat(false);
+
+          // Set activeCase to enable input (critical for canInteract check in ChatWindow)
+          setActiveCase({
+            case_id: newCaseId,
+            session_id: sessionId,  // Use the sessionId state variable
+            title: caseData.title || IdUtils.generateChatTitle(),
+            status: 'active',
+            created_at: caseData.created_at || new Date().toISOString(),
+            updated_at: caseData.updated_at || new Date().toISOString(),
+            message_count: 0
+          });
 
           // Initialize conversation for this case (empty initially)
           setConversations(prev => ({
@@ -1812,7 +1834,13 @@ function SidePanelAppContent() {
       }
 
       // Handle specific error cases
-      if (errorDetails.includes("File too large")) {
+      if (errorDetails.includes("Authentication required") || errorDetails.includes("Unauthorized") || errorDetails.includes("401")) {
+        errorMessage = "Authentication required";
+        errorDetails = "Please sign in again";
+        // Clear authentication state and redirect to login
+        setIsAuthenticated(false);
+        setSessionId(null);
+      } else if (errorDetails.includes("File too large")) {
         errorMessage = "File too large";
         errorDetails = "Maximum file size is 50MB";
       } else if (errorDetails.includes("Unable to decode") || errorDetails.includes("decode")) {
