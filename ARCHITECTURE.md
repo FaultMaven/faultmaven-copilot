@@ -49,11 +49,11 @@ export const API_BASE_URL =
 **Production**: `https://api.faultmaven.ai`
 **Development**: `http://api.faultmaven.local:8000`
 
-### Authentication
+### Authentication & Authorization
 
 **Auth Flow**:
 1. Development login via `/api/v1/auth/dev-login` (no credentials required)
-2. Receive JWT access token with expiration timestamp
+2. Receive JWT access token with expiration timestamp and user profile (including roles)
 3. Store auth state in browser storage
 4. Include `Authorization: Bearer {token}` header in subsequent requests
 5. Auto-refresh or re-authenticate on 401 responses
@@ -64,8 +64,49 @@ interface AuthState {
   access_token: string;
   token_type: "bearer";
   expires_at: number;  // Unix timestamp (ms)
+  user: {
+    user_id: string;
+    username: string;
+    email: string;
+    display_name: string;
+    is_dev_user: boolean;
+    is_active: boolean;
+    roles?: string[];  // User roles for RBAC (e.g., ['admin'], ['user'])
+  };
 }
 ```
+
+**Role-Based Access Control (RBAC)**:
+
+The system implements role-based access control to manage feature visibility and API access:
+
+- **Roles**: `admin`, `user` (default)
+- **Admin Features**:
+  - Global KB Management (system-wide knowledge base)
+  - Access to `/api/v1/knowledge/*` endpoints
+  - Purple-themed admin UI sections
+- **User Features**:
+  - Personal KB management (user-scoped knowledge base)
+  - Access to `/api/v1/users/{user_id}/kb/*` endpoints
+  - Troubleshooting copilot features
+
+**Role Utilities** (`src/lib/utils/roles.ts`):
+```typescript
+// Check if user has a specific role
+hasRole(user: User, role: string): boolean
+
+// Quick admin check
+isAdmin(user: User): boolean
+
+// Check for any of multiple roles
+hasAnyRole(user: User, roles: string[]): boolean
+```
+
+**UI Protection**:
+- Admin-only navigation items hidden from regular users
+- Route protection redirects non-admins from admin pages
+- 403 Forbidden errors handled with user-friendly messages
+- Access control enforced at both UI and API levels
 
 ### Core Endpoints
 
@@ -234,78 +275,107 @@ Response:
 
 **Supported Formats**: Text files, JSON, YAML, logs, configuration files
 
-#### Knowledge Base
+#### Knowledge Base (Two-Tier System)
 
-**Upload Document**
+The knowledge base has been architected with **two distinct tiers** for different use cases:
+
+##### 1. User Knowledge Base (Personal)
+User-scoped personal knowledge base for individual users' runbooks, procedures, and documentation.
+
+**Upload Document to User KB**
 ```
-POST /api/v1/knowledge/upload
+POST /api/v1/users/{user_id}/kb/documents
+Authorization: Bearer {token}
 Content-Type: multipart/form-data
 
 Form Data:
 - file: File
-- title: string       // Optional
-- tags: string[]      // Optional
+- title: string
+- category: string     // e.g., 'database', 'networking'
+- tags: string        // Comma-separated
+- description: string // Optional
 
 Response:
 {
   "document_id": "uuid-v4-string",
   "title": "string",
-  "filename": "string",
+  "category": "database",
   "upload_time": "2024-01-15T10:30:00Z",
-  "status": "processing",
-  "size_bytes": 2048,
-  "page_count": 5       // For PDFs
+  "status": "ready",
+  "size_bytes": 2048
 }
 ```
 
-**Get Documents**
+**Get User's KB Documents**
 ```
-GET /api/v1/knowledge/documents
+GET /api/v1/users/{user_id}/kb/documents?category={category}&limit=50&offset=0
 Authorization: Bearer {token}
 
 Response:
 {
   "documents": [
     {
-      "id": "uuid-v4-string",
-      "title": "string",
-      "filename": "string",
+      "document_id": "uuid-v4-string",
+      "title": "Database Timeout Troubleshooting",
+      "category": "database",
+      "tags": ["postgresql", "timeout"],
       "upload_time": "2024-01-15T10:30:00Z",
-      "status": "ready",
-      "size_bytes": 2048,
-      "tags": []
+      "status": "ready"
     }
-  ]
+  ],
+  "total_count": 42,
+  "limit": 50,
+  "offset": 0
 }
 ```
 
-**Get Single Document**
+**Delete User KB Document**
 ```
-GET /api/v1/knowledge/documents/{document_id}
+DELETE /api/v1/users/{user_id}/kb/documents/{doc_id}
+Authorization: Bearer {token}
+
+Response: 204 No Content
+```
+
+**Get User KB Statistics**
+```
+GET /api/v1/users/{user_id}/kb/stats
 Authorization: Bearer {token}
 
 Response:
 {
-  "id": "uuid-v4-string",
-  "title": "string",
-  "filename": "string",
-  "content": "string",          // Extracted text content
-  "upload_time": "2024-01-15T10:30:00Z",
-  "status": "ready",
-  "metadata": {
-    "page_count": 5,
-    "file_type": "pdf"
+  "total_documents": 42,
+  "categories": {
+    "database": 15,
+    "networking": 12,
+    "general": 15
   }
 }
 ```
 
-**Delete Document**
+##### 2. Global Knowledge Base (Admin Only)
+System-wide knowledge base managed by administrators. Uses the original endpoints but with role-based access control.
+
+**Upload to Global KB** (Admin only)
 ```
-DELETE /api/v1/knowledge/documents/{document_id}
-Authorization: Bearer {token}
+POST /api/v1/knowledge/documents
+Authorization: Bearer {admin_token}
+Content-Type: multipart/form-data
+
+Response: 201 Created
+Error: 403 Forbidden (if not admin)
+```
+
+**Get Global KB Documents** (Admin only)
+```
+GET /api/v1/knowledge/documents
+Authorization: Bearer {admin_token}
 
 Response: 200 OK
+Error: 403 Forbidden (if not admin)
 ```
+
+**Note**: Global KB endpoints require admin role. Regular users will receive 403 Forbidden errors.
 
 ### Data Structures
 
@@ -1662,6 +1732,35 @@ showErrorWithRetry(error, retryFn);
 
 ### UI Components
 
+**Knowledge Base Components**:
+
+**KnowledgeBaseView** (`src/shared/ui/KnowledgeBaseView.tsx`):
+- Personal knowledge base management for individual users
+- Upload documents to user-scoped KB (`/api/v1/users/{user_id}/kb/*`)
+- View, edit, delete user's personal documents
+- Category filtering and pagination
+- Duplicate detection before upload
+- Three-tab interface: Upload, Documents, Search
+- Accessible to all authenticated users
+
+**GlobalKBView** (`src/shared/ui/GlobalKBView.tsx`):
+- System-wide knowledge base management (admin only)
+- Manages global KB via `/api/v1/knowledge/*` endpoints
+- Purple-themed admin UI with "Admin Only" badge
+- Full CRUD operations on global documents
+- Built-in access control with friendly error for non-admins
+- Same three-tab interface as KnowledgeBaseView
+- Visible only to users with `admin` role
+
+**Role-Based Navigation** (`src/shared/ui/SidePanelApp.tsx`):
+- Dynamic navigation based on user roles
+- "My Knowledge Base" tab for all users
+- "Global KB (Admin)" tab visible only to admins
+- Route protection redirects non-admins from admin pages
+- Tab state: `'copilot' | 'kb' | 'admin-kb'`
+
+**Error Handling Components**:
+
 **Toast Notifications** (`src/shared/ui/components/Toast.tsx`):
 - Non-blocking transient errors
 - Auto-dismiss (configurable duration)
@@ -1694,13 +1793,16 @@ showErrorWithRetry(error, retryFn);
 
 | Error Type | Display | Duration | Dismissible | Actions |
 |------------|---------|----------|-------------|---------|
-| Authentication | Modal | Persistent | No | Sign In |
+| Authentication (401) | Modal | Persistent | No | Sign In |
+| Permission (403) | Toast | 8s | Yes | - |
 | Network | Toast | 10s | Yes | Retry |
 | Timeout | Toast | 10s | Yes | Retry |
 | Server Error | Toast | 8s | Yes | - |
 | Validation | Inline + Toast | 5s | Yes | - |
 | Rate Limit | Toast | Until reset | Yes | Wait |
 | Optimistic Failure | Inline | Persistent | Yes | Retry |
+
+**Note**: 403 Permission errors show user-friendly message "This feature requires admin access" instead of technical error details.
 
 ### Error Flow
 

@@ -50,6 +50,7 @@ import {
   debugDataSeparation
 } from "../../lib/utils/data-integrity";
 import KnowledgeBaseView from "./KnowledgeBaseView";
+import GlobalKBView from "./GlobalKBView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ErrorState } from "./components/ErrorState";
 import ConversationsList from "./components/ConversationsList";
@@ -59,6 +60,7 @@ import { ConflictResolutionModal, ConflictResolution } from "./components/Confli
 import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { memoryManager } from "../../lib/utils/memory-manager";
+import { useAuth } from "./hooks/useAuth";
 
 // Make PersistenceManager available globally for debugging
 if (typeof window !== 'undefined') {
@@ -89,8 +91,9 @@ export default function SidePanelApp() {
 function SidePanelAppContent() {
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError, showErrorWithRetry } = useError();
+  const { isAdmin } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'copilot' | 'kb'>('copilot');
+  const [activeTab, setActiveTab] = useState<'copilot' | 'kb' | 'admin-kb'>('copilot');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversationTitles, setConversationTitles] = useState<Record<string, string>>({});
   const [titleSources, setTitleSources] = useState<Record<string, 'user' | 'backend' | 'system'>>({});
@@ -139,6 +142,15 @@ function SidePanelAppContent() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  // Route protection: redirect non-admins away from admin-kb tab
+  useEffect(() => {
+    if (activeTab === 'admin-kb' && !isAdmin()) {
+      console.warn('[SidePanelApp] Non-admin attempted to access admin-kb, redirecting to copilot');
+      setActiveTab('copilot');
+      showError('Admin access required for Global KB Management');
+    }
+  }, [activeTab, isAdmin, showError]);
 
   // Track whether we need to load conversations from backend (after rebuild/login)
 
@@ -1266,7 +1278,7 @@ function SidePanelAppContent() {
         // Set activeCase to enable input (critical for canInteract check in ChatWindow)
         setActiveCase({
           case_id: newCaseId,
-          session_id: sessionId,  // Use the sessionId state variable
+          session_id: sessionId || undefined,  // Convert null to undefined for type compatibility
           title: caseData.title || IdUtils.generateChatTitle(),
           status: 'active',
           created_at: caseData.created_at || new Date().toISOString(),
@@ -2005,13 +2017,32 @@ function SidePanelAppContent() {
                     ? 'bg-blue-300 text-white hover:bg-blue-400'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
-                title="Knowledge Base"
+                title="My Knowledge Base"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
-                <span className="text-sm font-medium">Knowledge Base</span>
+                <span className="text-sm font-medium">My Knowledge Base</span>
               </button>
+              {isAdmin() && (
+                <button
+                  onClick={() => {
+                    setActiveTab('admin-kb');
+                    setHasUnsavedNewChat(false);
+                  }}
+                  className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors ${
+                    activeTab === 'admin-kb'
+                      ? 'bg-purple-500 text-white hover:bg-purple-600'
+                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                  }`}
+                  title="Global KB Management (Admin)"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  <span className="text-sm font-medium">Global KB (Admin)</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setActiveTab('copilot');
@@ -2224,6 +2255,23 @@ function SidePanelAppContent() {
                 }
               >
                 <KnowledgeBaseView className="h-full" />
+              </ErrorBoundary>
+            </div>
+            <div className={`h-full ${activeTab === 'admin-kb' ? 'block' : 'hidden'}`}>
+              <ErrorBoundary
+                fallback={
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">Error loading Global KB Management</p>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                }
+              >
+                <GlobalKBView className="h-full" />
               </ErrorBoundary>
             </div>
           </div>

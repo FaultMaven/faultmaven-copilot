@@ -17,6 +17,7 @@ export interface AuthState {
     display_name: string;
     is_dev_user: boolean;
     is_active: boolean;
+    roles?: string[]; // User roles (e.g., ['admin'], ['user'])
   };
 }
 
@@ -61,6 +62,25 @@ class AuthManager {
   async isAuthenticated(): Promise<boolean> {
     const authState = await this.getAuthState();
     return authState !== null;
+  }
+
+  /**
+   * Get current authenticated user with roles
+   * @returns User object or null if not authenticated
+   */
+  async getCurrentUser(): Promise<User | null> {
+    const authState = await this.getAuthState();
+    if (!authState) return null;
+
+    return {
+      user_id: authState.user.user_id,
+      username: authState.user.username,
+      email: authState.user.email,
+      display_name: authState.user.display_name,
+      is_dev_user: authState.user.is_dev_user,
+      is_active: authState.user.is_active,
+      roles: authState.user.roles || []
+    };
   }
 }
 
@@ -585,6 +605,7 @@ export interface User {
   display_name: string;
   is_dev_user: boolean;
   is_active: boolean;
+  roles?: string[]; // User roles for access control (e.g., ['admin'], ['user'])
 }
 
 /**
@@ -1395,6 +1416,149 @@ export async function searchKnowledgeBase(
   return response.json();
 }
 
+// ===== User-Scoped Knowledge Base Functions =====
+
+/**
+ * Upload a document to user's personal knowledge base
+ */
+export async function uploadUserKBDocument(
+  userId: string,
+  file: File,
+  title: string,
+  documentType: DocumentType,
+  category?: string,
+  tags?: string,
+  description?: string
+): Promise<KnowledgeDocument> {
+  const formData = new FormData();
+
+  // Ensure proper MIME type for common file extensions
+  const fileExtension = file.name.split('.').pop()?.toLowerCase();
+  const mimeTypeMap: Record<string, string> = {
+    'md': 'text/markdown',
+    'txt': 'text/plain',
+    'json': 'application/json',
+    'yaml': 'text/yaml',
+    'yml': 'text/yaml',
+    'log': 'text/plain',
+    'conf': 'text/plain'
+  };
+
+  let fileToUpload = file;
+  if (fileExtension && mimeTypeMap[fileExtension] && file.type === 'application/octet-stream') {
+    fileToUpload = new File([file], file.name, { type: mimeTypeMap[fileExtension] });
+  }
+
+  formData.append('file', fileToUpload);
+  formData.append('title', title);
+  formData.append('category', category || documentType);
+  if (tags) formData.append('tags', tags);
+  if (description) formData.append('description', description);
+
+  console.log(`[API] Uploading user KB document for user ${userId}: ${title}`);
+  console.log(`[API] Original file type: ${file.type}, Corrected type: ${fileToUpload.type}`);
+  console.log(`[API] File name: ${file.name}, File size: ${file.size} bytes`);
+
+  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/users/${userId}/kb/documents`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    console.error('[API] Upload failed:', response.status, errorData);
+    throw new Error(errorData.detail || `Upload failed: ${response.status}`);
+  }
+
+  const uploadedDocument = await response.json();
+  console.log('[API] Document uploaded successfully to user KB:', uploadedDocument);
+  return uploadedDocument;
+}
+
+/**
+ * Get user's KB documents with filtering and pagination
+ */
+export async function getUserKBDocuments(
+  userId: string,
+  category?: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<DocumentListResponse> {
+  const url = new URL(`${config.apiUrl}/api/v1/users/${userId}/kb/documents`);
+
+  if (category) url.searchParams.append('category', category);
+  url.searchParams.append('limit', limit.toString());
+  url.searchParams.append('offset', offset.toString());
+
+  console.log('[API] Fetching user KB documents from:', url.toString());
+
+  const response = await authenticatedFetch(url.toString(), {
+    method: 'GET'
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    console.error('[API] Failed to fetch user KB documents:', response.status, errorData);
+    throw new Error(errorData.detail || `Failed to fetch documents: ${response.status}`);
+  }
+
+  const data = await response.json();
+  console.log('[API] Received user KB documents:', data);
+
+  // Handle different possible response formats
+  if (data && typeof data === 'object' && data.documents && Array.isArray(data.documents)) {
+    const response: DocumentListResponse = {
+      documents: data.documents,
+      total_count: data.total_count || data.documents.length,
+      limit: data.limit || limit,
+      offset: data.offset || offset,
+      filters: data.filters || {}
+    };
+    console.log(`[API] Returning ${response.documents.length} user KB documents`);
+    return response;
+  }
+
+  // Unexpected format
+  console.warn('[API] Unexpected response format for user KB documents:', data);
+  return {
+    documents: [],
+    total_count: 0,
+    limit: limit,
+    offset: offset,
+    filters: {}
+  };
+}
+
+/**
+ * Delete a document from user's KB
+ */
+export async function deleteUserKBDocument(userId: string, documentId: string): Promise<void> {
+  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/users/${userId}/kb/documents/${documentId}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to delete document: ${response.status}`);
+  }
+}
+
+/**
+ * Get user's KB statistics
+ */
+export async function getUserKBStats(userId: string): Promise<any> {
+  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/users/${userId}/kb/stats`, {
+    method: 'GET'
+  });
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to get KB stats: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 /**
  * Get session details
  */
@@ -1901,6 +2065,7 @@ export interface UserProfile {
   display_name: string;
   created_at: string;
   is_dev_user: boolean;
+  roles?: string[]; // User roles for access control
 }
 
 // Backend response structure from /api/v1/auth/dev-login

@@ -5,17 +5,18 @@ import DocumentsListView from "./components/DocumentsListView";
 import EditMetadataModal from "./components/EditMetadataModal";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import SearchPanel from "./components/SearchPanel";
-import { 
-  uploadKnowledgeDocument, 
-  getKnowledgeDocuments, 
-  deleteKnowledgeDocument,
-  updateKnowledgeDocument,
+import {
+  uploadUserKBDocument,  // Changed to user-scoped
+  getUserKBDocuments,    // Changed to user-scoped
+  deleteUserKBDocument,  // Changed to user-scoped
+  updateKnowledgeDocument,  // Keep global for now (will need user-scoped version later)
   getKnowledgeDocument,
   searchKnowledgeBase,
   KnowledgeDocument,
   DocumentListResponse,
   DocumentType
 } from "../../lib/api";
+import { useAuth } from "./hooks/useAuth";
 
 interface KnowledgeBaseViewProps {
   serverError?: string | null;
@@ -24,6 +25,8 @@ interface KnowledgeBaseViewProps {
 }
 
 export default function KnowledgeBaseView({ serverError, onRetry, className = '' }: KnowledgeBaseViewProps) {
+  // Get current user for user-scoped KB operations
+  const { currentUser } = useAuth();
   // Main state
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -56,28 +59,35 @@ export default function KnowledgeBaseView({ serverError, onRetry, className = ''
   const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'documents' | 'search'>('upload');
 
-  // Fetch documents with filters and pagination
+  // Fetch documents with filters and pagination (user-scoped)
   const fetchDocuments = async () => {
+    if (!currentUser) {
+      console.warn('[KnowledgeBaseView] No current user, skipping fetch');
+      setError('Please log in to view your knowledge base');
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
-      const tagsParam = filters.tags?.join(',') || undefined;
       const offset = (currentPage - 1) * pageSize;
-      
-      const response: DocumentListResponse = await getKnowledgeDocuments(
-        filters.documentType,
-        tagsParam,
+      const category = filters.documentType;  // Use documentType as category filter
+
+      const response: DocumentListResponse = await getUserKBDocuments(
+        currentUser.user_id,
+        category,
         pageSize,
         offset
       );
-      
-      console.log('[KnowledgeBaseView] Fetched documents response:', response);
-      
+
+      console.log('[KnowledgeBaseView] Fetched user KB documents:', response);
+
       setDocuments(response.documents || []);
       setTotalCount(response.total_count || 0);
     } catch (err: any) {
-      console.error("[KnowledgeBaseView] Error fetching documents:", err);
-      setError('Could not load documents. Please check your connection and try again.');
+      console.error("[KnowledgeBaseView] Error fetching user KB documents:", err);
+      setError('Could not load your documents. Please check your connection and try again.');
       setDocuments([]);
       setTotalCount(0);
     } finally {
@@ -87,19 +97,20 @@ export default function KnowledgeBaseView({ serverError, onRetry, className = ''
 
   // Fetch documents when switching to documents tab or when filters/pagination change
   useEffect(() => {
-    if (activeTab === 'documents') {
+    if (activeTab === 'documents' && currentUser) {
       fetchDocuments();
     }
   }, [
-    activeTab, 
-    filters.documentType, 
+    activeTab,
+    currentUser?.user_id,  // Re-fetch when user changes
+    filters.documentType,
     JSON.stringify(filters.tags), // Stringify array to avoid reference comparison issues
-    filters.textSearch, 
-    currentPage, 
+    filters.textSearch,
+    currentPage,
     pageSize
   ]);
 
-  // Handle upload with enhanced metadata
+  // Handle upload with enhanced metadata (user-scoped)
   const handleUpload = async (uploadData: {
     file: File;
     title: string;
@@ -109,27 +120,32 @@ export default function KnowledgeBaseView({ serverError, onRetry, className = ''
     sourceUrl?: string;
     description?: string;
   }) => {
+    if (!currentUser) {
+      setError('Please log in to upload documents');
+      return;
+    }
+
     setIsUploading(true);
     setError(null);
-    
+
     try {
-      console.log('[KnowledgeBaseView] Uploading document:', uploadData.title);
-      
-      const uploadedDoc = await uploadKnowledgeDocument(
+      console.log('[KnowledgeBaseView] Uploading document to user KB:', uploadData.title);
+
+      const uploadedDoc = await uploadUserKBDocument(
+        currentUser.user_id,  // User-scoped upload
         uploadData.file,
         uploadData.title,
         uploadData.documentType,
         uploadData.category,
         uploadData.tags,
-        uploadData.sourceUrl,
         uploadData.description
       );
-      
-      console.log('[KnowledgeBaseView] Document uploaded successfully:', uploadedDoc);
-      
+
+      console.log('[KnowledgeBaseView] Document uploaded successfully to user KB:', uploadedDoc);
+
       // Refresh documents to show the new upload
       await fetchDocuments();
-      
+
       // Switch to documents tab to show the upload
       setActiveTab('documents');
       
@@ -153,8 +169,13 @@ export default function KnowledgeBaseView({ serverError, onRetry, className = ''
 
   // Handle document deletion
   const handleDelete = async (documentId: string) => {
+    if (!currentUser) {
+      setError('Please log in to delete documents');
+      return;
+    }
+
     try {
-      await deleteKnowledgeDocument(documentId);
+      await deleteUserKBDocument(currentUser.user_id, documentId);
       await fetchDocuments(); // Refresh list
     } catch (err: any) {
       console.error("[KnowledgeBaseView] Error deleting document:", err);
@@ -258,18 +279,22 @@ export default function KnowledgeBaseView({ serverError, onRetry, className = ''
     }
   };
 
-  // Handle duplicate checking for upload
+  // Handle duplicate checking for upload (user-scoped)
   const handleCheckDuplicates = async (title: string, documentType: DocumentType): Promise<KnowledgeDocument[]> => {
+    if (!currentUser) {
+      return []; // No user, no duplicates to check
+    }
+
     try {
-      // First, get all documents of the same type
-      const response = await getKnowledgeDocuments(documentType, undefined, 200, 0);
-      
+      // First, get all documents of the same type from user's KB
+      const response = await getUserKBDocuments(currentUser.user_id, documentType, 200, 0);
+
       // Filter for exact title matches (case-insensitive)
-      const duplicates = response.documents.filter(doc => 
+      const duplicates = response.documents.filter((doc: KnowledgeDocument) =>
         doc.title.toLowerCase().trim() === title.toLowerCase().trim() &&
         doc.document_type === documentType
       );
-      
+
       return duplicates;
     } catch (err: any) {
       console.warn("[KnowledgeBaseView] Error checking duplicates:", err);

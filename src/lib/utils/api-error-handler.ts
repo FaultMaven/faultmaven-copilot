@@ -12,6 +12,7 @@ const log = createLogger('APIErrorHandler');
 
 export enum ErrorType {
   AUTH = 'auth',
+  PERMISSION = 'permission',  // New: 403 Forbidden errors
   NETWORK = 'network',
   SERVER = 'server'
 }
@@ -57,9 +58,25 @@ export function classifyError(error: unknown, context?: string): ErrorInfo {
     };
   }
 
-  // 3. Check for network errors by error message
+  // 3. Check for permission/authorization errors (403 Forbidden)
   if (error instanceof Error) {
     const errorMsg = error.message.toLowerCase();
+
+    // 403 Forbidden - insufficient permissions
+    if (errorMsg.includes('403') ||
+        errorMsg.includes('forbidden') ||
+        errorMsg.includes('admin access required') ||
+        errorMsg.includes('insufficient permissions')) {
+      log.warn(`${contextPrefix}Permission error detected`, error);
+
+      return {
+        type: ErrorType.PERMISSION,
+        userMessage: '🔐 This feature requires admin access. You don\'t have permission to perform this action.',
+        technicalMessage: error.message,
+        shouldRetry: false,
+        shouldLogout: false
+      };
+    }
 
     // Network connectivity issues
     if (errorMsg.includes('network') ||
@@ -78,8 +95,9 @@ export function classifyError(error: unknown, context?: string): ErrorInfo {
       };
     }
 
-    // Session/auth issues (catch auth errors that came as 500)
-    if (errorMsg.includes('token') ||
+    // Session/auth issues (401 Unauthorized - catch auth errors that came as 500)
+    if (errorMsg.includes('401') ||
+        errorMsg.includes('token') ||
         errorMsg.includes('authentication') ||
         errorMsg.includes('unauthorized') ||
         errorMsg.includes('session expired') ||
@@ -117,6 +135,9 @@ export function formatErrorForChat(errorInfo: ErrorInfo): string {
   switch (errorInfo.type) {
     case ErrorType.AUTH:
       return '🔒 Your session has expired. Please log in again to continue.';
+
+    case ErrorType.PERMISSION:
+      return '🔐 Admin access required. You don\'t have permission to access this feature.';
 
     case ErrorType.NETWORK:
       return '🌐 Network error. Please check your connection and try again.';

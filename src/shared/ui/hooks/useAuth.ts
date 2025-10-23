@@ -6,13 +6,15 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { devLogin, logoutAuth, authManager, AuthenticationError } from '../../../lib/api';
+import { devLogin, logoutAuth, authManager, AuthenticationError, User } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
+import { hasRole, isAdmin, ROLES } from '../../../lib/utils/roles';
 
 const log = createLogger('Auth');
 
 interface AuthState {
   isAuthenticated: boolean;
+  currentUser: User | null;
   loginUsername: string;
   loggingIn: boolean;
   error: string | null;
@@ -21,18 +23,24 @@ interface AuthState {
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
+    currentUser: null,
     loginUsername: '',
     loggingIn: false,
     error: null
   });
 
-  // Check authentication status on mount
+  // Check authentication status and load user on mount
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const isAuth = await authManager.isAuthenticated();
-        setAuthState(prev => ({ ...prev, isAuthenticated: isAuth }));
-        log.debug('Auth status checked', { isAuthenticated: isAuth });
+        const user = await authManager.getCurrentUser();
+        setAuthState(prev => ({
+          ...prev,
+          isAuthenticated: isAuth,
+          currentUser: user
+        }));
+        log.debug('Auth status checked', { isAuthenticated: isAuth, user });
       } catch (error) {
         log.error('Auth check failed', error);
       }
@@ -50,6 +58,7 @@ export function useAuth() {
 
         setAuthState({
           isAuthenticated: false,
+          currentUser: null,
           loginUsername: '',
           loggingIn: false,
           error: 'Your session has expired. Please log in again.'
@@ -74,14 +83,18 @@ export function useAuth() {
       log.info('Attempting login', { username });
       await devLogin(username);
 
+      // Load user data after successful login
+      const user = await authManager.getCurrentUser();
+
       setAuthState({
         isAuthenticated: true,
+        currentUser: user,
         loginUsername: '',
         loggingIn: false,
         error: null
       });
 
-      log.info('Login successful');
+      log.info('Login successful', { user });
       return true;
     } catch (error) {
       const errorMessage = error instanceof AuthenticationError
@@ -105,6 +118,7 @@ export function useAuth() {
 
       setAuthState({
         isAuthenticated: false,
+        currentUser: null,
         loginUsername: '',
         loggingIn: false,
         error: null
@@ -125,14 +139,27 @@ export function useAuth() {
     setAuthState(prev => ({ ...prev, error: null }));
   }, []);
 
+  // Role checking helpers
+  const checkRole = useCallback((role: string): boolean => {
+    return hasRole(authState.currentUser, role);
+  }, [authState.currentUser]);
+
+  const checkIsAdmin = useCallback((): boolean => {
+    return isAdmin(authState.currentUser);
+  }, [authState.currentUser]);
+
   return {
     isAuthenticated: authState.isAuthenticated,
+    currentUser: authState.currentUser,
     loginUsername: authState.loginUsername,
     loggingIn: authState.loggingIn,
     authError: authState.error,
     login,
     logout,
     setLoginUsername,
-    clearAuthError
+    clearAuthError,
+    hasRole: checkRole,
+    isAdmin: checkIsAdmin,
+    ROLES, // Export ROLES constant for convenience
   };
 }
