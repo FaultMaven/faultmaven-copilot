@@ -2147,7 +2147,9 @@ function SidePanelAppContent() {
           optimisticCases={optimisticCases}
           pinnedCases={pinnedCases}
           refreshTrigger={refreshSessions}
+          dashboardUrl={capabilities?.dashboardUrl}
           onTabChange={handleTabChange}
+          onOpenDashboard={handleOpenDashboard}
           onCaseSelect={handleCaseSelect}
           onNewChat={handleNewChatFromNav}
           onLogout={handleLogout}
