@@ -21,7 +21,7 @@ export interface CollapsibleNavigationProps {
   onToggleCollapse: () => void;
 
   // Active states
-  activeTab: 'copilot' | 'kb' | 'admin-kb';
+  activeTab: 'copilot';
   activeCaseId?: string;
   sessionId?: string;
   hasUnsavedNewChat: boolean;
@@ -35,8 +35,12 @@ export interface CollapsibleNavigationProps {
   pinnedCases: Set<string>;
   refreshTrigger: number;
 
+  // Capabilities
+  dashboardUrl?: string;
+
   // Callbacks
-  onTabChange: (tab: 'copilot' | 'kb' | 'admin-kb') => void;
+  onTabChange: (tab: 'copilot') => void;
+  onOpenDashboard?: () => void;
   onCaseSelect: (caseId: string) => void;
   onNewChat: () => void;
   onLogout: () => void;
@@ -58,7 +62,9 @@ export function CollapsibleNavigation({
   optimisticCases,
   pinnedCases,
   refreshTrigger,
+  dashboardUrl,
   onTabChange,
+  onOpenDashboard,
   onCaseSelect,
   onNewChat,
   onLogout,
@@ -151,48 +157,10 @@ export function CollapsibleNavigation({
 
         {/* Navigation buttons */}
         <div className="flex-shrink-0 px-4 py-2 space-y-2">
-          {/* My Knowledge Base button */}
-          <button
-            onClick={() => onTabChange('kb')}
-            className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors ${
-              activeTab === 'kb'
-                ? 'bg-blue-300 text-white hover:bg-blue-400'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-            title="My Knowledge Base"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
-            <span className="text-sm font-medium">My Knowledge Base</span>
-          </button>
-
-          {/* Global KB (Admin only) */}
-          {isAdmin && (
-            <button
-              onClick={() => onTabChange('admin-kb')}
-              className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors ${
-                activeTab === 'admin-kb'
-                  ? 'bg-purple-500 text-white hover:bg-purple-600'
-                  : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-              }`}
-              title="Global KB Management (Admin)"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-              <span className="text-sm font-medium">Global KB (Admin)</span>
-            </button>
-          )}
-
           {/* New Case button */}
           <button
             onClick={onNewChat}
-            className={`w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors ${
-              activeTab === 'copilot'
-                ? 'bg-blue-300 text-white hover:bg-blue-400'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+            className="w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors bg-blue-300 text-white hover:bg-blue-400"
             title="Start new case"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -200,6 +168,23 @@ export function CollapsibleNavigation({
             </svg>
             <span className="text-sm font-medium">New Case</span>
           </button>
+
+          {/* Open Dashboard button */}
+          {dashboardUrl && onOpenDashboard && (
+            <button
+              onClick={onOpenDashboard}
+              className="w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200"
+              title="Open Knowledge Base Dashboard"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              <span className="text-sm font-medium">KB Dashboard</span>
+              <svg className="w-3 h-3 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Conversations list */}
