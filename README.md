@@ -1,6 +1,6 @@
 # FaultMaven Copilot – WXT Browser Extension
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](./package.json)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](./package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](./LICENSE.md)
 [![Framework](https://img.shields.io/badge/framework-WXT-orange.svg)](https://wxt.dev/)
 [![React](https://img.shields.io/badge/React-19+-61DAFB.svg?logo=react&logoColor=white)](https://react.dev/)
