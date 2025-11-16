@@ -17,7 +17,7 @@ export default defineConfig({
   }),
   manifest: {
     name: "FaultMaven Copilot",
-    version: "0.3.10",
+    version: "0.4.0",
     description: "AI-powered troubleshooting assistant embedded in your browser",
     icons: {
       "16": "icon/px16-square-dark.png",

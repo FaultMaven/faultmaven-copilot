@@ -2,24 +2,22 @@
 /**
  * Content Area Component
  *
- * Manages the main content area that switches between different views:
+ * Manages the main content area for chat-only UI:
  * - Copilot Chat (active case or new chat)
- * - User Knowledge Base
- * - Global KB Management (Admin only)
  *
- * Phase 1, Week 1 implementation
+ * Knowledge Base management now handled via dashboard (see CollapsibleNavigation.tsx)
+ *
+ * Phase 1, Week 1 implementation (updated for Universal Split Architecture)
  */
 
 import React from 'react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ChatWindow } from '../components/ChatWindow';
-import KnowledgeBaseView from '../KnowledgeBaseView';
-import GlobalKBView from '../GlobalKBView';
 import type { UserCase, InvestigationProgress, UploadedData } from '../../../lib/api';
 
 export interface ContentAreaProps {
-  // Active view
-  activeTab: 'copilot' | 'kb' | 'admin-kb';
+  // Active view (chat-only, no KB tabs)
+  activeTab: 'copilot';
 
   // Chat state
   activeCaseId?: string;
@@ -175,52 +173,12 @@ const ContentAreaComponent = ({
     );
   };
 
-  // Main content area with tab switching
+  // Main content area - chat-only (no tabs)
+  // KB management now handled via external dashboard
   return (
     <div className="flex-1 flex flex-col min-w-0 max-w-none">
       <div className="flex-1 overflow-y-auto">
-        {/* Copilot Chat Tab */}
-        <div className={`h-full ${activeTab === 'copilot' ? 'block' : 'hidden'}`}>
-          {renderChatContent()}
-        </div>
-
-        {/* User Knowledge Base Tab */}
-        <div className={`h-full ${activeTab === 'kb' ? 'block' : 'hidden'}`}>
-          <ErrorBoundary
-            fallback={
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700">Error loading Knowledge Base</p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
-                  Retry
-                </button>
-              </div>
-            }
-          >
-            <KnowledgeBaseView className="h-full" />
-          </ErrorBoundary>
-        </div>
-
-        {/* Global KB Management Tab (Admin only) */}
-        <div className={`h-full ${activeTab === 'admin-kb' ? 'block' : 'hidden'}`}>
-          <ErrorBoundary
-            fallback={
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700">Error loading Global KB Management</p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
-                  Retry
-                </button>
-              </div>
-            }
-          >
-            <GlobalKBView className="h-full" />
-          </ErrorBoundary>
-        </div>
+        {renderChatContent()}
       </div>
     </div>
   );
