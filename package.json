@@ -48,5 +48,10 @@
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
     "wxt": "^0.20.6"
+  },
+  "pnpm": {
+    "overrides": {
+      "js-yaml": ">=4.1.1"
+    }
   }
 }
