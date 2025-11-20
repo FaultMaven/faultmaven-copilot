@@ -30,9 +30,7 @@ export default defineConfig({
       "storage", "sidePanel", "activeTab", "tabs", "scripting"
     ],
     host_permissions: [
-      "<all_urls>",  // Required for content script auto-injection on all pages
-      "https://api.faultmaven.ai/*",
-      "http://api.faultmaven.local:8000/*"
+      "<all_urls>",  // Required for content script auto-injection and custom API endpoints
     ],
     action: {
       default_title: "Open FaultMaven Copilot",
@@ -45,7 +43,7 @@ export default defineConfig({
       default_path: "sidepanel_manual.html"
     },
     content_security_policy: {
-      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.faultmaven.ai http://api.faultmaven.local:8000;"
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }
   }
 });

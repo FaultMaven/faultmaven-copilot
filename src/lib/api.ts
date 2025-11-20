@@ -1,4 +1,4 @@
-import config from "../config";
+import config, { getApiUrl } from "../config";
 import { clientSessionManager } from "./session/client-session-manager";
 
 // ===== Authentication and Session Management =====
@@ -1069,7 +1069,7 @@ export async function createSession(metadata?: Record<string, any>): Promise<Ses
  * Use this when you explicitly want a fresh session
  */
 export async function createFreshSession(metadata?: Record<string, any>): Promise<Session> {
-  const url = new URL(`${config.apiUrl}/api/v1/sessions/`);
+  const url = new URL(`${await getApiUrl()}/api/v1/sessions/`);
 
   const requestBody = metadata ? { metadata } : {};
 
@@ -1101,7 +1101,7 @@ export async function createFreshSession(metadata?: Record<string, any>): Promis
  * Get session data with pagination
  */
 export async function getSessionData(sessionId: string, limit: number = 10, offset: number = 0): Promise<UploadedData[]> {
-  const url = new URL(`${config.apiUrl}/api/v1/data/sessions/${sessionId}`);
+  const url = new URL(`${await getApiUrl()}/api/v1/data/sessions/${sessionId}`);
   url.searchParams.append('limit', limit.toString());
   url.searchParams.append('offset', offset.toString());
 
@@ -1125,7 +1125,7 @@ export async function getSessionData(sessionId: string, limit: number = 10, offs
  * Get individual knowledge base document by ID
  */
 export async function getKnowledgeDocument(documentId: string): Promise<KnowledgeDocument> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/knowledge/documents/${documentId}`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/knowledge/documents/${documentId}`, {
     method: 'GET'
   });
 
@@ -1146,7 +1146,7 @@ export async function getKnowledgeDocument(documentId: string): Promise<Knowledg
  * Get session details
  */
 export async function getSession(sessionId: string): Promise<Session> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/sessions/${sessionId}`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/sessions/${sessionId}`, {
     method: 'GET'
   });
 
@@ -1162,7 +1162,7 @@ export async function getSession(sessionId: string): Promise<Session> {
  * Delete a session
  */
 export async function deleteSession(sessionId: string): Promise<void> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/sessions/${sessionId}`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/sessions/${sessionId}`, {
     method: 'DELETE'
   });
 
@@ -1332,7 +1332,7 @@ export interface CreateCaseRequest {
 }
 
 export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
-  const response = await authenticatedFetchWithRetry(`${config.apiUrl}/api/v1/cases`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases`, {
     method: 'POST',
     body: JSON.stringify(data || {}),
     credentials: 'include'
@@ -1366,7 +1366,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
     // Removed: session_id, priority, context (auth handled by backend)
   };
 
-  const response = await authenticatedFetchWithRetry(`${config.apiUrl}/api/v1/cases/${caseId}/queries`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/queries`, {
     method: 'POST',
     body: JSON.stringify(body),
     credentials: 'include'
@@ -1398,7 +1398,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
   if (response.status === 202) {
     const location = response.headers.get('Location');
     if (!location) throw new Error('Missing Location header for async query');
-    const jobUrl = new URL(location, config.apiUrl).toString();
+    const jobUrl = new URL(location, await getApiUrl()).toString();
     let delay = POLL_INITIAL_MS;
     let elapsed = 0;
     for (let i = 0; elapsed <= POLL_MAX_TOTAL_MS; i++) {
@@ -1411,7 +1411,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
       if (res.status === 303) {
         const finalLoc = res.headers.get('Location');
         if (!finalLoc) throw new Error('Missing final resource Location');
-        const finalUrl = new URL(finalLoc, config.apiUrl).toString();
+        const finalUrl = new URL(finalLoc, await getApiUrl()).toString();
         const finalRes = await authenticatedFetchWithRetry(finalUrl, { method: 'GET', credentials: 'include' });
         const fcorr = finalRes.headers.get('x-correlation-id') || finalRes.headers.get('X-Correlation-ID');
         if (fcorr) console.log('[API] poll final', { correlationId: fcorr, status: finalRes.status });
@@ -1466,7 +1466,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
     const createdLoc = response.headers.get('Location');
     console.log('[API] *** LOCATION HEADER ***', { createdLoc, hasLocation: !!createdLoc });
     if (createdLoc) {
-      const createdUrl = new URL(createdLoc, config.apiUrl).toString();
+      const createdUrl = new URL(createdLoc, await getApiUrl()).toString();
       console.log('[API] DEBUG: Starting polling for created resource:', { createdUrl, caseId });
       // Poll the created resource until it contains an AgentResponse or redirects to final
       let delay = POLL_INITIAL_MS;
@@ -1482,7 +1482,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
         if (createdRes.status === 303) {
           const finalLoc = createdRes.headers.get('Location');
           if (!finalLoc) throw new Error('Missing final resource Location');
-          const finalUrl = new URL(finalLoc, config.apiUrl).toString();
+          const finalUrl = new URL(finalLoc, await getApiUrl()).toString();
           const finalRes = await authenticatedFetchWithRetry(finalUrl, { method: 'GET', credentials: 'include' });
           const fcorr = finalRes.headers.get('x-correlation-id') || finalRes.headers.get('X-Correlation-ID');
           if (fcorr) console.log('[API] poll final', { correlationId: fcorr, status: finalRes.status });
@@ -1624,7 +1624,7 @@ export async function uploadDataToCase(
   form.append('file', file);
   if (description) form.append('description', description);
   if (sourceMetadata) form.append('source_metadata', JSON.stringify(sourceMetadata));
-  const response = await authenticatedFetchWithRetry(`${config.apiUrl}/api/v1/cases/${caseId}/data`, { method: 'POST', body: form, credentials: 'include' });
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/data`, { method: 'POST', body: form, credentials: 'include' });
   if (response.status === 202) {
     const jobLocation = response.headers.get('Location');
     if (!jobLocation) throw new Error('Missing job Location header');
@@ -1655,7 +1655,7 @@ export async function uploadDataToCase(
  */
 export async function getReportRecommendations(caseId: string): Promise<ReportRecommendation> {
   const response = await authenticatedFetch(
-    `${config.apiUrl}/api/v1/cases/${caseId}/report-recommendations`,
+    `${await getApiUrl()}/api/v1/cases/${caseId}/report-recommendations`,
     {
       method: 'GET',
       credentials: 'include'
@@ -1678,7 +1678,7 @@ export async function generateReports(
   request: ReportGenerationRequest
 ): Promise<ReportGenerationResponse> {
   const response = await authenticatedFetch(
-    `${config.apiUrl}/api/v1/cases/${caseId}/reports`,
+    `${await getApiUrl()}/api/v1/cases/${caseId}/reports`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1702,7 +1702,7 @@ export async function getCaseReports(
   caseId: string,
   includeHistory: boolean = false
 ): Promise<CaseReport[]> {
-  const url = new URL(`${config.apiUrl}/api/v1/cases/${caseId}/reports`);
+  const url = new URL(`${await getApiUrl()}/api/v1/cases/${caseId}/reports`);
   if (includeHistory) {
     url.searchParams.append('include_history', 'true');
   }
@@ -1728,7 +1728,7 @@ export async function downloadReport(
   reportId: string
 ): Promise<Blob> {
   const response = await authenticatedFetch(
-    `${config.apiUrl}/api/v1/cases/${caseId}/reports/${reportId}/download`,
+    `${await getApiUrl()}/api/v1/cases/${caseId}/reports/${reportId}/download`,
     {
       method: 'GET',
       credentials: 'include'
@@ -1751,7 +1751,7 @@ export async function closeCase(
   request: CaseClosureRequest
 ): Promise<CaseClosureResponse> {
   const response = await authenticatedFetch(
-    `${config.apiUrl}/api/v1/cases/${caseId}/close`,
+    `${await getApiUrl()}/api/v1/cases/${caseId}/close`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1769,7 +1769,7 @@ export async function closeCase(
 }
 
 export async function heartbeatSession(sessionId: string): Promise<void> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/sessions/${sessionId}/heartbeat`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/sessions/${sessionId}/heartbeat`, {
     method: 'POST',
     credentials: 'include'
   });
@@ -1789,7 +1789,7 @@ export async function generateCaseTitle(
   const body: Record<string, any> = {};
   if (options?.max_words) body.max_words = options.max_words;
   if (options?.hint) body.hint = options.hint;
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/cases/${caseId}/title`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/cases/${caseId}/title`, {
     method: 'POST',
     body: Object.keys(body).length ? JSON.stringify(body) : undefined,
     credentials: 'include'
@@ -1840,7 +1840,7 @@ export async function devLogin(
   displayName?: string
 ): Promise<AuthTokenResponse> {
   try {
-    const response = await fetch(`${config.apiUrl}/api/v1/auth/dev-login`, {
+    const response = await fetch(`${await getApiUrl()}/api/v1/auth/dev-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1885,7 +1885,7 @@ export async function devLogin(
 
 
 export async function getCurrentUser(): Promise<UserProfile> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/auth/me`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/auth/me`, {
     method: 'GET',
     credentials: 'include'
   });
@@ -1899,7 +1899,7 @@ export async function getCurrentUser(): Promise<UserProfile> {
 }
 
 export async function logoutAuth(): Promise<void> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/auth/logout`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/auth/logout`, {
     method: 'POST',
     credentials: 'include'
   });
@@ -1934,7 +1934,7 @@ export async function listSessions(filters?: {
   limit?: number;
   offset?: number;
 }): Promise<Session[]> {
-  const url = new URL(`${config.apiUrl}/api/v1/sessions/`);
+  const url = new URL(`${await getApiUrl()}/api/v1/sessions/`);
   if (filters) {
     Object.entries(filters).forEach(([k, v]) => {
       if (v !== undefined) url.searchParams.append(k, String(v));
@@ -1959,7 +1959,7 @@ export async function getUserCases(filters?: {
   limit?: number;
   offset?: number;
 }): Promise<UserCase[]> {
-  const url = new URL(`${config.apiUrl}/api/v1/cases`);
+  const url = new URL(`${await getApiUrl()}/api/v1/cases`);
   if (filters) {
     Object.entries(filters).forEach(([k, v]) => {
       if (v !== undefined) url.searchParams.append(k, String(v));
@@ -2000,7 +2000,7 @@ export async function getUserCases(filters?: {
 } 
 
 export async function archiveCase(caseId: string): Promise<void> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/cases/${caseId}/archive`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/cases/${caseId}/archive`, {
     method: 'POST',
     credentials: 'include'
   });
@@ -2011,7 +2011,7 @@ export async function archiveCase(caseId: string): Promise<void> {
 } 
 
 export async function deleteCase(caseId: string): Promise<void> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/cases/${caseId}`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
     method: 'DELETE',
     credentials: 'include'
   });
@@ -2033,7 +2033,7 @@ export interface CaseUpdateRequest {
 }
 
 export async function updateCaseTitle(caseId: string, title: string): Promise<void> {
-  const response = await authenticatedFetch(`${config.apiUrl}/api/v1/cases/${caseId}`, {
+  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
     method: 'PUT',
     body: JSON.stringify({ title } as CaseUpdateRequest),
     credentials: 'include'
@@ -2047,7 +2047,7 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
 }
 
 export async function getCaseConversation(caseId: string, includeDebug: boolean = false): Promise<any> {
-  const url = new URL(`${config.apiUrl}/api/v1/cases/${caseId}/messages`);
+  const url = new URL(`${await getApiUrl()}/api/v1/cases/${caseId}/messages`);
   if (includeDebug) {
     url.searchParams.set('include_debug', 'true');
   }
