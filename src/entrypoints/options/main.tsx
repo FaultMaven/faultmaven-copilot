@@ -56,7 +56,14 @@ function OptionsApp() {
 
   /**
    * Validates API endpoint by performing health check
-   * Uses the lightweight health check endpoint for fast validation
+   *
+   * Uses the API Gateway capabilities endpoint to validate the entire stack:
+   * - API Gateway routing (validates network path)
+   * - Backend services connectivity
+   * - Deployment configuration
+   *
+   * This ensures the user's configured URL reaches the actual API Gateway,
+   * not just a specific microservice.
    */
   const validateEndpoint = async (url: string): Promise<{ success: boolean; error?: string }> => {
     if (!url || !url.trim()) {
@@ -78,13 +85,15 @@ function OptionsApp() {
       return { success: false, error: 'Invalid URL format' };
     }
 
-    // Perform health check with timeout
+    // Perform health check via API Gateway with timeout
+    // Try capabilities endpoint first (validates full stack), fall back to simple health check
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-      const healthUrl = `${url.replace(/\/$/, '')}/api/v1/auth/health`;
-      const response = await fetch(healthUrl, {
+      // Try capabilities endpoint (validates API Gateway + backend)
+      const capabilitiesUrl = `${url.replace(/\/$/, '')}/v1/meta/capabilities`;
+      const response = await fetch(capabilitiesUrl, {
         method: 'GET',
         signal: controller.signal
       });
@@ -92,7 +101,11 @@ function OptionsApp() {
       clearTimeout(timeoutId);
 
       if (response.ok) {
+        // Successfully reached API Gateway and backend
         return { success: true };
+      } else if (response.status === 404) {
+        // Capabilities endpoint not found - try fallback health check
+        return await validateEndpointFallback(url);
       } else {
         return {
           success: false,
@@ -106,6 +119,43 @@ function OptionsApp() {
       return {
         success: false,
         error: `Connection failed: ${error.message || 'Unable to reach server'}`
+      };
+    }
+  };
+
+  /**
+   * Fallback health check using generic health endpoint
+   * Used when capabilities endpoint is not available (older backend versions)
+   */
+  const validateEndpointFallback = async (url: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      // Try generic health endpoint
+      const healthUrl = `${url.replace(/\/$/, '')}/health`;
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return { success: true };
+      } else {
+        return {
+          success: false,
+          error: `API Gateway unreachable (${response.status}). Verify URL is correct.`
+        };
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return { success: false, error: 'Connection timeout. Server not responding.' };
+      }
+      return {
+        success: false,
+        error: `Unable to reach API Gateway: ${error.message || 'Connection failed'}`
       };
     }
   };
