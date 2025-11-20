@@ -4,7 +4,17 @@ import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
 import '../../assets/tailwind.css';
 
+// Preset API endpoints for quick selection
+const PRESET_ENDPOINTS = {
+  production: 'https://api.faultmaven.ai',
+  localhost: 'http://127.0.0.1:8000',
+  custom: ''
+} as const;
+
+type PresetKey = keyof typeof PRESET_ENDPOINTS;
+
 function OptionsApp() {
+  const [selectedPreset, setSelectedPreset] = useState<PresetKey>('production');
   const [apiEndpoint, setApiEndpoint] = useState('https://api.faultmaven.ai');
   const [capabilities, setCapabilities] = useState<BackendCapabilities | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,6 +36,12 @@ function OptionsApp() {
       const endpoint = stored.apiEndpoint || 'https://api.faultmaven.ai';
       setApiEndpoint(endpoint);
 
+      // Detect which preset matches the stored endpoint
+      const matchedPreset = (Object.keys(PRESET_ENDPOINTS) as PresetKey[]).find(
+        key => PRESET_ENDPOINTS[key] === endpoint
+      );
+      setSelectedPreset(matchedPreset || 'custom');
+
       // Try to load capabilities
       try {
         const caps = await capabilitiesManager.fetch(endpoint);
@@ -38,26 +54,151 @@ function OptionsApp() {
     }
   };
 
+  /**
+   * Validates API endpoint by performing health check
+   *
+   * Uses the API Gateway capabilities endpoint to validate the entire stack:
+   * - API Gateway routing (validates network path)
+   * - Backend services connectivity
+   * - Deployment configuration
+   *
+   * This ensures the user's configured URL reaches the actual API Gateway,
+   * not just a specific microservice.
+   */
+  const validateEndpoint = async (url: string): Promise<{ success: boolean; error?: string }> => {
+    if (!url || !url.trim()) {
+      return { success: false, error: 'Please enter an API endpoint' };
+    }
+
+    // Validate URL format
+    try {
+      const parsedUrl = new URL(url);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return { success: false, error: 'Invalid protocol. Use http:// or https://' };
+      }
+
+      // Warn about insecure HTTP for non-localhost
+      if (parsedUrl.protocol === 'http:' && !['localhost', '127.0.0.1', '0.0.0.0'].includes(parsedUrl.hostname)) {
+        console.warn('[Settings] Insecure HTTP endpoint detected:', url);
+      }
+    } catch (error) {
+      return { success: false, error: 'Invalid URL format' };
+    }
+
+    // Perform health check via API Gateway with timeout
+    // Try capabilities endpoint first (validates full stack), fall back to simple health check
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      // Try capabilities endpoint (validates API Gateway + backend)
+      const capabilitiesUrl = `${url.replace(/\/$/, '')}/v1/meta/capabilities`;
+      const response = await fetch(capabilitiesUrl, {
+        method: 'GET',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        // Successfully reached API Gateway and backend
+        return { success: true };
+      } else if (response.status === 404) {
+        // Capabilities endpoint not found - try fallback health check
+        return await validateEndpointFallback(url);
+      } else {
+        return {
+          success: false,
+          error: `Server returned ${response.status}. Check URL and server status.`
+        };
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return { success: false, error: 'Connection timeout. Server not responding.' };
+      }
+      return {
+        success: false,
+        error: `Connection failed: ${error.message || 'Unable to reach server'}`
+      };
+    }
+  };
+
+  /**
+   * Fallback health check using generic health endpoint
+   * Used when capabilities endpoint is not available (older backend versions)
+   */
+  const validateEndpointFallback = async (url: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      // Try generic health endpoint
+      const healthUrl = `${url.replace(/\/$/, '')}/health`;
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return { success: true };
+      } else {
+        return {
+          success: false,
+          error: `API Gateway unreachable (${response.status}). Verify URL is correct.`
+        };
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return { success: false, error: 'Connection timeout. Server not responding.' };
+      }
+      return {
+        success: false,
+        error: `Unable to reach API Gateway: ${error.message || 'Connection failed'}`
+      };
+    }
+  };
+
   const handleSave = async () => {
-    if (!apiEndpoint.trim()) {
+    const trimmedUrl = apiEndpoint.trim();
+
+    if (!trimmedUrl) {
       showStatus('Please enter an API endpoint', 'error');
       return;
     }
 
     setSaving(true);
+    showStatus('Validating connection...', 'info');
+
     try {
-      await browser.storage.local.set({ apiEndpoint: apiEndpoint.trim() });
-      showStatus('Settings saved! Please refresh the extension.', 'success');
+      // VALIDATION REQUIREMENT: Test connection before saving
+      const validation = await validateEndpoint(trimmedUrl);
+
+      if (!validation.success) {
+        showStatus(`Connection failed: ${validation.error}`, 'error');
+        setSaving(false);
+        return;
+      }
+
+      // Connection successful - save to storage
+      await browser.storage.local.set({ apiEndpoint: trimmedUrl });
+
+      // Also mark first run as completed (if not already done)
+      await browser.storage.local.set({ hasCompletedFirstRun: true });
+
+      showStatus('✓ Settings saved! Please reload the extension.', 'success');
 
       // Try to load capabilities from new endpoint
       try {
-        const caps = await capabilitiesManager.fetch(apiEndpoint.trim());
+        const caps = await capabilitiesManager.fetch(trimmedUrl);
         setCapabilities(caps);
       } catch (error) {
         console.warn('Failed to load capabilities after save:', error);
         setCapabilities(null);
       }
     } catch (error) {
+      console.error('[Settings] Save failed:', error);
       showStatus('Failed to save settings', 'error');
     } finally {
       setSaving(false);
@@ -65,7 +206,9 @@ function OptionsApp() {
   };
 
   const handleTest = async () => {
-    if (!apiEndpoint.trim()) {
+    const trimmedUrl = apiEndpoint.trim();
+
+    if (!trimmedUrl) {
       showStatus('Please enter an API endpoint', 'error');
       return;
     }
@@ -74,17 +217,24 @@ function OptionsApp() {
     showStatus('Testing connection...', 'info');
 
     try {
-      const response = await fetch(`${apiEndpoint.trim()}/v1/meta/capabilities`);
+      const validation = await validateEndpoint(trimmedUrl);
 
-      if (response.ok) {
-        const caps = await response.json();
-        setCapabilities(caps);
-        showStatus(
-          `✓ Connected to ${caps.deploymentMode} backend`,
-          'success'
-        );
+      if (validation.success) {
+        // Also try to fetch capabilities for detailed info
+        try {
+          const caps = await capabilitiesManager.fetch(trimmedUrl);
+          setCapabilities(caps);
+          showStatus(
+            `✓ Connected successfully to ${caps.deploymentMode} backend`,
+            'success'
+          );
+        } catch (error) {
+          // Health check passed but capabilities fetch failed - still valid endpoint
+          showStatus('✓ Connection successful', 'success');
+          setCapabilities(null);
+        }
       } else {
-        showStatus(`✗ Connection failed: ${response.status}`, 'error');
+        showStatus(`✗ ${validation.error}`, 'error');
         setCapabilities(null);
       }
     } catch (error: any) {
@@ -92,6 +242,16 @@ function OptionsApp() {
       setCapabilities(null);
     } finally {
       setTesting(false);
+    }
+  };
+
+  /**
+   * Handle preset selection change
+   */
+  const handlePresetChange = (preset: PresetKey) => {
+    setSelectedPreset(preset);
+    if (preset !== 'custom') {
+      setApiEndpoint(PRESET_ENDPOINTS[preset]);
     }
   };
 
@@ -125,23 +285,52 @@ function OptionsApp() {
 
         {/* Settings Form */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
-          {/* API Endpoint */}
+          {/* Preset Selection */}
+          <div className="mb-6">
+            <label htmlFor="preset-selector" className="block text-sm font-medium text-gray-700 mb-2">
+              Server Type
+            </label>
+            <select
+              id="preset-selector"
+              value={selectedPreset}
+              onChange={(e) => handlePresetChange(e.target.value as PresetKey)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            >
+              <option value="production">☁️ FaultMaven SaaS (Production)</option>
+              <option value="localhost">🏠 Localhost (http://127.0.0.1:8000)</option>
+              <option value="custom">⚙️ Custom Server URL</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Choose a preset or enter a custom URL below
+            </p>
+          </div>
+
+          {/* API Endpoint Input */}
           <div className="mb-6">
             <label htmlFor="api-endpoint" className="block text-sm font-medium text-gray-700 mb-2">
-              API Endpoint
+              API Endpoint URL
+              {selectedPreset === 'custom' && <span className="text-red-500 ml-1">*</span>}
             </label>
             <input
               type="text"
               id="api-endpoint"
               value={apiEndpoint}
-              onChange={(e) => setApiEndpoint(e.target.value)}
-              placeholder="https://api.faultmaven.ai"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={(e) => {
+                setApiEndpoint(e.target.value);
+                // Auto-switch to custom when manually editing
+                if (selectedPreset !== 'custom') {
+                  setSelectedPreset('custom');
+                }
+              }}
+              placeholder="https://your-server.com:8000"
+              disabled={selectedPreset !== 'custom'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
             />
-            <div className="mt-2 text-sm text-gray-600">
-              <p className="mb-1"><strong>Self-hosted:</strong> <code className="px-2 py-0.5 bg-gray-100 rounded">http://localhost:8000</code></p>
-              <p><strong>Enterprise:</strong> <code className="px-2 py-0.5 bg-gray-100 rounded">https://api.faultmaven.ai</code> (default)</p>
-            </div>
+            {selectedPreset === 'custom' && (
+              <p className="mt-1 text-xs text-gray-600">
+                Enter your custom API endpoint (e.g., https://api.mycompany.com or http://192.168.1.100:8000)
+              </p>
+            )}
           </div>
 
           {/* Deployment Mode Display */}
