@@ -3,7 +3,7 @@
  */
 
 import type { CaseUIResponse } from '../../types/case';
-import config from '../../config';
+import { getApiUrl } from '../../config';
 
 /**
  * Gets dual headers for API requests (Authentication + Session)
@@ -43,8 +43,9 @@ async function getAuthHeaders(): Promise<HeadersInit> {
  */
 async function getCaseUI(caseId: string, sessionId: string): Promise<CaseUIResponse> {
   const headers = await getAuthHeaders();
+  const apiUrl = await getApiUrl();
 
-  const response = await fetch(`${config.apiUrl}/api/v1/cases/${caseId}/ui`, {
+  const response = await fetch(`${apiUrl}/api/v1/cases/${caseId}/ui`, {
     method: 'GET',
     headers,
     credentials: 'include',

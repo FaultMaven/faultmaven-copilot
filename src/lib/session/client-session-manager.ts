@@ -1,4 +1,4 @@
-import config from "../../config";
+import { getApiUrl } from "../../config";
 
 // Enhanced TypeScript interfaces for client-based session management
 export interface SessionCreateRequest {
@@ -83,6 +83,7 @@ export class ClientSessionManager {
    */
   async createSession(userContext?: any, timeoutMinutes?: number): Promise<SessionCreateResponse> {
     const clientId = this.getOrCreateClientId();
+    const apiUrl = await getApiUrl();
 
     // Use provided timeout or default, enforcing min/max limits
     const sessionTimeout = this.validateSessionTimeout(timeoutMinutes || ClientSessionManager.DEFAULT_SESSION_TIMEOUT);
@@ -100,7 +101,7 @@ export class ClientSessionManager {
 
     console.log('[ClientSessionManager] Creating session with client_id:', clientId.slice(0, 8) + '...');
 
-    const response = await fetch(`${config.apiUrl}/api/v1/sessions`, {
+    const response = await fetch(`${apiUrl}/api/v1/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

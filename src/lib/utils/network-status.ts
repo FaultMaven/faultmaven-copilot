@@ -1,6 +1,6 @@
 // src/lib/utils/network-status.ts
 
-import config from '../../config';
+import { getApiUrl } from '../../config';
 
 /**
  * Network status monitor for detecting connectivity issues
@@ -22,10 +22,11 @@ export class NetworkStatusMonitor {
    */
   static async canReachServer(): Promise<boolean> {
     try {
+      const apiUrl = await getApiUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-      const response = await fetch(`${config.apiUrl}/health`, {
+      const response = await fetch(`${apiUrl}/health`, {
         method: 'HEAD',
         cache: 'no-cache',
         signal: controller.signal

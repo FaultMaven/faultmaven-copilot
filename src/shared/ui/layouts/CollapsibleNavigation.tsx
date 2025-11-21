@@ -158,18 +158,6 @@ export function CollapsibleNavigation({
 
         {/* Navigation buttons */}
         <div className="flex-shrink-0 px-4 py-2 space-y-2">
-          {/* New Case button */}
-          <button
-            onClick={onNewChat}
-            className="w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors bg-blue-300 text-white hover:bg-blue-400"
-            title="Start new case"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span className="text-sm font-medium">New Case</span>
-          </button>
-
           {/* Open Dashboard button */}
           {dashboardUrl && onOpenDashboard && (
             <button
@@ -186,6 +174,18 @@ export function CollapsibleNavigation({
               </svg>
             </button>
           )}
+
+          {/* New Case button */}
+          <button
+            onClick={onNewChat}
+            className="w-full flex items-center gap-3 py-2.5 px-4 rounded-lg transition-colors bg-blue-300 text-white hover:bg-blue-400"
+            title="Start new case"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span className="text-sm font-medium">New Case</span>
+          </button>
         </div>
 
         {/* Conversations list */}
