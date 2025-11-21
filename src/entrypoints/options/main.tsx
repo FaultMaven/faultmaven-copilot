@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
-import '../../assets/tailwind.css';
+import '../../assets/styles/globals.css';
 
 // Preset API endpoints for quick selection
 const PRESET_ENDPOINTS = {
