@@ -3,7 +3,7 @@
  */
 
 import type { UploadedFileMetadata, UploadedFileDetailsResponse } from '../../types/case';
-import config from '../../config';
+import { getApiUrl } from '../../config';
 
 /**
  * Gets dual headers for API requests (Authentication + Session)
@@ -44,8 +44,9 @@ async function getAuthHeaders(): Promise<HeadersInit> {
  */
 async function getUploadedFiles(caseId: string): Promise<UploadedFileMetadata[]> {
   const headers = await getAuthHeaders();
+  const apiUrl = await getApiUrl();
 
-  const response = await fetch(`${config.apiUrl}/api/v1/cases/${caseId}/uploaded-files`, {
+  const response = await fetch(`${apiUrl}/api/v1/cases/${caseId}/uploaded-files`, {
     method: 'GET',
     headers,
     credentials: 'include',
@@ -71,9 +72,10 @@ async function getUploadedFileDetails(
   fileId: string
 ): Promise<UploadedFileDetailsResponse> {
   const headers = await getAuthHeaders();
+  const apiUrl = await getApiUrl();
 
   const response = await fetch(
-    `${config.apiUrl}/api/v1/cases/${caseId}/uploaded-files/${fileId}`,
+    `${apiUrl}/api/v1/cases/${caseId}/uploaded-files/${fileId}`,
     {
       method: 'GET',
       headers,
