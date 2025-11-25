@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { devLogin, logoutAuth, authManager, AuthenticationError, User } from '../../../lib/api';
+import { devLogin, logoutAuth, authManager, User } from '../../../lib/api';
+import { AuthenticationError } from '../../../lib/errors/types';
 import { createLogger } from '../../../lib/utils/logger';
 import { hasRole, isAdmin, ROLES } from '../../../lib/utils/roles';
 

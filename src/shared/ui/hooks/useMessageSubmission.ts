@@ -15,9 +15,9 @@ import {
   submitQueryToCase,
   QueryRequest,
   createSession,
-  authManager,
-  AuthenticationError
+  authManager
 } from '../../../lib/api';
+import { AuthenticationError } from '../../../lib/errors/types';
 import {
   OptimisticIdGenerator,
   IdUtils,

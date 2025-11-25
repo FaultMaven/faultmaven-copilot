@@ -17,7 +17,6 @@ import {
   updateCaseTitle,
   QueryRequest,
   authManager,
-  AuthenticationError,
   SourceMetadata,
   formatFileSize,
   formatDataType,

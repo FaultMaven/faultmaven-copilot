@@ -5,7 +5,7 @@
  * for all API operations across the application.
  */
 
-import { AuthenticationError } from '../api';
+import { AuthenticationError } from '../errors/types';
 import { createLogger } from './logger';
 
 const log = createLogger('APIErrorHandler');
