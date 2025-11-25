@@ -47,7 +47,9 @@ export default defineConfig({
         matches: [
           "*://app.faultmaven.ai/*",
           "*://localhost/*",
-          process.env.VITE_DASHBOARD_URL ? `${process.env.VITE_DASHBOARD_URL}*` : undefined
+          process.env.VITE_DASHBOARD_URL 
+            ? `${process.env.VITE_DASHBOARD_URL.replace(/\/$/, '')}/*` 
+            : undefined
         ].filter(Boolean) as string[],
         js: ["content-scripts/auth-bridge.js"],
         run_at: "document_end"
