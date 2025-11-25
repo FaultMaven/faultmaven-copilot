@@ -4,8 +4,13 @@ import { ClientSessionManager } from '../../lib/session/client-session-manager';
 // Mock config
 vi.mock('../../config', () => ({
   default: {
-    apiUrl: 'http://localhost:8000'
-  }
+    apiUrl: 'http://localhost:8000',
+    session: {
+      timeoutMinutes: 180,
+      timeoutMs: 180 * 60 * 1000
+    }
+  },
+  getApiUrl: vi.fn().mockResolvedValue('http://localhost:8000')
 }));
 
 // Mock crypto.randomUUID
@@ -15,81 +20,102 @@ Object.defineProperty(global, 'crypto', {
   },
 });
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
+// Mock browser.storage.local
+const browserStorageMock = (() => {
+  let store: Record<string, any> = {};
 
   return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
+    get: vi.fn((keys: string[]) => {
+      const result: Record<string, any> = {};
+      for (const key of keys) {
+        if (store[key] !== undefined) {
+          result[key] = store[key];
+        }
+      }
+      return Promise.resolve(result);
     }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
+    set: vi.fn((items: Record<string, any>) => {
+      Object.assign(store, items);
+      return Promise.resolve();
     }),
-    clear: vi.fn(() => {
+    remove: vi.fn((keys: string[]) => {
+      for (const key of keys) {
+        delete store[key];
+      }
+      return Promise.resolve();
+    }),
+    clear: () => {
       store = {};
-    }),
+    },
   };
 })();
 
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-});
+// Mock browser global
+(global as any).browser = {
+  storage: {
+    local: browserStorageMock,
+  },
+};
 
 // Mock fetch for API calls
 global.fetch = vi.fn();
 
 describe('ClientSessionManager', () => {
   beforeEach(() => {
-    localStorageMock.clear();
+    browserStorageMock.clear();
     vi.clearAllMocks();
     // Reset singleton instance
     (ClientSessionManager as any).instance = undefined;
   });
 
-  test('generates and persists client ID', () => {
+  test('generates and persists client ID', async () => {
     const manager = ClientSessionManager.getInstance();
 
-    const clientId1 = manager.getOrCreateClientId();
-    const clientId2 = manager.getOrCreateClientId();
+    const clientId1 = await manager.getOrCreateClientId();
+    const clientId2 = await manager.getOrCreateClientId();
 
     expect(clientId1).toBe(clientId2);
     expect(clientId1).toBe('test-uuid-12345678-1234-5678-9012-123456789012');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('faultmaven_client_id', clientId1);
-    expect(localStorageMock.getItem).toHaveBeenCalledWith('faultmaven_client_id');
+    expect(browserStorageMock.set).toHaveBeenCalledWith({ 'faultmaven_client_id': clientId1 });
+    expect(browserStorageMock.get).toHaveBeenCalledWith(['faultmaven_client_id']);
   });
 
-  test('uses existing client ID from localStorage', () => {
-    localStorageMock.setItem('faultmaven_client_id', 'existing-client-id');
+  test('uses existing client ID from browser.storage.local', async () => {
+    // Pre-set a client ID in storage
+    await browserStorageMock.set({ 'faultmaven_client_id': 'existing-client-id' });
+    vi.clearAllMocks(); // Clear the mock calls from setup
 
     const manager = ClientSessionManager.getInstance();
-    const clientId = manager.getOrCreateClientId();
+    const clientId = await manager.getOrCreateClientId();
 
     expect(clientId).toBe('existing-client-id');
     expect(crypto.randomUUID).not.toHaveBeenCalled();
   });
 
-  test('clears client ID correctly', () => {
+  test('clears client ID correctly', async () => {
     const manager = ClientSessionManager.getInstance();
 
     // First, create a client ID
-    manager.getOrCreateClientId();
-    expect(localStorageMock.setItem).toHaveBeenCalled();
+    await manager.getOrCreateClientId();
+    expect(browserStorageMock.set).toHaveBeenCalled();
 
     // Then clear it
-    manager.clearClientId();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('faultmaven_client_id');
+    await manager.clearClientId();
+    expect(browserStorageMock.remove).toHaveBeenCalledWith(['faultmaven_client_id']);
+
+    // Reset mocks and generate new UUID
+    vi.clearAllMocks();
+    vi.mocked(crypto.randomUUID).mockReturnValue('87654321-4321-5678-9012-123456789012');
 
     // Next call should generate a new ID
-    vi.mocked(crypto.randomUUID).mockReturnValue('87654321-4321-5678-9012-123456789012');
-    const newClientId = manager.getOrCreateClientId();
+    const newClientId = await manager.getOrCreateClientId();
     expect(newClientId).toBe('87654321-4321-5678-9012-123456789012');
   });
 
   test('handles session creation with client_id and timeout', async () => {
     const mockSessionResponse = {
       session_id: 'session-123',
+      user_id: 'user-123',
       client_id: 'test-uuid-12345678-1234-5678-9012-123456789012',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -121,6 +147,7 @@ describe('ClientSessionManager', () => {
   test('handles session resumption', async () => {
     const mockResumedSession = {
       session_id: 'resumed-session-456',
+      user_id: 'user-123',
       client_id: 'test-uuid-12345678-1234-5678-9012-123456789012',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -154,6 +181,7 @@ describe('ClientSessionManager', () => {
     // Second call succeeds after clearing client ID
     const mockNewSession = {
       session_id: 'new-session-789',
+      user_id: 'user-123',
       client_id: '12345678-after-clear-9012-123456789012',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -170,7 +198,7 @@ describe('ClientSessionManager', () => {
 
     const session = await manager.createSessionWithRecovery();
 
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('faultmaven_client_id');
+    expect(browserStorageMock.remove).toHaveBeenCalledWith(['faultmaven_client_id']);
     expect(session.session_id).toBe('new-session-789');
     expect(session.session_resumed).toBe(false);
   });
@@ -180,6 +208,7 @@ describe('ClientSessionManager', () => {
 
     const mockSessionResponse = {
       session_id: 'session-123',
+      user_id: 'user-123',
       client_id: 'test-client-id',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -214,5 +243,28 @@ describe('ClientSessionManager', () => {
     const manager2 = ClientSessionManager.getInstance();
 
     expect(manager1).toBe(manager2);
+  });
+
+  test('getCurrentClientId returns null when no ID exists', async () => {
+    const manager = ClientSessionManager.getInstance();
+    const clientId = await manager.getCurrentClientId();
+    expect(clientId).toBeNull();
+  });
+
+  test('getCurrentClientId returns cached ID when available', async () => {
+    // Reset UUID mock to known value
+    vi.mocked(crypto.randomUUID).mockReturnValue('cached-test-uuid-9012-123456789012');
+
+    const manager = ClientSessionManager.getInstance();
+    // Create a client ID first
+    await manager.getOrCreateClientId();
+
+    // Clear mock to verify it uses cache
+    vi.clearAllMocks();
+
+    const clientId = await manager.getCurrentClientId();
+    expect(clientId).toBe('cached-test-uuid-9012-123456789012');
+    // Should use cached value, not call storage again
+    expect(browserStorageMock.get).not.toHaveBeenCalled();
   });
 });

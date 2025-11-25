@@ -1,4 +1,5 @@
 import { getApiUrl } from "../../config";
+import config from "../../config";
 
 // Enhanced TypeScript interfaces for client-based session management
 export interface SessionCreateRequest {
@@ -35,14 +36,19 @@ export interface SessionCreateResponse {
  * - Browser restart < 3 hours: Resume previous session seamlessly
  * - Browser restart > 3 hours: Create fresh session automatically
  * - Session corruption/expiration: Auto-recover with new session
+ *
+ * Storage:
+ * - Uses browser.storage.local for persistence (works in service workers)
+ * - Client ID is cached in memory after first load
  */
 export class ClientSessionManager {
   private static CLIENT_ID_KEY = 'faultmaven_client_id';
   private static instance: ClientSessionManager;
   private clientId: string | null = null;
+  private clientIdLoaded: boolean = false;
 
   // Session timeout configuration (in minutes)
-  private static readonly DEFAULT_SESSION_TIMEOUT = 180; // 3 hours for active troubleshooting
+  private static readonly DEFAULT_SESSION_TIMEOUT = config.session.timeoutMinutes;
   private static readonly MIN_SESSION_TIMEOUT = 60;      // 1 hour minimum
   private static readonly MAX_SESSION_TIMEOUT = 480;     // 8 hours maximum
 
@@ -58,19 +64,42 @@ export class ClientSessionManager {
 
   /**
    * Get or generate a unique client ID for this browser instance
-   * Client ID persists across browser sessions via localStorage
+   * Client ID persists across browser sessions via browser.storage.local
+   *
+   * @returns Promise<string> The client ID
    */
-  getOrCreateClientId(): string {
-    if (!this.clientId) {
-      this.clientId = localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
+  async getOrCreateClientId(): Promise<string> {
+    // Return cached value if already loaded
+    if (this.clientId && this.clientIdLoaded) {
+      return this.clientId;
+    }
+
+    try {
+      // Try to load from browser.storage.local
+      if (typeof browser !== 'undefined' && browser.storage) {
+        const result = await browser.storage.local.get([ClientSessionManager.CLIENT_ID_KEY]);
+        this.clientId = result[ClientSessionManager.CLIENT_ID_KEY] || null;
+      }
 
       if (!this.clientId) {
         // Generate UUID v4 using crypto.randomUUID() for performance
         this.clientId = crypto.randomUUID();
-        localStorage.setItem(ClientSessionManager.CLIENT_ID_KEY, this.clientId);
+
+        // Save to browser.storage.local
+        if (typeof browser !== 'undefined' && browser.storage) {
+          await browser.storage.local.set({ [ClientSessionManager.CLIENT_ID_KEY]: this.clientId });
+        }
         console.log('[ClientSessionManager] Generated new client ID:', this.clientId.slice(0, 8) + '...');
       } else {
         console.log('[ClientSessionManager] Using existing client ID:', this.clientId.slice(0, 8) + '...');
+      }
+
+      this.clientIdLoaded = true;
+    } catch (error) {
+      // Fallback: generate a new ID if storage fails
+      console.warn('[ClientSessionManager] Storage access failed, generating temporary client ID:', error);
+      if (!this.clientId) {
+        this.clientId = crypto.randomUUID();
       }
     }
 
@@ -82,7 +111,7 @@ export class ClientSessionManager {
    * Implements timeout + resume strategy for crash recovery
    */
   async createSession(userContext?: any, timeoutMinutes?: number): Promise<SessionCreateResponse> {
-    const clientId = this.getOrCreateClientId();
+    const clientId = await this.getOrCreateClientId();
     const apiUrl = await getApiUrl();
 
     // Use provided timeout or default, enforcing min/max limits
@@ -138,9 +167,18 @@ export class ClientSessionManager {
    * Note: This is primarily used internally for session expiration recovery.
    * UI no longer exposes manual session forcing to users.
    */
-  clearClientId(): void {
+  async clearClientId(): Promise<void> {
     this.clientId = null;
-    localStorage.removeItem(ClientSessionManager.CLIENT_ID_KEY);
+    this.clientIdLoaded = false;
+
+    try {
+      if (typeof browser !== 'undefined' && browser.storage) {
+        await browser.storage.local.remove([ClientSessionManager.CLIENT_ID_KEY]);
+      }
+    } catch (error) {
+      console.warn('[ClientSessionManager] Failed to clear client ID from storage:', error);
+    }
+
     console.log('[ClientSessionManager] Client ID cleared - next session will be new');
   }
 
@@ -148,8 +186,21 @@ export class ClientSessionManager {
    * Get current client ID without generating new one
    * Returns null if no client ID exists
    */
-  getCurrentClientId(): string | null {
-    return localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
+  async getCurrentClientId(): Promise<string | null> {
+    if (this.clientId && this.clientIdLoaded) {
+      return this.clientId;
+    }
+
+    try {
+      if (typeof browser !== 'undefined' && browser.storage) {
+        const result = await browser.storage.local.get([ClientSessionManager.CLIENT_ID_KEY]);
+        return result[ClientSessionManager.CLIENT_ID_KEY] || null;
+      }
+    } catch (error) {
+      console.warn('[ClientSessionManager] Failed to get client ID from storage:', error);
+    }
+
+    return null;
   }
 
   /**
@@ -183,7 +234,7 @@ export class ClientSessionManager {
       // Handle expired/invalid session scenarios (404, 410, session not found)
       if (this.isSessionExpiredError(error)) {
         console.warn('[ClientSessionManager] Session expired/invalid after browser crash - creating fresh session');
-        this.clearClientId();
+        await this.clearClientId();
         return await this.createSession(userContext, timeoutMinutes);
       }
       // Re-throw other errors

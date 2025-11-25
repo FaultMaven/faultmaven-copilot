@@ -12,7 +12,7 @@ import {
   UnknownError,
   ErrorContext
 } from './types';
-import { AuthenticationError as ApiAuthError } from '../api';
+// import { AuthenticationError as ApiAuthError } from '../api';
 
 /**
  * Classifies technical errors into user-facing errors with friendly messages
@@ -42,7 +42,8 @@ export class ErrorClassifier {
     const err = error instanceof Error ? error : new Error(String(error));
 
     // API Authentication Error
-    if (error instanceof ApiAuthError || err.message.includes('Authentication required')) {
+    // Since we now use the same class everywhere, we can just check the name or message
+    if (err.name === 'AuthenticationError' || err.message.includes('Authentication required')) {
       return new AuthenticationError(err.message, err, context);
     }
 

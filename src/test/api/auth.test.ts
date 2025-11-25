@@ -5,10 +5,10 @@ import {
   logoutAuth,
   authManager,
   AuthState,
-  AuthenticationError,
   getUserCases,
   createCase
 } from '../../lib/api';
+import { AuthenticationError } from '../../lib/errors/types';
 
 // Mock the config module
 vi.mock('../../config', () => ({

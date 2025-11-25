@@ -17,8 +17,16 @@ interface InputLimitsConfig {
   allowedMimeTypes: readonly string[];
 }
 
+interface SessionConfig {
+  /** Session timeout in milliseconds */
+  timeoutMs: number;
+  /** Session timeout in minutes */
+  timeoutMinutes: number;
+}
+
 interface Config {
   inputLimits: InputLimitsConfig;
+  session: SessionConfig;
 }
 
 /**
@@ -32,7 +40,10 @@ interface Config {
  * - VITE_DATA_MODE_LINES: Lines threshold for data mode (default: 100)
  * - VITE_MAX_QUERY_LENGTH: Max input characters (default: 200000 = 200KB, matches backend)
  * - VITE_MAX_FILE_SIZE_MB: Max file size in MB (default: 10, matches backend MAX_UPLOAD_SIZE_MB)
+ * - VITE_SESSION_TIMEOUT_MINUTES: Session timeout in minutes (default: 180 = 3 hours)
  */
+const sessionTimeoutMinutes = parseInt(import.meta.env.VITE_SESSION_TIMEOUT_MINUTES || '180', 10);
+
 const config: Config = {
   // Input Limits Configuration (build-time only, rarely changed)
   inputLimits: {
@@ -46,6 +57,10 @@ const config: Config = {
     allowedFileExtensions: ['.txt', '.log', '.json', '.csv', '.md'],
     allowedMimeTypes: ['text/plain', 'text/markdown', 'application/json', 'text/csv'],
   },
+  session: {
+    timeoutMinutes: sessionTimeoutMinutes,
+    timeoutMs: sessionTimeoutMinutes * 60 * 1000,
+  }
 };
 
 /**
