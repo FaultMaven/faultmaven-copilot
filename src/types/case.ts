@@ -9,7 +9,31 @@ import { components } from './api.generated';
 
 // ==================== Type Aliases from API Contract ====================
 
+// Backend status types
 export type CaseStatus = 'consulting' | 'investigating' | 'resolved' | 'closed';
+
+/**
+ * User-Facing Case Status Types (4 states)
+ * Based on FRONTEND_CASE_STATUS_DROPDOWN_GUIDE.md
+ */
+export type UserCaseStatus = CaseStatus;
+
+/**
+ * User Case Interface
+ * Consolidates definitions from api.ts and optimistic/types.ts
+ */
+export interface UserCase {
+  case_id: string;
+  title: string;
+  status: UserCaseStatus;
+  created_at: string;
+  updated_at?: string;
+  description?: string;
+  priority?: 'low' | 'medium' | 'high' | 'critical' | string;
+  resolved_at?: string;
+  message_count?: number;
+  owner_id: string; // Required per v2.0 security
+}
 
 // Consulting Phase Types
 export type CaseUIResponse_Consulting = components['schemas']['CaseUIResponse_Consulting'];

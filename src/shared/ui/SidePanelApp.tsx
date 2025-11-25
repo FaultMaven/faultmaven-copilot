@@ -684,6 +684,18 @@ function SidePanelAppContent() {
   }, [activeCaseId]); // Re-create interval when active case changes
 
   const handleLogin = async () => {
+    // Open Dashboard login page
+    // Determine URL based on capabilities or config
+    const dashboardUrl = capabilities?.dashboardUrl || 'https://app.faultmaven.ai';
+    const loginUrl = `${dashboardUrl}/login?source=extension`;
+    
+    window.open(loginUrl, '_blank');
+    // The auth-bridge content script will detect login and send message back
+    // The useAuth hook or background listener will update state
+  };
+
+  /* Deprecated local dev login
+  const handleLoginOld = async () => {
     setAuthError(null);
     if (!loginUsername || loginUsername.trim().length < 3) {
       setAuthError("Username must be at least 3 characters");
@@ -721,6 +733,7 @@ function SidePanelAppContent() {
       setLoggingIn(false);
     }
   };
+  */
 
   const handleLogout = async () => {
     try {
@@ -2051,28 +2064,25 @@ function SidePanelAppContent() {
       <div className="bg-white border border-gray-200 rounded-lg p-6 w-full max-w-sm shadow-sm">
         <div className="text-center mb-4">
           <img src="/icon/square-light.svg" alt="FaultMaven" className="w-12 h-12 mx-auto mb-2" />
-          <h2 className="text-base font-semibold text-gray-800">Sign in (Dev)</h2>
-          <p className="text-xs text-gray-500">Use your email to start a session</p>
+          <h2 className="text-base font-semibold text-gray-800">Welcome to FaultMaven</h2>
+          <p className="text-xs text-gray-500">Sign in via Dashboard to start</p>
         </div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Username</label>
-        <input
-          type="text"
-          value={loginUsername}
-          onChange={(e) => setLoginUsername(e.target.value)}
-          placeholder="Enter your username"
-          className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          disabled={loggingIn}
-        />
+        
         {authError && (
-          <div className="text-xs text-red-600 mt-2">{authError}</div>
+          <div className="text-xs text-red-600 mb-4 text-center">{authError}</div>
         )}
+        
         <div className="mt-4">
           <button
             onClick={handleLogin}
-            disabled={loggingIn || !loginUsername}
-            className="w-full px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            className="w-full px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"
           >
-            {loggingIn ? 'Signing in…' : 'Sign in'}
+            <span>Sign In via Dashboard</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
           </button>
         </div>
       </div>

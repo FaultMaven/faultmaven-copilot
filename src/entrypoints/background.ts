@@ -1,12 +1,37 @@
 // src/entrypoints/background.ts
-import { createSession, deleteSession } from '../lib/api';
+import { createSession, deleteSession, authManager } from '../lib/api';
 import { clientSessionManager } from '../lib/session/client-session-manager';
 import { PersistenceManager } from '../lib/utils/persistence-manager';
 import { browser } from 'wxt/browser';
+import config from '../config';
 
 export default defineBackground({
   main() {
     console.log("[background.ts] Init (Fixed: Backend Session Logic)");
+
+    // === Auth Handler ===
+    async function handleStoreAuth(payload: any, sendResponse: (response?: any) => void) {
+      console.log("[background.ts] storing auth state from bridge", payload);
+      try {
+        // Use AuthManager to save state
+        await authManager.saveAuthState(payload);
+        
+        // Also broadcast to side panel if open
+        try {
+          await browser.runtime.sendMessage({
+            type: "auth_state_changed",
+            authState: payload
+          });
+        } catch (e) {
+          // Ignore if no listener
+        }
+        
+        sendResponse({ status: "success" });
+      } catch (error) {
+        console.error("[background.ts] Failed to store auth:", error);
+        sendResponse({ status: "error", message: String(error) });
+      }
+    }
 
     // === Backend Session Logic Functions ===
     async function handleGetSessionId(requestAction: string, sendResponse: (response?: any) => void) {
@@ -16,8 +41,8 @@ export default defineBackground({
         // Check if we have a valid session stored locally
         const result = await browser.storage.local.get(["sessionId", "sessionCreatedAt", "sessionResumed"]);
 
-        // If we have a recent session (less than 30 minutes old), use it
-        const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+        // If we have a recent session (less than configured timeout), use it
+        const SESSION_TIMEOUT = config.session.timeoutMs;
         const now = Date.now();
         const sessionAge = result.sessionCreatedAt ? (now - result.sessionCreatedAt) : SESSION_TIMEOUT + 1;
 
@@ -96,6 +121,11 @@ export default defineBackground({
     // === Message Handler ===
     browser.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
       console.log("[background.ts] Message received:", request);
+
+      if (request.action === "storeAuth") {
+        handleStoreAuth(request.payload, sendResponse);
+        return true; // Indicate async response
+      }
 
       if (request.action === "getSessionId") {
         handleGetSessionId(request.action, sendResponse);

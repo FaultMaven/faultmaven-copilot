@@ -12,9 +12,10 @@ import {
   Source,
   SuggestedAction,
   EvidenceRequest,
-  InvestigationMode,
-  CaseStatus
+  InvestigationMode
 } from '../api';
+
+import { CaseStatus, UserCase } from '../../types/case';
 
 /**
  * Base conversation item interface - matches ChatWindow.tsx (v3.1.0)
@@ -66,19 +67,6 @@ export interface OptimisticConversationItem extends ConversationItem {
   optimistic: boolean; // Can be true for optimistic, false for confirmed
   originalId?: string;
   pendingOperationId?: string;
-}
-
-/**
- * Base user case interface
- * Matches backend CaseSummary schema - consulting/investigating/resolved/closed
- */
-export interface UserCase {
-  case_id: string;
-  title: string;
-  status: 'consulting' | 'investigating' | 'resolved' | 'closed';
-  created_at: string;
-  updated_at: string;
-  message_count: number;
 }
 
 /**

@@ -1,5 +1,7 @@
 import config, { getApiUrl } from "../config";
 import { clientSessionManager } from "./session/client-session-manager";
+import { AuthenticationError } from "./errors/types";
+import { UserCase, UserCaseStatus, CaseStatus } from "../types/case";
 
 // ===== Authentication and Session Management =====
 
@@ -119,12 +121,7 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 /**
  * Handles authentication errors and triggers re-authentication
  */
-export class AuthenticationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuthenticationError';
-  }
-}
+// AuthenticationError imported from ./errors/types
 
 /**
  * Session expiration error for automatic session refresh
@@ -786,12 +783,7 @@ export type ProcessingStatus = "pending" | "processing" | "completed" | "failed"
  * Source metadata - where the data came from
  * NEW: Enables richer AI context
  */
-export interface SourceMetadata {
-  source_type: "file_upload" | "text_paste" | "page_capture";
-  source_url?: string;           // URL if from page capture
-  captured_at?: string;          // ISO 8601 timestamp for page capture
-  user_description?: string;     // User's description of the data
-}
+// SourceMetadata removed (duplicate)
 
 /**
  * Classification metadata returned from backend
@@ -1173,30 +1165,14 @@ export async function deleteSession(sessionId: string): Promise<void> {
 } 
 
 // ===== Chat and Cases: Types and Functions required by UI =====
-export interface UserCase {
-  case_id: string;
-  status: string;
-  title: string;
-  description?: string;
-  priority?: 'low' | 'medium' | 'high' | 'critical' | string;
-  created_at?: string;
-  updated_at?: string;
-  resolved_at?: string;
-  message_count?: number;
-  owner_id: string;                  // NOW REQUIRED - authorization security
-  // session_id REMOVED - cases are session-independent (v2.0)
-}
+// UserCase imported from ../types/case
 
 /**
  * User-Facing Case Status Types (4 states)
  * Based on FRONTEND_CASE_STATUS_DROPDOWN_GUIDE.md
  * Note: Different from CaseStatus enum which is used for investigation phases
  */
-export type UserCaseStatus =
-  | 'consulting'      // Q&A mode, exploring issue
-  | 'investigating'   // Active troubleshooting (Phases 1-5)
-  | 'resolved'        // Closed with root cause + solution
-  | 'closed';         // Closed without resolution
+// UserCaseStatus imported from ../types/case
 
 /**
  * Allowed status transitions

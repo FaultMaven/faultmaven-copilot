@@ -42,6 +42,13 @@ export default defineConfig({
     side_panel: {
       default_path: "sidepanel_manual.html"
     },
+    content_scripts: [
+      {
+        matches: ["*://app.faultmaven.ai/*", "*://localhost/*"],
+        js: ["content-scripts/auth-bridge.js"],
+        run_at: "document_end"
+      }
+    ],
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }

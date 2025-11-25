@@ -1,4 +1,5 @@
 import { getApiUrl } from "../../config";
+import config from "../../config";
 
 // Enhanced TypeScript interfaces for client-based session management
 export interface SessionCreateRequest {
@@ -42,7 +43,7 @@ export class ClientSessionManager {
   private clientId: string | null = null;
 
   // Session timeout configuration (in minutes)
-  private static readonly DEFAULT_SESSION_TIMEOUT = 180; // 3 hours for active troubleshooting
+  private static readonly DEFAULT_SESSION_TIMEOUT = config.session.timeoutMinutes;
   private static readonly MIN_SESSION_TIMEOUT = 60;      // 1 hour minimum
   private static readonly MAX_SESSION_TIMEOUT = 480;     // 8 hours maximum
 
