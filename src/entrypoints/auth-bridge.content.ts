@@ -9,8 +9,7 @@ import { browser } from 'wxt/browser';
  */
 
 export default defineContentScript({
-  // Matches are defined in wxt.config.ts for flexibility with env vars
-  matches: [], 
+  matches: ["*://app.faultmaven.ai/*", "*://localhost/*"],
   runAt: "document_end",
   main() {
     console.log("[FaultMaven Bridge] Auth bridge initialized");

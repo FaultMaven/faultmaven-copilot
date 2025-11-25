@@ -42,19 +42,13 @@ export default defineConfig({
     side_panel: {
       default_path: "sidepanel_manual.html"
     },
-    content_scripts: [
+    content_scripts: process.env.VITE_DASHBOARD_URL ? [
       {
-        matches: [
-          "*://app.faultmaven.ai/*",
-          "*://localhost/*",
-          process.env.VITE_DASHBOARD_URL 
-            ? `${process.env.VITE_DASHBOARD_URL.replace(/\/$/, '')}/*` 
-            : undefined
-        ].filter(Boolean) as string[],
+        matches: [`${process.env.VITE_DASHBOARD_URL.replace(/\/$/, '')}/*`],
         js: ["content-scripts/auth-bridge.js"],
         run_at: "document_end"
       }
-    ],
+    ] : undefined,
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }
