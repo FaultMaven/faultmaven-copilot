@@ -2066,7 +2066,7 @@ function SidePanelAppContent() {
         <div className="text-center mb-4">
           <img src="/icon/square-light.svg" alt="FaultMaven" className="w-12 h-12 mx-auto mb-2" />
           <h2 className="text-base font-semibold text-gray-800">Welcome to FaultMaven</h2>
-          <p className="text-xs text-gray-500">Sign in to FaultMaven Dashboard to continue</p>
+          <p className="text-xs text-gray-500">Sign in to start working</p>
         </div>
         
         {authError && (
@@ -2078,7 +2078,7 @@ function SidePanelAppContent() {
             onClick={handleLogin}
             className="w-full px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"
           >
-            <span>Sign In to Dashboard</span>
+            <span>Sign In to Work</span>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
               <polyline points="15 3 21 3 21 9"></polyline>
