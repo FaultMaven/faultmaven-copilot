@@ -11,8 +11,13 @@ import {
 // Mock the config module
 vi.mock('../../config', () => ({
   default: {
-    apiUrl: 'https://api.faultmaven.ai'
-  }
+    apiUrl: 'https://api.faultmaven.ai',
+    session: {
+      timeoutMinutes: 180,
+      timeoutMs: 180 * 60 * 1000
+    }
+  },
+  getApiUrl: vi.fn().mockResolvedValue('https://api.faultmaven.ai')
 }));
 
 // Mock browser for tests that use uploadData (which now requires auth)
