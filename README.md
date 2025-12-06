@@ -1,5 +1,8 @@
 # FaultMaven Copilot
 
+> **Part of [FaultMaven](https://github.com/FaultMaven/faultmaven)** —
+> The AI-Powered Troubleshooting Copilot
+
 **The Browser Extension for In-Flow Troubleshooting**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -108,7 +111,7 @@ We welcome contributions to the FaultMaven Copilot! Whether it's adding new site
 
 **Getting Started:**
 - Check out [`good-first-issue`](https://github.com/search?q=org%3AFaultMaven+label%3A%22good+first+issue%22+state%3Aopen+repo%3Afaultmaven-copilot) tags for beginner-friendly tasks
-- Read the [Contributing Guide](https://github.com/FaultMaven/faultmaven/blob/main/CONTRIBUTING.md) for code style and workflow
+- See our [Contributing Guide](https://github.com/FaultMaven/.github/blob/main/CONTRIBUTING.md) for detailed guidelines
 - Join [GitHub Discussions](https://github.com/FaultMaven/faultmaven/discussions) to share ideas
 
 ---
@@ -130,13 +133,10 @@ The FaultMaven ecosystem includes:
 
 ---
 
-## 🆘 Support
+## Support
 
-- **Website**: [faultmaven.ai](https://faultmaven.ai)
-- **Documentation**: [GitHub README](https://github.com/FaultMaven/faultmaven)
-- **Issues**: [GitHub Issues](https://github.com/FaultMaven/faultmaven-copilot/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/FaultMaven/faultmaven/discussions)
-- **Email**: [support@faultmaven.ai](mailto:support@faultmaven.ai)
+- **Discussions:** [GitHub Discussions](https://github.com/FaultMaven/faultmaven/discussions)
+- **Issues:** [GitHub Issues](https://github.com/FaultMaven/faultmaven-copilot/issues)
 
 ---
 
