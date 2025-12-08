@@ -18,7 +18,6 @@ type StorageBatch = Record<string, StorageValue>;
 
 class BatchedStorageManager {
   private pendingWrites: StorageBatch = {};
-  private isWriteScheduled = false;
   private readonly DEBOUNCE_MS = 500;
 
   /**
@@ -43,12 +42,16 @@ class BatchedStorageManager {
   private scheduleWrite = debounce(async () => {
     if (Object.keys(this.pendingWrites).length === 0) return;
 
+    // Capture current pending writes
     const writesToCommit = { ...this.pendingWrites };
-    this.pendingWrites = {}; // Clear pending immediately to allow new writes during async op
+    
+    // Clear pending writes from queue.
+    // If new writes come in during await, they will be in the next batch.
+    this.pendingWrites = {}; 
 
     try {
       if (typeof browser !== 'undefined' && browser.storage) {
-        console.log('[BatchedStorage] 💾 Committing batch write:', Object.keys(writesToCommit));
+        // console.log('[BatchedStorage] 💾 Committing batch write:', Object.keys(writesToCommit));
         await browser.storage.local.set(writesToCommit);
       } else {
         console.warn('[BatchedStorage] Browser storage not available, falling back to localStorage');
@@ -61,21 +64,18 @@ class BatchedStorageManager {
         });
       }
     } catch (error) {
-      console.error('[BatchedStorage] ❌ Batch write failed:', error);
-      // Re-queue failed writes? For now, we log.
-      // A robust implementation might retry or keep them in pending.
+      console.error('[BatchedStorage] ❌ Batch write failed, re-queueing:', error);
+      // Restore failed writes to pendingWrites to be retried on next schedule
+      // We merge with any new writes that might have happened
+      this.pendingWrites = { ...writesToCommit, ...this.pendingWrites };
     }
-  }, { wait: this.DEBOUNCE_MS });
+  }, { wait: 500 }); // Use literal instead of this.DEBOUNCE_MS for safety
 
   /**
    * Force immediate write of pending changes
    */
   public async flush(): Promise<void> {
     if (Object.keys(this.pendingWrites).length === 0) return;
-    
-    // Cancel any scheduled debounce
-    // (Note: our simple debounce implementation might not expose cancel, 
-    // but calling the function directly works if we manage the queue correctly)
     
     const writesToCommit = { ...this.pendingWrites };
     this.pendingWrites = {};
@@ -85,7 +85,8 @@ class BatchedStorageManager {
         await browser.storage.local.set(writesToCommit);
       }
     } catch (error) {
-      console.error('[BatchedStorage] Flush failed:', error);
+      console.error('[BatchedStorage] Flush failed, re-queueing:', error);
+      this.pendingWrites = { ...writesToCommit, ...this.pendingWrites };
     }
   }
 }

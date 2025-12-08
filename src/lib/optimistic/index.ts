@@ -31,6 +31,7 @@ export type { IdMapping, IdMappingState } from './IdMappingManager';
 export type {
   ConflictDetectionResult,
   ConflictResolutionStrategy,
+  ConflictResolution,
   DataBackup
 } from './ConflictResolver';
 

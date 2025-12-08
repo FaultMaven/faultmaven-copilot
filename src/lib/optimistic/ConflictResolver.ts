@@ -28,6 +28,11 @@ export interface ConflictResolutionStrategy {
   resolutionFn: () => Promise<void>;
 }
 
+export interface ConflictResolution {
+  choice: 'keep_local' | 'take_remote' | 'merge' | 'manual';
+  mergedData?: any;
+}
+
 export interface DataBackup {
   id: string;
   timestamp: number;
