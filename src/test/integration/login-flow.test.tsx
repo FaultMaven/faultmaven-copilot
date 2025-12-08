@@ -66,7 +66,7 @@ describe('SidePanelApp Login Flow', () => {
     });
   });
 
-  it('opens correct dashboard URL when "Sign In to Dashboard" is clicked', async () => {
+  it('opens correct dashboard URL when "Sign In to Work" is clicked', async () => {
     // Render the app (will show login screen since isAuthenticated is false)
     // We need to bypass the WelcomeScreen check
     (browser.storage.local.get as any).mockResolvedValue({ hasCompletedFirstRun: true });
@@ -74,7 +74,7 @@ describe('SidePanelApp Login Flow', () => {
     render(<SidePanelApp />);
 
     // Find the login button
-    const loginButton = await screen.findByText('Sign In to Dashboard');
+    const loginButton = await screen.findByText('Sign In to Work');
     expect(loginButton).toBeInTheDocument();
 
     // Click it

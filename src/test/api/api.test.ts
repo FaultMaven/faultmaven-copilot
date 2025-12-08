@@ -11,8 +11,18 @@ import {
 // Mock the config module
 vi.mock('../../config', () => ({
   default: {
-    apiUrl: 'https://api.faultmaven.ai'
-  }
+    apiUrl: 'https://api.faultmaven.ai',
+    session: {
+      timeoutMinutes: 180,
+      timeoutMs: 180 * 60 * 1000
+    },
+    inputLimits: {
+      dataModeLinesThreshold: 100,
+      maxQueryLength: 200000,
+      maxFileSize: 10 * 1024 * 1024
+    }
+  },
+  getApiUrl: vi.fn().mockResolvedValue('https://api.faultmaven.ai')
 }));
 
 // Mock browser for tests that use uploadData (which now requires auth)
@@ -157,7 +167,7 @@ describe('API Functions', () => {
         session_id: 'session-123',
         query: 'test query',
         priority: 'normal'
-      })).rejects.toThrow('Backend API contract violation: Expected AgentResponse format but received OpenAI completion format');
+      })).rejects.toThrow('Backend API contract violation: AgentResponse missing required fields');
     });
 
     it('accepts valid AgentResponse format', async () => {

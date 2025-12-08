@@ -13,8 +13,18 @@ import { AuthenticationError } from '../../lib/errors/types';
 // Mock the config module
 vi.mock('../../config', () => ({
   default: {
-    apiUrl: 'https://api.faultmaven.ai'
-  }
+    apiUrl: 'https://api.faultmaven.ai',
+    session: {
+      timeoutMinutes: 180,
+      timeoutMs: 180 * 60 * 1000
+    },
+    inputLimits: {
+      dataModeLinesThreshold: 100,
+      maxQueryLength: 200000,
+      maxFileSize: 10 * 1024 * 1024
+    }
+  },
+  getApiUrl: vi.fn().mockResolvedValue('https://api.faultmaven.ai')
 }));
 
 // Mock browser storage

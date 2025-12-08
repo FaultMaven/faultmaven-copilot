@@ -2,25 +2,37 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authManager, AuthState } from '../../lib/api';
 
 // Mock browser environment
-const mockBrowserStorage = {
-  local: {
-    get: vi.fn(),
-    set: vi.fn(),
-    remove: vi.fn()
-  }
-};
+const { mockBrowser } = vi.hoisted(() => {
+  const storage = {
+    local: {
+      get: vi.fn(),
+      set: vi.fn(),
+      remove: vi.fn()
+    }
+  };
+  const runtime = {
+    sendMessage: vi.fn(),
+    onMessage: {
+      addListener: vi.fn()
+    }
+  };
+  return {
+    mockBrowser: {
+      storage,
+      runtime
+    }
+  };
+});
 
-const mockBrowserRuntime = {
-  sendMessage: vi.fn(),
-  onMessage: {
-    addListener: vi.fn()
-  }
-};
+const mockBrowserStorage = mockBrowser.storage;
+const mockBrowserRuntime = mockBrowser.runtime;
 
-(global as any).browser = {
-  storage: mockBrowserStorage,
-  runtime: mockBrowserRuntime
-};
+// Mock wxt/browser
+vi.mock('wxt/browser', () => ({
+  browser: mockBrowser
+}));
+
+(global as any).browser = mockBrowser;
 
 describe('Authentication Integration Flow', () => {
   beforeEach(() => {

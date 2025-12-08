@@ -1,11 +1,44 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { ClientSessionManager } from '../../lib/session/client-session-manager';
 
+// Hoist mock browser
+const { mockBrowser } = vi.hoisted(() => {
+  return {
+    mockBrowser: {
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({}),
+          set: vi.fn().mockResolvedValue(undefined),
+          remove: vi.fn().mockResolvedValue(undefined)
+        }
+      },
+      runtime: {
+        id: 'test-ext-id'
+      }
+    }
+  };
+});
+
+// Mock wxt/browser
+vi.mock('wxt/browser', () => ({
+  browser: mockBrowser
+}));
+
 // Mock config
 vi.mock('../../config', () => ({
   default: {
-    apiUrl: 'http://localhost:8000'
-  }
+    apiUrl: 'http://localhost:8000',
+    session: {
+      timeoutMinutes: 180,
+      timeoutMs: 180 * 60 * 1000
+    },
+    inputLimits: {
+      dataModeLinesThreshold: 100,
+      maxQueryLength: 200000,
+      maxFileSize: 10 * 1024 * 1024
+    }
+  },
+  getApiUrl: vi.fn().mockResolvedValue('http://localhost:8000')
 }));
 
 // Mock crypto.randomUUID
@@ -40,50 +73,58 @@ Object.defineProperty(window, 'localStorage', {
 // Mock fetch for API calls
 global.fetch = vi.fn();
 
+// Global stub just in case
+vi.stubGlobal('browser', mockBrowser);
+
 describe('ClientSessionManager', () => {
   beforeEach(() => {
     localStorageMock.clear();
     vi.clearAllMocks();
     // Reset singleton instance
     (ClientSessionManager as any).instance = undefined;
+    
+    // Reset mock return values
+    mockBrowser.storage.local.get.mockResolvedValue({});
   });
 
-  test('generates and persists client ID', () => {
+
+  test('generates and persists client ID', async () => {
     const manager = ClientSessionManager.getInstance();
 
-    const clientId1 = manager.getOrCreateClientId();
-    const clientId2 = manager.getOrCreateClientId();
+    const clientId1 = await manager.getOrCreateClientId();
+    const clientId2 = await manager.getOrCreateClientId();
 
     expect(clientId1).toBe(clientId2);
     expect(clientId1).toBe('test-uuid-12345678-1234-5678-9012-123456789012');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('faultmaven_client_id', clientId1);
-    expect(localStorageMock.getItem).toHaveBeenCalledWith('faultmaven_client_id');
+    expect(mockBrowser.storage.local.set).toHaveBeenCalledWith({ faultmaven_client_id: clientId1 });
+    expect(mockBrowser.storage.local.get).toHaveBeenCalledWith(['faultmaven_client_id']);
   });
 
-  test('uses existing client ID from localStorage', () => {
-    localStorageMock.setItem('faultmaven_client_id', 'existing-client-id');
+  test('uses existing client ID from localStorage', async () => {
+    mockBrowser.storage.local.get.mockResolvedValue({ faultmaven_client_id: 'existing-client-id' });
 
     const manager = ClientSessionManager.getInstance();
-    const clientId = manager.getOrCreateClientId();
+    const clientId = await manager.getOrCreateClientId();
 
     expect(clientId).toBe('existing-client-id');
     expect(crypto.randomUUID).not.toHaveBeenCalled();
   });
 
-  test('clears client ID correctly', () => {
+  test('clears client ID correctly', async () => {
     const manager = ClientSessionManager.getInstance();
 
     // First, create a client ID
-    manager.getOrCreateClientId();
-    expect(localStorageMock.setItem).toHaveBeenCalled();
+    await manager.getOrCreateClientId();
+    expect(mockBrowser.storage.local.set).toHaveBeenCalled();
 
     // Then clear it
-    manager.clearClientId();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('faultmaven_client_id');
+    await manager.clearClientId();
+    expect(mockBrowser.storage.local.remove).toHaveBeenCalledWith(['faultmaven_client_id']);
 
     // Next call should generate a new ID
     vi.mocked(crypto.randomUUID).mockReturnValue('87654321-4321-5678-9012-123456789012');
-    const newClientId = manager.getOrCreateClientId();
+    mockBrowser.storage.local.get.mockResolvedValue({}); // Reset for new ID
+    const newClientId = await manager.getOrCreateClientId();
     expect(newClientId).toBe('87654321-4321-5678-9012-123456789012');
   });
 
@@ -170,7 +211,7 @@ describe('ClientSessionManager', () => {
 
     const session = await manager.createSessionWithRecovery();
 
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('faultmaven_client_id');
+    expect(mockBrowser.storage.local.remove).toHaveBeenCalledWith(['faultmaven_client_id']);
     expect(session.session_id).toBe('new-session-789');
     expect(session.session_resumed).toBe(false);
   });

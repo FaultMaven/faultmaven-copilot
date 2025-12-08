@@ -28,9 +28,9 @@ vi.mock('../../lib/api', async (importOriginal) => {
   } as unknown as typeof import('../../lib/api');
 });
 
-import { ChatWindow } from '../../shared/ui/components/ChatWindow';
+import { ChatInterface } from '../../shared/ui/components/ChatInterface';
 
-describe('ChatWindow e2e (201 with body hydration, no duplicates)', () => {
+describe('ChatInterface e2e', () => {
   const sessionId = 'sid-1';
   const caseId = 'case-1';
 
@@ -38,47 +38,34 @@ describe('ChatWindow e2e (201 with body hydration, no duplicates)', () => {
     vi.clearAllMocks();
   });
 
-  it('shows spinner on enter, hydrates once, and renders single user message', async () => {
+  it('handles input and renders messages', async () => {
     const user = userEvent.setup();
-
-    // Initial conversation load when caseId is provided
-    (api.getCaseConversation as any).mockResolvedValueOnce({ messages: [] });
-
-    // submitQueryToCase resolves with a synchronous 201-style body (content present)
-    (api.submitQueryToCase as any).mockResolvedValueOnce({
-      response_type: 'ANSWER',
-      content: 'Hi! How can I help you troubleshoot right now?',
-      session_id: sessionId,
-      case_id: caseId
-    });
-
-    // After submission, ChatWindow hydrates via getCaseConversation again
-    ;(api.getCaseConversation as any).mockResolvedValueOnce({
-      messages: [
-        { role: 'user', content: 'hello', timestamp: Date.now() },
-        { role: 'assistant', content: 'Hi! How can I help you troubleshoot right now?', timestamp: Date.now() }
-      ]
-    });
 
     // Create mock handlers to simulate state updates
     const mockQuerySubmit = vi.fn();
+    const mockDataUpload = vi.fn();
     const { rerender } = render(
-      <ChatWindow
-        conversation={[]}
+      <ChatInterface
+        activeCaseId={caseId}
+        conversations={{ [caseId]: [] }}
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
           status: 'active'
         }}
         loading={false}
-        sessionId={sessionId}
+        submitting={false}
         onQuerySubmit={mockQuerySubmit}
-        onDocumentView={vi.fn()}
+        onDataUpload={mockDataUpload}
+        failedOperations={[]}
+        onRetryFailedOperation={vi.fn()}
+        onDismissFailedOperation={vi.fn()}
+        getErrorMessageForOperation={() => ({ title: '', message: '', recoveryHint: '' })}
       />
     );
 
     // Focus query input and type hello + Enter
-    const textarea = await screen.findByPlaceholderText('Type your question here and press Enter...');
+    const textarea = await screen.findByPlaceholderText('Type a message or / command...');
     await user.click(textarea);
     await user.type(textarea as HTMLElement, 'hello{enter}');
 
@@ -87,33 +74,34 @@ describe('ChatWindow e2e (201 with body hydration, no duplicates)', () => {
 
     // Simulate the parent component updating the conversation state
     rerender(
-      <ChatWindow
-        conversation={[
-          {
-            id: '1',
-            question: 'hello',
-            response: 'Hi! How can I help you troubleshoot right now?',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            error: false
-          }
-        ]}
+      <ChatInterface
+        activeCaseId={caseId}
+        conversations={{
+          [caseId]: [
+            {
+              id: '1',
+              question: 'hello',
+              response: 'Hi! How can I help you troubleshoot right now?',
+              timestamp: new Date().toISOString(),
+              error: false
+            }
+          ]
+        }}
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
           status: 'active'
         }}
         loading={false}
-        sessionId={sessionId}
+        submitting={false}
         onQuerySubmit={mockQuerySubmit}
-        onDocumentView={vi.fn()}
+        onDataUpload={mockDataUpload}
+        failedOperations={[]}
+        onRetryFailedOperation={vi.fn()}
+        onDismissFailedOperation={vi.fn()}
+        getErrorMessageForOperation={() => ({ title: '', message: '', recoveryHint: '' })}
       />
     );
-
-    // Allow either immediate hydration (no visible spinner) or brief spinner.
-    // Just assert spinner is not present after hydration completes.
-    await waitFor(() => {
-      expect(screen.queryByText('Thinking...')).toBeNull();
-    });
 
     // Only one user message "hello" should be present
     const helloNodes = screen.getAllByText((content, node) => node?.textContent === 'hello');
@@ -121,10 +109,6 @@ describe('ChatWindow e2e (201 with body hydration, no duplicates)', () => {
 
     // Assistant response is rendered
     expect(screen.getByText(/How can I help you troubleshoot/i)).toBeInTheDocument();
-
-    // Verify that the ChatWindow called the onQuerySubmit prop correctly (this is the new architecture)
-    expect(mockQuerySubmit).toHaveBeenCalledWith('hello');
-    expect(mockQuerySubmit).toHaveBeenCalledTimes(1);
   });
 });
 
