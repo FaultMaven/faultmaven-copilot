@@ -458,15 +458,8 @@ export enum InvestigationMode {
 /**
  * Current case investigation state
  */
-export enum CaseStatus {
-  INTAKE = 'intake',
-  IN_PROGRESS = 'in_progress',
-  RESOLVED = 'resolved',
-  MITIGATED = 'mitigated',
-  STALLED = 'stalled',
-  ABANDONED = 'abandoned',
-  CLOSED = 'closed'
-}
+// CaseStatus enum removed. Using string union type from ../types/case
+export type { UserCase, UserCaseStatus, CaseStatus } from "../types/case";
 
 /**
  * How well evidence answers specific request(s)

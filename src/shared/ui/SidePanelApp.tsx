@@ -22,7 +22,7 @@ import {
   formatDataType,
   formatCompression
 } from "../../lib/api";
-import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
+import { ErrorHandlerProvider, useErrorHandler, useError, AuthenticationError } from "../../lib/errors";
 import { retryWithBackoff } from "../../lib/utils/retry";
 import { NetworkStatusMonitor } from "../../lib/utils/network-status";
 import { ToastContainer } from "./components/Toast";

@@ -1,5 +1,6 @@
 import { getApiUrl } from "../../config";
 import config from "../../config";
+import { browser } from 'wxt/browser';
 
 // Enhanced TypeScript interfaces for client-based session management
 export interface SessionCreateRequest {
@@ -59,16 +60,29 @@ export class ClientSessionManager {
 
   /**
    * Get or generate a unique client ID for this browser instance
-   * Client ID persists across browser sessions via localStorage
+   * Client ID persists across browser sessions via browser.storage.local
    */
-  getOrCreateClientId(): string {
+  async getOrCreateClientId(): Promise<string> {
     if (!this.clientId) {
-      this.clientId = localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
+      // Try to get from storage first
+      if (typeof browser !== 'undefined' && browser.storage) {
+        const stored = await browser.storage.local.get([ClientSessionManager.CLIENT_ID_KEY]);
+        this.clientId = stored[ClientSessionManager.CLIENT_ID_KEY];
+      } else {
+        // Fallback for non-extension environments (e.g., unit tests)
+        this.clientId = localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
+      }
 
       if (!this.clientId) {
         // Generate UUID v4 using crypto.randomUUID() for performance
         this.clientId = crypto.randomUUID();
-        localStorage.setItem(ClientSessionManager.CLIENT_ID_KEY, this.clientId);
+        
+        if (typeof browser !== 'undefined' && browser.storage) {
+          await browser.storage.local.set({ [ClientSessionManager.CLIENT_ID_KEY]: this.clientId });
+        } else {
+          localStorage.setItem(ClientSessionManager.CLIENT_ID_KEY, this.clientId);
+        }
+        
         console.log('[ClientSessionManager] Generated new client ID:', this.clientId.slice(0, 8) + '...');
       } else {
         console.log('[ClientSessionManager] Using existing client ID:', this.clientId.slice(0, 8) + '...');
@@ -83,7 +97,7 @@ export class ClientSessionManager {
    * Implements timeout + resume strategy for crash recovery
    */
   async createSession(userContext?: any, timeoutMinutes?: number): Promise<SessionCreateResponse> {
-    const clientId = this.getOrCreateClientId();
+    const clientId = await this.getOrCreateClientId();
     const apiUrl = await getApiUrl();
 
     // Use provided timeout or default, enforcing min/max limits
@@ -139,9 +153,15 @@ export class ClientSessionManager {
    * Note: This is primarily used internally for session expiration recovery.
    * UI no longer exposes manual session forcing to users.
    */
-  clearClientId(): void {
+  async clearClientId(): Promise<void> {
     this.clientId = null;
-    localStorage.removeItem(ClientSessionManager.CLIENT_ID_KEY);
+    
+    if (typeof browser !== 'undefined' && browser.storage) {
+      await browser.storage.local.remove([ClientSessionManager.CLIENT_ID_KEY]);
+    } else {
+      localStorage.removeItem(ClientSessionManager.CLIENT_ID_KEY);
+    }
+    
     console.log('[ClientSessionManager] Client ID cleared - next session will be new');
   }
 
@@ -149,7 +169,14 @@ export class ClientSessionManager {
    * Get current client ID without generating new one
    * Returns null if no client ID exists
    */
-  getCurrentClientId(): string | null {
+  async getCurrentClientId(): Promise<string | null> {
+    if (this.clientId) return this.clientId;
+    
+    if (typeof browser !== 'undefined' && browser.storage) {
+      const stored = await browser.storage.local.get([ClientSessionManager.CLIENT_ID_KEY]);
+      return stored[ClientSessionManager.CLIENT_ID_KEY] || null;
+    }
+    
     return localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
   }
 
@@ -184,7 +211,7 @@ export class ClientSessionManager {
       // Handle expired/invalid session scenarios (404, 410, session not found)
       if (this.isSessionExpiredError(error)) {
         console.warn('[ClientSessionManager] Session expired/invalid after browser crash - creating fresh session');
-        this.clearClientId();
+        await this.clearClientId();
         return await this.createSession(userContext, timeoutMinutes);
       }
       // Re-throw other errors

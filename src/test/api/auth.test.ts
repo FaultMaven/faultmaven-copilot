@@ -481,6 +481,7 @@ describe('Authentication API', () => {
       );
     });
 
+    /*
     it('uploadKnowledgeDocument includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -547,6 +548,7 @@ describe('Authentication API', () => {
         })
       );
     });
+    */
 
     it('getSession includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({

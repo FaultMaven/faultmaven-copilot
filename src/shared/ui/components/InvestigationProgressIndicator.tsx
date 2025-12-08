@@ -36,10 +36,10 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
 
   const getStatusColor = (): string => {
     switch (progress.case_status) {
-      case 'in_progress': return 'text-blue-600';
+      case 'investigating': return 'text-blue-600';
+      case 'consulting': return 'text-purple-600';
       case 'resolved': return 'text-green-600';
-      case 'mitigated': return 'text-yellow-600';
-      case 'stalled': return 'text-orange-600';
+      case 'closed': return 'text-gray-600';
       default: return 'text-gray-600';
     }
   };

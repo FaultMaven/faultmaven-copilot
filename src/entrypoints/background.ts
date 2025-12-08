@@ -4,6 +4,7 @@ import { clientSessionManager } from '../lib/session/client-session-manager';
 import { PersistenceManager } from '../lib/utils/persistence-manager';
 import { browser } from 'wxt/browser';
 import config from '../config';
+import { getAuthConfig, initiateOIDCLogin } from '../lib/auth/auth-config';
 
 export default defineBackground({
   main() {
@@ -91,7 +92,7 @@ export default defineBackground({
 
     async function handleClearSession(requestAction: string, sendResponse: (response?: any) => void) {
       console.log(`[background.ts] handleClearSession called for action: ${requestAction}`);
-      
+
       try {
         // Get current session to delete from backend
         const result = await browser.storage.local.get(["sessionId"]);
@@ -118,6 +119,32 @@ export default defineBackground({
       }
     }
 
+    // === OIDC Login Handler ===
+    async function handleInitiateOIDCLogin(sendResponse: (response?: any) => void) {
+      console.log('[background.ts] Initiating OIDC login flow');
+
+      try {
+        // Get extension callback URL
+        const callbackUrl = browser.runtime.getURL('/oidc-callback.html');
+        console.log('[background.ts] OIDC callback URL:', callbackUrl);
+
+        // Initiate OIDC flow (generates PKCE parameters and stores code_verifier)
+        const oidcResponse = await initiateOIDCLogin(callbackUrl);
+
+        // Open authorization URL in new tab
+        await browser.tabs.create({
+          url: oidcResponse.authorization_url,
+          active: true
+        });
+
+        console.log('[background.ts] OIDC login initiated, authorization tab opened');
+        sendResponse({ status: 'success', state: oidcResponse.state });
+      } catch (error: any) {
+        console.error('[background.ts] Failed to initiate OIDC login:', error);
+        sendResponse({ status: 'error', message: error.message || 'Failed to initiate OIDC login' });
+      }
+    }
+
     // === Message Handler ===
     browser.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
       console.log("[background.ts] Message received:", request);
@@ -134,6 +161,11 @@ export default defineBackground({
 
       if (request.action === "clearSession") {
         handleClearSession(request.action, sendResponse);
+        return true; // Indicate async response
+      }
+
+      if (request.action === "initiateOIDCLogin") {
+        handleInitiateOIDCLogin(sendResponse);
         return true; // Indicate async response
       }
 

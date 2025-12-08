@@ -27,7 +27,7 @@ function createTestResponse(overrides: Partial<AgentResponse> = {}): AgentRespon
     session_id: 'test-session-123',
     evidence_requests: [],
     investigation_mode: InvestigationMode.ACTIVE_INCIDENT,
-    case_status: CaseStatus.IN_PROGRESS,
+    case_status: 'investigating',
     ...overrides
   };
 }

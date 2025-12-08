@@ -16,6 +16,7 @@ import {
 } from '../api';
 
 import { CaseStatus, UserCase } from '../../types/case';
+export type { UserCase };
 
 /**
  * Base conversation item interface - matches ChatWindow.tsx (v3.1.0)
