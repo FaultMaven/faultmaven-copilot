@@ -329,7 +329,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     // Update conversation immediately
     props.setConversations(prev => ({
       ...prev,
-      [targetCaseId]: [...(prev[targetCaseId] || []), userMessage, aiThinkingMessage]
+      [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiThinkingMessage]
     }));
 
     // Focus/highlight the active case in the sidebar
@@ -370,4 +370,3 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     handleQuerySubmit
   };
 }
-

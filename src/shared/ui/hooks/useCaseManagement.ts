@@ -148,9 +148,9 @@ export function useCaseManagement(sessionId: string | null) {
    * Sets the active case ID (used when selecting existing case from list)
    * v2.0: Frontend-only state management
    */
-  const setActiveCase = useCallback(async (caseId: string | null) => {
+  const setActiveCase = useCallback(async (caseId: string | null | undefined) => {
     log.debug('Setting active case:', caseId);
-    setState(prev => ({ ...prev, currentCaseId: caseId }));
+    setState(prev => ({ ...prev, currentCaseId: caseId || null }));
 
     if (caseId) {
       await browser.storage.local.set({ faultmaven_current_case: caseId });

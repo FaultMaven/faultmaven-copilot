@@ -12,8 +12,9 @@
 
 import React from 'react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { ChatWindow } from '../components/ChatWindow';
+import { ChatInterface } from '../components/ChatInterface';
 import type { UserCase, InvestigationProgress, UploadedData } from '../../../lib/api';
+import type { OptimisticConversationItem } from '../../../lib/optimistic';
 
 export interface ContentAreaProps {
   // Active view (chat-only, no KB tabs)
@@ -22,7 +23,7 @@ export interface ContentAreaProps {
   // Chat state
   activeCaseId?: string;
   activeCase: UserCase | null;
-  conversations: Record<string, any[]>;
+  conversations: Record<string, OptimisticConversationItem[]>;
   loading: boolean;
   submitting: boolean;
   sessionId: string | null;
@@ -36,7 +37,7 @@ export interface ContentAreaProps {
   failedOperations: any[];
 
   // Chat callbacks
-  onQuerySubmit: (query: string) => void;
+  onQuerySubmit: (query: string) => Promise<void>;
   onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
   onDocumentView?: (documentId: string) => void;
   onGenerateReports?: () => void;
@@ -108,66 +109,24 @@ const ContentAreaComponent = ({
         }
       >
         <div className="h-full flex flex-col">
-          {/* Failed Operations Alert */}
-          {failedOperations.length > 0 && (
-            <div className="flex-shrink-0 p-4 space-y-3">
-              {failedOperations.map((operation) => {
-                const errorInfo = getErrorMessageForOperation(operation);
-                return (
-                  <div key={operation.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                          </svg>
-                          <h4 className="text-sm font-medium text-yellow-800">{errorInfo.title}</h4>
-                        </div>
-                        <p className="text-xs text-yellow-700 mt-1">{errorInfo.message}</p>
-                        <p className="text-xs text-yellow-600 mt-2 italic">{errorInfo.recoveryHint}</p>
-                      </div>
-                      <div className="flex items-center gap-2 ml-3">
-                        <button
-                          onClick={() => onRetryFailedOperation(operation.id)}
-                          className="px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200 transition-colors font-medium"
-                        >
-                          Retry
-                        </button>
-                        <button
-                          onClick={() => onDismissFailedOperation(operation.id)}
-                          className="p-1 text-yellow-600 hover:text-yellow-800 transition-colors"
-                          title="Dismiss this error"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Main Chat Window */}
-          <div className="flex-1 min-h-0">
-            <ChatWindow
-              conversation={conversations[activeCaseId || ''] || []}
-              activeCase={activeCase}
-              loading={loading}
-              submitting={submitting}
-              sessionId={sessionId}
-              isNewUnsavedChat={hasUnsavedNewChat}
-              investigationProgress={activeCaseId ? investigationProgress[activeCaseId] : null}
-              evidence={activeCaseId ? caseEvidence[activeCaseId] : undefined}
-              onQuerySubmit={onQuerySubmit}
-              onDataUpload={onDataUpload}
-              onDocumentView={onDocumentView}
-              onGenerateReports={onGenerateReports}
-              className="h-full"
-            />
-          </div>
+          <ChatInterface
+            activeCaseId={activeCaseId}
+            activeCase={activeCase}
+            conversations={conversations}
+            loading={loading}
+            submitting={submitting}
+            onQuerySubmit={onQuerySubmit}
+            onDataUpload={onDataUpload}
+            failedOperations={failedOperations}
+            onRetryFailedOperation={onRetryFailedOperation}
+            onDismissFailedOperation={onDismissFailedOperation}
+            getErrorMessageForOperation={getErrorMessageForOperation}
+            investigationProgress={investigationProgress}
+            caseEvidence={caseEvidence}
+            onDocumentView={onDocumentView}
+            onGenerateReports={onGenerateReports}
+            onNewChat={onNewChat}
+          />
         </div>
       </ErrorBoundary>
     );

@@ -1,6 +1,4 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from "react";
-import { browser } from "wxt/browser";
-import DOMPurify from 'dompurify';
 import {
   UploadedData,
   Source,
@@ -25,7 +23,6 @@ import { ClarifyingQuestions } from "./ClarifyingQuestions";
 import { CommandValidationDisplay } from "./CommandValidationDisplay";
 import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
 import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
-import { UnifiedInputBar } from "./UnifiedInputBar";
 import { EvidencePanel } from "./EvidencePanel";
 import { EvidenceAnalysisModal } from "./EvidenceAnalysisModal";
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
@@ -93,7 +90,7 @@ interface ChatWindowProps {
   conversation: ConversationItem[];
   activeCase: UserCase | null;
   loading: boolean;
-  submitting: boolean; // For input locking during message submission
+  // submitting: boolean; // Removed: Input locking handled by parent/UnifiedInputBar
   sessionId: string | null;
 
   // UI state
@@ -106,32 +103,27 @@ interface ChatWindowProps {
   // Phase 3 Week 7: Evidence Management
   evidence?: UploadedData[];
 
-  // Action callbacks only (no state management)
+  // Action callbacks
   onQuerySubmit: (query: string) => void;
-  onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
+  // onDataUpload removed - handled by parent/UnifiedInputBar
   onDocumentView?: (documentId: string) => void;
   onGenerateReports?: () => void;  // FR-CM-006: Trigger report generation for resolved cases
 }
 
 // PERFORMANCE OPTIMIZATION: Memoized component to prevent unnecessary re-renders
-// Only re-renders when conversation, activeCase, loading, or other props actually change
 const ChatWindowComponent = function ChatWindow({
   conversation,
   activeCase,
   loading,
-  submitting,
   sessionId,
   isNewUnsavedChat = false,
   className = '',
   investigationProgress,
   evidence = [],
   onQuerySubmit,
-  onDataUpload,
   onDocumentView,
   onGenerateReports
 }: ChatWindowProps) {
-  const MAX_QUERY_LENGTH = 4000;
-
   // Phase 3 Week 7: Evidence panel state
   const [evidencePanelExpanded, setEvidencePanelExpanded] = useState(true);
   const [viewingEvidence, setViewingEvidence] = useState<UploadedData | null>(null);
@@ -141,41 +133,38 @@ const ChatWindowComponent = function ChatWindow({
   const [caseLoading, setCaseLoading] = useState(false);
   const [caseError, setCaseError] = useState<string | null>(null);
 
+  // UI refs
+  const conversationHistoryRef = useRef<HTMLDivElement>(null);
+
   /**
    * Format timestamp for display with turn number
-   * Converts ISO 8601 to readable format: "Turn 2 · Jan 12, 5:08 AM"
    */
   const formatTimestampWithTurn = useCallback((timestamp: string, turnNumber?: number) => {
     const date = new Date(timestamp);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
 
-    // Format time
     const timeStr = date.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true
     });
 
-    // Format date
     const dateStr = isToday
       ? 'Today'
       : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-    // Combine turn number with formatted date/time
     const turnPrefix = turnNumber ? `Turn ${turnNumber} · ` : '';
     return `${turnPrefix}${dateStr}, ${timeStr}`;
   }, []);
 
   /**
    * Scroll to a specific turn in the conversation
-   * Used by ConsultingDetails when clicking on file turn numbers
    */
   const scrollToTurn = useCallback((turnNumber: number) => {
     const element = document.querySelector(`[data-turn="${turnNumber}"]`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Brief highlight effect
       element.classList.add('bg-yellow-100');
       setTimeout(() => element.classList.remove('bg-yellow-100'), 2000);
     }
@@ -183,16 +172,11 @@ const ChatWindowComponent = function ChatWindow({
 
   /**
    * Handle status change request from CaseHeader dropdown
-   * Implements Option A: Send as regular query to agent (FRONTEND_STATUS_CHANGE_CONFIRMATION_FLOW.md)
    */
   const handleStatusChangeRequest = useCallback((newStatus: UserCaseStatus) => {
     if (!activeCase) return;
 
-    // Use fullCaseData.status if available (detailed backend status: consulting/investigating/resolved)
-    // Otherwise fall back to activeCase.status (simplified: active/resolved/closed)
     const currentStatus = fullCaseData?.status || activeCase.status;
-
-    // Get the predefined message for this transition
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
     if (!message) {
@@ -201,47 +185,26 @@ const ChatWindowComponent = function ChatWindow({
     }
 
     console.log('[ChatWindow] Status change request:', { from: currentStatus, to: newStatus, message });
-
-    // Send as regular query - agent will respond with confirmation prompt
     onQuerySubmit(message);
   }, [activeCase, fullCaseData, onQuerySubmit]);
 
-  /**
-   * Handles Yes button click on confirmation prompts
-   * Sends "Yes" as system-generated message
-   */
   const handleConfirmationYes = useCallback(() => {
     console.log('[ChatWindow] User confirmed with Yes');
     onQuerySubmit('Yes');
   }, [onQuerySubmit]);
 
-  /**
-   * Handles No button click on confirmation prompts
-   * Sends "No" as system-generated message
-   */
   const handleConfirmationNo = useCallback(() => {
     console.log('[ChatWindow] User declined with No');
     onQuerySubmit('No');
   }, [onQuerySubmit]);
 
-  // UI-only state (no data management)
-  const [queryInput, setQueryInput] = useState("");
-  const [textInput, setTextInput] = useState("");
-  const [pageContent, setPageContent] = useState<string>("");
-  const [fileSelected, setFileSelected] = useState(false);
-  const [injectionStatus, setInjectionStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: "", type: "" });
-  const [showDataSection, setShowDataSection] = useState(true);
-  const [dataSource, setDataSource] = useState<"text" | "file" | "page">("text");
+  const handleViewAnalysis = (item: UploadedData) => {
+    setViewingEvidence(item);
+  };
 
-  // UI refs
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const queryInputRef = useRef<HTMLTextAreaElement>(null);
-  const conversationHistoryRef = useRef<HTMLDivElement>(null);
-
-  // Enable inputs only when an active case exists or we are in an ephemeral new chat
   const canInteract = Boolean(activeCase) || Boolean(isNewUnsavedChat);
 
-  // Fetch full case data for EnhancedCaseHeader
+  // Fetch full case data
   useEffect(() => {
     if (activeCase?.case_id && sessionId) {
       setCaseLoading(true);
@@ -250,11 +213,6 @@ const ChatWindowComponent = function ChatWindow({
       caseApi
         .getCaseUI(activeCase.case_id, sessionId)
         .then((data) => {
-          console.log('[ChatWindow] 📊 Case UI data received:', {
-            case_id: data.case_id,
-            status: data.status,
-            uploaded_files_count: 'uploaded_files_count' in data ? data.uploaded_files_count : 'N/A'
-          });
           setFullCaseData(data);
         })
         .catch((err) => {
@@ -270,166 +228,16 @@ const ChatWindowComponent = function ChatWindow({
     }
   }, [activeCase?.case_id, conversation.length]);
 
-  // Auto-scroll to bottom when conversation updates
+  // Auto-scroll to bottom
   useEffect(() => {
     if (conversationHistoryRef.current) {
       conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
     }
   }, [conversation]);
 
-  const getPageContent = async (): Promise<string> => {
-    try {
-      setInjectionStatus({ message: "🔄 Analyzing page content...", type: "" });
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-
-      if (!tab.id) {
-        throw new Error("No active tab found");
-      }
-
-      // Check if tab URL is valid for content script injection
-      if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') ||
-          tab.url.startsWith('about:') || tab.url.startsWith('edge://') || tab.url.startsWith('brave://'))) {
-        throw new Error("Cannot analyze browser internal pages (chrome://, about:, etc.)");
-      }
-
-      let capturedContent = '';
-
-      try {
-        // Try sending message to existing content script
-        const response = await browser.tabs.sendMessage(tab.id, { action: "getPageContent" });
-
-        if (response && response.content) {
-          capturedContent = response.content;
-          setPageContent(capturedContent);
-          setInjectionStatus({ message: "✅ Page content captured successfully!", type: "success" });
-          return capturedContent;
-        }
-      } catch (messageError: any) {
-        // If content script doesn't exist, try programmatic injection as fallback
-        console.log("[ChatWindow] Content script not responding, attempting programmatic injection...");
-
-        try {
-          // Get the result from the injection (single call)
-          const [result] = await browser.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => document.documentElement.outerHTML
-          });
-
-          if (result && result.result) {
-            capturedContent = result.result;
-            setPageContent(capturedContent);
-            setInjectionStatus({ message: "✅ Page content captured successfully!", type: "success" });
-            return capturedContent;
-          }
-        } catch (injectionError: any) {
-          console.error("[ChatWindow] Programmatic injection failed:", injectionError);
-
-          // Check if it's a permission error
-          const errorMsg = injectionError.message || "";
-          if (errorMsg.includes("Cannot access contents") || errorMsg.includes("manifest must request permission")) {
-            throw new Error("Cannot analyze this page. Please refresh the page first, then try again");
-          }
-
-          throw new Error(`Cannot inject script: ${injectionError.message}`);
-        }
-      }
-
-      throw new Error("Failed to capture page content");
-    } catch (err: any) {
-      console.error("[ChatWindow] getPageContent error:", err);
-      const errorMsg = err.message || "Unknown error occurred";
-      setInjectionStatus({
-        message: `⚠️ ${errorMsg}. Please try refreshing the page.`,
-        type: "error"
-      });
-      throw err; // Re-throw so handlePageInject knows it failed
-    }
-  };
-
-  // Phase 1 Week 2: Handler for page injection from UnifiedInputBar (Step 1 only - capture)
-  const handlePageInject = async (): Promise<string> => {
-    // Capture the page content and return it directly (not from state)
-    const content = await getPageContent();
-    return content;
-  };
-
-  // Phase 3 Week 7: Evidence panel handlers
-  const handleViewAnalysis = (item: UploadedData) => {
-    setViewingEvidence(item);
-  };
-
-  const handleSubmitQuery = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!canInteract) {
-        setInjectionStatus({ message: "Start a new chat to begin.", type: "" });
-        return;
-      }
-      const trimmed = queryInput.trim();
-      if (trimmed.length > MAX_QUERY_LENGTH) {
-        setInjectionStatus({ message: `❌  Query too long (${trimmed.length}/${MAX_QUERY_LENGTH}). Please shorten it.`, type: "error" });
-        return;
-      }
-      if (trimmed && !loading && !submitting) {
-        onQuerySubmit(trimmed);
-        setQueryInput("");
-      }
-    }
-  };
-
-  const handleDataSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value as "text" | "file" | "page";
-    setDataSource(value);
-    setInjectionStatus({ message: "", type: "" });
-    setTextInput("");
-    setFileSelected(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setPageContent("");
-  };
-
-  const handleDataSubmit = async () => {
-    let dataToSend: string | File | null = null;
-    if (dataSource === "text") dataToSend = textInput.trim();
-    else if (dataSource === "file" && fileInputRef.current?.files?.[0]) dataToSend = fileInputRef.current.files[0];
-    else if (dataSource === "page") dataToSend = pageContent;
-
-    if (!dataToSend) {
-      setInjectionStatus({ message: "❌  No data to submit", type: "error" });
-      return;
-    }
-
-    // Show uploading status
-    setInjectionStatus({ message: "🔄 Uploading data...", type: "" });
-
-    // Call upload handler and wait for result
-    const result = await onDataUpload(dataToSend, dataSource);
-
-    // Show result to user
-    setInjectionStatus({
-      message: result.success ? `✅ ${result.message}` : `❌ ${result.message}`,
-      type: result.success ? "success" : "error"
-    });
-
-    // Clear inputs only on success
-    if (result.success) {
-      if (dataSource === "text") setTextInput("");
-      else if (dataSource === "file") {
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setFileSelected(false);
-      }
-      else if (dataSource === "page") setPageContent("");
-    }
-  };
-
-  const isSubmitEnabled =
-    !loading &&
-    ((dataSource === "text" && textInput.trim()) ||
-    (dataSource === "file" && fileSelected) ||
-    (dataSource === "page" && !!pageContent.trim()));
-
   return (
     <div className={`flex flex-col h-full space-y-1 overflow-y-auto ${className}`}>
-      {/* Case Header - show for all active cases (loading, error, or data) */}
+      {/* Case Header */}
       {activeCase && (
         <EnhancedCaseHeader
           caseData={fullCaseData}
@@ -441,25 +249,22 @@ const ChatWindowComponent = function ChatWindow({
         />
       )}
 
-      {/* OODA Investigation Progress (v3.2.0) */}
+      {/* OODA Investigation Progress */}
       {investigationProgress && (
         <div className="ooda-investigation-panel px-2 py-1">
           <InvestigationProgressIndicator progress={investigationProgress} />
-
           <HypothesisTracker hypotheses={investigationProgress.hypotheses} />
-
           <EvidenceProgressBar
             collected={investigationProgress.evidence_collected}
             requested={investigationProgress.evidence_requested}
           />
-
           {investigationProgress.anomaly_frame && (
             <AnomalyAlert anomaly={investigationProgress.anomaly_frame} />
           )}
         </div>
       )}
 
-      {/* Phase 3 Week 7: Evidence Panel - Only show in INVESTIGATING phase */}
+      {/* Evidence Panel */}
       {activeCase?.status === 'investigating' && evidence && evidence.length > 0 && (
         <EvidencePanel
           evidence={evidence}
@@ -469,7 +274,7 @@ const ChatWindowComponent = function ChatWindow({
         />
       )}
 
-      {/* Report Generation Button for Resolved Cases (FR-CM-006) */}
+      {/* Report Generation Button */}
       {activeCase && activeCase.status === 'resolved' && onGenerateReports && (
         <div className="px-2 py-2 bg-green-50 border border-green-200 rounded-lg mx-2">
           <div className="flex items-center justify-between">
@@ -567,7 +372,7 @@ const ChatWindowComponent = function ChatWindow({
                       <ClarifyingQuestions
                         questions={item.clarifyingQuestions}
                         onQuestionClick={(question) => {
-                          if (canInteract && !loading && !submitting) {
+                          if (canInteract && !loading) {
                             onQuerySubmit(question);
                           }
                         }}
@@ -579,7 +384,7 @@ const ChatWindowComponent = function ChatWindow({
                         commands={item.suggestedCommands}
                         onCommandClick={(command) => {
                           navigator.clipboard.writeText(command);
-                          setInjectionStatus({ message: "✅ Command copied to clipboard!", type: "success" });
+                          // Note: Clipboard success toast is handled locally in SuggestedCommands now or needs to be handled by parent
                         }}
                       />
                     )}
@@ -591,7 +396,6 @@ const ChatWindowComponent = function ChatWindow({
                     <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span>{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
-                        {/* Removed "Thinking..." spinner - processing indicator is shown in input area */}
                         {item.failed && (
                           <span className="text-red-600 flex items-center gap-1" title={item.errorMessage || "Failed to process"}>
                             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -626,18 +430,8 @@ const ChatWindowComponent = function ChatWindow({
         )}
       </div>
 
-      {/* Phase 1 Week 2: Unified Input Bar replaces separate Ask/Provide sections */}
-      <UnifiedInputBar
-        disabled={!canInteract}
-        loading={loading}
-        submitting={submitting}
-        onQuerySubmit={onQuerySubmit}
-        onDataUpload={onDataUpload}
-        onPageInject={handlePageInject}
-        maxLength={MAX_QUERY_LENGTH}
-      />
+      {/* UnifiedInputBar removed - input now handled by ChatInterface */}
 
-      {/* Phase 3 Week 7: Evidence modals */}
       <EvidenceAnalysisModal
         evidence={viewingEvidence}
         isOpen={viewingEvidence !== null}
@@ -648,19 +442,14 @@ const ChatWindowComponent = function ChatWindow({
   );
 };
 
-// Export memoized component with custom comparison
-// Re-renders only when these props change significantly
 export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
-  // Custom comparison to avoid unnecessary re-renders
   return (
     prevProps.conversation === nextProps.conversation &&
     prevProps.activeCase?.case_id === nextProps.activeCase?.case_id &&
     prevProps.loading === nextProps.loading &&
-    prevProps.submitting === nextProps.submitting &&
     prevProps.sessionId === nextProps.sessionId &&
     prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat
   );
 });
 
-// Default export for backward compatibility
 export default ChatWindow;

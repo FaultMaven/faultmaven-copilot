@@ -71,10 +71,8 @@ describe('ChatWindow e2e (201 with body hydration, no duplicates)', () => {
           status: 'active'
         }}
         loading={false}
-        submitting={false}
         sessionId={sessionId}
         onQuerySubmit={mockQuerySubmit}
-        onDataUpload={vi.fn()}
         onDocumentView={vi.fn()}
       />
     );
@@ -105,10 +103,8 @@ describe('ChatWindow e2e (201 with body hydration, no duplicates)', () => {
           status: 'active'
         }}
         loading={false}
-        submitting={false}
         sessionId={sessionId}
         onQuerySubmit={mockQuerySubmit}
-        onDataUpload={vi.fn()}
         onDocumentView={vi.fn()}
       />
     );
