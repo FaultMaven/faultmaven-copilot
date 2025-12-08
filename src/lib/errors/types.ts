@@ -114,6 +114,30 @@ export interface ErrorAction {
 }
 
 /**
+ * Session expiration error for automatic session refresh
+ */
+export class SessionExpiredError extends UserFacingError {
+  readonly userTitle = 'Session Expired';
+  readonly userMessage = 'Your session has expired.';
+  readonly userAction = 'We are refreshing your session...';
+  readonly category: ErrorCategory = 'authentication';
+  readonly recovery: RecoveryStrategy = 'auto_retry_with_delay';
+
+  constructor(message: string = 'Session expired', originalError?: Error, context?: ErrorContext) {
+    super(message, originalError, context);
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 3000,
+      dismissible: true,
+      icon: 'info'
+    };
+  }
+}
+
+/**
  * Authentication error (401)
  */
 export class AuthenticationError extends UserFacingError {
