@@ -51,7 +51,9 @@ describe('ChatInterface e2e', () => {
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
-          status: 'active'
+          status: 'consulting',
+          created_at: new Date().toISOString(),
+          owner_id: 'user-1'
         }}
         loading={false}
         submitting={false}
@@ -83,14 +85,17 @@ describe('ChatInterface e2e', () => {
               question: 'hello',
               response: 'Hi! How can I help you troubleshoot right now?',
               timestamp: new Date().toISOString(),
-              error: false
+              error: false,
+              optimistic: false
             }
           ]
         }}
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
-          status: 'active'
+          status: 'consulting',
+          created_at: new Date().toISOString(),
+          owner_id: 'user-1'
         }}
         loading={false}
         submitting={false}
