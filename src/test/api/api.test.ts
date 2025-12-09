@@ -10,8 +10,8 @@ import {
 
 // Mock the config module
 vi.mock('../../config', () => ({
+  __esModule: true,
   default: {
-    apiUrl: 'https://api.faultmaven.ai',
     session: {
       timeoutMinutes: 180,
       timeoutMs: 180 * 60 * 1000
@@ -26,13 +26,22 @@ vi.mock('../../config', () => ({
 }));
 
 // Mock browser for tests that use uploadData (which now requires auth)
-const mockBrowserStorage = {
-  local: {
-    get: vi.fn().mockResolvedValue({}), // No auth by default
-    set: vi.fn(),
-    remove: vi.fn()
+const { mockBrowserStorage } = vi.hoisted(() => {
+  const storage = {
+    local: {
+      get: vi.fn().mockResolvedValue({}), // No auth by default
+      set: vi.fn(),
+      remove: vi.fn()
+    }
+  };
+  return { mockBrowserStorage: storage };
+});
+
+vi.mock('wxt/browser', () => ({
+  browser: {
+    storage: mockBrowserStorage
   }
-};
+}));
 
 (global as any).browser = {
   storage: mockBrowserStorage

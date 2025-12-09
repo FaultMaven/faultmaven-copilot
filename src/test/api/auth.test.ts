@@ -10,10 +10,10 @@ import {
 } from '../../lib/api';
 import { AuthenticationError } from '../../lib/errors/types';
 
-// Mock the config module
+// Mock config
 vi.mock('../../config', () => ({
+  __esModule: true,
   default: {
-    apiUrl: 'https://api.faultmaven.ai',
     session: {
       timeoutMinutes: 180,
       timeoutMs: 180 * 60 * 1000
@@ -24,30 +24,61 @@ vi.mock('../../config', () => ({
       maxFileSize: 10 * 1024 * 1024
     }
   },
-  getApiUrl: vi.fn().mockResolvedValue('https://api.faultmaven.ai')
+  getApiUrl: async () => 'https://api.faultmaven.ai'
 }));
 
-// Mock browser storage
-const mockBrowserStorage = {
-  local: {
-    get: vi.fn(),
-    set: vi.fn(),
-    remove: vi.fn()
-  }
-};
+// Mock browser environment using vi.hoisted to handle hoisting
+const { mockBrowserStorage, mockBrowserRuntime } = vi.hoisted(() => {
+  const mockStorage = {
+    local: {
+      get: vi.fn().mockResolvedValue({}),
+      set: vi.fn(),
+      remove: vi.fn()
+    },
+    onChanged: {
+      addListener: vi.fn(),
+      removeListener: vi.fn()
+    }
+  };
+  
+  const mockRuntime = {
+    sendMessage: vi.fn(),
+    onMessage: {
+      addListener: vi.fn(),
+      removeListener: vi.fn()
+    }
+  };
+  
+  return {
+    mockBrowserStorage: mockStorage,
+    mockBrowserRuntime: mockRuntime
+  };
+});
 
-// Mock browser runtime for messaging
-const mockBrowserRuntime = {
-  sendMessage: vi.fn(),
-  onMessage: {
-    addListener: vi.fn()
+// Mock wxt/browser
+vi.mock('wxt/browser', () => ({
+  browser: {
+    storage: mockBrowserStorage,
+    runtime: mockBrowserRuntime
   }
-};
+}));
 
-// Setup global browser mock
+// Setup global browser mock (for legacy/fallback code)
 (global as any).browser = {
   storage: mockBrowserStorage,
   runtime: mockBrowserRuntime
+};
+
+// Helper to mock fetch response
+const mockFetchResponse = (response: any = {}) => {
+  return {
+    ok: response.ok ?? true,
+    status: response.status ?? 200,
+    headers: {
+      get: vi.fn((key) => response.headers?.[key] || null)
+    },
+    json: () => Promise.resolve(response.json ?? {})
+  };
 };
 
 describe('Authentication API', () => {
@@ -247,10 +278,11 @@ describe('Authentication API', () => {
     it('handles 401 authentication error', async () => {
       mockBrowserStorage.local.get.mockResolvedValue({});
 
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         status: 401,
-        ok: false
-      });
+        ok: false,
+        json: { detail: 'Unauthorized' }
+      }));
 
       await expect(getCurrentUser()).rejects.toThrow(AuthenticationError);
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
@@ -296,11 +328,11 @@ describe('Authentication API', () => {
         authState: { access_token: 'token-to-clear' }
       });
 
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         ok: false,
         status: 500,
-        json: () => Promise.resolve({ detail: 'Server error' })
-      });
+        json: { detail: 'Server error' }
+      }));
 
       await expect(logoutAuth()).rejects.toThrow('Server error');
 
@@ -444,11 +476,11 @@ describe('Authentication API', () => {
     });
 
     it('generateCaseTitle includes auth headers', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ title: 'Generated Title' })
-      });
+        json: { title: 'Generated Title' }
+      }));
 
       const { generateCaseTitle } = await import('../../lib/api');
       await generateCaseTitle('case-123', { max_words: 5 });
@@ -626,10 +658,11 @@ describe('Authentication API', () => {
     });
 
     it('handles 401 error in authenticated calls', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         status: 401,
-        ok: false
-      });
+        ok: false,
+        json: { detail: 'Unauthorized' }
+      }));
 
       await expect(getUserCases()).rejects.toThrow(AuthenticationError);
 

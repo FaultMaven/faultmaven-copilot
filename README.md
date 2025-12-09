@@ -64,7 +64,7 @@ By default, the extension tries to connect to **FaultMaven Cloud**.
 
 1. Click the extension icon
 2. Go to **Settings**
-3. Change API Endpoint to: `http://localhost:8090` (or your gateway URL)
+3. Change API Endpoint to: `http://localhost:8000` (or your gateway URL)
 
 > **Need the backend?** Deploy FaultMaven in 5 minutes: [Quick Start](https://github.com/FaultMaven/faultmaven#quick-start)
 
@@ -80,16 +80,31 @@ git clone https://github.com/FaultMaven/faultmaven-copilot.git
 cd faultmaven-copilot
 
 # 2. Install dependencies
-npm install
+pnpm install
 
-# 3. Run in dev mode (Chrome)
-npm run dev
+# 3. Setup environment
+cp .env.example .env
 
-# 4. Build for production
-npm run build
+# 4. Run in dev mode (Chrome)
+pnpm dev
+# or for Firefox
+pnpm dev:firefox
 
-# 5. Package for distribution
-npm run zip
+# 5. Build for production
+pnpm build
+
+# 6. Package for distribution
+pnpm zip
+```
+
+**Testing:**
+
+```bash
+# Run unit tests
+pnpm test
+
+# Run tests with UI
+pnpm test:ui
 ```
 
 **Tech Stack:**
@@ -98,21 +113,17 @@ npm run zip
 - **UI**: React 19+
 - **Styling**: Tailwind CSS
 - **Language**: TypeScript
+- **State Management**: Zustand + TanStack Query
 - **Testing**: Vitest + React Testing Library
-- **Package Manager**: npm / pnpm
+- **Package Manager**: pnpm
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions to the FaultMaven Copilot! Whether it's adding new site integrations, improving the UI, or fixing bugs, your help makes FaultMaven better for everyone.
+We welcome contributions to the FaultMaven Copilot!
 
-**Note:** This repository contains only the browser extension UI. For backend features (AI agent, knowledge base, microservices), see the main [FaultMaven repository](https://github.com/FaultMaven/faultmaven).
-
-**Getting Started:**
-- Check out [`good-first-issue`](https://github.com/search?q=org%3AFaultMaven+label%3A%22good+first+issue%22+state%3Aopen+repo%3Afaultmaven-copilot) tags for beginner-friendly tasks
-- See our [Contributing Guide](https://github.com/FaultMaven/.github/blob/main/CONTRIBUTING.md) for detailed guidelines
-- Join [GitHub Discussions](https://github.com/FaultMaven/faultmaven/discussions) to share ideas
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 

@@ -10,6 +10,7 @@ import { devLogin, logoutAuth, authManager, User } from '../../../lib/api';
 import { AuthenticationError } from '../../../lib/errors/types';
 import { createLogger } from '../../../lib/utils/logger';
 import { hasRole, isAdmin, ROLES } from '../../../lib/utils/roles';
+import { EventBus, AuthStateChangedEvent } from '../../../lib/utils/messaging';
 
 const log = createLogger('Auth');
 
@@ -50,12 +51,36 @@ export function useAuth() {
     checkAuth();
   }, []);
 
-  // Listen for authentication errors from storage changes (when auth state is cleared)
+  // Listen for authentication errors from Event Bus and storage changes
   useEffect(() => {
+    // Handler for EventBus
+    const unsubscribe = EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
+      if (!event.authState) {
+        // Logged out
+        log.warn('Auth state cleared via EventBus - logging out user');
+        setAuthState({
+          isAuthenticated: false,
+          currentUser: null,
+          loginUsername: '',
+          loggingIn: false,
+          error: 'Your session has expired. Please log in again.'
+        });
+      } else {
+        // Logged in
+        setAuthState(prev => ({
+          ...prev,
+          isAuthenticated: event.authState!.isAuthenticated,
+          currentUser: event.authState!.user,
+          error: null
+        }));
+      }
+    });
+
+    // Handler for Storage (fallback/cross-tab)
     const handleStorageChange = (changes: any) => {
       // Check if authState was removed (user logged out or session expired)
       if (changes.authState && !changes.authState.newValue && changes.authState.oldValue) {
-        log.warn('Auth state cleared - logging out user');
+        log.warn('Auth state cleared via Storage - logging out user');
 
         setAuthState({
           isAuthenticated: false,
@@ -70,11 +95,14 @@ export function useAuth() {
     // Listen for storage changes
     if (typeof browser !== 'undefined' && browser.storage) {
       browser.storage.onChanged.addListener(handleStorageChange);
-
-      return () => {
-        browser.storage.onChanged.removeListener(handleStorageChange);
-      };
     }
+
+    return () => {
+      unsubscribe();
+      if (typeof browser !== 'undefined' && browser.storage) {
+        browser.storage.onChanged.removeListener(handleStorageChange);
+      }
+    };
   }, []);
 
   const login = useCallback(async (username: string) => {
@@ -96,6 +124,13 @@ export function useAuth() {
       });
 
       log.info('Login successful', { user });
+      
+      // Notify other components
+      EventBus.emit({
+        type: 'auth_state_changed',
+        authState: { isAuthenticated: true, user }
+      });
+      
       return true;
     } catch (error) {
       const errorMessage = error instanceof AuthenticationError
@@ -126,6 +161,12 @@ export function useAuth() {
       });
 
       log.info('Logout successful');
+      
+      // Notify other components
+      EventBus.emit({
+        type: 'auth_state_changed',
+        authState: null
+      });
     } catch (error) {
       log.error('Logout failed', error);
       throw error;

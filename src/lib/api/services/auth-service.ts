@@ -68,29 +68,31 @@ export async function getCurrentUser(): Promise<UserProfile> {
 }
 
 export async function logoutAuth(): Promise<void> {
-  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/auth/logout`, {
-    method: 'POST',
-    credentials: 'include'
-  });
+  try {
+    const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    });
 
-  // Clear auth state regardless of response status
-  await authManager.clearAuthState();
-
-  // Broadcast auth state change to other tabs
-  if (typeof browser !== 'undefined' && browser.runtime) {
-    try {
-      await browser.runtime.sendMessage({
-        type: 'auth_state_changed',
-        authState: null
-      });
-    } catch (error) {
-      // Ignore messaging errors - not critical for logout
-      console.warn('[API] Failed to broadcast logout:', error);
+    if (!response.ok) {
+      const errorData: APIError = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Logout failed: ${response.status}`);
     }
-  }
+  } finally {
+    // Clear auth state regardless of response status
+    await authManager.clearAuthState();
 
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Logout failed: ${response.status}`);
+    // Broadcast auth state change to other tabs
+    if (typeof browser !== 'undefined' && browser.runtime) {
+      try {
+        await browser.runtime.sendMessage({
+          type: 'auth_state_changed',
+          authState: null
+        });
+      } catch (error) {
+        // Ignore messaging errors - not critical for logout
+        console.warn('[API] Failed to broadcast logout:', error);
+      }
+    }
   }
 }

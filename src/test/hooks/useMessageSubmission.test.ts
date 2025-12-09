@@ -50,6 +50,11 @@ vi.mock('../../lib/utils/logger', () => ({
   })
 }));
 
+// Mock retry logic to execute immediately
+vi.mock('../../lib/utils/retry', () => ({
+  retryWithBackoff: vi.fn((fn) => fn())
+}));
+
 describe('useMessageSubmission', () => {
   const mockProps = {
     sessionId: 'session-123',
@@ -137,8 +142,10 @@ describe('useMessageSubmission', () => {
       await result.current.handleQuerySubmit('test query');
     });
 
-    // Should mark op as failed
-    expect(pendingOpsManager.fail).toHaveBeenCalledWith('ai-msg-id', expect.stringContaining('Network Error'));
+    // Wait for retries to complete and failure to be handled
+    await waitFor(() => {
+      expect(pendingOpsManager.fail).toHaveBeenCalledWith('ai-msg-id', expect.stringContaining('Network Error'));
+    });
     
     // Should show error to user (likely via showErrorWithRetry since it's network error)
     expect(mockProps.showErrorWithRetry).toHaveBeenCalled();
