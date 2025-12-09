@@ -13,6 +13,8 @@ import {
   IdUtils,
   OptimisticUserCase
 } from '../../../lib/optimistic';
+import { resilientOperation } from '../../../lib/utils/resilient-operation';
+import { classifyError, formatErrorForAlert } from '../../../lib/utils/api-error-handler';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('useDataUpload');
@@ -189,14 +191,22 @@ export function useDataUpload({
       // Step 2: Upload data
       let uploadResponse;
       try {
-        uploadResponse = await uploadDataToCase(
-          targetCaseId,
-          sessionId,
-          fileToUpload,
-          sourceMetadata
-        );
+        uploadResponse = await resilientOperation({
+          operation: async () => {
+            return await uploadDataToCase(
+              targetCaseId!,
+              sessionId,
+              fileToUpload,
+              sourceMetadata
+            );
+          },
+          context: {
+            operation: 'data_upload',
+            caseId: targetCaseId!,
+            metadata: { fileName: fileToUpload.name, size: fileToUpload.size }
+          }
+        });
       } catch (error) {
-        // Handle 404 recovery logic... (omitted for brevity, can implement if needed)
         throw error;
       }
 
@@ -245,14 +255,14 @@ export function useDataUpload({
 
     } catch (error) {
       log.error('Data upload error:', error);
-      let errorMessage = "Upload failed";
-      let errorDetails = error instanceof Error ? error.message : "Unknown error";
       
-      // Basic error parsing
-      if (errorDetails.includes("Authentication")) errorMessage = "Authentication required";
-      else if (errorDetails.includes("File too large")) errorMessage = "File too large";
+      const errorInfo = classifyError(error, 'data_upload');
+      const friendlyMessage = formatErrorForAlert(errorInfo);
       
-      return { success: false, message: `${errorMessage}: ${errorDetails}` };
+      return { 
+        success: false, 
+        message: friendlyMessage 
+      };
     } finally {
       setLoading(false);
     }

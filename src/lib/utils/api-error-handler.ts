@@ -5,7 +5,7 @@
  * for all API operations across the application.
  */
 
-import { AuthenticationError } from '../errors/types';
+import { AuthenticationError, UserFacingError } from '../errors/types';
 import { createLogger } from './logger';
 
 const log = createLogger('APIErrorHandler');
@@ -30,6 +30,19 @@ export interface ErrorInfo {
  */
 export function classifyError(error: unknown, context?: string): ErrorInfo {
   const contextPrefix = context ? `[${context}] ` : '';
+
+  // 0. Handle UserFacingError (from new error system)
+  if (error instanceof UserFacingError) {
+    return {
+      type: error.category === 'authentication' ? ErrorType.AUTH :
+            error.category === 'network' ? ErrorType.NETWORK :
+            ErrorType.SERVER,
+      userMessage: error.userMessage,
+      technicalMessage: error.message,
+      shouldRetry: error.recovery === 'retry_with_backoff' || error.recovery === 'auto_retry_with_delay',
+      shouldLogout: error.category === 'authentication'
+    };
+  }
 
   // 1. Authentication Error
   if (error instanceof AuthenticationError ||
@@ -131,7 +144,11 @@ export function classifyError(error: unknown, context?: string): ErrorInfo {
 /**
  * Formats error message for display in chat/conversation
  */
-export function formatErrorForChat(errorInfo: ErrorInfo): string {
+export function formatErrorForChat(errorInfo: ErrorInfo | UserFacingError): string {
+  if (errorInfo instanceof UserFacingError) {
+    return errorInfo.userMessage;
+  }
+
   switch (errorInfo.type) {
     case ErrorType.AUTH:
       return '🔒 Your session has expired. Please log in again to continue.';
@@ -153,7 +170,10 @@ export function formatErrorForChat(errorInfo: ErrorInfo): string {
 /**
  * Formats error message for display in toast/alert
  */
-export function formatErrorForAlert(errorInfo: ErrorInfo): string {
+export function formatErrorForAlert(errorInfo: ErrorInfo | UserFacingError): string {
+  if (errorInfo instanceof UserFacingError) {
+    return errorInfo.userMessage;
+  }
   return errorInfo.userMessage;
 }
 

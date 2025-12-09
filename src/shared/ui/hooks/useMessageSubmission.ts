@@ -30,7 +30,8 @@ import {
   MergeContext,
   ConflictDetectionResult
 } from '../../../lib/optimistic';
-import { retryWithBackoff } from '../../../lib/utils/retry';
+import { resilientOperation } from '../../../lib/utils/resilient-operation';
+import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
 import { classifyError, formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import type { ConflictResolution } from '../components/ConflictResolutionModal';
@@ -78,151 +79,161 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     aiMessageId: string
   ) => {
     try {
-      log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
+      await resilientOperation({
+        operation: async () => {
+          log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
 
-      // Ensure we have a session
-      let currentSessionId = props.sessionId;
-      if (!currentSessionId) {
-        log.info('No session found, creating new session...');
-        currentSessionId = await props.refreshSession();
-        log.info('New session created', { sessionId: currentSessionId });
-      }
-
-      // Step 2: Submit query to case (caseId is already the real UUID)
-      // No ID reconciliation needed - we got the real case ID from session endpoint
-      log.info('Submitting query to case via API', { caseId, sessionId: currentSessionId });
-
-      if (!currentSessionId) {
-        throw new Error('Session ID is required for query submission');
-      }
-
-      const queryRequest: QueryRequest = {
-        session_id: currentSessionId,
-        query: query.trim(),
-        priority: 'low',
-        context: {}
-      };
-
-      const response = await submitQueryToCase(caseId, queryRequest);
-      log.info('Query submitted successfully', { responseType: response.response_type });
-
-      // Update investigation progress from view_state (OODA Framework v3.2.0)
-      if (response.view_state && response.view_state.investigation_progress) {
-        props.setInvestigationProgress(prev => ({
-          ...prev,
-          [caseId]: response.view_state!.investigation_progress
-        }));
-        log.debug('Investigation progress updated', response.view_state.investigation_progress);
-      }
-
-      // Update conversations: replace optimistic messages with real data
-      props.setConversations(prev => {
-        const currentConversation = prev[caseId] || [];
-        let updated = currentConversation.map(item => {
-          if (item.id === userMessageId) {
-            return {
-              ...item,
-              optimistic: false,
-              originalId: userMessageId
-            } as OptimisticConversationItem;
-          } else if (item.id === aiMessageId) {
-            return {
-              ...item,
-              response: response.content,
-              responseType: response.response_type,
-              confidenceScore: response.confidence_score,
-              sources: response.sources,
-              evidenceRequests: response.evidence_requests,
-              investigationMode: response.investigation_mode,
-              caseStatus: response.case_status,
-              suggestedActions: response.suggested_actions,
-              clarifyingQuestions: response.clarifying_questions,
-              suggestedCommands: response.suggested_commands,
-              commandValidation: response.command_validation,
-              problemDetected: response.problem_detected,
-              problemSummary: response.problem_summary,
-              severity: response.severity,
-              scopeAssessment: response.scope_assessment,
-              plan: response.plan,
-              nextActionHint: response.next_action_hint,
-              requiresAction: response.response_type === 'CONFIRMATION_REQUEST' || response.response_type === 'CLARIFICATION_REQUEST',
-              optimistic: false,
-              loading: false,
-              originalId: aiMessageId
-            } as OptimisticConversationItem;
+          // Ensure we have a session
+          let currentSessionId = props.sessionId;
+          if (!currentSessionId) {
+            log.info('No session found, creating new session...');
+            currentSessionId = await props.refreshSession();
+            log.info('New session created', { sessionId: currentSessionId });
           }
-          return item;
-        });
 
-        // No ID reconciliation needed - caseId is already the real UUID from backend
-        return {
-          ...prev,
-          [caseId]: updated
-        };
+          // Step 2: Submit query to case (caseId is already the real UUID)
+          log.info('Submitting query to case via API', { caseId, sessionId: currentSessionId });
+
+          if (!currentSessionId) {
+            throw new Error('Session ID is required for query submission');
+          }
+
+          const queryRequest: QueryRequest = {
+            session_id: currentSessionId,
+            query: query.trim(),
+            priority: 'low',
+            context: {}
+          };
+
+          const response = await submitQueryToCase(caseId, queryRequest);
+          log.info('Query submitted successfully', { responseType: response.response_type });
+
+          // Update investigation progress
+          if (response.view_state && response.view_state.investigation_progress) {
+            props.setInvestigationProgress(prev => ({
+              ...prev,
+              [caseId]: response.view_state!.investigation_progress
+            }));
+          }
+
+          return response;
+        },
+        context: {
+          operation: 'message_submission',
+          caseId,
+          metadata: { query: query.substring(0, 50) }
+        },
+        onError: (error, attempt) => {
+          log.warn(`Submission attempt ${attempt} failed`, error);
+        },
+        onFailure: (error) => {
+          log.error('All submission attempts failed', error);
+          
+          // Mark operation as failed in pendingOpsManager
+          pendingOpsManager.fail(aiMessageId, error.message);
+
+          // Update AI message to show error state
+          props.setConversations(prev => {
+            const currentConversation = prev[caseId] || [];
+            const userMessage = formatErrorForChat(error);
+            
+            return {
+              ...prev,
+              [caseId]: currentConversation.map(item => {
+                if (item.id === aiMessageId) {
+                  return {
+                    ...item,
+                    response: userMessage,
+                    error: true,
+                    optimistic: false,
+                    loading: false,
+                    failed: true
+                  } as OptimisticConversationItem;
+                }
+                return item;
+              })
+            };
+          });
+
+          // Show global error UI if needed
+          const plan = getRecoveryPlan(error, {
+            onRetry: async () => {
+              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId);
+            },
+            onLogout: () => {
+               // Auth handling is typically global, but we can signal it
+            }
+          });
+
+          if (plan.strategy === 'manual_retry' || plan.strategy === 'retry_with_backoff') {
+             // For manual retry (like 500 error), show the retry UI
+             // Even if strategy is retry_with_backoff, if we are in onFailure, it means auto-retries exhausted
+             props.showErrorWithRetry(
+              error,
+              async () => {
+                await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId);
+              },
+              { operation: 'message_submission' }
+             );
+          } else if (plan.strategy === 'logout_and_redirect') {
+             props.showError('Session expired. Please sign in again.');
+          } else {
+             props.showError(error.userMessage);
+          }
+        }
+      }).then((response) => {
+         // SUCCESS HANDLER
+         // Update conversations: replace optimistic messages with real data
+         props.setConversations(prev => {
+           const currentConversation = prev[caseId] || [];
+           return {
+             ...prev,
+             [caseId]: currentConversation.map(item => {
+               if (item.id === userMessageId) {
+                 return {
+                   ...item,
+                   optimistic: false,
+                   originalId: userMessageId
+                 } as OptimisticConversationItem;
+               } else if (item.id === aiMessageId) {
+                 return {
+                   ...item,
+                   response: response.content,
+                   responseType: response.response_type,
+                   confidenceScore: response.confidence_score,
+                   sources: response.sources,
+                   evidenceRequests: response.evidence_requests,
+                   investigationMode: response.investigation_mode,
+                   caseStatus: response.case_status,
+                   suggestedActions: response.suggested_actions,
+                   clarifyingQuestions: response.clarifying_questions,
+                   suggestedCommands: response.suggested_commands,
+                   commandValidation: response.command_validation,
+                   problemDetected: response.problem_detected,
+                   problemSummary: response.problem_summary,
+                   severity: response.severity,
+                   scopeAssessment: response.scope_assessment,
+                   plan: response.plan,
+                   nextActionHint: response.next_action_hint,
+                   requiresAction: response.response_type === 'CONFIRMATION_REQUEST' || response.response_type === 'CLARIFICATION_REQUEST',
+                   optimistic: false,
+                   loading: false,
+                   originalId: aiMessageId
+                 } as OptimisticConversationItem;
+               }
+               return item;
+             })
+           };
+         });
+
+         // Mark operation as completed
+         pendingOpsManager.complete(aiMessageId);
+         log.info('Message submission completed and UI updated');
       });
-
-      // Mark operation as completed
-      pendingOpsManager.complete(aiMessageId);
-
-      log.info('Message submission completed and UI updated');
 
     } catch (error) {
-      log.error('Background query submission failed', error);
-
-      // Classify the error using centralized handler
-      const errorInfo = classifyError(error, 'message_submission');
-
-      // Mark operation as failed
-      pendingOpsManager.fail(aiMessageId, errorInfo.technicalMessage);
-
-      // Get user-friendly error message
-      const userMessage = formatErrorForChat(errorInfo);
-
-      // Update AI message to show error state
-      props.setConversations(prev => {
-        const currentConversation = prev[caseId] || [];
-        const updated = currentConversation.map(item => {
-          if (item.id === aiMessageId) {
-            return {
-              ...item,
-              response: userMessage,
-              error: true,
-              optimistic: false,
-              loading: false,
-              failed: true
-            } as OptimisticConversationItem;
-          }
-          return item;
-        });
-
-        return {
-          ...prev,
-          [caseId]: updated
-        };
-      });
-
-      // Handle based on error type
-      if (errorInfo.shouldLogout) {
-        // Auth error - user needs to log in, don't show retry
-        log.warn('Auth error detected - user needs to re-login');
-        props.showError(errorInfo.userMessage);
-      } else if (errorInfo.shouldRetry) {
-        // Retryable error (network or server) - show retry option
-        props.showErrorWithRetry(
-          error,
-          async () => {
-            await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId);
-          },
-          {
-            operation: 'message_submission',
-            metadata: { caseId, query: query.substring(0, 50) }
-          }
-        );
-      } else {
-        // Non-retryable error - just show message
-        props.showError(errorInfo.userMessage);
-      }
-
+       // We rely on onFailure for the UI updates.
+       log.debug('Caught error from resilientOperation (handled in onFailure)', error);
     } finally {
       // UNLOCK INPUT: Always unlock input when submission completes
       setSubmitting(false);
