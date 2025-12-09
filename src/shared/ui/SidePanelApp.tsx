@@ -9,7 +9,10 @@ import { WelcomeScreen } from "./components/WelcomeScreen";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { ErrorScreen } from "./components/ErrorScreen";
 import { capabilitiesManager, type BackendCapabilities } from "../../lib/capabilities";
+import { createLogger } from "../../lib/utils/logger";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
+
+const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
 import { getKnowledgeDocument } from "../../lib/api";
@@ -43,8 +46,8 @@ function SidePanelAppContent() {
   const { showError } = useError();
 
   // --- Auth & Session ---
-  const { isAuthenticated, isAdmin, login, logout, authError } = useAuth();
-  const { sessionId, isSessionInitialized, sessionError, refreshSession, clearSession } = useSessionManagement();
+  const { isAuthenticated, isAdmin, logout, authError } = useAuth();
+  const { sessionId, refreshSession, clearSession } = useSessionManagement();
 
   // --- UI State ---
   const [activeTab, setActiveTab] = useState<'copilot'>('copilot');
@@ -70,8 +73,7 @@ function SidePanelAppContent() {
   // --- Case Management ---
   const {
     currentCaseId: activeCaseId,
-    setActiveCase: setActiveCaseId,
-    clearCurrentCase
+    setActiveCase: setActiveCaseId
   } = useCaseManagement(sessionId);
 
   // --- Data Recovery ---
@@ -202,7 +204,7 @@ function SidePanelAppContent() {
         setCapabilities(caps);
         setCapabilitiesError(null);
       } catch (error) {
-        console.error('[SidePanelApp] Failed to load capabilities:', error);
+        log.error('Failed to load capabilities:', error);
         setCapabilitiesError(error instanceof Error ? error.message : 'Unknown error');
       } finally {
         setInitializingCapabilities(false);

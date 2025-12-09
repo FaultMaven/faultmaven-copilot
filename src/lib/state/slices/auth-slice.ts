@@ -1,5 +1,8 @@
 import { StateCreator } from 'zustand';
 import { AuthState, User, authManager, devLogin, logoutAuth } from '../../api';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('AuthSlice');
 
 export interface AuthSlice {
   // State
@@ -61,7 +64,7 @@ export const createAuthSlice: StateCreator<AuthSlice> = (set, get) => ({
     try {
       await logoutAuth();
     } catch (error) {
-      console.warn('[AuthSlice] Logout error:', error);
+      log.warn('Logout error:', error);
       // Ensure we clear local state even if server logout fails
       await authManager.clearAuthState();
     }

@@ -34,6 +34,9 @@ import { memoryManager } from '../../utils/memory-manager';
 import { browser } from 'wxt/browser';
 import { debounce } from '../../utils/debounce';
 import { batchedStorage } from '../../utils/batched-storage';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('CasesSlice');
 
 export interface CasesSlice {
   // State
@@ -102,7 +105,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       // This logic will be refined in the integration phase
       set({ loading: false });
     } catch (error) {
-      console.error('[CasesSlice] Failed to load cases:', error);
+      log.error('Failed to load cases:', error);
       set({ loading: false });
     }
   },
@@ -181,7 +184,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         });
       }
     } catch (error) {
-      console.error('[CasesSlice] Error loading case:', error);
+      log.error('Error loading case:', error);
       set({ loading: false });
     }
   },
@@ -305,7 +308,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       // This logic mirrors submitOptimisticQueryInBackground in SidePanelApp
       
     } catch (error) {
-      console.error('[CasesSlice] Query submission failed:', error);
+      log.error('Query submission failed:', error);
       // Handle error state updates
     } finally {
       set({ submitting: false });
@@ -350,7 +353,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         return { pendingOperations: newOps };
       });
     } catch (error) {
-      console.error('[CasesSlice] Title sync failed:', error);
+      log.error('Title sync failed:', error);
       pendingOpsManager.fail(operationId, error instanceof Error ? error.message : 'Unknown error');
       set(state => {
         const op = state.pendingOperations[operationId];

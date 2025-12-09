@@ -1,18 +1,19 @@
 // src/entrypoints/background.ts
 import { createSession, deleteSession, authManager } from '../lib/api';
-import { clientSessionManager } from '../lib/session/client-session-manager';
 import { PersistenceManager } from '../lib/utils/persistence-manager';
 import { browser } from 'wxt/browser';
 import config from '../config';
-import { getAuthConfig, initiateOIDCLogin } from '../lib/auth/auth-config';
+import { initiateOIDCLogin } from '../lib/auth/auth-config';
+import { createLogger } from '../lib/utils/logger';
 
 export default defineBackground({
   main() {
-    console.log("[background.ts] Init (Fixed: Backend Session Logic)");
+    const log = createLogger('Background');
+    log.info("Init (Fixed: Backend Session Logic)");
 
     // === Auth Handler ===
     async function handleStoreAuth(payload: any, sendResponse: (response?: any) => void) {
-      console.log("[background.ts] storing auth state from bridge", payload);
+      log.info("storing auth state from bridge", payload);
       try {
         // Use AuthManager to save state
         await authManager.saveAuthState(payload);
@@ -29,14 +30,14 @@ export default defineBackground({
         
         sendResponse({ status: "success" });
       } catch (error) {
-        console.error("[background.ts] Failed to store auth:", error);
+        log.error("Failed to store auth:", error);
         sendResponse({ status: "error", message: String(error) });
       }
     }
 
     // === Backend Session Logic Functions ===
     async function handleGetSessionId(requestAction: string, sendResponse: (response?: any) => void) {
-      console.log(`[background.ts] handleGetSessionId called for action: ${requestAction}`);
+      log.info(`handleGetSessionId called for action: ${requestAction}`);
 
       try {
         // Check if we have a valid session stored locally
@@ -48,7 +49,7 @@ export default defineBackground({
         const sessionAge = result.sessionCreatedAt ? (now - result.sessionCreatedAt) : SESSION_TIMEOUT + 1;
 
         if (result.sessionId && sessionAge < SESSION_TIMEOUT) {
-          console.log("[background.ts] Using existing valid session:", result.sessionId);
+          log.info("Using existing valid session:", result.sessionId);
           sendResponse({
             sessionId: result.sessionId,
             status: "success",
@@ -58,12 +59,12 @@ export default defineBackground({
         }
 
         // Create new backend session using ClientSessionManager
-        console.log("[background.ts] Creating new backend session with client-based management...");
+        log.info("Creating new backend session with client-based management...");
         try {
           const session = await createSession();
-          console.log("[background.ts] Backend session created/resumed:", session.session_id);
-          console.log("[background.ts] Session resumed?", session.session_resumed || false);
-          console.log("[background.ts] Client ID:", session.client_id?.slice(0, 8) + '...');
+          log.info("Backend session created/resumed:", session.session_id);
+          log.info("Session resumed?", session.session_resumed || false);
+          log.info("Client ID:", session.client_id?.slice(0, 8) + '...');
 
           // Store the session locally with timestamp and resumption info
           await browser.storage.local.set({
@@ -73,7 +74,7 @@ export default defineBackground({
             clientId: session.client_id
           });
 
-          console.log("[background.ts] Session stored locally:", session.session_id);
+          log.info("Session stored locally:", session.session_id);
           sendResponse({
             sessionId: session.session_id,
             status: "success",
@@ -81,17 +82,17 @@ export default defineBackground({
             message: session.message
           });
         } catch (apiError: any) {
-          console.error("[background.ts] Failed to create backend session:", apiError);
+          log.error("Failed to create backend session:", apiError);
           sendResponse({ status: "error", message: `Failed to create session: ${apiError.message}` });
         }
       } catch (error) {
-        console.error("[background.ts] Error in handleGetSessionId:", error);
+        log.error("Error in handleGetSessionId:", error);
         sendResponse({ status: "error", message: "Session creation failed" });
       }
     }
 
     async function handleClearSession(requestAction: string, sendResponse: (response?: any) => void) {
-      console.log(`[background.ts] handleClearSession called for action: ${requestAction}`);
+      log.info(`handleClearSession called for action: ${requestAction}`);
 
       try {
         // Get current session to delete from backend
@@ -100,33 +101,33 @@ export default defineBackground({
         // Try to delete from backend if we have a session ID
         if (result.sessionId) {
           try {
-            console.log("[background.ts] Deleting backend session:", result.sessionId);
+            log.info("Deleting backend session:", result.sessionId);
             await deleteSession(result.sessionId);
-            console.log("[background.ts] Backend session deleted successfully");
+            log.info("Backend session deleted successfully");
           } catch (apiError) {
-            console.warn("[background.ts] Failed to delete backend session (continuing anyway):", apiError);
+            log.warn("Failed to delete backend session (continuing anyway):", apiError);
             // Continue with local cleanup even if backend deletion fails
           }
         }
 
         // Clear local storage
         await browser.storage.local.remove(["sessionId", "sessionCreatedAt", "sessionResumed", "clientId"]);
-        console.log("[background.ts] Session cleared (local and backend).");
+        log.info("Session cleared (local and backend).");
         sendResponse({ status: "success" });
       } catch (error) {
-        console.error("[background.ts] Error in handleClearSession:", error);
+        log.error("Error in handleClearSession:", error);
         sendResponse({ status: "error", message: "Failed to clear session" });
       }
     }
 
     // === OIDC Login Handler ===
     async function handleInitiateOIDCLogin(sendResponse: (response?: any) => void) {
-      console.log('[background.ts] Initiating OIDC login flow');
+      log.info('Initiating OIDC login flow');
 
       try {
         // Get extension callback URL
         const callbackUrl = browser.runtime.getURL('/oidc-callback.html');
-        console.log('[background.ts] OIDC callback URL:', callbackUrl);
+        log.info('OIDC callback URL:', callbackUrl);
 
         // Initiate OIDC flow (generates PKCE parameters and stores code_verifier)
         const oidcResponse = await initiateOIDCLogin(callbackUrl);
@@ -137,17 +138,17 @@ export default defineBackground({
           active: true
         });
 
-        console.log('[background.ts] OIDC login initiated, authorization tab opened');
+        log.info('OIDC login initiated, authorization tab opened');
         sendResponse({ status: 'success', state: oidcResponse.state });
       } catch (error: any) {
-        console.error('[background.ts] Failed to initiate OIDC login:', error);
+        log.error('Failed to initiate OIDC login:', error);
         sendResponse({ status: 'error', message: error.message || 'Failed to initiate OIDC login' });
       }
     }
 
     // === Message Handler ===
-    browser.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
-      console.log("[background.ts] Message received:", request);
+    browser.runtime.onMessage.addListener((request: any, _sender: any, sendResponse: any) => {
+      log.info("Message received:", request);
 
       if (request.action === "storeAuth") {
         handleStoreAuth(request.payload, sendResponse);
@@ -175,26 +176,26 @@ export default defineBackground({
 
     // === Action Click Handler ===
     browser.action.onClicked.addListener(async (tab: any) => {
-      console.log("[background.ts] Action clicked, opening side panel...");
+      log.info("Action clicked, opening side panel...");
       
       try {
         if (tab.windowId) {
           await browser.sidePanel.open({ windowId: tab.windowId });
         }
       } catch (error) {
-        console.error("[background.ts] Error opening side panel:", error);
+        log.error("Error opening side panel:", error);
       }
     });
 
     // === Installation Handler ===
     browser.runtime.onInstalled.addListener(async (details: any) => {
-      console.log("[background.ts] Extension installed/updated:", details);
+      log.info("Extension installed/updated:", details);
 
       // Set reload flag for conversation recovery
       // This triggers recovery on next app load if user had existing conversations
       if (details.reason === 'install' || details.reason === 'update') {
         await PersistenceManager.markReloadDetected();
-        console.log("[background.ts] Reload flag set - will trigger recovery on next load");
+        log.info("Reload flag set - will trigger recovery on next load");
       }
     });
   }

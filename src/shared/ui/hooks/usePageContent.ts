@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { browser } from 'wxt/browser';
+import { createLogger } from '../../../lib/utils/logger';
+
+const log = createLogger('usePageContent');
 
 export function usePageContent() {
   const [pageContent, setPageContent] = useState<string>("");
@@ -34,7 +37,7 @@ export function usePageContent() {
         }
       } catch (messageError: any) {
         // If content script doesn't exist, try programmatic injection as fallback
-        console.log("[usePageContent] Content script not responding, attempting programmatic injection...");
+        log.info("Content script not responding, attempting programmatic injection...");
 
         try {
           // Get the result from the injection (single call)
@@ -50,7 +53,7 @@ export function usePageContent() {
             return capturedContent;
           }
         } catch (injectionError: any) {
-          console.error("[usePageContent] Programmatic injection failed:", injectionError);
+          log.error("Programmatic injection failed:", injectionError);
 
           // Check if it's a permission error
           const errorMsg = injectionError.message || "";
@@ -64,7 +67,7 @@ export function usePageContent() {
 
       throw new Error("Failed to capture page content");
     } catch (err: any) {
-      console.error("[usePageContent] getPageContent error:", err);
+      log.error("getPageContent error:", err);
       const errorMsg = err.message || "Unknown error occurred";
       setInjectionStatus({
         message: `⚠️ ${errorMsg}. Please try refreshing the page.`,

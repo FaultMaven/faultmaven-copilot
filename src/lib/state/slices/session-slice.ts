@@ -2,6 +2,9 @@ import { StateCreator } from 'zustand';
 import { clientSessionManager } from '../../session/client-session-manager';
 import { BackendCapabilities, capabilitiesManager } from '../../capabilities';
 import { browser } from 'wxt/browser';
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('SessionSlice');
 
 export interface SessionSlice {
   // State
@@ -48,13 +51,13 @@ export const createSessionSlice: StateCreator<SessionSlice> = (set, get) => ({
         const stored = await browser.storage.local.get(["sessionId", "sessionResumed"]);
         if (stored.sessionId) {
           set({ sessionId: stored.sessionId });
-          console.log('[SessionSlice] Session initialized:', stored.sessionId);
+          log.info('Session initialized:', stored.sessionId);
         } else {
           set({ sessionId: null });
         }
       }
     } catch (error) {
-      console.warn('[SessionSlice] Session initialization error:', error);
+      log.warn('Session initialization error:', error);
       set({ sessionId: null });
     }
   },
@@ -73,7 +76,7 @@ export const createSessionSlice: StateCreator<SessionSlice> = (set, get) => ({
       }
       return session.session_id;
     } catch (error) {
-      console.error('[SessionSlice] Failed to create session:', error);
+      log.error('Failed to create session:', error);
       throw error;
     }
   },
@@ -92,7 +95,7 @@ export const createSessionSlice: StateCreator<SessionSlice> = (set, get) => ({
   setSessionId: (sessionId: string | null) => {
     set({ sessionId });
     if (sessionId && typeof browser !== 'undefined' && browser.storage) {
-      browser.storage.local.set({ sessionId }).catch(console.error);
+      browser.storage.local.set({ sessionId }).catch((err) => log.error('Failed to save session ID', err));
     }
   },
 
@@ -120,7 +123,7 @@ export const createSessionSlice: StateCreator<SessionSlice> = (set, get) => ({
       const caps = await capabilitiesManager.fetch(apiEndpoint);
       set({ capabilities: caps });
     } catch (error) {
-      console.error('[SessionSlice] Failed to load capabilities:', error);
+      log.error('Failed to load capabilities:', error);
       set({ capabilitiesError: error instanceof Error ? error.message : 'Unknown error' });
     } finally {
       set({ initializingCapabilities: false });

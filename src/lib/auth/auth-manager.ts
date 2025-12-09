@@ -1,5 +1,8 @@
 import { browser } from 'wxt/browser';
 import { AuthState, User } from '../api/types';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('AuthManager');
 
 /**
  * Auth manager for centralized authentication state
@@ -28,7 +31,7 @@ class AuthManager {
         return authState;
       }
     } catch (error) {
-      console.warn('[AuthManager] Failed to get auth state:', error);
+      log.warn('Failed to get auth state:', error);
     }
     return null;
   }

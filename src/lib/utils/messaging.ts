@@ -76,7 +76,7 @@ export async function sendMessageToBackground(message: any): Promise<any> {
   try {
     return await browser.runtime.sendMessage(message);
   } catch (error) {
-    console.error("Error sending message to background:", error, "Message:", message);
+    log.error("Error sending message to background:", error);
     throw error;
   }
 }

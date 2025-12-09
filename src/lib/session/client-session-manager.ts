@@ -1,6 +1,9 @@
 import { getApiUrl } from "../../config";
 import config from "../../config";
 import { browser } from 'wxt/browser';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('ClientSessionManager');
 
 // Enhanced TypeScript interfaces for client-based session management
 export interface SessionCreateRequest {
@@ -83,9 +86,9 @@ export class ClientSessionManager {
           localStorage.setItem(ClientSessionManager.CLIENT_ID_KEY, this.clientId);
         }
         
-        console.log('[ClientSessionManager] Generated new client ID:', this.clientId.slice(0, 8) + '...');
+        log.info('Generated new client ID:', this.clientId.slice(0, 8) + '...');
       } else {
-        console.log('[ClientSessionManager] Using existing client ID:', this.clientId.slice(0, 8) + '...');
+        log.info('Using existing client ID:', this.clientId.slice(0, 8) + '...');
       }
     }
 
@@ -114,7 +117,7 @@ export class ClientSessionManager {
       requestBody.metadata = userContext;
     }
 
-    console.log('[ClientSessionManager] Creating session with client_id:', clientId.slice(0, 8) + '...');
+    log.info('Creating session with client_id:', clientId.slice(0, 8) + '...');
 
     const response = await fetch(`${apiUrl}/api/v1/sessions`, {
       method: 'POST',
@@ -133,9 +136,9 @@ export class ClientSessionManager {
 
     // Log session creation/resumption
     if (sessionResponse.session_resumed) {
-      console.log('[ClientSessionManager] Session resumed:', sessionResponse.session_id);
+      log.info('Session resumed:', sessionResponse.session_id);
     } else {
-      console.log('[ClientSessionManager] New session created:', sessionResponse.session_id);
+      log.info('New session created:', sessionResponse.session_id);
     }
 
     return sessionResponse;
@@ -162,7 +165,7 @@ export class ClientSessionManager {
       localStorage.removeItem(ClientSessionManager.CLIENT_ID_KEY);
     }
     
-    console.log('[ClientSessionManager] Client ID cleared - next session will be new');
+    log.info('Client ID cleared - next session will be new');
   }
 
   /**
@@ -201,16 +204,16 @@ export class ClientSessionManager {
       // Log session creation/resumption with timeout info
       const timeoutUsed = this.validateSessionTimeout(timeoutMinutes || ClientSessionManager.DEFAULT_SESSION_TIMEOUT);
       if (response.session_resumed) {
-        console.log('[ClientSessionManager] Session resumed successfully, timeout:', timeoutUsed, 'minutes');
+        log.info(`Session resumed successfully, timeout: ${timeoutUsed} minutes`);
       } else {
-        console.log('[ClientSessionManager] New session created, timeout:', timeoutUsed, 'minutes');
+        log.info(`New session created, timeout: ${timeoutUsed} minutes`);
       }
 
       return response;
     } catch (error: any) {
       // Handle expired/invalid session scenarios (404, 410, session not found)
       if (this.isSessionExpiredError(error)) {
-        console.warn('[ClientSessionManager] Session expired/invalid after browser crash - creating fresh session');
+        log.warn('Session expired/invalid after browser crash - creating fresh session');
         await this.clearClientId();
         return await this.createSession(userContext, timeoutMinutes);
       }

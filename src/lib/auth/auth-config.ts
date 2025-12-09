@@ -6,6 +6,9 @@
  */
 
 import { getApiUrl } from '../../config';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('AuthConfig');
 
 /**
  * Auth provider configuration from backend
@@ -69,11 +72,11 @@ export async function getAuthConfig(): Promise<AuthConfig> {
     // Cache the config
     cachedAuthConfig = config;
 
-    console.log('[AuthConfig] Retrieved auth configuration:', config.provider);
+    log.info('Retrieved auth configuration:', config.provider);
     return config;
-
+  
   } catch (error) {
-    console.error('[AuthConfig] Failed to get auth config:', error);
+    log.error('Failed to get auth config:', error);
 
     // Fallback to local auth if backend is unreachable
     const fallbackConfig: AuthConfig = {
@@ -129,12 +132,12 @@ export async function initiateOIDCLogin(redirectUri: string): Promise<OIDCInitia
     }
 
     const result: OIDCInitiateResponse = await response.json();
-    console.log('[AuthConfig] OIDC login initiated');
+    log.info('OIDC login initiated');
 
     return result;
 
   } catch (error) {
-    console.error('[AuthConfig] OIDC initiation failed:', error);
+    log.error('OIDC initiation failed:', error);
     throw error;
   }
 }
@@ -180,12 +183,12 @@ export async function handleOIDCCallback(code: string, state: string): Promise<a
     }
 
     const result = await response.json();
-    console.log('[AuthConfig] OIDC callback successful');
+    log.info('OIDC callback successful');
 
     return result;
 
   } catch (error) {
-    console.error('[AuthConfig] OIDC callback failed:', error);
+    log.error('OIDC callback failed:', error);
     throw error;
   }
 }

@@ -12,6 +12,9 @@
 import React, { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { getAuthConfig, AuthConfig } from '../../../lib/auth/auth-config';
+import { createLogger } from '../../../lib/utils/logger';
+
+const log = createLogger('AuthScreen');
 
 interface AuthScreenProps {
   onAuthSuccess: () => void;
@@ -31,7 +34,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         setAuthConfig(config);
         setLoading(false);
       } catch (err: any) {
-        console.error('[AuthScreen] Failed to load auth config:', err);
+        log.error('Failed to load auth config:', err);
         setError(err.message || 'Failed to load authentication configuration');
         setLoading(false);
       }
@@ -44,7 +47,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   useEffect(() => {
     const handleAuthChange = (message: any) => {
       if (message.type === 'auth_state_changed' && message.authState) {
-        console.log('[AuthScreen] Auth state changed, triggering success');
+        log.info('Auth state changed, triggering success');
         onAuthSuccess();
       }
     };
@@ -72,7 +75,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       // User will complete SSO flow, callback will store auth state
       // auth_state_changed message will trigger onAuthSuccess
     } catch (err: any) {
-      console.error('[AuthScreen] SSO login failed:', err);
+      log.error('SSO login failed:', err);
       setError(err.message || 'Failed to initiate SSO login');
       setIsAuthenticating(false);
     }
@@ -85,7 +88,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       const dashboardUrl = 'https://app.faultmaven.ai/login'; // TODO: Make configurable
       await browser.tabs.create({ url: dashboardUrl, active: true });
     } catch (err: any) {
-      console.error('[AuthScreen] Failed to open dashboard:', err);
+      log.error('Failed to open dashboard:', err);
       setError('Failed to open login page');
     }
   }

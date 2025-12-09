@@ -2,6 +2,9 @@ import config, { getApiUrl } from "../../config";
 import { authManager } from "../auth/auth-manager";
 import { browser } from "wxt/browser";
 import { APIError, Session } from "./types";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger('FetchUtils');
 
 /**
  * Gets dual headers for API requests (Authentication + Session)
@@ -26,7 +29,7 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     }
   } catch (error) {
     // Ignore storage errors - API calls will proceed without auth/session
-    console.warn('[API] Failed to get auth/session headers:', error);
+    log.warn('Failed to get auth/session headers:', error);
   }
 
   return headers;

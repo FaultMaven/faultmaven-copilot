@@ -1,6 +1,7 @@
-import config, { getApiUrl } from "../../../config";
+import { getApiUrl } from "../../../config";
 import { UserCase, UserCaseStatus } from "../../../types/case";
 import { authenticatedFetchWithRetry } from "../client";
+import { createLogger } from "../../utils/logger";
 import { 
   AgentResponse, 
   APIError, 
@@ -13,6 +14,9 @@ import {
   TitleResponse, 
   UploadedData 
 } from "../types";
+
+const log = createLogger('CaseService');
+
 
 /**
  * Allowed status transitions
@@ -91,7 +95,7 @@ export function normalizeStatus(status: string): UserCaseStatus {
   if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved';
   if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed';
 
-  console.warn('[normalizeStatus] Unknown status:', status, '- defaulting to consulting');
+  log.warn('Unknown status, defaulting to consulting', { status });
   return 'consulting';
 }
 
@@ -224,7 +228,7 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
   const data = await response.json();
   
   if (data.total_count > 0 && data.retrieved_count === 0) {
-    console.error('[API] Message retrieval failure detected:', {
+    log.error('Message retrieval failure detected', {
       caseId,
       totalCount: data.total_count,
       retrievedCount: data.retrieved_count,

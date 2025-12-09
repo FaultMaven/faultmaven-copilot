@@ -3,7 +3,9 @@ import { authManager } from '../auth/auth-manager';
 import { AuthenticationError, SessionExpiredError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
 import { createSession } from './session-core';
-import { APIError } from './types';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('APIClient');
 
 /**
  * Handles authentication errors and triggers re-authentication
@@ -26,7 +28,7 @@ async function handleSessionExpired(): Promise<void> {
     await browser.storage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
   }
 
-  console.warn('[API] Session expired - cleared from storage');
+  log.warn('Session expired - cleared from storage');
   throw new SessionExpiredError('Session expired - please refresh');
 }
 
@@ -46,17 +48,17 @@ export async function authenticatedFetchWithRetry(url: string, options: RequestI
     // If session expired, refresh and retry once
     if (error instanceof SessionExpiredError ||
         (error instanceof Error && error.name === 'SessionExpiredError')) {
-      console.log('[API] Session expired, attempting refresh and retry...');
+      log.info('Session expired, attempting refresh and retry...');
 
       try {
         // Get fresh session (this will call createSession which uses client_id)
         const newSession = await createSession();
-        console.log('[API] Fresh session obtained:', newSession.session_id);
+        log.info('Fresh session obtained:', newSession.session_id);
 
         // Retry the request with the same options
         return await authenticatedFetch(url, options);
       } catch (refreshError) {
-        console.error('[API] Session refresh failed:', refreshError);
+        log.error('Session refresh failed:', refreshError);
         throw refreshError;
       }
     }

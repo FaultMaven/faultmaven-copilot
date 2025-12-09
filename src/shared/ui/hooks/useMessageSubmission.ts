@@ -79,7 +79,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     aiMessageId: string
   ) => {
     try {
-      await resilientOperation({
+      const response = await resilientOperation({
         operation: async () => {
           log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
 
@@ -181,10 +181,11 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
              props.showError(error.userMessage);
           }
         }
-      }).then((response) => {
-         // SUCCESS HANDLER
-         // Update conversations: replace optimistic messages with real data
-         props.setConversations(prev => {
+      });
+
+      // SUCCESS HANDLER
+      // Update conversations: replace optimistic messages with real data
+      props.setConversations(prev => {
            const currentConversation = prev[caseId] || [];
            return {
              ...prev,
@@ -229,7 +230,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
          // Mark operation as completed
          pendingOpsManager.complete(aiMessageId);
          log.info('Message submission completed and UI updated');
-      });
 
     } catch (error) {
        // We rely on onFailure for the UI updates.

@@ -9,6 +9,9 @@
 import { browser } from 'wxt/browser';
 import { handleOIDCCallback } from './auth-config';
 import { authManager } from '../api';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('OIDCCallback');
 
 async function handleCallback() {
   const loadingEl = document.getElementById('loading');
@@ -33,7 +36,7 @@ async function handleCallback() {
       throw new Error('Missing authorization code or state parameter');
     }
 
-    console.log('[OIDC Callback] Processing callback with code and state');
+    log.info('Processing callback with code and state');
 
     // Exchange authorization code for tokens
     const authResponse = await handleOIDCCallback(code, state);
@@ -48,11 +51,11 @@ async function handleCallback() {
         authState: authResponse
       });
     } catch (e) {
-      console.warn('[OIDC Callback] Could not notify background script:', e);
+      log.warn('Could not notify background script:', e);
       // Not critical - auth state is saved
     }
 
-    console.log('[OIDC Callback] Authentication successful');
+    log.info('Authentication successful');
 
     // Show success and close window
     if (loadingEl) {
@@ -71,7 +74,7 @@ async function handleCallback() {
     }, 2000);
 
   } catch (err: any) {
-    console.error('[OIDC Callback] Authentication failed:', err);
+    log.error('Authentication failed:', err);
 
     // Show error to user
     if (loadingEl) loadingEl.style.display = 'none';

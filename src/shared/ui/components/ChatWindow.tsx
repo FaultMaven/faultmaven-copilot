@@ -27,7 +27,10 @@ import { EvidencePanel } from "./EvidencePanel";
 import { EvidenceAnalysisModal } from "./EvidenceAnalysisModal";
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { caseApi } from "../../../lib/api/case-service";
+import { createLogger } from "../../../lib/utils/logger";
 import type { CaseUIResponse } from "../../../types/case";
+
+const log = createLogger('ChatWindow');
 
 // TypeScript interfaces
 interface ConversationItem {
@@ -180,21 +183,21 @@ const ChatWindowComponent = function ChatWindow({
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
     if (!message) {
-      console.error('[ChatWindow] Invalid status transition:', currentStatus, '→', newStatus);
+      log.error('Invalid status transition:', { currentStatus, newStatus });
       return;
     }
 
-    console.log('[ChatWindow] Status change request:', { from: currentStatus, to: newStatus, message });
+    log.info('Status change request:', { from: currentStatus, to: newStatus, message });
     onQuerySubmit(message);
   }, [activeCase, fullCaseData, onQuerySubmit]);
 
   const handleConfirmationYes = useCallback(() => {
-    console.log('[ChatWindow] User confirmed with Yes');
+    log.info('User confirmed with Yes');
     onQuerySubmit('Yes');
   }, [onQuerySubmit]);
 
   const handleConfirmationNo = useCallback(() => {
-    console.log('[ChatWindow] User declined with No');
+    log.info('User declined with No');
     onQuerySubmit('No');
   }, [onQuerySubmit]);
 
@@ -210,18 +213,19 @@ const ChatWindowComponent = function ChatWindow({
       setCaseLoading(true);
       setCaseError(null);
 
-      caseApi
-        .getCaseUI(activeCase.case_id, sessionId)
-        .then((data) => {
+      const loadCaseData = async () => {
+        try {
+          const data = await caseApi.getCaseUI(activeCase.case_id, sessionId);
           setFullCaseData(data);
-        })
-        .catch((err) => {
-          console.error('[ChatWindow] Failed to load case data:', err);
+        } catch (err) {
+          log.error('Failed to load case data:', err);
           setCaseError(err instanceof Error ? err.message : 'Failed to load case data');
-        })
-        .finally(() => {
+        } finally {
           setCaseLoading(false);
-        });
+        }
+      };
+
+      loadCaseData();
     } else {
       setFullCaseData(null);
       setCaseError(null);

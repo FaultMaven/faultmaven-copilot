@@ -1,5 +1,8 @@
 import { browser } from 'wxt/browser';
 import { debounce } from './debounce';
+import { createLogger } from './logger';
+
+const log = createLogger('BatchedStorage');
 
 /**
  * Batched Storage Manager
@@ -51,20 +54,20 @@ class BatchedStorageManager {
 
     try {
       if (typeof browser !== 'undefined' && browser.storage) {
-        // console.log('[BatchedStorage] 💾 Committing batch write:', Object.keys(writesToCommit));
+        log.debug('💾 Committing batch write:', Object.keys(writesToCommit));
         await browser.storage.local.set(writesToCommit);
       } else {
-        console.warn('[BatchedStorage] Browser storage not available, falling back to localStorage');
+        log.warn('Browser storage not available, falling back to localStorage');
         Object.entries(writesToCommit).forEach(([key, value]) => {
           try {
             localStorage.setItem(key, JSON.stringify(value));
           } catch (e) {
-            console.error(`[BatchedStorage] LocalStorage fallback failed for ${key}`, e);
+            log.error(`LocalStorage fallback failed for ${key}`, e);
           }
         });
       }
     } catch (error) {
-      console.error('[BatchedStorage] ❌ Batch write failed, re-queueing:', error);
+      log.error('❌ Batch write failed, re-queueing:', error);
       // Restore failed writes to pendingWrites to be retried on next schedule
       // We merge with any new writes that might have happened
       this.pendingWrites = { ...writesToCommit, ...this.pendingWrites };
@@ -85,7 +88,7 @@ class BatchedStorageManager {
         await browser.storage.local.set(writesToCommit);
       }
     } catch (error) {
-      console.error('[BatchedStorage] Flush failed, re-queueing:', error);
+      log.error('Flush failed, re-queueing:', error);
       this.pendingWrites = { ...writesToCommit, ...this.pendingWrites };
     }
   }

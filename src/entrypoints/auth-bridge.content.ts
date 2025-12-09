@@ -1,5 +1,6 @@
 // src/entrypoints/auth-bridge.content.ts
 import { browser } from 'wxt/browser';
+import { createLogger } from '../lib/utils/logger';
 
 /**
  * Auth Bridge Content Script
@@ -12,7 +13,8 @@ export default defineContentScript({
   matches: ["*://app.faultmaven.ai/*", "*://localhost/*"],
   runAt: "document_end",
   main() {
-    console.log("[FaultMaven Bridge] Auth bridge initialized");
+    const log = createLogger('AuthBridge');
+    log.info("Auth bridge initialized");
 
     // Listen for window messages from the web app
     window.addEventListener("message", async (event) => {
@@ -24,7 +26,7 @@ export default defineContentScript({
 
       // Handle login success message from dashboard
       if (message && message.type === "FM_AUTH_SUCCESS") {
-        console.log("[FaultMaven Bridge] Auth success detected", message.payload);
+        log.info("Auth success detected", message.payload);
 
         try {
           // Forward to background script
@@ -32,9 +34,9 @@ export default defineContentScript({
             action: "storeAuth",
             payload: message.payload
           });
-          console.log("[FaultMaven Bridge] Auth data forwarded to extension");
+          log.info("Auth data forwarded to extension");
         } catch (error) {
-          console.error("[FaultMaven Bridge] Failed to forward auth data:", error);
+          log.error("Failed to forward auth data:", error);
         }
       }
     });

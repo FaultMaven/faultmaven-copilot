@@ -1,5 +1,9 @@
 // src/config.ts
 
+import { createLogger } from './lib/utils/logger';
+
+const log = createLogger('Config');
+
 interface InputLimitsConfig {
   /** Smart detection threshold: text >= this many lines is treated as data upload */
   dataModeLinesThreshold: number;
@@ -85,7 +89,7 @@ export async function getApiUrl(): Promise<string> {
       }
     }
   } catch (error) {
-    console.warn('[Config] Failed to read apiEndpoint from storage:', error);
+    log.warn('Failed to read apiEndpoint from storage:', error);
   }
 
   // Fallback 1: Build-time environment variable

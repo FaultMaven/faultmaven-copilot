@@ -2,7 +2,8 @@
  * Case UI Types
  *
  * Re-exports from OpenAPI generated types with convenient type aliases
- * Source: Generated from FaultMaven/docs/api/openapi.locked.yaml
+ * Source: Generated from fm-api-gateway OpenAPI spec
+ * To regenerate: npx openapi-typescript http://localhost:8090/openapi.json -o src/types/api.generated.ts
  */
 
 import { components } from './api.generated';
