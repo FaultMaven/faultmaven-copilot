@@ -46,7 +46,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
 
         {/* Deployment options */}
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Enterprise Cloud */}
+          {/* FaultMaven Enterprise */}
           <button
             onClick={handleCloudSetup}
             className="group bg-white border-2 border-blue-200 rounded-xl p-6 hover:border-blue-500 hover:shadow-lg transition-all text-left"
@@ -58,7 +58,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900">
-                Enterprise Cloud
+                FaultMaven Enterprise
               </h3>
             </div>
 
