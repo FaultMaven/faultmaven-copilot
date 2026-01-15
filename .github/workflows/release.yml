@@ -53,7 +53,7 @@ jobs:
 
       - name: Package Firefox extension
         run: |
-          cd .output/firefox-mv3
+          cd .output/firefox-mv2
           zip -r ../../faultmaven-copilot-firefox.zip . -x "*.map"
           cd ../..
 
