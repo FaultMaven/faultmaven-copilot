@@ -1,0 +1,119 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Matches semantic version tags like v1.2.3
+
+env:
+  SERVICE_NAME: faultmaven-copilot
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: '9'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate icons
+        run: pnpm run generate-icons
+
+      - name: Build Chrome extension
+        run: pnpm run build
+
+      - name: Build Firefox extension
+        run: pnpm run build:firefox
+
+      - name: Package Chrome extension
+        run: |
+          cd .output/chrome-mv3
+          zip -r ../../faultmaven-copilot-chrome.zip . -x "*.map"
+          cd ../..
+
+      - name: Package Firefox extension
+        run: |
+          cd .output/firefox-mv3
+          zip -r ../../faultmaven-copilot-firefox.zip . -x "*.map"
+          cd ../..
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "notes=## What's Changed" > $GITHUB_OUTPUT
+            echo "Initial release" >> $GITHUB_OUTPUT
+          else
+            echo "notes=## What's Changed" > $GITHUB_OUTPUT
+            git log --pretty=format:"- %s (%h)" ${PREV_TAG}..${TAG} >> $GITHUB_OUTPUT || echo "- See commit history" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "" >> $GITHUB_OUTPUT
+          echo "## Installation" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Chrome/Edge" >> $GITHUB_OUTPUT
+          echo "1. Download \`faultmaven-copilot-chrome.zip\`" >> $GITHUB_OUTPUT
+          echo "2. Extract the archive" >> $GITHUB_OUTPUT
+          echo "3. Go to \`chrome://extensions\`" >> $GITHUB_OUTPUT
+          echo "4. Enable Developer mode" >> $GITHUB_OUTPUT
+          echo "5. Click Load unpacked and select the extracted folder" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Firefox" >> $GITHUB_OUTPUT
+          echo "1. Download \`faultmaven-copilot-firefox.zip\`" >> $GITHUB_OUTPUT
+          echo "2. Extract the archive" >> $GITHUB_OUTPUT
+          echo "3. Go to \`about:debugging#/runtime/this-firefox\`" >> $GITHUB_OUTPUT
+          echo "4. Click Load Temporary Add-on and select any file in the extracted folder" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            faultmaven-copilot-chrome.zip
+            faultmaven-copilot-firefox.zip
+          name: Release ${{ steps.version.outputs.version }}
+          body: ${{ steps.release-notes.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "### ✅ Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Release artifacts:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`faultmaven-copilot-chrome.zip\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`faultmaven-copilot-firefox.zip\`" >> $GITHUB_STEP_SUMMARY

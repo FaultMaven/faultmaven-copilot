@@ -1,0 +1,65 @@
+name: Policy - No Direct K8s Deploy
+
+# This workflow enforces the architectural policy that product repositories
+# (faultmaven, faultmaven-dashboard, faultmaven-copilot) must NOT contain
+# kubectl/helm commands or Kubernetes deployment logic.
+#
+# Deployment logic belongs in faultmaven-enterprise-infra only.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '**/*.yml'
+      - '**/*.yaml'
+      - '**/*.sh'
+
+jobs:
+  check-no-k8s-deploy:
+    name: Check for K8s Deployment Logic
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for kubectl commands
+        run: |
+          if grep -r "kubectl" --include="*.yml" --include="*.yaml" --include="*.sh" .github/workflows/ 2>/dev/null; then
+            echo "❌ Found kubectl commands in workflow files"
+            echo "Policy: Product repos must not contain kubectl commands"
+            echo "Deployment logic belongs in faultmaven-enterprise-infra"
+            exit 1
+          fi
+          echo "✅ No kubectl commands found"
+
+      - name: Check for helm commands
+        run: |
+          if grep -r "helm" --include="*.yml" --include="*.yaml" --include="*.sh" .github/workflows/ 2>/dev/null; then
+            echo "❌ Found helm commands in workflow files"
+            echo "Policy: Product repos must not contain helm commands"
+            echo "Deployment logic belongs in faultmaven-enterprise-infra"
+            exit 1
+          fi
+          echo "✅ No helm commands found"
+
+      - name: Check for k8s apply commands
+        run: |
+          if grep -ri "kubectl apply\|kustomize\|kubernetes" --include="*.yml" --include="*.yaml" --include="*.sh" .github/workflows/ 2>/dev/null; then
+            echo "❌ Found Kubernetes deployment commands in workflow files"
+            echo "Policy: Product repos must not contain deployment logic"
+            echo "Deployment logic belongs in faultmaven-enterprise-infra"
+            exit 1
+          fi
+          echo "✅ No Kubernetes deployment commands found"
+
+      - name: Policy check summary
+        if: success()
+        run: |
+          echo "### ✅ Policy Check Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No Kubernetes deployment logic found in product repository." >> $GITHUB_STEP_SUMMARY
+          echo "✅ Compliant with architectural policy." >> $GITHUB_STEP_SUMMARY
