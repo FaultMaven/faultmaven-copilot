@@ -54,7 +54,7 @@ Download the latest `faultmaven-copilot.zip` from [Releases](https://github.com/
 
 1. Navigate to `about:debugging#/runtime/this-firefox`
 2. Click **Load Temporary Add-on**
-3. Select any file in the `.output/firefox-mv3/` folder
+3. Select any file in the `.output/firefox-mv2/` folder
 
 ### Connection
 
