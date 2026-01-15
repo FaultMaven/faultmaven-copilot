@@ -40,6 +40,11 @@ lerna-debug.log*
 pnpm-lock.yaml # Or add this if you prefer not to commit the lockfile, though committing it is usually recommended for consistency.
                  # For libraries it's often not committed, for applications it often is. Your call.
 
+# Test coverage reports
+coverage/
+*.lcov
+.nyc_output/
+
 # Temporary files
 *.tmp
 *.swp
