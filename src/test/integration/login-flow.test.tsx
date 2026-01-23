@@ -29,7 +29,8 @@ const storageMock = {
 
 const runtimeMock = {
   openOptionsPage: vi.fn(),
-  onMessage: { addListener: vi.fn(), removeListener: vi.fn() }
+  onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
+  sendMessage: vi.fn().mockResolvedValue({ status: 'success' })
 };
 
 vi.mock('wxt/browser', () => ({
@@ -43,7 +44,8 @@ vi.mock('wxt/browser', () => ({
     },
     runtime: {
       openOptionsPage: vi.fn(),
-      onMessage: { addListener: vi.fn(), removeListener: vi.fn() }
+      onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
+      sendMessage: vi.fn().mockResolvedValue({ status: 'success' })
     },
     tabs: {
       query: vi.fn().mockResolvedValue([])
@@ -52,8 +54,6 @@ vi.mock('wxt/browser', () => ({
 }));
 
 import { browser } from 'wxt/browser'; // Import the mocked browser
-
-(global as any).window.open = vi.fn();
 
 // Mock import.meta.env
 vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:5173' } } });
@@ -66,7 +66,7 @@ describe('SidePanelApp Login Flow', () => {
     });
   });
 
-  it('opens correct dashboard URL when "Sign In to Work" is clicked', async () => {
+  it('initiates Dashboard OAuth flow when "Sign In to Work" is clicked', async () => {
     // Render the app (will show login screen since isAuthenticated is false)
     // We need to bypass the WelcomeScreen check
     (browser.storage.local.get as any).mockResolvedValue({ hasCompletedFirstRun: true });
@@ -80,11 +80,12 @@ describe('SidePanelApp Login Flow', () => {
     // Click it
     fireEvent.click(loginButton);
 
-    // Verify window.open was called with the correct URL structure
-    expect(window.open).toHaveBeenCalledWith(
-      expect.stringContaining('/login?source=extension'),
-      '_blank'
-    );
+    // Verify browser.runtime.sendMessage was called to initiate OAuth flow
+    await waitFor(() => {
+      expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+        action: 'initiateOIDCLogin'
+      });
+    });
   });
 });
 

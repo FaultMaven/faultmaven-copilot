@@ -226,11 +226,22 @@ function SidePanelAppContent() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleLogin = () => {
-    const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL || capabilities?.dashboardUrl || 'http://localhost:5173';
-    const baseUrl = dashboardUrl.endsWith('/') ? dashboardUrl.slice(0, -1) : dashboardUrl;
-    const loginUrl = `${baseUrl}/login?source=extension`;
-    window.open(loginUrl, '_blank');
+  const handleLogin = async () => {
+    try {
+      // Initiate Dashboard OAuth flow (opens /auth/authorize with PKCE challenge)
+      // This follows the OAuth 2.0 Authorization Code Flow with PKCE as designed
+      const response = await browser.runtime.sendMessage({
+        action: 'initiateOIDCLogin'  // Triggers OAuth flow in background.ts:handleInitiateDashboardOAuth()
+      });
+
+      if (response?.status !== 'success') {
+        log.error('Failed to initiate Dashboard OAuth:', response?.message);
+        showError('Failed to start authentication. Please try again.');
+      }
+    } catch (error) {
+      log.error('OAuth initiation failed:', error);
+      showError('Failed to start authentication. Please try again.');
+    }
   };
 
   const handleLogout = async () => {
