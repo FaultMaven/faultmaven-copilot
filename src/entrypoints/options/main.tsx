@@ -4,10 +4,11 @@ import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
 import '../../assets/styles/globals.css';
 
-// Preset API endpoints for quick selection
+// Preset Dashboard endpoints for quick selection
+// Users configure Dashboard URL (where they log in), not API URL
 const PRESET_ENDPOINTS = {
-  production: 'https://api.faultmaven.ai',
-  localhost: 'http://127.0.0.1:8090',
+  production: 'https://app.faultmaven.ai',
+  localhost: 'http://127.0.0.1:3333',
   custom: ''
 } as const;
 
@@ -15,7 +16,7 @@ type PresetKey = keyof typeof PRESET_ENDPOINTS;
 
 function OptionsApp() {
   const [selectedPreset, setSelectedPreset] = useState<PresetKey>('production');
-  const [apiEndpoint, setApiEndpoint] = useState('https://api.faultmaven.ai');
+  const [apiEndpoint, setApiEndpoint] = useState('https://app.faultmaven.ai');
   const [capabilities, setCapabilities] = useState<BackendCapabilities | null>(null);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
@@ -297,7 +298,7 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
               <option value="production">☁️ FaultMaven Cloud</option>
-              <option value="localhost">🏠 Local Deployment (http://127.0.0.1:8090)</option>
+              <option value="localhost">🏠 Local Deployment (http://127.0.0.1:3333)</option>
               <option value="custom">⚙️ Custom Server URL</option>
             </select>
             <p className="mt-1 text-xs text-gray-500">
@@ -305,10 +306,10 @@ function OptionsApp() {
             </p>
           </div>
 
-          {/* API Endpoint Input */}
+          {/* Dashboard URL Input */}
           <div className="mb-6">
             <label htmlFor="api-endpoint" className="block text-sm font-medium text-gray-700 mb-2">
-              API Endpoint URL
+              Dashboard URL
               {selectedPreset === 'custom' && <span className="text-red-500 ml-1">*</span>}
             </label>
             <input
@@ -322,13 +323,13 @@ function OptionsApp() {
                   setSelectedPreset('custom');
                 }
               }}
-              placeholder="e.g., https://api.mycompany.com:8090"
+              placeholder="e.g., https://app.mycompany.com:3333"
               disabled={selectedPreset !== 'custom'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
             />
             {selectedPreset === 'custom' && (
               <p className="mt-1 text-xs text-gray-600">
-                Enter your custom API endpoint. Port 8090 is the FaultMaven API default (e.g., <code className="bg-gray-100 px-1 rounded">http://192.168.1.100:8090</code>)
+                Enter your custom Dashboard URL. Port 3333 is the default for local deployments (e.g., <code className="bg-gray-100 px-1 rounded">http://192.168.1.100:3333</code>)
               </p>
             )}
           </div>
@@ -395,11 +396,11 @@ function OptionsApp() {
           <div className="space-y-3 text-sm text-blue-800">
             <div>
               <strong className="font-semibold">☁️ FaultMaven Cloud:</strong>
-              <p className="mt-1">Connects to managed service at <code className="bg-blue-100 px-1 py-0.5 rounded">https://api.faultmaven.ai</code> (default)</p>
+              <p className="mt-1">Connects to managed service at <code className="bg-blue-100 px-1 py-0.5 rounded">https://app.faultmaven.ai</code> (default)</p>
             </div>
             <div>
               <strong className="font-semibold">🏠 Local Deployment:</strong>
-              <p className="mt-1">API runs on port <strong>8090</strong>, Dashboard on port <strong>3333</strong></p>
+              <p className="mt-1">Dashboard runs on port <strong>3333</strong>, API on port <strong>8090</strong></p>
               <p className="mt-1 text-xs">Use <code className="bg-blue-100 px-1 py-0.5 rounded">docker compose up</code> to start locally</p>
             </div>
             <div>

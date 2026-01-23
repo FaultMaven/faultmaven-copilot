@@ -68,10 +68,17 @@ const config: Config = {
 };
 
 /**
- * Runtime Configuration: Get API URL from browser storage
+ * Runtime Configuration: Get API URL derived from Dashboard URL
+ *
+ * IMPORTANT: Extension stores Dashboard URL (not API URL) because users
+ * always interact with Dashboard first (for OAuth login).
+ *
+ * This function derives the API URL from the Dashboard URL:
+ * - Local: http://127.0.0.1:3333 → http://127.0.0.1:8090
+ * - Cloud: https://app.faultmaven.ai → https://api.faultmaven.ai
  *
  * Priority order:
- * 1. User-configured URL from browser.storage.local (highest priority)
+ * 1. Derive from user-configured Dashboard URL (stored in apiEndpoint key)
  * 2. Build-time environment variable (VITE_API_URL)
  * 3. Hardcoded default (https://api.faultmaven.ai)
  *
@@ -85,7 +92,17 @@ export async function getApiUrl(): Promise<string> {
     if (typeof browser !== 'undefined' && browser.storage) {
       const stored = await browser.storage.local.get(['apiEndpoint']);
       if (stored.apiEndpoint) {
-        return stored.apiEndpoint;
+        const dashboardUrl = stored.apiEndpoint;
+
+        // Derive API URL from Dashboard URL
+        // Local deployment: Replace Dashboard port (3333) with API port (8090)
+        if (dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')) {
+          return dashboardUrl.replace(':3333', ':8090');
+        }
+
+        // Cloud deployment: Replace app subdomain with api subdomain
+        // https://app.faultmaven.ai → https://api.faultmaven.ai
+        return dashboardUrl.replace('app.', 'api.');
       }
     }
   } catch (error) {

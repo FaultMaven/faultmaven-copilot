@@ -33,14 +33,11 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-// Mock config
-vi.mock('../../../config', () => ({
-  getApiUrl: async () => 'http://localhost:8090'
-}));
-
 describe('Dashboard OAuth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock storage to return Dashboard URL (not API URL)
+    mockBrowserStorage.local.get.mockResolvedValue({ apiEndpoint: 'http://localhost:3333' });
   });
 
   afterEach(() => {
@@ -48,15 +45,16 @@ describe('Dashboard OAuth', () => {
   });
 
   describe('getDashboardUrl', () => {
-    it('converts localhost API URL to Dashboard URL (local deployment)', async () => {
+    it('reads Dashboard URL from storage (local deployment)', async () => {
       const dashboardUrl = await getDashboardUrl();
       expect(dashboardUrl).toBe('http://localhost:3333');
+      expect(mockBrowserStorage.local.get).toHaveBeenCalledWith(['apiEndpoint']);
     });
 
-    it.skip('handles cloud deployment API URLs (manual test - requires mock override)', async () => {
-      // TODO: This test requires dynamic mock override which is not trivial in Vitest
-      // with hoisted mocks. The cloud deployment logic is tested manually during deployment.
-      // The getDashboardUrl function correctly strips /api suffix in cloud deployment.
+    it('returns production default when storage is empty', async () => {
+      mockBrowserStorage.local.get.mockResolvedValue({});
+      const dashboardUrl = await getDashboardUrl();
+      expect(dashboardUrl).toBe('https://app.faultmaven.ai');
     });
   });
 

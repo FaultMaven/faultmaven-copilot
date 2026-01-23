@@ -28,23 +28,27 @@ export interface DashboardOAuthInitiateResponse {
 }
 
 /**
- * Get Dashboard URL from API URL
+ * Get Dashboard URL from browser storage
  *
- * Local deployment: API at :8090, Dashboard at :3333
- * Cloud deployment: Same domain (both served from same host)
+ * The extension stores Dashboard URL (not API URL) because:
+ * - Users always interact with Dashboard first (for OAuth login)
+ * - Dashboard knows how to reach the API backend
+ * - Simpler architecture: no URL derivation needed
+ *
+ * Local deployment: http://127.0.0.1:3333
+ * Cloud deployment: https://app.faultmaven.ai
  */
 export async function getDashboardUrl(): Promise<string> {
-  const apiUrl = await getApiUrl();
-
-  // Local deployment detection
-  if (apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1')) {
-    // Replace API port (8090) with Dashboard port (3333)
-    return apiUrl.replace(':8090', ':3333');
+  // Read Dashboard URL from storage (configured in Settings)
+  // Storage key is still 'apiEndpoint' for backward compatibility
+  // but it now stores Dashboard URL, not API URL
+  const stored = await browser.storage.local.get(['apiEndpoint']);
+  if (stored.apiEndpoint) {
+    return stored.apiEndpoint;
   }
 
-  // Cloud deployment: Dashboard is at root of same domain
-  // Example: https://app.faultmaven.ai (both API and Dashboard)
-  return apiUrl.replace('/api', '');
+  // Fallback to production default
+  return 'https://app.faultmaven.ai';
 }
 
 /**
