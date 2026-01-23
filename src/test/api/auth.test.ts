@@ -245,13 +245,19 @@ describe('Authentication API', () => {
         is_active: true
       };
 
-      // Mock auth state
+      // Mock auth state (legacy AuthManager) AND OAuth tokens (TokenManager)
       mockBrowserStorage.local.get.mockResolvedValue({
         authState: {
           access_token: 'valid-token',
           token_type: 'bearer',
           expires_at: Date.now() + 86400000
-        }
+        },
+        // OAuth tokens for TokenManager
+        access_token: 'valid-token',
+        token_type: 'bearer',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'valid-refresh',
+        refresh_expires_at: Date.now() + 604800000
       });
 
       global.fetch = vi.fn().mockResolvedValue({
@@ -292,7 +298,12 @@ describe('Authentication API', () => {
   describe('logoutAuth', () => {
     it('logs out successfully and clears state', async () => {
       mockBrowserStorage.local.get.mockResolvedValue({
-        authState: { access_token: 'token-to-clear' }
+        authState: { access_token: 'token-to-clear' },
+        // OAuth tokens for TokenManager
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'refresh-token',
+        refresh_expires_at: Date.now() + 604800000
       });
 
       global.fetch = vi.fn().mockResolvedValue({
@@ -325,7 +336,12 @@ describe('Authentication API', () => {
 
     it('clears auth state even on logout API failure', async () => {
       mockBrowserStorage.local.get.mockResolvedValue({
-        authState: { access_token: 'token-to-clear' }
+        authState: { access_token: 'token-to-clear' },
+        // OAuth tokens for TokenManager
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'refresh-token',
+        refresh_expires_at: Date.now() + 604800000
       });
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
@@ -343,14 +359,21 @@ describe('Authentication API', () => {
 
   describe('Authenticated API calls', () => {
     beforeEach(() => {
-      // Mock valid auth state for authenticated calls
+      // Mock valid auth state for authenticated calls (legacy AuthManager)
+      // AND OAuth tokens for TokenManager
       mockBrowserStorage.local.get.mockResolvedValue({
         authState: {
           access_token: 'valid-auth-token',
           token_type: 'bearer',
           expires_at: Date.now() + 86400000
         },
-        sessionId: 'test-session-id'
+        sessionId: 'test-session-id',
+        // OAuth tokens for TokenManager
+        access_token: 'valid-auth-token',
+        token_type: 'bearer',
+        expires_at: Date.now() + 3600000, // 1 hour from now
+        refresh_token: 'valid-refresh-token',
+        refresh_expires_at: Date.now() + 604800000 // 7 days from now
       });
     });
 
@@ -678,7 +701,12 @@ describe('Authentication API', () => {
           access_token: 'test-token',
           expires_at: Date.now() + 86400000
         },
-        sessionId: 'test-session'
+        sessionId: 'test-session',
+        // OAuth tokens for TokenManager
+        access_token: 'test-token',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'test-refresh',
+        refresh_expires_at: Date.now() + 604800000
       });
 
       global.fetch = vi.fn().mockResolvedValue({
@@ -720,7 +748,12 @@ describe('Authentication API', () => {
         authState: {
           access_token: 'test-token',
           expires_at: Date.now() + 86400000
-        }
+        },
+        // OAuth tokens for TokenManager
+        access_token: 'test-token',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'test-refresh',
+        refresh_expires_at: Date.now() + 604800000
       });
 
       global.fetch = vi.fn().mockResolvedValue({
