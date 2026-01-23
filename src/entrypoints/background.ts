@@ -3,7 +3,7 @@ import { createSession, deleteSession, authManager } from '../lib/api';
 import { PersistenceManager } from '../lib/utils/persistence-manager';
 import { browser } from 'wxt/browser';
 import config from '../config';
-import { initiateOIDCLogin } from '../lib/auth/auth-config';
+import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
 import { createLogger } from '../lib/utils/logger';
 
 export default defineBackground({
@@ -120,29 +120,31 @@ export default defineBackground({
       }
     }
 
-    // === OIDC Login Handler ===
-    async function handleInitiateOIDCLogin(sendResponse: (response?: any) => void) {
-      log.info('Initiating OIDC login flow');
+    // === Dashboard OAuth Login Handler ===
+    async function handleInitiateDashboardOAuth(sendResponse: (response?: any) => void) {
+      log.info('Initiating Dashboard OAuth flow');
 
       try {
-        // Get extension callback URL
-        const callbackUrl = browser.runtime.getURL('/oidc-callback.html');
-        log.info('OIDC callback URL:', callbackUrl);
+        // Initiate Dashboard OAuth flow (generates PKCE parameters and stores them)
+        const oauthResponse = await initiateDashboardOAuth();
 
-        // Initiate OIDC flow (generates PKCE parameters and stores code_verifier)
-        const oidcResponse = await initiateOIDCLogin(callbackUrl);
+        log.info('Dashboard OAuth URL:', oauthResponse.authorization_url);
 
-        // Open authorization URL in new tab
+        // Open Dashboard authorization page in new tab
         await browser.tabs.create({
-          url: oidcResponse.authorization_url,
+          url: oauthResponse.authorization_url,
           active: true
         });
 
-        log.info('OIDC login initiated, authorization tab opened');
-        sendResponse({ status: 'success', state: oidcResponse.state });
+        log.info('Dashboard OAuth initiated, authorization tab opened');
+        sendResponse({ status: 'success', state: oauthResponse.state });
       } catch (error: any) {
-        log.error('Failed to initiate OIDC login:', error);
-        sendResponse({ status: 'error', message: error.message || 'Failed to initiate OIDC login' });
+        log.error('Failed to initiate Dashboard OAuth:', error);
+
+        // Clean up on error
+        await cleanupOAuthState();
+
+        sendResponse({ status: 'error', message: error.message || 'Failed to initiate Dashboard OAuth' });
       }
     }
 
@@ -166,7 +168,8 @@ export default defineBackground({
         log.info('State verified, exchanging authorization code for tokens');
 
         // Exchange authorization code for access token
-        const apiUrl = await config.getApiUrl();
+        const { getApiUrl } = await import('../config');
+        const apiUrl = await getApiUrl();
         const tokenResponse = await fetch(`${apiUrl}/auth/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -202,6 +205,7 @@ export default defineBackground({
         const authState = {
           access_token: tokens.access_token,
           token_type: tokens.token_type,
+          expires_at: Date.now() + (tokens.expires_in * 1000),
           session_id: tokens.session_id,
           user: tokens.user
         };
@@ -210,7 +214,7 @@ export default defineBackground({
         await authManager.saveAuthState(authState);
 
         // Clean up PKCE data
-        await browser.storage.local.remove(['pkce_verifier', 'auth_state', 'redirect_uri', 'auth_initiated_at']);
+        await cleanupOAuthState();
 
         log.info('OAuth authentication completed successfully');
 
@@ -232,11 +236,11 @@ export default defineBackground({
     }
 
     // === OAuth Error Handler ===
-    function handleAuthError(payload: { error: string; error_description?: string }) {
+    async function handleAuthError(payload: { error: string; error_description?: string }) {
       log.error('OAuth error received:', payload);
 
       // Clean up PKCE data
-      browser.storage.local.remove(['pkce_verifier', 'auth_state', 'redirect_uri', 'auth_initiated_at']);
+      await cleanupOAuthState();
 
       // Could show notification to user or trigger error state in UI
       // For now, just log it
@@ -262,7 +266,9 @@ export default defineBackground({
       }
 
       if (request.action === "initiateOIDCLogin") {
-        handleInitiateOIDCLogin(sendResponse);
+        // Note: Action name kept for backward compatibility with UI
+        // But now uses Dashboard OAuth flow instead of OIDC
+        handleInitiateDashboardOAuth(sendResponse);
         return true; // Indicate async response
       }
 

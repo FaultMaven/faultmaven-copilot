@@ -10,7 +10,7 @@
  */
 
 import { browser } from 'wxt/browser';
-import config from '../../config';
+import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('TokenManager');
@@ -102,7 +102,7 @@ export class TokenManager {
     log.info('Refreshing access token...');
 
     try {
-      const apiUrl = await config.getApiUrl();
+      const apiUrl = await getApiUrl();
       const response = await fetch(`${apiUrl}/auth/oauth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
