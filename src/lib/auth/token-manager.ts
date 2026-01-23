@@ -109,7 +109,7 @@ export class TokenManager {
 
     try {
       const apiUrl = await getApiUrl();
-      const response = await fetch(`${apiUrl}/auth/oauth/token`, {
+      const response = await fetch(`${apiUrl}/api/v1/auth/oauth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

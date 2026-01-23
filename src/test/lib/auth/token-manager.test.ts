@@ -112,7 +112,7 @@ describe('TokenManager', () => {
 
       // Should have refreshed
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8090/auth/oauth/token',
+        'http://localhost:8090/api/v1/auth/oauth/token',
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('grant_type":"refresh_token')

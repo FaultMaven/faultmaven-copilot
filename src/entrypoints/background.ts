@@ -170,7 +170,7 @@ export default defineBackground({
         // Exchange authorization code for access token
         const { getApiUrl } = await import('../config');
         const apiUrl = await getApiUrl();
-        const tokenResponse = await fetch(`${apiUrl}/auth/oauth/token`, {
+        const tokenResponse = await fetch(`${apiUrl}/api/v1/auth/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
