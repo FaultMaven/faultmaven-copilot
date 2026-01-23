@@ -48,15 +48,15 @@ describe('Dashboard OAuth', () => {
   });
 
   describe('getDashboardUrl', () => {
-    it('converts localhost API URL to Dashboard URL (dev mode)', async () => {
+    it('converts localhost API URL to Dashboard URL (local deployment)', async () => {
       const dashboardUrl = await getDashboardUrl();
-      expect(dashboardUrl).toBe('http://localhost:5173');
+      expect(dashboardUrl).toBe('http://localhost:3000');
     });
 
-    it.skip('handles production API URLs (manual test - requires mock override)', async () => {
+    it.skip('handles cloud deployment API URLs (manual test - requires mock override)', async () => {
       // TODO: This test requires dynamic mock override which is not trivial in Vitest
-      // with hoisted mocks. The production logic is tested manually during deployment.
-      // The getDashboardUrl function correctly strips /api suffix in production.
+      // with hoisted mocks. The cloud deployment logic is tested manually during deployment.
+      // The getDashboardUrl function correctly strips /api suffix in cloud deployment.
     });
   });
 
@@ -92,7 +92,7 @@ describe('Dashboard OAuth', () => {
       const url = new URL(result.authorization_url);
 
       // Verify base URL
-      expect(url.origin + url.pathname).toBe('http://localhost:5173/auth/authorize');
+      expect(url.origin + url.pathname).toBe('http://localhost:3000/auth/authorize');
 
       // Verify query parameters
       expect(url.searchParams.get('response_type')).toBe('code');

@@ -30,19 +30,19 @@ export interface DashboardOAuthInitiateResponse {
 /**
  * Get Dashboard URL from API URL
  *
- * In development: API at :8000, Dashboard at :5173
- * In production: Same domain (both served from same host)
+ * Local deployment: API at :8000, Dashboard at :3000
+ * Cloud deployment: Same domain (both served from same host)
  */
 export async function getDashboardUrl(): Promise<string> {
   const apiUrl = await getApiUrl();
 
-  // Development mode detection
+  // Local deployment detection
   if (apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1')) {
-    // Replace API port (8000) with Dashboard port (5173)
-    return apiUrl.replace(':8000', ':5173');
+    // Replace API port (8000) with Dashboard port (3000)
+    return apiUrl.replace(':8000', ':3000');
   }
 
-  // Production: Dashboard is at root of same domain
+  // Cloud deployment: Dashboard is at root of same domain
   // Example: https://app.faultmaven.ai (both API and Dashboard)
   return apiUrl.replace('/api', '');
 }

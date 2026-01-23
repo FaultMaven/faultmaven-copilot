@@ -56,7 +56,7 @@ vi.mock('wxt/browser', () => ({
 import { browser } from 'wxt/browser'; // Import the mocked browser
 
 // Mock import.meta.env
-vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:5173' } } });
+vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3000' } } });
 
 describe('SidePanelApp Login Flow', () => {
   beforeEach(() => {
