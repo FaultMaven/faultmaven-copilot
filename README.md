@@ -64,7 +64,7 @@ By default, the extension tries to connect to **FaultMaven Cloud**.
 
 1. Click the extension icon
 2. Go to **Settings**
-3. Change API Endpoint to: `http://localhost:8000` (or your gateway URL)
+3. Change API Endpoint to: `http://localhost:8090` (or your gateway URL)
 
 > **Need the backend?** Deploy FaultMaven in 5 minutes: [Quick Start](https://github.com/FaultMaven/faultmaven#quick-start)
 

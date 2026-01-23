@@ -35,7 +35,7 @@ vi.mock('wxt/browser', () => ({
 
 // Mock config
 vi.mock('../../../config', () => ({
-  getApiUrl: async () => 'http://localhost:8000'
+  getApiUrl: async () => 'http://localhost:8090'
 }));
 
 describe('Dashboard OAuth', () => {
@@ -50,7 +50,7 @@ describe('Dashboard OAuth', () => {
   describe('getDashboardUrl', () => {
     it('converts localhost API URL to Dashboard URL (local deployment)', async () => {
       const dashboardUrl = await getDashboardUrl();
-      expect(dashboardUrl).toBe('http://localhost:3000');
+      expect(dashboardUrl).toBe('http://localhost:3333');
     });
 
     it.skip('handles cloud deployment API URLs (manual test - requires mock override)', async () => {
@@ -92,7 +92,7 @@ describe('Dashboard OAuth', () => {
       const url = new URL(result.authorization_url);
 
       // Verify base URL
-      expect(url.origin + url.pathname).toBe('http://localhost:3000/auth/authorize');
+      expect(url.origin + url.pathname).toBe('http://localhost:3333/auth/authorize');
 
       // Verify query parameters
       expect(url.searchParams.get('response_type')).toBe('code');

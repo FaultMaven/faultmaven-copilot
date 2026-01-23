@@ -76,7 +76,7 @@ class CapabilitiesManager {
         const fallback: BackendCapabilities = {
           deploymentMode: 'self-hosted',
           kbManagement: 'dashboard',
-          dashboardUrl: 'http://localhost:3000',
+          dashboardUrl: 'http://localhost:3333',
           features: {
             extensionKB: false,
             adminKB: false,

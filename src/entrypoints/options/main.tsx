@@ -7,7 +7,7 @@ import '../../assets/styles/globals.css';
 // Preset API endpoints for quick selection
 const PRESET_ENDPOINTS = {
   production: 'https://api.faultmaven.ai',
-  localhost: 'http://127.0.0.1:8000',
+  localhost: 'http://127.0.0.1:8090',
   custom: ''
 } as const;
 
@@ -297,7 +297,7 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
               <option value="production">☁️ FaultMaven SaaS (Production)</option>
-              <option value="localhost">🏠 Localhost (http://127.0.0.1:8000)</option>
+              <option value="localhost">🏠 Localhost (http://127.0.0.1:8090)</option>
               <option value="custom">⚙️ Custom Server URL</option>
             </select>
             <p className="mt-1 text-xs text-gray-500">
@@ -322,13 +322,13 @@ function OptionsApp() {
                   setSelectedPreset('custom');
                 }
               }}
-              placeholder="https://your-server.com:8000"
+              placeholder="https://your-server.com:8090"
               disabled={selectedPreset !== 'custom'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
             />
             {selectedPreset === 'custom' && (
               <p className="mt-1 text-xs text-gray-600">
-                Enter your custom API endpoint (e.g., https://api.mycompany.com or http://192.168.1.100:8000)
+                Enter your custom API endpoint (e.g., https://api.mycompany.com or http://192.168.1.100:8090)
               </p>
             )}
           </div>

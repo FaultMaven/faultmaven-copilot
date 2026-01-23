@@ -21,7 +21,7 @@
 - [ ] **Permissions:** I have *not* added unnecessary permissions to `wxt.config.ts` / `manifest.json`.
 - [ ] **Data Privacy:** This PR does not send new user data (URLs, DOM content) to the backend without consent.
 - [ ] **Logs:** Removed all `console.log` statements (crucial for performance in content scripts).
-- [ ] **Localhost:** I have ensured no hardcoded `localhost:8000` URLs are left in the production build.
+- [ ] **Localhost:** I have ensured no hardcoded `localhost:8090` URLs are left in the production build.
 
 ## Standard Checklist
 - [ ] I have performed a self-review of my code.

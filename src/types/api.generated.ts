@@ -1415,15 +1415,15 @@ export interface paths {
          *     **Example**:
          *     ```bash
          *     # List all documents
-         *     curl "http://localhost:8000/api/v1/users/alice/kb/documents" \
+         *     curl "http://localhost:8090/api/v1/users/alice/kb/documents" \
          *       -H "Authorization: Bearer dev_token"
          *
          *     # List database runbooks only
-         *     curl "http://localhost:8000/api/v1/users/alice/kb/documents?category=database" \
+         *     curl "http://localhost:8090/api/v1/users/alice/kb/documents?category=database" \
          *       -H "Authorization: Bearer dev_token"
          *
          *     # Paginate (10 documents at a time)
-         *     curl "http://localhost:8000/api/v1/users/alice/kb/documents?limit=10&offset=0" \
+         *     curl "http://localhost:8090/api/v1/users/alice/kb/documents?limit=10&offset=0" \
          *       -H "Authorization: Bearer dev_token"
          *     ```
          */
@@ -1453,7 +1453,7 @@ export interface paths {
          *
          *     **Example**:
          *     ```bash
-         *     curl -X POST "http://localhost:8000/api/v1/users/alice/kb/documents" \
+         *     curl -X POST "http://localhost:8090/api/v1/users/alice/kb/documents" \
          *       -H "Authorization: Bearer dev_token" \
          *       -F "file=@database_runbook.md" \
          *       -F "title=Database Timeout Troubleshooting" \
@@ -1488,7 +1488,7 @@ export interface paths {
          *
          *     **Example**:
          *     ```bash
-         *     curl -X DELETE "http://localhost:8000/api/v1/users/alice/kb/documents/abc-123" \
+         *     curl -X DELETE "http://localhost:8090/api/v1/users/alice/kb/documents/abc-123" \
          *       -H "Authorization: Bearer dev_token"
          *     ```
          */
@@ -1516,7 +1516,7 @@ export interface paths {
          *
          *     **Example**:
          *     ```bash
-         *     curl "http://localhost:8000/api/v1/users/alice/kb/stats" \
+         *     curl "http://localhost:8090/api/v1/users/alice/kb/stats" \
          *       -H "Authorization: Bearer dev_token"
          *     ```
          */

@@ -25,7 +25,7 @@ vi.mock('wxt/browser', () => ({
 
 // Mock config
 vi.mock('../../../config', () => ({
-  getApiUrl: async () => 'http://localhost:8000'
+  getApiUrl: async () => 'http://localhost:8090'
 }));
 
 describe('TokenManager', () => {
@@ -112,7 +112,7 @@ describe('TokenManager', () => {
 
       // Should have refreshed
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8000/auth/oauth/token',
+        'http://localhost:8090/auth/oauth/token',
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('grant_type":"refresh_token')

@@ -15,9 +15,9 @@ import { createLogger } from '../lib/utils/logger';
 // Allowed origins for postMessage validation
 const ALLOWED_ORIGINS = [
   'https://app.faultmaven.ai',
-  'http://localhost:3000',
+  'http://localhost:3333',
   'http://localhost:5173',  // Vite dev server
-  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3333',
   'http://127.0.0.1:5173',
   // Add more localhost ports as needed for self-hosted deployments
 ];

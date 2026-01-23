@@ -30,7 +30,7 @@ export interface DashboardOAuthInitiateResponse {
 /**
  * Get Dashboard URL from API URL
  *
- * Local deployment: API at :8000, Dashboard at :3000
+ * Local deployment: API at :8090, Dashboard at :3333
  * Cloud deployment: Same domain (both served from same host)
  */
 export async function getDashboardUrl(): Promise<string> {
@@ -38,8 +38,8 @@ export async function getDashboardUrl(): Promise<string> {
 
   // Local deployment detection
   if (apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1')) {
-    // Replace API port (8000) with Dashboard port (3000)
-    return apiUrl.replace(':8000', ':3000');
+    // Replace API port (8090) with Dashboard port (3333)
+    return apiUrl.replace(':8090', ':3333');
   }
 
   // Cloud deployment: Dashboard is at root of same domain

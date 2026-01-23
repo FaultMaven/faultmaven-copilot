@@ -27,7 +27,7 @@ vi.mock('wxt/browser', () => ({
 // Mock config
 vi.mock('../../config', () => ({
   default: {
-    apiUrl: 'http://localhost:8000',
+    apiUrl: 'http://localhost:8090',
     session: {
       timeoutMinutes: 180,
       timeoutMs: 180 * 60 * 1000
@@ -38,7 +38,7 @@ vi.mock('../../config', () => ({
       maxFileSize: 10 * 1024 * 1024
     }
   },
-  getApiUrl: vi.fn().mockResolvedValue('http://localhost:8000')
+  getApiUrl: vi.fn().mockResolvedValue('http://localhost:8090')
 }));
 
 // Mock crypto.randomUUID
@@ -148,7 +148,7 @@ describe('ClientSessionManager', () => {
     const session = await manager.createSession();
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/sessions',
+      'http://localhost:8090/api/v1/sessions',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
