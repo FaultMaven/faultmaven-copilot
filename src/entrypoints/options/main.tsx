@@ -296,8 +296,8 @@ function OptionsApp() {
               onChange={(e) => handlePresetChange(e.target.value as PresetKey)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
-              <option value="production">☁️ FaultMaven SaaS (Production)</option>
-              <option value="localhost">🏠 Localhost (http://127.0.0.1:8090)</option>
+              <option value="production">☁️ FaultMaven Cloud</option>
+              <option value="localhost">🏠 Local Deployment (http://127.0.0.1:8090)</option>
               <option value="custom">⚙️ Custom Server URL</option>
             </select>
             <p className="mt-1 text-xs text-gray-500">
@@ -322,13 +322,13 @@ function OptionsApp() {
                   setSelectedPreset('custom');
                 }
               }}
-              placeholder="https://your-server.com:8090"
+              placeholder="e.g., https://api.mycompany.com:8090"
               disabled={selectedPreset !== 'custom'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
             />
             {selectedPreset === 'custom' && (
               <p className="mt-1 text-xs text-gray-600">
-                Enter your custom API endpoint (e.g., https://api.mycompany.com or http://192.168.1.100:8090)
+                Enter your custom API endpoint. Port 8090 is the FaultMaven API default (e.g., <code className="bg-gray-100 px-1 rounded">http://192.168.1.100:8090</code>)
               </p>
             )}
           </div>
@@ -346,8 +346,8 @@ function OptionsApp() {
               }`}>
                 {capabilities.deploymentMode === 'self-hosted' ? '🏠' : '☁️'}
                 {capabilities.deploymentMode === 'self-hosted'
-                  ? 'Self-Hosted (Open Source)'
-                  : 'Enterprise (SaaS)'}
+                  ? 'Local Deployment'
+                  : 'Cloud Deployment'}
               </div>
               {capabilities.dashboardUrl && (
                 <p className="mt-2 text-sm text-gray-600">
@@ -391,13 +391,26 @@ function OptionsApp() {
 
         {/* Help Section */}
         <div className="bg-blue-50 rounded-lg border border-blue-200 p-6">
-          <h2 className="text-lg font-semibold text-blue-900 mb-3">Need Help?</h2>
-          <ul className="space-y-2 text-sm text-blue-800">
-            <li>• Self-hosted users: Ensure your backend is running and accessible</li>
-            <li>• Enterprise users: Use the default endpoint (api.faultmaven.ai)</li>
-            <li>• Changes require refreshing the extension to take effect</li>
-            <li>• Use "Test Connection" to verify your endpoint is working</li>
-          </ul>
+          <h2 className="text-lg font-semibold text-blue-900 mb-3">💡 Configuration Guide</h2>
+          <div className="space-y-3 text-sm text-blue-800">
+            <div>
+              <strong className="font-semibold">☁️ FaultMaven Cloud:</strong>
+              <p className="mt-1">Uses <code className="bg-blue-100 px-1 py-0.5 rounded">https://api.faultmaven.ai</code> (default)</p>
+            </div>
+            <div>
+              <strong className="font-semibold">🏠 Local Deployment:</strong>
+              <p className="mt-1">API runs on port <strong>8090</strong>, Dashboard on port <strong>3333</strong></p>
+              <p className="mt-1 text-xs">Use <code className="bg-blue-100 px-1 py-0.5 rounded">docker compose up</code> to start locally</p>
+            </div>
+            <div>
+              <strong className="font-semibold">⚙️ Custom Server:</strong>
+              <p className="mt-1">For self-hosted deployments with custom domains or ports</p>
+            </div>
+            <div className="pt-2 border-t border-blue-200">
+              <p>✓ Always click <strong>"Test Connection"</strong> before saving</p>
+              <p>✓ Reload the extension after changing settings</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
