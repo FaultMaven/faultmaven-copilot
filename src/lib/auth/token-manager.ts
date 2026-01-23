@@ -62,11 +62,17 @@ export class TokenManager {
     }
 
     // Refresh the token
-    await this.refreshAccessToken();
+    try {
+      await this.refreshAccessToken();
 
-    // Get the new token
-    const newTokens = await this.getStoredTokens();
-    return newTokens?.access_token || null;
+      // Get the new token
+      const newTokens = await this.getStoredTokens();
+      return newTokens?.access_token || null;
+    } catch (error) {
+      // Refresh failed, tokens already cleared by performRefresh
+      log.error('Failed to refresh token', error);
+      return null;
+    }
   }
 
   /**
@@ -175,7 +181,9 @@ export class TokenManager {
       'token_type',
       'expires_at',
       'refresh_token',
-      'refresh_expires_at'
+      'refresh_expires_at',
+      'session_id',
+      'user'
     ]);
   }
 
