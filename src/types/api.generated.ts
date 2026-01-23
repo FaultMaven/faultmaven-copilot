@@ -2134,8 +2134,8 @@ export interface components {
         AuthTokenResponse: {
             /**
              * Access Token
-             * @description Bearer access token
-             * @example 550e8400-e29b-41d4-a716-446655440000
+             * @description Bearer access token (JWT, 1 hour expiry)
+             * @example eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
              */
             access_token: string;
             /**
@@ -2146,10 +2146,24 @@ export interface components {
             token_type: string;
             /**
              * Expires In
-             * @description Token expiration time in seconds
-             * @example 86400
+             * @description Access token expiration time in seconds (3600 = 1 hour)
+             * @example 3600
              */
             expires_in: number;
+            /**
+             * Refresh Token
+             * @description Refresh token for obtaining new access tokens (JWT, 7 day expiry)
+             * @example eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+             * @note MANUAL ADDITION - Update backend OpenAPI spec to include this field
+             */
+            refresh_token: string;
+            /**
+             * Refresh Expires In
+             * @description Refresh token expiration time in seconds (604800 = 7 days)
+             * @example 604800
+             * @note MANUAL ADDITION - Update backend OpenAPI spec to include this field
+             */
+            refresh_expires_in: number;
             /**
              * Session Id
              * @description Session identifier for multi-turn conversations
