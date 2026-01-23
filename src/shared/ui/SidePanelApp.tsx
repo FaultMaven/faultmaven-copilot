@@ -191,7 +191,12 @@ function SidePanelAppContent() {
       try {
         const stored = await browser.storage.local.get(['hasCompletedFirstRun', 'apiEndpoint']);
         const completedFirstRun = stored.hasCompletedFirstRun || false;
-        const apiEndpoint = stored.apiEndpoint || 'https://api.faultmaven.ai';
+        // Note: apiEndpoint now stores Dashboard URL, but capabilities endpoint is on API
+        // Derive API URL from Dashboard URL for capabilities fetch
+        const dashboardUrl = stored.apiEndpoint || 'https://app.faultmaven.ai';
+        const apiEndpoint = dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')
+          ? dashboardUrl.replace(':3333', ':8090')
+          : dashboardUrl.replace('app.', 'api.');
 
         setHasCompletedFirstRun(completedFirstRun);
 

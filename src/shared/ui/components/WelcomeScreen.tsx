@@ -7,21 +7,24 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
   const handleCloudSetup = async () => {
-    // Use default enterprise endpoint
+    // Configure Dashboard URL for FaultMaven Cloud
+    // Users interact with Dashboard first (for OAuth login)
     await browser.storage.local.set({
-      apiEndpoint: 'https://api.faultmaven.ai',
+      apiEndpoint: 'https://app.faultmaven.ai',  // Dashboard URL, not API URL
       hasCompletedFirstRun: true
     });
     onComplete();
   };
 
   const handleSelfHostedSetup = async () => {
-    // Mark as completed and open settings
+    // Configure default Dashboard URL for local deployment
+    // Opens Settings page so user can verify/customize
     await browser.storage.local.set({
+      apiEndpoint: 'http://127.0.0.1:3333',  // Default local Dashboard URL
       hasCompletedFirstRun: true
     });
 
-    // Open settings page for configuration
+    // Open settings page for verification/customization
     await browser.runtime.openOptionsPage();
     onComplete();
   };
