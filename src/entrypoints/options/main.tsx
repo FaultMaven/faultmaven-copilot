@@ -34,18 +34,20 @@ function OptionsApp() {
     setLoading(true);
     try {
       const stored = await browser.storage.local.get(['apiEndpoint']);
-      const endpoint = stored.apiEndpoint || 'https://api.faultmaven.ai';
-      setApiEndpoint(endpoint);
+      const dashboardUrl = stored.apiEndpoint || 'https://app.faultmaven.ai';
+      setApiEndpoint(dashboardUrl);
 
       // Detect which preset matches the stored endpoint
       const matchedPreset = (Object.keys(PRESET_ENDPOINTS) as PresetKey[]).find(
-        key => PRESET_ENDPOINTS[key] === endpoint
+        key => PRESET_ENDPOINTS[key] === dashboardUrl
       );
       setSelectedPreset(matchedPreset || 'custom');
 
-      // Try to load capabilities
+      // Try to load capabilities from API backend
+      // Note: Storage contains Dashboard URL, derive API URL for capabilities
       try {
-        const caps = await capabilitiesManager.fetch(endpoint);
+        const apiUrl = deriveApiUrl(dashboardUrl);
+        const caps = await capabilitiesManager.fetch(apiUrl);
         setCapabilities(caps);
       } catch (error) {
         console.warn('Failed to load capabilities:', error);
@@ -56,35 +58,55 @@ function OptionsApp() {
   };
 
   /**
-   * Validates API endpoint by performing health check
+   * Derives API URL from Dashboard URL for validation
    *
-   * Uses the API Gateway capabilities endpoint to validate the entire stack:
-   * - API Gateway routing (validates network path)
-   * - Backend services connectivity
-   * - Deployment configuration
-   *
-   * This ensures the user's configured URL reaches the actual API Gateway,
-   * not just a specific microservice.
+   * Since we store Dashboard URL but need to validate the API backend,
+   * we must derive the API URL using the same logic as config.ts:getApiUrl()
    */
-  const validateEndpoint = async (url: string): Promise<{ success: boolean; error?: string }> => {
-    if (!url || !url.trim()) {
-      return { success: false, error: 'Please enter an API endpoint' };
+  const deriveApiUrl = (dashboardUrl: string): string => {
+    // Local deployment: Replace Dashboard port (3333) with API port (8090)
+    if (dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')) {
+      return dashboardUrl.replace(':3333', ':8090');
+    }
+
+    // Cloud deployment: Replace app subdomain with api subdomain
+    // https://app.faultmaven.ai → https://api.faultmaven.ai
+    return dashboardUrl.replace('app.', 'api.');
+  };
+
+  /**
+   * Validates Dashboard URL by checking the API backend
+   *
+   * Architecture: Users configure Dashboard URL (where they login), but we validate
+   * by checking the API backend since that's what actually serves the capabilities endpoint.
+   *
+   * Validation steps:
+   * 1. Derive API URL from Dashboard URL
+   * 2. Check API capabilities endpoint (validates full stack)
+   * 3. Fallback to basic health check if capabilities not available
+   */
+  const validateEndpoint = async (dashboardUrl: string): Promise<{ success: boolean; error?: string }> => {
+    if (!dashboardUrl || !dashboardUrl.trim()) {
+      return { success: false, error: 'Please enter a Dashboard URL' };
     }
 
     // Validate URL format
     try {
-      const parsedUrl = new URL(url);
+      const parsedUrl = new URL(dashboardUrl);
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
         return { success: false, error: 'Invalid protocol. Use http:// or https://' };
       }
 
       // Warn about insecure HTTP for non-localhost
       if (parsedUrl.protocol === 'http:' && !['localhost', '127.0.0.1', '0.0.0.0'].includes(parsedUrl.hostname)) {
-        console.warn('[Settings] Insecure HTTP endpoint detected:', url);
+        console.warn('[Settings] Insecure HTTP endpoint detected:', dashboardUrl);
       }
     } catch (error) {
       return { success: false, error: 'Invalid URL format' };
     }
+
+    // Derive API URL from Dashboard URL for validation
+    const apiUrl = deriveApiUrl(dashboardUrl);
 
     // Perform health check via API Gateway with timeout
     // Try capabilities endpoint first (validates full stack), fall back to simple health check
@@ -93,7 +115,7 @@ function OptionsApp() {
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
       // Try capabilities endpoint (validates API Gateway + backend)
-      const capabilitiesUrl = `${url.replace(/\/$/, '')}/v1/meta/capabilities`;
+      const capabilitiesUrl = `${apiUrl.replace(/\/$/, '')}/v1/meta/capabilities`;
       const response = await fetch(capabilitiesUrl, {
         method: 'GET',
         signal: controller.signal
@@ -106,7 +128,7 @@ function OptionsApp() {
         return { success: true };
       } else if (response.status === 404) {
         // Capabilities endpoint not found - try fallback health check
-        return await validateEndpointFallback(url);
+        return await validateEndpointFallback(apiUrl);
       } else {
         return {
           success: false,
@@ -128,13 +150,13 @@ function OptionsApp() {
    * Fallback health check using generic health endpoint
    * Used when capabilities endpoint is not available (older backend versions)
    */
-  const validateEndpointFallback = async (url: string): Promise<{ success: boolean; error?: string }> => {
+  const validateEndpointFallback = async (apiUrl: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      // Try generic health endpoint
-      const healthUrl = `${url.replace(/\/$/, '')}/health`;
+      // Try generic health endpoint on API server
+      const healthUrl = `${apiUrl.replace(/\/$/, '')}/health`;
       const response = await fetch(healthUrl, {
         method: 'GET',
         signal: controller.signal
@@ -191,8 +213,10 @@ function OptionsApp() {
       showStatus('✓ Settings saved! Please reload the extension.', 'success');
 
       // Try to load capabilities from new endpoint
+      // Note: capabilitiesManager.fetch expects API URL, not Dashboard URL
       try {
-        const caps = await capabilitiesManager.fetch(trimmedUrl);
+        const apiUrl = deriveApiUrl(trimmedUrl);
+        const caps = await capabilitiesManager.fetch(apiUrl);
         setCapabilities(caps);
       } catch (error) {
         console.warn('Failed to load capabilities after save:', error);
@@ -222,8 +246,10 @@ function OptionsApp() {
 
       if (validation.success) {
         // Also try to fetch capabilities for detailed info
+        // Note: capabilitiesManager.fetch expects API URL, not Dashboard URL
         try {
-          const caps = await capabilitiesManager.fetch(trimmedUrl);
+          const apiUrl = deriveApiUrl(trimmedUrl);
+          const caps = await capabilitiesManager.fetch(apiUrl);
           setCapabilities(caps);
           showStatus(
             `✓ Connected successfully to ${caps.deploymentMode} backend`,
