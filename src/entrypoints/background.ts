@@ -146,6 +146,102 @@ export default defineBackground({
       }
     }
 
+    // === OAuth Callback Handler ===
+    async function handleAuthCallback(payload: { code: string; state: string }, sendResponse: (response?: any) => void) {
+      log.info('Handling OAuth callback', { state: payload.state });
+
+      try {
+        // Retrieve stored PKCE verifier and state
+        const storage = await browser.storage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+
+        if (!storage.pkce_verifier || !storage.auth_state) {
+          throw new Error('No pending authorization request found');
+        }
+
+        // Verify state parameter (CSRF protection)
+        if (payload.state !== storage.auth_state) {
+          throw new Error('State parameter mismatch - possible CSRF attack');
+        }
+
+        log.info('State verified, exchanging authorization code for tokens');
+
+        // Exchange authorization code for access token
+        const apiUrl = await config.getApiUrl();
+        const tokenResponse = await fetch(`${apiUrl}/auth/oauth/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            code: payload.code,
+            code_verifier: storage.pkce_verifier,
+            client_id: 'faultmaven-copilot',
+            redirect_uri: storage.redirect_uri || `chrome-extension://${browser.runtime.id}/callback`
+          })
+        });
+
+        if (!tokenResponse.ok) {
+          const error = await tokenResponse.json();
+          throw new Error(`Token exchange failed: ${error.error_description || error.error}`);
+        }
+
+        const tokens = await tokenResponse.json();
+        log.info('Tokens received successfully');
+
+        // Store tokens and user info
+        await browser.storage.local.set({
+          access_token: tokens.access_token,
+          token_type: tokens.token_type,
+          expires_at: Date.now() + (tokens.expires_in * 1000),
+          refresh_token: tokens.refresh_token,
+          refresh_expires_at: Date.now() + (tokens.refresh_expires_in * 1000),
+          session_id: tokens.session_id,
+          user: tokens.user
+        });
+
+        // Create auth state for compatibility with existing auth system
+        const authState = {
+          access_token: tokens.access_token,
+          token_type: tokens.token_type,
+          session_id: tokens.session_id,
+          user: tokens.user
+        };
+
+        // Use AuthManager to save state
+        await authManager.saveAuthState(authState);
+
+        // Clean up PKCE data
+        await browser.storage.local.remove(['pkce_verifier', 'auth_state', 'redirect_uri', 'auth_initiated_at']);
+
+        log.info('OAuth authentication completed successfully');
+
+        // Broadcast auth state change
+        try {
+          await browser.runtime.sendMessage({
+            type: "auth_state_changed",
+            authState: authState
+          });
+        } catch (e) {
+          // Ignore if no listener
+        }
+
+        sendResponse({ success: true, user: tokens.user });
+      } catch (error: any) {
+        log.error('OAuth callback failed:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    }
+
+    // === OAuth Error Handler ===
+    function handleAuthError(payload: { error: string; error_description?: string }) {
+      log.error('OAuth error received:', payload);
+
+      // Clean up PKCE data
+      browser.storage.local.remove(['pkce_verifier', 'auth_state', 'redirect_uri', 'auth_initiated_at']);
+
+      // Could show notification to user or trigger error state in UI
+      // For now, just log it
+    }
+
     // === Message Handler ===
     browser.runtime.onMessage.addListener((request: any, _sender: any, sendResponse: any) => {
       log.info("Message received:", request);
@@ -168,6 +264,19 @@ export default defineBackground({
       if (request.action === "initiateOIDCLogin") {
         handleInitiateOIDCLogin(sendResponse);
         return true; // Indicate async response
+      }
+
+      // OAuth callback from callback.html
+      if (request.type === "AUTH_CALLBACK") {
+        handleAuthCallback({ code: request.code, state: request.state }, sendResponse);
+        return true; // Indicate async response
+      }
+
+      // OAuth error from callback.html
+      if (request.type === "AUTH_ERROR") {
+        handleAuthError({ error: request.error, error_description: request.error_description });
+        sendResponse({ status: "received" });
+        return false;
       }
 
       // Handle other actions...
