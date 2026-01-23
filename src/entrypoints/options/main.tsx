@@ -274,12 +274,18 @@ function OptionsApp() {
 
   /**
    * Handle preset selection change
+   *
+   * Clears capabilities when user changes selection so "Detected Mode" badge
+   * disappears until they test/save the new URL
    */
   const handlePresetChange = (preset: PresetKey) => {
     setSelectedPreset(preset);
     if (preset !== 'custom') {
       setApiEndpoint(PRESET_ENDPOINTS[preset]);
     }
+    // Clear capabilities when changing selection - user must test/save to re-detect
+    setCapabilities(null);
+    setStatusMessage(null); // Also clear any previous status messages
   };
 
   const showStatus = (text: string, type: 'success' | 'error' | 'info') => {
@@ -348,6 +354,9 @@ function OptionsApp() {
                 if (selectedPreset !== 'custom') {
                   setSelectedPreset('custom');
                 }
+                // Clear capabilities when URL changes - user must test/save to re-detect
+                setCapabilities(null);
+                setStatusMessage(null); // Also clear any previous status messages
               }}
               placeholder="e.g., https://app.mycompany.com:3333"
               disabled={selectedPreset !== 'custom'}
