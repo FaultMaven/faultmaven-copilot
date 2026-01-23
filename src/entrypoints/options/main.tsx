@@ -347,7 +347,7 @@ function OptionsApp() {
                 {capabilities.deploymentMode === 'self-hosted' ? '🏠' : '☁️'}
                 {capabilities.deploymentMode === 'self-hosted'
                   ? 'Local Deployment'
-                  : 'Cloud Deployment'}
+                  : 'Cloud Service'}
               </div>
               {capabilities.dashboardUrl && (
                 <p className="mt-2 text-sm text-gray-600">
@@ -395,7 +395,7 @@ function OptionsApp() {
           <div className="space-y-3 text-sm text-blue-800">
             <div>
               <strong className="font-semibold">☁️ FaultMaven Cloud:</strong>
-              <p className="mt-1">Uses <code className="bg-blue-100 px-1 py-0.5 rounded">https://api.faultmaven.ai</code> (default)</p>
+              <p className="mt-1">Connects to managed service at <code className="bg-blue-100 px-1 py-0.5 rounded">https://api.faultmaven.ai</code> (default)</p>
             </div>
             <div>
               <strong className="font-semibold">🏠 Local Deployment:</strong>
