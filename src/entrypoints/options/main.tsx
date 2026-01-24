@@ -385,11 +385,9 @@ function OptionsApp() {
                   ? 'Local Deployment'
                   : 'Cloud Service'}
               </div>
-              {capabilities.dashboardUrl && (
-                <p className="mt-2 text-sm text-gray-600">
-                  Dashboard: <a href={capabilities.dashboardUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{capabilities.dashboardUrl}</a>
-                </p>
-              )}
+              <p className="mt-2 text-sm text-gray-600">
+                Dashboard: <a href={apiEndpoint} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{apiEndpoint}</a>
+              </p>
             </div>
           )}
 
