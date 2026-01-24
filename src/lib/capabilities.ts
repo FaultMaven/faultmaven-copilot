@@ -1,7 +1,7 @@
 // src/lib/capabilities.ts
 
 export interface BackendCapabilities {
-  deploymentMode: 'self-hosted' | 'enterprise';
+  deploymentMode: 'self-hosted' | 'cloud';
   kbManagement: 'dashboard';
   dashboardUrl: string;
   features: {

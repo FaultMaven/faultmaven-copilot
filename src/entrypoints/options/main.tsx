@@ -382,8 +382,8 @@ function OptionsApp() {
               }`}>
                 {capabilities.deploymentMode === 'self-hosted' ? '🏠' : '☁️'}
                 {capabilities.deploymentMode === 'self-hosted'
-                  ? 'Local Deployment'
-                  : 'Cloud Service'}
+                  ? 'Self-Hosted'
+                  : 'FaultMaven Cloud'}
               </div>
               <p className="mt-2 text-sm text-gray-600">
                 Dashboard: <a href={apiEndpoint} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{apiEndpoint}</a>
