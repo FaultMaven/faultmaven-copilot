@@ -171,6 +171,11 @@ export default defineBackground({
       log.info('Initiating Dashboard OAuth flow');
 
       try {
+        // Check if storage is available before proceeding
+        if (typeof browser === 'undefined' || !browser.storage) {
+          throw new Error('Browser storage not available');
+        }
+
         // Initiate Dashboard OAuth flow (generates PKCE parameters and stores them)
         const oauthResponse = await initiateDashboardOAuth();
 
@@ -182,21 +187,28 @@ export default defineBackground({
           active: true
         });
 
+        if (!tab.id) {
+          throw new Error('Failed to create OAuth tab');
+        }
+
         log.info('Dashboard OAuth initiated, authorization tab opened');
 
         // Monitor the tab for the success page with authorization code
-        if (tab.id) {
-          monitorOAuthTab(tab.id, oauthResponse.state);
-        }
+        monitorOAuthTab(tab.id, oauthResponse.state);
 
         sendResponse({ status: 'success', state: oauthResponse.state });
       } catch (error: any) {
         log.error('Failed to initiate Dashboard OAuth:', error);
 
         // Clean up on error
-        await cleanupOAuthState();
+        try {
+          await cleanupOAuthState();
+        } catch (cleanupError) {
+          log.warn('Failed to cleanup OAuth state:', cleanupError);
+        }
 
-        sendResponse({ status: 'error', message: error.message || 'Failed to initiate Dashboard OAuth' });
+        const errorMessage = error instanceof Error ? error.message : 'Failed to initiate Dashboard OAuth';
+        sendResponse({ status: 'error', message: errorMessage });
       }
     }
 
@@ -205,15 +217,21 @@ export default defineBackground({
       log.info('Handling OAuth callback', { state: payload.state });
 
       try {
+        // Validate input
+        if (!payload.code || !payload.state) {
+          throw new Error('Invalid callback: missing code or state');
+        }
+
         // Retrieve stored PKCE verifier and state
         const storage = await browser.storage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
 
         if (!storage.pkce_verifier || !storage.auth_state) {
-          throw new Error('No pending authorization request found');
+          throw new Error('No pending authorization request found. Please try logging in again.');
         }
 
         // Verify state parameter (CSRF protection)
         if (payload.state !== storage.auth_state) {
+          log.error('State mismatch', { expected: storage.auth_state, received: payload.state });
           throw new Error('State parameter mismatch - possible CSRF attack');
         }
 
@@ -222,6 +240,7 @@ export default defineBackground({
         // Exchange authorization code for access token
         const { getApiUrl } = await import('../config');
         const apiUrl = await getApiUrl();
+
         const tokenResponse = await fetch(`${apiUrl}/api/v1/auth/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -235,12 +254,30 @@ export default defineBackground({
         });
 
         if (!tokenResponse.ok) {
-          const error = await tokenResponse.json();
+          const error = await tokenResponse.json().catch(() => ({ error: 'unknown', error_description: 'Failed to parse error response' }));
           throw new Error(`Token exchange failed: ${error.error_description || error.error}`);
         }
 
         const tokens = await tokenResponse.json();
+
+        // Validate token response (per AuthTokenResponse in backend)
+        if (!tokens.access_token || !tokens.user) {
+          throw new Error('Invalid token response: missing required fields');
+        }
+
         log.info('Tokens received successfully');
+
+        // Use complete user object from API response (per AuthTokenResponse.user: UserProfile)
+        // Backend returns full user object with all required fields
+        const user = {
+          user_id: tokens.user.user_id,
+          username: tokens.user.username,
+          email: tokens.user.email,
+          display_name: tokens.user.display_name,
+          is_dev_user: tokens.user.is_dev_user,
+          is_active: true,  // User is active if they successfully authenticated
+          roles: tokens.user.roles || ['user']
+        };
 
         // Store tokens and user info
         await browser.storage.local.set({
@@ -248,9 +285,8 @@ export default defineBackground({
           token_type: tokens.token_type,
           expires_at: Date.now() + (tokens.expires_in * 1000),
           refresh_token: tokens.refresh_token,
-          refresh_expires_at: Date.now() + (tokens.refresh_expires_in * 1000),
-          session_id: tokens.session_id,
-          user: tokens.user
+          refresh_expires_at: tokens.refresh_expires_in ? Date.now() + (tokens.refresh_expires_in * 1000) : undefined,
+          user: user
         });
 
         // Create auth state for compatibility with existing auth system
@@ -258,8 +294,7 @@ export default defineBackground({
           access_token: tokens.access_token,
           token_type: tokens.token_type,
           expires_at: Date.now() + (tokens.expires_in * 1000),
-          session_id: tokens.session_id,
-          user: tokens.user
+          user: user
         };
 
         // Use AuthManager to save state
@@ -277,13 +312,23 @@ export default defineBackground({
             authState: authState
           });
         } catch (e) {
-          // Ignore if no listener
+          // Ignore if no listener (side panel may not be open)
+          log.debug('Could not broadcast auth state change:', e);
         }
 
         sendResponse({ success: true, user: tokens.user });
       } catch (error: any) {
         log.error('OAuth callback failed:', error);
-        sendResponse({ success: false, error: error.message });
+
+        // Clean up PKCE state on error
+        try {
+          await cleanupOAuthState();
+        } catch (cleanupError) {
+          log.warn('Failed to cleanup OAuth state after error:', cleanupError);
+        }
+
+        const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+        sendResponse({ success: false, error: errorMessage });
       }
     }
 

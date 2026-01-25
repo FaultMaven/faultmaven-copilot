@@ -45,13 +45,16 @@ function SidePanelAppContent() {
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
 
-  // --- Auth & Session ---
-  const { isAuthenticated, isAdmin, logout, authError } = useAuth();
-  const { sessionId, refreshSession, clearSession } = useSessionManagement();
-
   // --- UI State ---
   const [activeTab, setActiveTab] = useState<'copilot'>('copilot');
   const [hasCompletedFirstRun, setHasCompletedFirstRun] = useState<boolean | null>(null);
+
+  // --- Auth & Session ---
+  const { isAuthenticated, isAdmin, logout, authError } = useAuth();
+  // Only initialize session management after first-run is complete
+  // This prevents race condition where session tries to connect to API before storage is configured
+  const shouldInitializeSession = hasCompletedFirstRun === true;
+  const { sessionId, refreshSession, clearSession } = useSessionManagement(shouldInitializeSession);
   const [capabilities, setCapabilities] = useState<BackendCapabilities | null>(null);
   const [initializingCapabilities, setInitializingCapabilities] = useState(true);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
@@ -185,39 +188,43 @@ function SidePanelAppContent() {
 
   // --- UI Handlers ---
   
-  // Initialize capabilities
+  // Initialize first-run status and capabilities
   useEffect(() => {
-    const initializeCapabilities = async () => {
+    const initializeApp = async () => {
       try {
+        // First, load first-run status from storage
         const stored = await browser.storage.local.get(['hasCompletedFirstRun', 'apiEndpoint']);
         const completedFirstRun = stored.hasCompletedFirstRun || false;
-        // Note: apiEndpoint now stores Dashboard URL, but capabilities endpoint is on API
-        // Derive API URL from Dashboard URL for capabilities fetch
-        const dashboardUrl = stored.apiEndpoint || 'https://app.faultmaven.ai';
-        const apiEndpoint = dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')
-          ? dashboardUrl.replace(':3333', ':8090')
-          : dashboardUrl.replace('app.', 'api.');
 
         setHasCompletedFirstRun(completedFirstRun);
 
+        // If first-run not completed, skip capabilities loading
         if (!completedFirstRun) {
           setInitializingCapabilities(false);
           return;
         }
 
+        // Derive API URL from Dashboard URL for capabilities fetch
+        // Note: apiEndpoint now stores Dashboard URL, but capabilities endpoint is on API
+        const dashboardUrl = stored.apiEndpoint || 'https://app.faultmaven.ai';
+        const apiEndpoint = dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')
+          ? dashboardUrl.replace(':3333', ':8090')
+          : dashboardUrl.replace('app.', 'api.');
+
+        // Load backend capabilities
         const caps = await capabilitiesManager.fetch(apiEndpoint);
         setCapabilities(caps);
         setCapabilitiesError(null);
       } catch (error) {
-        log.error('Failed to load capabilities:', error);
+        log.error('Failed to initialize app:', error);
         setCapabilitiesError(error instanceof Error ? error.message : 'Unknown error');
       } finally {
         setInitializingCapabilities(false);
       }
     };
 
-    initializeCapabilities();
-  }, [hasCompletedFirstRun]);
+    initializeApp();
+  }, []); // Run once on mount
 
   // Handle responsive sidebar
   useEffect(() => {

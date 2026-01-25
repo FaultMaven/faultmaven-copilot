@@ -104,7 +104,9 @@ export const createSessionSlice: StateCreator<SessionSlice> = (set, get) => ({
     try {
       // 1. Check first run
       let completedFirstRun = false;
-      let apiEndpoint = 'https://api.faultmaven.ai';
+      // Default to Cloud deployment (safe for Chrome Web Store distribution)
+      // Users choose deployment type via Welcome screen on first run
+      let apiEndpoint = 'https://app.faultmaven.ai';
 
       if (typeof browser !== 'undefined' && browser.storage) {
         const stored = await browser.storage.local.get(['hasCompletedFirstRun', 'apiEndpoint']);

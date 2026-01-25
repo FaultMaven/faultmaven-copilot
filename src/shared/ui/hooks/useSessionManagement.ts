@@ -18,19 +18,29 @@ interface SessionState {
   error: string | null;
 }
 
-export function useSessionManagement() {
+export function useSessionManagement(shouldInitialize: boolean = true) {
   const [sessionState, setSessionState] = useState<SessionState>({
     sessionId: null,
     isInitialized: false,
     error: null
   });
 
-  // Initialize session on mount
+  // Initialize session on mount (only if shouldInitialize is true)
   useEffect(() => {
+    // Skip initialization if not ready (e.g., first-run not completed)
+    if (!shouldInitialize) {
+      log.debug('Session initialization skipped - waiting for first-run completion');
+      return;
+    }
     let heartbeatInterval: NodeJS.Timeout | null = null;
 
     const initializeSession = async () => {
       try {
+        // Validate browser environment
+        if (typeof browser === 'undefined' || !browser.storage) {
+          throw new Error('Browser storage not available');
+        }
+
         // Get session from storage
         const result = await browser.storage.local.get(['sessionId']);
 
@@ -45,6 +55,10 @@ export function useSessionManagement() {
           // Create new session
           log.info('Creating new session');
           const session = await createSession();
+
+          if (!session.session_id) {
+            throw new Error('Invalid session response: missing session_id');
+          }
 
           await browser.storage.local.set({
             sessionId: session.session_id,
@@ -78,11 +92,12 @@ export function useSessionManagement() {
         }, 5 * 60 * 1000);
 
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         log.error('Session initialization failed', error);
         setSessionState({
           sessionId: null,
           isInitialized: false,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: errorMessage
         });
       }
     };
@@ -94,7 +109,7 @@ export function useSessionManagement() {
         clearInterval(heartbeatInterval);
       }
     };
-  }, []);
+  }, [shouldInitialize]);
 
   const refreshSession = useCallback(async (): Promise<string> => {
     try {

@@ -4,39 +4,7 @@
 
 import type { CaseUIResponse } from '../../types/case';
 import { getApiUrl } from '../../config';
-
-/**
- * Gets dual headers for API requests (Authentication + Session)
- * Returns both Authorization and X-Session-Id headers when available
- */
-async function getAuthHeaders(): Promise<HeadersInit> {
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-
-  try {
-    if (typeof browser !== 'undefined' && browser.storage) {
-      // Get auth token from AuthState
-      const result = await browser.storage.local.get(['authState']);
-      const authState = result.authState;
-
-      if (authState?.access_token) {
-        // Check if token is expired
-        if (Date.now() < authState.expires_at) {
-          headers['Authorization'] = `Bearer ${authState.access_token}`;
-        }
-      }
-
-      // Get session ID
-      const sessionData = await browser.storage.local.get(['sessionId']);
-      if (sessionData.sessionId) {
-        headers['X-Session-Id'] = sessionData.sessionId;
-      }
-    }
-  } catch (error) {
-    console.warn('[CaseService] Failed to get auth/session headers:', error);
-  }
-
-  return headers;
-}
+import { getAuthHeaders } from './fetch-utils';
 
 /**
  * Fetch UI-optimized case data

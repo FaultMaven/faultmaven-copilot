@@ -39,12 +39,18 @@ export interface DashboardOAuthInitiateResponse {
  * Cloud deployment: https://app.faultmaven.ai
  */
 export async function getDashboardUrl(): Promise<string> {
-  // Read Dashboard URL from storage (configured in Settings)
-  // Storage key is still 'apiEndpoint' for backward compatibility
-  // but it now stores Dashboard URL, not API URL
-  const stored = await browser.storage.local.get(['apiEndpoint']);
-  if (stored.apiEndpoint) {
-    return stored.apiEndpoint;
+  try {
+    // Read Dashboard URL from storage (configured in Settings)
+    // Storage key is still 'apiEndpoint' for backward compatibility
+    // but it now stores Dashboard URL, not API URL
+    if (typeof browser !== 'undefined' && browser.storage) {
+      const stored = await browser.storage.local.get(['apiEndpoint']);
+      if (stored.apiEndpoint) {
+        return stored.apiEndpoint;
+      }
+    }
+  } catch (error) {
+    log.warn('Failed to read Dashboard URL from storage:', error);
   }
 
   // Fallback to production default

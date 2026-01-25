@@ -30,7 +30,14 @@ export default defineConfig({
       "storage", "sidePanel", "activeTab", "tabs", "scripting"
     ],
     host_permissions: [
-      "<all_urls>",  // Required for content script auto-injection and custom API endpoints
+      "https://app.faultmaven.ai/*",
+      "https://api.faultmaven.ai/*"
+    ],
+    optional_host_permissions: [
+      "http://localhost/*",
+      "http://127.0.0.1/*",
+      "http://*/*",  // Allow custom local deployments
+      "https://*/*"  // Allow custom enterprise deployments
     ],
     action: {
       default_title: "Open FaultMaven Copilot",

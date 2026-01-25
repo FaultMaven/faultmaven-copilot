@@ -67,6 +67,10 @@ const config: Config = {
   }
 };
 
+// Default URLs
+const CLOUD_DASHBOARD_URL = 'https://app.faultmaven.ai';
+const CLOUD_API_URL = 'https://api.faultmaven.ai';
+
 /**
  * Runtime Configuration: Get API URL derived from Dashboard URL
  *
@@ -78,9 +82,8 @@ const config: Config = {
  * - Cloud: https://app.faultmaven.ai → https://api.faultmaven.ai
  *
  * Priority order:
- * 1. Derive from user-configured Dashboard URL (stored in apiEndpoint key)
- * 2. Build-time environment variable (VITE_API_URL)
- * 3. Hardcoded default (https://api.faultmaven.ai)
+ * 1. User-configured Dashboard URL (stored in apiEndpoint key)
+ * 2. Cloud default (safe for Chrome Web Store distribution)
  *
  * Performance: Uses browser.storage.local (NOT sync) for fast access
  *
@@ -88,7 +91,7 @@ const config: Config = {
  */
 export async function getApiUrl(): Promise<string> {
   try {
-    // Check if running in browser extension environment
+    // 1. Check storage (user override via Welcome screen or Settings)
     if (typeof browser !== 'undefined' && browser.storage) {
       const stored = await browser.storage.local.get(['apiEndpoint']);
       if (stored.apiEndpoint) {
@@ -120,13 +123,29 @@ export async function getApiUrl(): Promise<string> {
     log.warn('Failed to read apiEndpoint from storage:', error);
   }
 
-  // Fallback 1: Build-time environment variable
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+  // 2. Fallback: Cloud deployment default (safe for Chrome Web Store distribution)
+  // Users choose deployment type via Welcome screen on first run
+  return CLOUD_API_URL;
+}
+
+/**
+ * Get Dashboard URL (for OAuth redirect)
+ *
+ * @returns Dashboard endpoint URL
+ */
+export async function getDashboardUrl(): Promise<string> {
+  try {
+    if (typeof browser !== 'undefined' && browser.storage) {
+      const stored = await browser.storage.local.get(['apiEndpoint']);
+      if (stored.apiEndpoint) {
+        return stored.apiEndpoint;
+      }
+    }
+  } catch (error) {
+    log.warn('Failed to read apiEndpoint from storage:', error);
   }
 
-  // Fallback 2: Production default
-  return 'https://api.faultmaven.ai';
+  return CLOUD_DASHBOARD_URL;
 }
 
 export default config;
