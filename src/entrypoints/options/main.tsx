@@ -65,7 +65,10 @@ function OptionsApp() {
    */
   const deriveApiUrl = (dashboardUrl: string): string => {
     // Local deployment: Replace Dashboard port (3333) with API port (8090)
-    if (dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')) {
+    // Supports localhost and 127.0.0.1 (port 3333 auto-detection as fallback)
+    if (dashboardUrl.includes('localhost') ||
+        dashboardUrl.includes('127.0.0.1') ||
+        dashboardUrl.includes(':3333')) {
       return dashboardUrl.replace(':3333', ':8090');
     }
 

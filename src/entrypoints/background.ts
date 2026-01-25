@@ -120,6 +120,52 @@ export default defineBackground({
       }
     }
 
+    // === Monitor OAuth Tab for Success Page ===
+    function monitorOAuthTab(tabId: number, expectedState: string) {
+      const listener = async (updatedTabId: number, changeInfo: any, tab: any) => {
+        if (updatedTabId !== tabId) return;
+
+        // Check if the URL contains the authorization code
+        const url = tab.url || changeInfo.url;
+        if (!url) return;
+
+        try {
+          const parsedUrl = new URL(url);
+          const code = parsedUrl.searchParams.get('code');
+          const state = parsedUrl.searchParams.get('state');
+
+          if (code && state === expectedState) {
+            log.info('OAuth authorization code detected in tab URL');
+
+            // Remove the listener
+            browser.tabs.onUpdated.removeListener(listener);
+
+            // Handle the callback
+            await handleAuthCallback({ code, state }, (response) => {
+              log.info('OAuth callback handled:', response);
+            });
+
+            // Close the OAuth tab
+            try {
+              await browser.tabs.remove(tabId);
+            } catch (e) {
+              log.warn('Could not close OAuth tab:', e);
+            }
+          }
+        } catch (e) {
+          // Invalid URL, ignore
+        }
+      };
+
+      browser.tabs.onUpdated.addListener(listener);
+
+      // Clean up listener after 5 minutes (timeout)
+      setTimeout(() => {
+        browser.tabs.onUpdated.removeListener(listener);
+        log.warn('OAuth tab monitoring timed out');
+      }, 5 * 60 * 1000);
+    }
+
     // === Dashboard OAuth Login Handler ===
     async function handleInitiateDashboardOAuth(sendResponse: (response?: any) => void) {
       log.info('Initiating Dashboard OAuth flow');
@@ -131,12 +177,18 @@ export default defineBackground({
         log.info('Dashboard OAuth URL:', oauthResponse.authorization_url);
 
         // Open Dashboard authorization page in new tab
-        await browser.tabs.create({
+        const tab = await browser.tabs.create({
           url: oauthResponse.authorization_url,
           active: true
         });
 
         log.info('Dashboard OAuth initiated, authorization tab opened');
+
+        // Monitor the tab for the success page with authorization code
+        if (tab.id) {
+          monitorOAuthTab(tab.id, oauthResponse.state);
+        }
+
         sendResponse({ status: 'success', state: oauthResponse.state });
       } catch (error: any) {
         log.error('Failed to initiate Dashboard OAuth:', error);

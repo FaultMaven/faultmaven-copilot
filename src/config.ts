@@ -96,7 +96,18 @@ export async function getApiUrl(): Promise<string> {
 
         // Derive API URL from Dashboard URL
         // Local deployment: Replace Dashboard port (3333) with API port (8090)
-        if (dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')) {
+        //
+        // TECHNICAL NOTE: While this code supports any URL with :3333 port,
+        // raw IP access (http://192.168.x.x:3333) faces browser security hurdles:
+        //   - NOT a Secure Context (Extension APIs may fail)
+        //   - Requires manual CORS configuration in backend .env
+        //   - Requires manual OAuth redirect URI patterns
+        //   - Network-specific (breaks when IP changes)
+        // Supported patterns: localhost, or HTTPS with proper SSL certificate.
+        // See: docs/working/ENTERPRISE_DEPLOYMENT_GUIDE.md
+        if (dashboardUrl.includes('localhost') ||
+            dashboardUrl.includes('127.0.0.1') ||
+            dashboardUrl.includes(':3333')) {
           return dashboardUrl.replace(':3333', ':8090');
         }
 
