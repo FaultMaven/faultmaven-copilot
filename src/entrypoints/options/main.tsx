@@ -367,7 +367,7 @@ function OptionsApp() {
             />
             {selectedPreset === 'custom' && (
               <p className="mt-1 text-xs text-gray-600">
-                Enter your custom Dashboard URL. Port 3333 is the default for local deployments (e.g., <code className="bg-gray-100 px-1 rounded">http://192.168.1.100:3333</code>)
+                Enter your custom Dashboard URL. For remote servers, use SSH tunnel to localhost (e.g., <code className="bg-gray-100 px-1 rounded">ssh -L 3333:localhost:3333 user@server</code>)
               </p>
             )}
           </div>
