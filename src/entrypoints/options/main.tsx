@@ -333,12 +333,25 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
               <option value="production">☁️ FaultMaven Cloud</option>
-              <option value="localhost">🏠 Local Deployment (http://127.0.0.1:3333)</option>
-              <option value="custom">⚙️ Custom Server URL</option>
+              <option value="localhost">🏠 Local Deployment (localhost - includes SSH tunnels)</option>
+              <option value="custom">⚙️ Custom Server URL (enterprise domains)</option>
             </select>
-            <p className="mt-1 text-xs text-gray-500">
-              Choose a preset or enter a custom URL below
-            </p>
+            {selectedPreset === 'localhost' && (
+              <p className="mt-1 text-xs text-gray-600">
+                <strong>Local machine:</strong> Dashboard runs on localhost:3333<br/>
+                <strong>Remote server:</strong> Use SSH tunnel: <code className="bg-gray-100 px-1 rounded">ssh -L 3333:localhost:3333 -L 8090:localhost:8090 user@server</code>
+              </p>
+            )}
+            {selectedPreset === 'production' && (
+              <p className="mt-1 text-xs text-gray-500">
+                Connect to FaultMaven's managed cloud service
+              </p>
+            )}
+            {selectedPreset === 'custom' && (
+              <p className="mt-1 text-xs text-gray-500">
+                For enterprise deployments with custom domains (e.g., https://faultmaven.acme.com)
+              </p>
+            )}
           </div>
 
           {/* Dashboard URL Input */}
@@ -361,13 +374,13 @@ function OptionsApp() {
                 setCapabilities(null);
                 setStatusMessage(null); // Also clear any previous status messages
               }}
-              placeholder="e.g., https://app.mycompany.com:3333"
+              placeholder="e.g., https://faultmaven.acme.com"
               disabled={selectedPreset !== 'custom'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
             />
             {selectedPreset === 'custom' && (
               <p className="mt-1 text-xs text-gray-600">
-                Enter your custom Dashboard URL. For remote servers, use SSH tunnel to localhost (e.g., <code className="bg-gray-100 px-1 rounded">ssh -L 3333:localhost:3333 user@server</code>)
+                Enter your enterprise Dashboard URL with SSL (HTTPS required). For remote servers without custom domains, use <strong>🏠 Local Deployment</strong> with SSH tunnel instead.
               </p>
             )}
           </div>
