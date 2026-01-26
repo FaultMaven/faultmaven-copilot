@@ -13,6 +13,7 @@ import React, { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { getAuthConfig, AuthConfig } from '../../../lib/auth/auth-config';
 import { createLogger } from '../../../lib/utils/logger';
+import { LocalLoginForm } from './LocalLoginForm';
 
 const log = createLogger('AuthScreen');
 
@@ -81,17 +82,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     }
   }
 
-  // Handle local login (redirect to dashboard)
-  async function handleLocalLogin() {
-    try {
-      // For local auth, redirect to dashboard login page
-      const dashboardUrl = 'https://app.faultmaven.ai/login'; // TODO: Make configurable
-      await browser.tabs.create({ url: dashboardUrl, active: true });
-    } catch (err: any) {
-      log.error('Failed to open dashboard:', err);
-      setError('Failed to open login page');
-    }
-  }
+  // Local login is now handled by LocalLoginForm component (no function needed)
 
   if (loading) {
     return (
@@ -147,17 +138,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         {/* Authentication UI */}
         <div className="bg-white rounded-xl shadow-lg p-6">
           {authConfig.provider === 'local' && (
-            <>
-              <p className="text-gray-600 mb-4 text-center">
-                Click below to sign in with your FaultMaven account
-              </p>
-              <button
-                onClick={handleLocalLogin}
-                className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Sign In
-              </button>
-            </>
+            <LocalLoginForm authConfig={authConfig} onAuthSuccess={onAuthSuccess} />
           )}
 
           {(authConfig.provider === 'oidc' || authConfig.provider === 'saml') && (

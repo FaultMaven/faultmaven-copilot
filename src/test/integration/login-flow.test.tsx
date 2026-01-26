@@ -17,6 +17,16 @@ vi.mock('../../lib/errors', () => ({
   useError: () => ({ showError: vi.fn(), showErrorWithRetry: vi.fn() }),
   ErrorHandlerProvider: ({ children }: any) => children
 }));
+vi.mock('../../lib/auth/auth-config', () => ({
+  getAuthConfig: vi.fn().mockResolvedValue({
+    provider: 'oidc',
+    features: {
+      supports_registration: false,
+      supports_password_reset: false,
+      supports_mfa: false
+    }
+  })
+}));
 
 // Mock browser global and wxt/browser
 const storageMock = {
@@ -73,8 +83,8 @@ describe('SidePanelApp Login Flow', () => {
 
     render(<SidePanelApp />);
 
-    // Find the login button
-    const loginButton = await screen.findByText('Sign In to Work');
+    // Find the OAuth login button (for OIDC provider)
+    const loginButton = await screen.findByText('Sign in with Organization');
     expect(loginButton).toBeInTheDocument();
 
     // Click it

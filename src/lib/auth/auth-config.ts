@@ -11,7 +11,23 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('AuthConfig');
 
 /**
- * Auth provider configuration from backend
+ * Backend auth config response (from /api/v1/auth/config)
+ */
+interface BackendAuthConfig {
+  auth_mode: 'local' | 'oauth';
+  login_endpoint?: string;
+  register_endpoint?: string;
+  supports_registration: boolean;
+  oauth?: {
+    authorize_url: string;
+    token_url: string;
+    client_id: string;
+    scopes: string[];
+  } | null;
+}
+
+/**
+ * Auth provider configuration (internal format)
  */
 export interface AuthConfig {
   provider: 'local' | 'oidc' | 'saml';
@@ -39,6 +55,11 @@ export interface OIDCInitiateResponse {
 let cachedAuthConfig: AuthConfig | null = null;
 
 /**
+ * Config cache version (increment to force cache invalidation on updates)
+ */
+const CONFIG_CACHE_VERSION = 2;  // Incremented for local auth implementation
+
+/**
  * Get authentication configuration from backend
  *
  * This tells the extension which authentication mode is active:
@@ -49,6 +70,22 @@ let cachedAuthConfig: AuthConfig | null = null;
  * @returns Auth configuration
  */
 export async function getAuthConfig(): Promise<AuthConfig> {
+  // Check cache version in storage and clear if outdated
+  if (typeof browser !== 'undefined' && browser.storage) {
+    try {
+      const stored = await browser.storage.local.get(['auth_config_version']);
+      const storedVersion = stored.auth_config_version || 0;
+
+      if (storedVersion < CONFIG_CACHE_VERSION) {
+        log.info(`Cache version mismatch (${storedVersion} < ${CONFIG_CACHE_VERSION}), clearing cache`);
+        cachedAuthConfig = null;
+        await browser.storage.local.set({ auth_config_version: CONFIG_CACHE_VERSION });
+      }
+    } catch (err) {
+      log.warn('Failed to check cache version:', err);
+    }
+  }
+
   // Return cached config if available
   if (cachedAuthConfig) {
     return cachedAuthConfig;
@@ -67,7 +104,19 @@ export async function getAuthConfig(): Promise<AuthConfig> {
       throw new Error(`Auth config failed: ${response.status}`);
     }
 
-    const config: AuthConfig = await response.json();
+    const backendConfig: BackendAuthConfig = await response.json();
+
+    // Transform backend response to AuthConfig format
+    const config: AuthConfig = {
+      provider: backendConfig.auth_mode === 'local' ? 'local' : 'oidc',
+      login_url: backendConfig.login_endpoint,
+      features: {
+        supports_registration: backendConfig.supports_registration,
+        supports_password_reset: false,  // Not supported yet
+        supports_email_verification: false,  // Not supported yet
+        requires_redirect: backendConfig.auth_mode === 'oauth'  // OAuth requires redirect to Dashboard
+      }
+    };
 
     // Cache the config
     cachedAuthConfig = config;
