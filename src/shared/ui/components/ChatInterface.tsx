@@ -11,6 +11,7 @@ interface ChatInterfaceProps {
   conversations: Record<string, OptimisticConversationItem[]>;
   loading: boolean;
   submitting: boolean;
+  sessionId: string | null;
   onQuerySubmit: (query: string) => Promise<void>;
   onDataUpload: (data: string | File, type: 'text' | 'file' | 'page') => Promise<{ success: boolean; message: string }>;
   failedOperations: PendingOperation[];
@@ -31,6 +32,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   conversations,
   loading,
   submitting,
+  sessionId,
   onQuerySubmit,
   onDataUpload,
   failedOperations,
@@ -128,7 +130,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           conversation={currentMessages}
           activeCase={activeCase}
           loading={loading}
-          sessionId={activeCase?.owner_id || null} // Use owner_id as session context if needed
+          sessionId={sessionId}
           investigationProgress={currentProgress}
           evidence={currentEvidence}
           onQuerySubmit={onQuerySubmit}

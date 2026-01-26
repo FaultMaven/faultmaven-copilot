@@ -57,6 +57,7 @@ describe('ChatInterface e2e', () => {
         }}
         loading={false}
         submitting={false}
+        sessionId={sessionId}
         onQuerySubmit={mockQuerySubmit}
         onDataUpload={mockDataUpload}
         failedOperations={[]}
@@ -99,6 +100,7 @@ describe('ChatInterface e2e', () => {
         }}
         loading={false}
         submitting={false}
+        sessionId={sessionId}
         onQuerySubmit={mockQuerySubmit}
         onDataUpload={mockDataUpload}
         failedOperations={[]}

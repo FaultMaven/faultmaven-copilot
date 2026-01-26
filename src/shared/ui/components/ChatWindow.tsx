@@ -238,7 +238,7 @@ const ChatWindowComponent = function ChatWindow({
       setFullCaseData(null);
       setCaseError(null);
     }
-  }, [activeCase?.case_id, conversation.length]);
+  }, [activeCase?.case_id, sessionId, conversation.length]);
 
   // Auto-scroll to bottom
   useEffect(() => {

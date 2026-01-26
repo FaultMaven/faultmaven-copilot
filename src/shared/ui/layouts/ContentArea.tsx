@@ -123,6 +123,7 @@ const ContentAreaComponent = ({
             conversations={conversations}
             loading={loading}
             submitting={submitting}
+            sessionId={sessionId}
             onQuerySubmit={onQuerySubmit}
             onDataUpload={onDataUpload}
             failedOperations={failedOperations}
