@@ -12,7 +12,9 @@ import {
   Source,
   SuggestedAction,
   EvidenceRequest,
-  InvestigationMode
+  InvestigationMode,
+  Hypothesis,
+  TestResult
 } from '../api';
 
 import { CaseStatus, UserCase } from '../../types/case';
@@ -47,6 +49,11 @@ export interface ConversationItem {
   } | null;
   nextActionHint?: string | null;
   requiresAction?: boolean;
+
+  // Hypothesis tracking fields (reconnected features)
+  newHypotheses?: Hypothesis[];
+  hypothesisTested?: string | null;
+  testResult?: TestResult | null;
 
   // Additional properties for optimistic updates (optional in base)
   role?: 'user' | 'assistant' | 'system';

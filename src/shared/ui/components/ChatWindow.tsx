@@ -11,7 +11,9 @@ import {
   CommandValidation,
   ScopeAssessment,
   UserCaseStatus,
-  getStatusChangeMessage
+  getStatusChangeMessage,
+  Hypothesis,
+  TestResult
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
 import { InvestigationProgressIndicator } from "./InvestigationProgressIndicator";
@@ -69,6 +71,12 @@ interface ConversationItem {
   } | null;
   nextActionHint?: string | null;
   requiresAction?: boolean;
+
+  // Hypothesis tracking fields (reconnected features)
+  newHypotheses?: Hypothesis[];
+  hypothesisTested?: string | null;
+  testResult?: TestResult | null;
+
   // Optimistic update metadata
   optimistic?: boolean;
   loading?: boolean;
@@ -372,6 +380,78 @@ const ChatWindowComponent = function ChatWindow({
                       <ScopeAssessmentDisplay assessment={item.scopeAssessment} />
                     )}
 
+                    {/* Investigation Plan - Reconnected Feature */}
+                    {item.plan && (
+                      <div className="mt-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded text-xs">
+                        <div className="font-semibold text-indigo-800 dark:text-indigo-200 mb-2 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          📋 Investigation Plan - Step {item.plan.step_number}
+                        </div>
+                        <div className="space-y-2">
+                          <div className="p-2 bg-white dark:bg-gray-800 rounded border border-indigo-100 dark:border-indigo-900">
+                            <div className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">
+                              {item.plan.action}
+                            </div>
+                            <div className="text-gray-700 dark:text-gray-300 text-[11px] mb-2">
+                              {item.plan.description}
+                            </div>
+                            {item.plan.estimated_time && (
+                              <div className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                </svg>
+                                <span>Estimated time: {item.plan.estimated_time}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Suggested Actions - Reconnected Feature */}
+                    {item.suggestedActions && item.suggestedActions.length > 0 && (
+                      <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-xs">
+                        <div className="font-semibold text-amber-800 dark:text-amber-200 mb-2 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                          </svg>
+                          ⚡ Quick Actions
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {item.suggestedActions.map((action, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                if (action.type === 'question_template' && canInteract && !loading) {
+                                  onQuerySubmit(action.payload);
+                                } else if (action.type === 'command') {
+                                  navigator.clipboard.writeText(action.payload);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                                action.type === 'question_template'
+                                  ? 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200'
+                                  : action.type === 'command'
+                                  ? 'bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200'
+                                  : action.type === 'upload_data'
+                                  ? 'bg-purple-100 hover:bg-purple-200 dark:bg-purple-900 dark:hover:bg-purple-800 text-purple-800 dark:text-purple-200'
+                                  : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
+                              }`}
+                              disabled={!canInteract || loading}
+                            >
+                              <span className="flex items-center gap-1">
+                                {action.icon && <span>{action.icon}</span>}
+                                {action.label}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {item.clarifyingQuestions && item.clarifyingQuestions.length > 0 && (
                       <ClarifyingQuestions
                         questions={item.clarifyingQuestions}
@@ -395,6 +475,118 @@ const ChatWindowComponent = function ChatWindow({
 
                     {item.commandValidation && (
                       <CommandValidationDisplay validation={item.commandValidation} />
+                    )}
+
+                    {/* Next Action Hint - Reconnected Feature */}
+                    {item.nextActionHint && (
+                      <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded text-xs text-blue-800 dark:text-blue-200">
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          <div>
+                            <div className="font-semibold mb-1">💡 Next Action</div>
+                            <div>{item.nextActionHint}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* New Hypotheses - Reconnected Feature */}
+                    {item.newHypotheses && item.newHypotheses.length > 0 && (
+                      <div className="mt-2 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded text-xs">
+                        <div className="font-semibold text-purple-800 dark:text-purple-200 mb-2 flex items-center gap-1">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                          </svg>
+                          🧪 New Hypotheses Generated
+                        </div>
+                        <div className="space-y-2">
+                          {item.newHypotheses.map((hypothesis, idx) => (
+                            <div key={idx} className="p-2 bg-white dark:bg-gray-800 rounded border border-purple-100 dark:border-purple-900">
+                              <div className="font-medium text-purple-900 dark:text-purple-100 mb-1">
+                                {hypothesis.statement}
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-gray-600 dark:text-gray-400 mb-1">
+                                <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900 rounded">
+                                  {hypothesis.category}
+                                </span>
+                                <span>Likelihood: {(hypothesis.likelihood * 100).toFixed(0)}%</span>
+                                <span className={`px-1.5 py-0.5 rounded ${
+                                  hypothesis.status === 'validated' ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' :
+                                  hypothesis.status === 'refuted' ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' :
+                                  hypothesis.status === 'testing' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200' :
+                                  'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                                }`}>
+                                  {hypothesis.status}
+                                </span>
+                              </div>
+                              {hypothesis.testing_strategy && (
+                                <div className="text-[10px] text-gray-600 dark:text-gray-400 mt-1">
+                                  <span className="font-medium">Testing:</span> {hypothesis.testing_strategy}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hypothesis Test Results - Reconnected Feature */}
+                    {item.hypothesisTested && item.testResult && (
+                      <div className={`mt-2 p-3 rounded text-xs border ${
+                        item.testResult.outcome === 'supports' ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
+                        item.testResult.outcome === 'refutes' ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' :
+                        'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                      }`}>
+                        <div className={`font-semibold mb-2 flex items-center gap-2 ${
+                          item.testResult.outcome === 'supports' ? 'text-green-800 dark:text-green-200' :
+                          item.testResult.outcome === 'refutes' ? 'text-red-800 dark:text-red-200' :
+                          'text-yellow-800 dark:text-yellow-200'
+                        }`}>
+                          {item.testResult.outcome === 'supports' && (
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          {item.testResult.outcome === 'refutes' && (
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          {item.testResult.outcome === 'inconclusive' && (
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          <span>
+                            {item.testResult.outcome === 'supports' ? '✅ Hypothesis Supported' :
+                             item.testResult.outcome === 'refutes' ? '❌ Hypothesis Refuted' :
+                             '❓ Inconclusive Test'}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">Tested Hypothesis:</div>
+                            <div className="text-gray-700 dark:text-gray-300 italic">{item.hypothesisTested}</div>
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">Test: {item.testResult.test_description}</div>
+                            <div className="text-gray-700 dark:text-gray-300">{item.testResult.evidence_summary}</div>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px]">
+                            <span className="font-medium">Confidence Impact:</span>
+                            <span className={`px-2 py-0.5 rounded ${
+                              item.testResult.confidence_impact > 0 ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' :
+                              item.testResult.confidence_impact < 0 ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' :
+                              'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                            }`}>
+                              {item.testResult.confidence_impact > 0 ? '+' : ''}{(item.testResult.confidence_impact * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     )}
 
                     <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
