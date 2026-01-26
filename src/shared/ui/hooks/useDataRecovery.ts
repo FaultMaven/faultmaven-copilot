@@ -6,7 +6,7 @@
  * Extracted from SidePanelApp to reduce component complexity.
  */
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
 import { pendingOpsManager, IdMappingState, idMappingManager } from '../../../lib/optimistic';
@@ -38,6 +38,16 @@ export function useDataRecovery(
     isRecovering: false,
     error: null,
     recoveredCases: 0
+  });
+
+  // Store stable references to callbacks to prevent useEffect from re-running
+  const onDataRecoveredRef = useRef(onDataRecovered);
+  const onErrorRef = useRef(onError);
+
+  // Update refs when callbacks change (without triggering useEffect)
+  useEffect(() => {
+    onDataRecoveredRef.current = onDataRecovered;
+    onErrorRef.current = onError;
   });
 
   useEffect(() => {
@@ -87,7 +97,7 @@ export function useDataRecovery(
             });
 
             if (recoveryResult.errors.length > 0) {
-              onError(`Failed to recover conversations: ${recoveryResult.errors[0]}`);
+              onErrorRef.current(`Failed to recover conversations: ${recoveryResult.errors[0]}`);
             }
           }
         }
@@ -144,7 +154,7 @@ export function useDataRecovery(
         }
 
         // Notify parent component
-        onDataRecovered(recoveredData);
+        onDataRecoveredRef.current(recoveredData);
 
         // Mark persistence loading complete
         await PersistenceManager.markSyncComplete();
@@ -158,12 +168,12 @@ export function useDataRecovery(
           error: errorMessage,
           recoveredCases: 0
         });
-        onError(errorMessage);
+        onErrorRef.current(errorMessage);
       }
     };
 
     loadPersistedDataWithRecovery();
-  }, [onDataRecovered, onError]);
+  }, []); // Empty dependency array - run only once on mount
 
   const forceRecovery = useCallback(async () => {
     try {

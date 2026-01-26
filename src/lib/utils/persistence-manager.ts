@@ -49,7 +49,7 @@ export interface RecoveryResult {
   recoveredCases: number;
   recoveredConversations: number;
   errors: string[];
-  strategy: 'full_recovery' | 'partial_recovery' | 'no_recovery_needed';
+  strategy: 'full_recovery' | 'partial_recovery' | 'metadata_only_recovery' | 'no_recovery_needed';
 }
 
 /**
@@ -61,16 +61,22 @@ export class PersistenceManager {
   private static readonly VERSION_KEY = 'faultmaven_extension_version';
   private static readonly RELOAD_FLAG_KEY = 'faultmaven_reload_detected';
   private static readonly SESSION_ID_KEY = 'faultmaven_session_id';
+  private static readonly LAST_RECOVERY_KEY = 'faultmaven_last_recovery_attempt';
 
   // Extension version for detecting updates/reloads
   private static readonly CURRENT_VERSION = browser.runtime.getManifest?.()?.version || '1.0.0';
 
+  // Minimum time between recovery attempts (5 minutes)
+  private static readonly RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
+
   /**
-   * Robust reload detection using lifecycle flags and structural analysis:
+   * Deterministic reload detection using reliable signals only:
    * 1. Explicit reload flag set during extension lifecycle events
    * 2. Extension version mismatch (update scenario)
    * 3. Session ID mismatch (runtime context changed)
-   * 4. Structural inconsistency (titles exist but no conversations)
+   *
+   * NOTE: Heuristic checks (structural inconsistency) removed - cannot distinguish
+   * "currently loading" from "lost data", causing false positives on login flow.
    */
   static async detectExtensionReload(): Promise<boolean> {
     try {
@@ -85,9 +91,24 @@ export class PersistenceManager {
         'conversations',
         PersistenceManager.VERSION_KEY,
         PersistenceManager.RELOAD_FLAG_KEY,
-        PersistenceManager.SESSION_ID_KEY
+        PersistenceManager.SESSION_ID_KEY,
+        PersistenceManager.LAST_RECOVERY_KEY
       ]);
 
+      // Check recovery cooldown - prevent excessive recovery attempts
+      const lastRecovery = stored[PersistenceManager.LAST_RECOVERY_KEY];
+      if (lastRecovery) {
+        const timeSinceLastRecovery = Date.now() - lastRecovery;
+        if (timeSinceLastRecovery < PersistenceManager.RECOVERY_COOLDOWN_MS) {
+          console.log('[PersistenceManager] Recovery cooldown active:', {
+            timeSinceLastRecovery: `${Math.round(timeSinceLastRecovery / 1000)}s`,
+            cooldownRemaining: `${Math.round((PersistenceManager.RECOVERY_COOLDOWN_MS - timeSinceLastRecovery) / 1000)}s`
+          });
+          return false; // Skip recovery if cooldown is active
+        }
+      }
+
+      // DETERMINISTIC SIGNALS ONLY (Reliable)
       // Method 1: Explicit reload flag (most reliable)
       const hasReloadFlag = !!stored[PersistenceManager.RELOAD_FLAG_KEY];
 
@@ -99,17 +120,12 @@ export class PersistenceManager {
       const sessionMismatch = stored[PersistenceManager.SESSION_ID_KEY] &&
                              stored[PersistenceManager.SESSION_ID_KEY] !== currentSessionId;
 
-      // Method 4: Structural inconsistency (titles exist but conversations missing/empty)
-      const hasAnyTitles = stored.conversationTitles && Object.keys(stored.conversationTitles).length > 0;
-      const hasNoConversations = !stored.conversations ||
-                                 Object.keys(stored.conversations).length === 0 ||
-                                 Object.values(stored.conversations).every((conv: any) =>
-                                   !Array.isArray(conv) || conv.length === 0
-                                 );
-      const structuralMismatch = hasAnyTitles && hasNoConversations;
+      // REMOVED: Method 4 "Structural inconsistency" - UNRELIABLE & DANGEROUS
+      // Why removed: Cannot distinguish "currently loading" from "lost data"
+      // This heuristic caused the retry storm by triggering on normal login flow
 
-      // Recovery needed if ANY indicator is true
-      const shouldRecover = hasReloadFlag || versionMismatch || sessionMismatch || structuralMismatch;
+      // Recovery needed if ANY DETERMINISTIC indicator is true
+      const shouldRecover = hasReloadFlag || versionMismatch || sessionMismatch;
 
       console.log('[PersistenceManager] Reload detection:', {
         isAuthenticated,
@@ -117,8 +133,7 @@ export class PersistenceManager {
         indicators: {
           reloadFlag: hasReloadFlag,
           versionMismatch,
-          sessionMismatch,
-          structuralMismatch
+          sessionMismatch
         },
         state: {
           titleCount: stored.conversationTitles ? Object.keys(stored.conversationTitles).length : 0,
@@ -131,8 +146,7 @@ export class PersistenceManager {
         reason: shouldRecover ? (
           hasReloadFlag ? 'explicit_reload_flag' :
           versionMismatch ? 'version_mismatch' :
-          sessionMismatch ? 'session_id_mismatch' :
-          'structural_inconsistency'
+          'session_id_mismatch'
         ) : 'no_recovery_needed'
       });
 
@@ -185,8 +199,12 @@ export class PersistenceManager {
     };
 
     try {
-      // Set recovery flag to prevent concurrent recovery attempts
-      await browser.storage.local.set({ [PersistenceManager.RECOVERY_FLAG_KEY]: true });
+      // Set recovery flag and timestamp to prevent concurrent recovery attempts
+      const now = Date.now();
+      await browser.storage.local.set({
+        [PersistenceManager.RECOVERY_FLAG_KEY]: true,
+        [PersistenceManager.LAST_RECOVERY_KEY]: now
+      });
 
       console.log('[PersistenceManager] 🔄 Starting conversation recovery from backend...');
 
@@ -197,13 +215,16 @@ export class PersistenceManager {
         return result;
       }
 
-      // Fetch all user cases from backend
-      console.log('[PersistenceManager] 📡 Fetching user cases from backend...');
+      // HYBRID STRATEGY: Auto-List / Lazy-Detail
+      // Only fetch case metadata (IDs, titles, dates) - NOT conversation details
+      // Conversations will be lazy-loaded when user opens a specific case
+
+      console.log('[PersistenceManager] 📡 Fetching case list (metadata only) from backend...');
       const cases: UserCase[] = await getUserCases({
-        limit: 100 // Get up to 100 recent cases
+        limit: 50 // Reasonable default for initial load
       });
 
-      console.log('[PersistenceManager] ✅ Retrieved cases from backend:', {
+      console.log('[PersistenceManager] ✅ Retrieved case list from backend:', {
         count: cases.length,
         caseIds: cases.map(c => c.case_id)
       });
@@ -218,177 +239,35 @@ export class PersistenceManager {
       // Prepare recovery data structures
       const recoveredTitles: Record<string, string> = {};
       const recoveredTitleSources: Record<string, 'user' | 'backend' | 'system'> = {};
+
+      // NO conversation fetching - conversations are empty/null until lazy-loaded
       const recoveredConversations: Record<string, OptimisticConversationItem[]> = {};
 
-      // PARALLEL RECOVERY: Fetch conversations with concurrency limit to avoid overwhelming the API
-      const CONCURRENCY_LIMIT = 5; // Process 5 cases at a time
-      let conversationCount = 0;
+      // Process case metadata only (no conversation fetching)
+      console.log('[PersistenceManager] 📋 Processing case metadata...');
+      for (const userCase of cases) {
+        // Extract metadata only
+        recoveredTitles[userCase.case_id] = userCase.title || `Chat-${new Date(userCase.created_at || Date.now()).toLocaleString()}`;
+        recoveredTitleSources[userCase.case_id] = 'backend';
 
-      // Helper function to process a single case
-      const processCase = async (userCase: UserCase) => {
-        try {
-          console.log('[PersistenceManager] 🔄 Recovering case:', userCase.case_id);
+        // Mark conversations as empty (will be lazy-loaded on case open)
+        // Empty array signals UI that conversation needs to be fetched
+        recoveredConversations[userCase.case_id] = [];
 
-          // Set case title
-          recoveredTitles[userCase.case_id] = userCase.title || `Chat-${new Date(userCase.created_at || Date.now()).toLocaleString()}`;
-          recoveredTitleSources[userCase.case_id] = 'backend';
-
-          // Fetch conversation for this case with debug info enabled
-          console.log('[PersistenceManager] 📡 Fetching conversation for case:', userCase.case_id);
-          const conversationData: EnhancedCaseMessagesResponse = await getCaseConversation(userCase.case_id, true);
-
-          console.log('[PersistenceManager] 📄 Enhanced conversation data:', {
-            caseId: userCase.case_id,
-            totalCount: conversationData.total_count,
-            retrievedCount: conversationData.retrieved_count,
-            hasMore: conversationData.has_more,
-            messagesLength: conversationData.messages?.length || 0,
-            debugInfo: conversationData.debug_info
-          });
-
-          // Check for retrieval issues
-          if (conversationData.total_count > 0 && conversationData.retrieved_count === 0) {
-            const errorMsg = `Message retrieval failed for case ${userCase.case_id}: total=${conversationData.total_count}, retrieved=0`;
-            console.error('[PersistenceManager] 🚨', errorMsg);
-            result.errors.push(errorMsg);
-            if (conversationData.debug_info?.storage_errors?.length) {
-              result.errors.push(...conversationData.debug_info.storage_errors);
-            }
-          }
-
-          const messages: BackendMessage[] = conversationData.messages || [];
-
-          // Debug: Log the actual message structure to understand what we're receiving
-          console.log('[PersistenceManager] 🔍 Message details for case:', userCase.case_id, {
-            totalMessages: messages.length,
-            messages: messages.map(m => ({
-              id: m.message_id || m.id,
-              role: m.role,
-              contentPreview: m.content.substring(0, 50) + '...',
-              created_at: m.created_at
-            }))
-          });
-
-          // Convert to optimistic format for UI compatibility
-          // Pair user messages with agent responses to create proper conversation items
-          const optimisticMessages: OptimisticConversationItem[] = [];
-
-          for (let i = 0; i < messages.length; i++) {
-            const msg = messages[i];
-
-            if (msg.role === 'user') {
-              // Find the corresponding agent response (next message or search ahead)
-              const agentResponse = messages.find((m, idx) =>
-                idx > i && (m.role === 'agent' || m.role === 'assistant')
-              );
-
-              const conversationItem: OptimisticConversationItem = {
-                id: msg.id || `recovered_${userCase.case_id}_${i}`,
-                question: msg.content,
-                response: agentResponse ? agentResponse.content : '', // Empty if no response yet
-                error: false,
-                timestamp: msg.created_at, // Use ISO 8601 format from backend
-                optimistic: false, // Backend messages are confirmed
-                loading: !agentResponse, // Still loading if no response
-                failed: false,
-                originalId: msg.id || `recovered_${userCase.case_id}_${i}`,
-                role: 'user',
-                content: msg.content
-              };
-
-              optimisticMessages.push(conversationItem);
-            }
-            // Skip agent messages as they're already included as responses
-          }
-
-          // If we only have agent messages (edge case), create items for them
-          if (optimisticMessages.length === 0 && messages.some(m => m.role === 'agent' || m.role === 'assistant')) {
-            messages.forEach((msg, index) => {
-              if (msg.role === 'agent' || msg.role === 'assistant') {
-                optimisticMessages.push({
-                  id: msg.id || `recovered_agent_${userCase.case_id}_${index}`,
-                  question: '', // No user question found
-                  response: msg.content,
-                  error: false,
-                  timestamp: msg.created_at, // Use ISO 8601 format from backend
-                  optimistic: false,
-                  loading: false,
-                  failed: false,
-                  originalId: msg.id || `recovered_agent_${userCase.case_id}_${index}`,
-                  role: 'assistant',
-                  content: msg.content
-                });
-              }
-            });
-          }
-
-          // Only store conversations with actual content
-          if (optimisticMessages.length > 0) {
-            recoveredConversations[userCase.case_id] = optimisticMessages;
-            conversationCount += messages.length;
-            result.recoveredConversations++;
-
-            console.log('[PersistenceManager] ✅ Recovered conversation for case:', {
-              caseId: userCase.case_id,
-              messageCount: messages.length,
-              retrievedCount: conversationData.retrieved_count,
-              totalCount: conversationData.total_count,
-              title: recoveredTitles[userCase.case_id]
-            });
-          } else {
-            // Enhanced logging for empty conversations
-            if (conversationData.total_count > 0) {
-              console.warn('[PersistenceManager] ⚠️ Case has messages but none retrieved:', {
-                caseId: userCase.case_id,
-                totalCount: conversationData.total_count,
-                retrievedCount: conversationData.retrieved_count,
-                debugInfo: conversationData.debug_info
-              });
-            } else {
-              console.log('[PersistenceManager] ⚪ Skipping empty conversation for case:', userCase.case_id);
-            }
-          }
-
-          result.recoveredCases++;
-          return { success: true, caseId: userCase.case_id };
-
-        } catch (error) {
-          console.warn('[PersistenceManager] ⚠️ Failed to recover case:', userCase.case_id, error);
-          result.errors.push(`Failed to recover case ${userCase.case_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-          // Still add the case title even if conversation failed
-          recoveredTitles[userCase.case_id] = userCase.title || `Chat-${new Date(userCase.created_at || Date.now()).toLocaleString()}`;
-          recoveredTitleSources[userCase.case_id] = 'backend';
-          return { success: false, caseId: userCase.case_id, error };
-        }
-      };
-
-      // Parallel processing with concurrency limit
-      console.log('[PersistenceManager] 📦 Processing cases in parallel (concurrency:', CONCURRENCY_LIMIT, ')');
-      const results: Array<{ success: boolean; caseId: string; error?: any }> = [];
-
-      for (let i = 0; i < cases.length; i += CONCURRENCY_LIMIT) {
-        const batch = cases.slice(i, i + CONCURRENCY_LIMIT);
-        console.log(`[PersistenceManager] 🔄 Processing batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1}/${Math.ceil(cases.length / CONCURRENCY_LIMIT)}`);
-
-        const batchResults = await Promise.all(batch.map(processCase));
-        results.push(...batchResults);
+        result.recoveredCases++;
       }
 
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.filter(r => !r.success).length;
-      console.log('[PersistenceManager] ✅ Parallel processing complete:', {
-        total: results.length,
-        successful: successCount,
-        failed: failureCount
+      console.log('[PersistenceManager] ✅ Recovered case list:', {
+        totalCases: cases.length,
+        caseIds: cases.map(c => c.case_id)
       });
 
       // Save recovered data to local storage
-      console.log('[PersistenceManager] 💾 Saving recovered data to local storage...');
+      console.log('[PersistenceManager] 💾 Saving recovered metadata to local storage...');
       await browser.storage.local.set({
         conversationTitles: recoveredTitles,
         titleSources: recoveredTitleSources,
-        conversations: recoveredConversations,
+        conversations: recoveredConversations, // Empty arrays - lazy-loaded on demand
         [PersistenceManager.SYNC_TIMESTAMP_KEY]: Date.now(),
         [PersistenceManager.VERSION_KEY]: PersistenceManager.CURRENT_VERSION,
         [PersistenceManager.SESSION_ID_KEY]: browser.runtime.id
@@ -397,11 +276,14 @@ export class PersistenceManager {
       // Clear reload flag after successful recovery
       await PersistenceManager.clearReloadFlag();
 
-      // Success metrics - use the count from the result object which tracks actual recovered conversations
+      // Success metrics
       result.success = true;
-      result.strategy = result.recoveredConversations > 0 ? 'full_recovery' : 'partial_recovery';
+      result.strategy = 'metadata_only_recovery'; // New strategy: list only, conversations lazy-loaded
 
-      console.log('[PersistenceManager] ✅ Conversation recovery completed successfully:', result);
+      console.log('[PersistenceManager] ✅ Metadata recovery completed successfully:', {
+        recoveredCases: result.recoveredCases,
+        strategy: result.strategy
+      });
 
       return result;
 

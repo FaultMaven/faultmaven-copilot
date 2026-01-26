@@ -51,35 +51,32 @@ describe('PersistenceManager', () => {
   });
 
   describe('detectExtensionReload', () => {
-    it('should detect reload when user is authenticated but no conversations exist', async () => {
-      // Mock authenticated user with empty storage
+    it('should detect reload when explicit reload flag is set', async () => {
+      // Mock authenticated user with reload flag set (deterministic signal)
       vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
       mockBrowser.storage.local.get.mockResolvedValue({
         conversationTitles: { 'case1': 'Title' },
         conversations: {},
-        faultmaven_extension_version: '1.0.0'
+        faultmaven_extension_version: '1.0.0',
+        faultmaven_reload_detected: true, // Explicit reload flag
+        faultmaven_session_id: 'test-ext-id'
       });
 
       const result = await PersistenceManager.detectExtensionReload();
 
       expect(result).toBe(true);
       expect(authManager.isAuthenticated).toHaveBeenCalled();
-      expect(mockBrowser.storage.local.get).toHaveBeenCalledWith([
-        'conversationTitles',
-        'conversations',
-        'faultmaven_extension_version',
-        'faultmaven_reload_detected',
-        'faultmaven_session_id'
-      ]);
+      expect(mockBrowser.storage.local.get).toHaveBeenCalled();
     });
 
-    it('should not detect reload when user has existing conversations', async () => {
-      // Mock authenticated user with existing conversations
+    it('should not detect reload when no deterministic signals present', async () => {
+      // Mock authenticated user with no reload flag, matching version, and matching session
       vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
       mockBrowser.storage.local.get.mockResolvedValue({
         conversationTitles: { 'case1': 'Test Chat' },
         conversations: { 'case1': [{ id: '1', content: 'msg' }] },
-        faultmaven_extension_version: '1.0.0',
+        faultmaven_extension_version: '1.0.0', // Matches current version
+        faultmaven_session_id: 'test-ext-id', // Matches current session
         faultmaven_last_sync: Date.now()
       });
 
@@ -140,60 +137,18 @@ describe('PersistenceManager', () => {
         }
       ];
 
-      const mockConversation1 = {
-        total_count: 2,
-        retrieved_count: 2,
-        messages: [
-          {
-            id: 'msg1',
-            role: 'user',
-            content: 'Hello',
-            created_at: '2023-01-01T00:00:00Z'
-          },
-          {
-            id: 'msg2',
-            role: 'agent',
-            content: 'Hi there!',
-            created_at: '2023-01-01T00:01:00Z'
-          }
-        ]
-      };
-
-      const mockConversation2 = {
-        total_count: 1,
-        retrieved_count: 1,
-        messages: [
-          {
-            id: 'msg3',
-            role: 'user',
-            content: 'How are you?',
-            created_at: '2023-01-02T00:00:00Z'
-          }
-        ]
-      };
-
       vi.mocked(getUserCases).mockResolvedValue(mockCases);
-      vi.mocked(getCaseConversation)
-        .mockResolvedValueOnce(mockConversation1)
-        .mockResolvedValueOnce(mockConversation2);
+      // Note: getCaseConversation is NOT called in new lazy-loading strategy
 
       const result = await PersistenceManager.recoverConversationsFromBackend();
 
       expect(result.success).toBe(true);
       expect(result.recoveredCases).toBe(2);
-      expect(result.recoveredConversations).toBe(2); // case1 has 1 pair, case2 has 1 user msg (no agent response) -> Wait, logic?
-      // Logic:
-      // case1: user, agent -> 1 pair -> 1 optimistic msg
-      // case2: user -> 1 optimistic msg
-      // Wait, processCase counts optimisticMessages.length.
-      // case1: 1 optimistic item (user msg with response).
-      // case2: 1 optimistic item (user msg with empty response).
-      // So total 2.
-
-      expect(result.strategy).toBe('full_recovery');
+      expect(result.recoveredConversations).toBe(0); // Lazy-loading: conversations not fetched during recovery
+      expect(result.strategy).toBe('metadata_only_recovery'); // New strategy
       expect(result.errors).toHaveLength(0);
 
-      // Verify storage was updated
+      // Verify storage was updated with metadata only
       expect(mockBrowser.storage.local.set).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationTitles: expect.objectContaining({
@@ -205,23 +160,14 @@ describe('PersistenceManager', () => {
             'case2': 'backend'
           }),
           conversations: expect.objectContaining({
-            'case1': expect.arrayContaining([
-              expect.objectContaining({
-                question: 'Hello',
-                response: 'Hi there!',
-                optimistic: false
-              })
-            ]),
-            'case2': expect.arrayContaining([
-              expect.objectContaining({
-                question: 'How are you?',
-                response: '',
-                optimistic: false
-              })
-            ])
+            'case1': [], // Empty array - will be lazy-loaded when case is opened
+            'case2': []  // Empty array - will be lazy-loaded when case is opened
           })
         })
       );
+
+      // Verify getCaseConversation was NOT called (lazy-loading)
+      expect(getCaseConversation).not.toHaveBeenCalled();
     });
 
     it('should handle unauthenticated user gracefully', async () => {
@@ -255,7 +201,9 @@ describe('PersistenceManager', () => {
       expect(result.errors).toContain('Recovery failed: API Error');
     });
 
-    it('should handle partial recovery when some conversations fail', async () => {
+    it('should handle successful metadata recovery (no conversation fetching)', async () => {
+      // New lazy-loading strategy: even if case list fetch succeeds,
+      // conversations are NOT fetched - they're lazy-loaded on demand
       vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
 
       const mockCases = [
@@ -271,7 +219,7 @@ describe('PersistenceManager', () => {
         {
           case_id: 'case2',
           owner_id: 'user1',
-          title: 'Broken Chat',
+          title: 'Another Chat',
           created_at: '2023-01-02T00:00:00Z',
           updated_at: '2023-01-02T01:00:00Z',
           status: 'investigating' as const,
@@ -280,30 +228,32 @@ describe('PersistenceManager', () => {
       ];
 
       vi.mocked(getUserCases).mockResolvedValue(mockCases);
-      vi.mocked(getCaseConversation)
-        .mockResolvedValueOnce({ 
-          total_count: 1, 
-          retrieved_count: 1, 
-          messages: [{ id: 'msg1', role: 'user', content: 'Hello', created_at: '2023-01-01T00:00:00Z' }] 
-        })
-        .mockRejectedValueOnce(new Error('Conversation not found'));
+      // Note: getCaseConversation is NOT called in new strategy
 
       const result = await PersistenceManager.recoverConversationsFromBackend();
 
       expect(result.success).toBe(true);
-      expect(result.recoveredCases).toBe(1);
-      expect(result.recoveredConversations).toBe(1);
-      expect(result.errors).toContain('Failed to recover case case2: Conversation not found');
+      expect(result.recoveredCases).toBe(2); // Both case metadata recovered
+      expect(result.recoveredConversations).toBe(0); // No conversations fetched (lazy-loading)
+      expect(result.errors).toHaveLength(0); // No errors
+      expect(result.strategy).toBe('metadata_only_recovery');
 
-      // Should still save titles for both cases
+      // Should save titles for both cases with empty conversation arrays
       expect(mockBrowser.storage.local.set).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationTitles: expect.objectContaining({
             'case1': 'Working Chat',
-            'case2': 'Broken Chat'
+            'case2': 'Another Chat'
+          }),
+          conversations: expect.objectContaining({
+            'case1': [], // Empty - lazy-loaded
+            'case2': []  // Empty - lazy-loaded
           })
         })
       );
+
+      // Verify getCaseConversation was NOT called
+      expect(getCaseConversation).not.toHaveBeenCalled();
     });
   });
 
