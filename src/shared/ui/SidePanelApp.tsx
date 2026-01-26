@@ -8,6 +8,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { ErrorScreen } from "./components/ErrorScreen";
+import { AuthScreen } from "./components/AuthScreen";
 import { capabilitiesManager, type BackendCapabilities } from "../../lib/capabilities";
 import { createLogger } from "../../lib/utils/logger";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
@@ -15,8 +16,8 @@ import DocumentDetailsModal from "./components/DocumentDetailsModal";
 const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
-import { getKnowledgeDocument } from "../../lib/api";
-import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation } from "../../lib/optimistic";
+import { getKnowledgeDocument, createCase, CreateCaseRequest } from "../../lib/api";
+import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
 
 // Layouts
 import { CollapsibleNavigation, ContentArea } from "./layouts";
@@ -157,9 +158,92 @@ function SidePanelAppContent() {
     setConversationTitles,
     setTitleSources,
     setInvestigationProgress,
-    createOptimisticCaseInBackground: async (id, title) => {
-      // This needs to be implemented or extracted if not fully covered by useMessageSubmission
-      // For now, useMessageSubmission handles the optimistic logic internally
+    createOptimisticCaseInBackground: async (optimisticId, title) => {
+      try {
+        log.info('Creating case on backend', { optimisticId, title });
+
+        // Create the case on the backend
+        const caseRequest: CreateCaseRequest = {
+          title: title || 'New troubleshooting case',
+          priority: 'low'
+        };
+
+        const newCase = await createCase(caseRequest);
+        const realCaseId = newCase.case_id;
+
+        log.info('Case created on backend', { optimisticId, realCaseId });
+
+        // Update ID mapping
+        idMappingManager.addMapping(optimisticId, realCaseId);
+
+        // Replace optimistic ID with real ID in all state
+        setActiveCaseId(realCaseId);
+
+        // Update conversations - move from optimistic ID to real ID
+        setConversations(prev => {
+          const optimisticConversation = prev[optimisticId];
+          if (!optimisticConversation) return prev;
+
+          const updated = { ...prev };
+          delete updated[optimisticId];
+          updated[realCaseId] = optimisticConversation;
+          return updated;
+        });
+
+        // Update conversation titles
+        setConversationTitles(prev => {
+          const updated = { ...prev };
+          const optimisticTitle = prev[optimisticId];
+
+          // Always set the real case ID title (either from optimistic or from backend)
+          updated[realCaseId] = newCase.title || optimisticTitle || title || 'New troubleshooting case';
+
+          // Remove optimistic ID if different
+          if (optimisticId !== realCaseId && updated[optimisticId]) {
+            delete updated[optimisticId];
+          }
+
+          return updated;
+        });
+
+        // Update title sources
+        setTitleSources(prev => {
+          const optimisticSource = prev[optimisticId];
+          if (!optimisticSource) return prev;
+
+          const updated = { ...prev };
+          delete updated[optimisticId];
+          updated[realCaseId] = 'backend';
+          return updated;
+        });
+
+        // Remove optimistic case (real case will come from getUserCases() API)
+        setOptimisticCases(prev => {
+          // Remove the reconciled optimistic case
+          // Real cases are loaded separately via getUserCases() API
+          return prev.filter(c => c.case_id !== optimisticId);
+        });
+
+        // Update active case
+        setActiveCase(newCase);
+
+        // Persist to storage
+        await browser.storage.local.set({
+          faultmaven_current_case: realCaseId
+        });
+
+        log.info('Case ID reconciliation completed', { optimisticId, realCaseId });
+
+        // Trigger case list refresh to load the new case from backend
+        setRefreshSessions(prev => prev + 1);
+
+        // Return the real case ID for immediate use
+        return realCaseId;
+
+      } catch (error) {
+        log.error('Failed to create case on backend', error);
+        throw error;
+      }
     },
     refreshSession: async () => {
         return refreshSession();
@@ -238,22 +322,15 @@ function SidePanelAppContent() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleLogin = async () => {
-    try {
-      // Initiate Dashboard OAuth flow (opens /auth/authorize with PKCE challenge)
-      // This follows the OAuth 2.0 Authorization Code Flow with PKCE as designed
-      const response = await browser.runtime.sendMessage({
-        action: 'initiateOIDCLogin'  // Triggers OAuth flow in background.ts:handleInitiateDashboardOAuth()
-      });
+  const handleAuthSuccess = async () => {
+    // Auth successful - wait a moment for storage to sync, then check auth state
+    log.info('Authentication successful, checking auth state');
 
-      if (response?.status !== 'success') {
-        log.error('Failed to initiate Dashboard OAuth:', response?.message);
-        showError('Failed to start authentication. Please try again.');
-      }
-    } catch (error) {
-      log.error('OAuth initiation failed:', error);
-      showError('Failed to start authentication. Please try again.');
-    }
+    // Small delay to ensure storage sync completes
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Force reload to trigger useAuth's checkAuth
+    window.location.reload();
   };
 
   const handleLogout = async () => {
@@ -265,10 +342,16 @@ function SidePanelAppContent() {
   };
 
   const handleNewChatFromNav = () => {
+    console.log('[SidePanelApp] handleNewChatFromNav called - setting up new chat');
     setActiveTab('copilot');
     setActiveCaseId(null);
     setActiveCase(null);
     setHasUnsavedNewChat(true);
+    console.log('[SidePanelApp] New chat state updated:', {
+      activeTab: 'copilot',
+      activeCaseId: null,
+      hasUnsavedNewChat: true
+    });
   };
 
   const handleCaseSelect = async (caseId: string) => {
@@ -327,20 +410,7 @@ function SidePanelAppContent() {
   if (!isAuthenticated) {
     return (
       <ErrorBoundary>
-        <div className="flex h-screen bg-gray-50 text-gray-800 text-sm font-sans items-center justify-center">
-          <div className="bg-white border border-gray-200 rounded-lg p-6 w-full max-w-sm shadow-sm text-center">
-            <img src="/icon/square-light.svg" alt="FaultMaven" className="w-12 h-12 mx-auto mb-2" />
-            <h2 className="text-base font-semibold text-gray-800">Welcome to FaultMaven</h2>
-            <p className="text-xs text-gray-500 mb-4">Sign in to start working</p>
-            {authError && <div className="text-xs text-red-600 mb-4">{authError}</div>}
-            <button
-              onClick={handleLogin}
-              className="w-full px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"
-            >
-              <span>Sign In to Work</span>
-            </button>
-          </div>
-        </div>
+        <AuthScreen onAuthSuccess={handleAuthSuccess} />
       </ErrorBoundary>
     );
   }

@@ -76,8 +76,16 @@ const ContentAreaComponent = ({
 }: ContentAreaProps) => {
   // Render chat content (copilot tab)
   const renderChatContent = () => {
+    console.log('[ContentArea] Rendering chat content:', {
+      activeCaseId,
+      hasUnsavedNewChat,
+      shouldShowEmptyState: !activeCaseId && !hasUnsavedNewChat,
+      shouldShowChat: activeCaseId || hasUnsavedNewChat
+    });
+
     // Show empty state if no active case and no new chat
     if (!activeCaseId && !hasUnsavedNewChat) {
+      console.log('[ContentArea] Showing empty state');
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md p-6">
@@ -126,6 +134,7 @@ const ContentAreaComponent = ({
             onDocumentView={onDocumentView}
             onGenerateReports={onGenerateReports}
             onNewChat={onNewChat}
+            hasUnsavedNewChat={hasUnsavedNewChat}
           />
         </div>
       </ErrorBoundary>

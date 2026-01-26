@@ -52,6 +52,7 @@ export interface CasesSlice {
   submitting: boolean;
   investigationProgress: Record<string, InvestigationProgress>;
   caseEvidence: Record<string, UploadedData[]>;
+  loadedConversationIds: Set<string>; // Track which cases have been fetched (even if empty)
   
   // Actions
   setActiveCaseId: (caseId: string | undefined) => void;
@@ -93,6 +94,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
   submitting: false,
   investigationProgress: {},
   caseEvidence: {},
+  loadedConversationIds: new Set(), // Track which conversations have been fetched
 
   // Actions
   setActiveCaseId: (caseId) => set({ activeCaseId: caseId }),
@@ -112,7 +114,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
 
   handleCaseSelect: async (caseId: string) => {
     set({ activeCaseId: caseId });
-    const { conversations, conversationTitles, activeCase } = get();
+    const { conversations, conversationTitles, activeCase, loadedConversationIds } = get();
 
     try {
       // Resolve optimistic IDs to real IDs
@@ -120,7 +122,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
 
-      // Update active case object
+      // Update active case object (Metadata only)
       if (!activeCase || activeCase.case_id !== caseId) {
         set({
           activeCase: {
@@ -135,54 +137,70 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         });
       }
 
-      // Check for conversation data
-      const hasData = (conversations[caseId]?.length > 0) || (conversations[resolvedCaseId]?.length > 0);
+      // --- CRITICAL FIX: Prevent infinite refetch of empty cases ---
+      // Check if we have successfully fetched this case before
+      // We check 'resolvedCaseId' because that's what the backend knows
+      const alreadyLoaded = loadedConversationIds.has(resolvedCaseId);
 
-      if (!hasData) {
-        set({ loading: true });
-        
-        // If optimistic and unreconciled, use local data (already in state or empty)
-        if (isOptimisticId(caseId) && !idMappingManager.getRealId(caseId)) {
-          set({ loading: false });
-          return;
-        }
+      // Fallback: If we have data locally, we count it as loaded too
+      const hasLocalData = (conversations[caseId]?.length > 0) || (conversations[resolvedCaseId]?.length > 0);
 
-        // Fetch from backend
-        const conversationData = await getCaseConversation(resolvedCaseId);
-        const messages = conversationData.messages || [];
-        
-        // Transform backend messages
-        const backendMessages: OptimisticConversationItem[] = messages.map((msg: any) => ({
-          id: msg.message_id,
-          timestamp: msg.created_at,
-          turn_number: msg.turn_number,
-          optimistic: false,
-          originalId: msg.message_id,
-          question: msg.role === 'user' ? msg.content : undefined,
-          response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined
-        }));
-
-        // Merge logic
-        set(state => {
-          const existing = state.conversations[caseId] || [];
-          const backendMap = new Map(backendMessages.map(m => [m.id, m]));
-          
-          const merged = existing.map(local => {
-            const backend = backendMap.get(local.id);
-            return backend || local;
-          });
-
-          const newMessages = backendMessages.filter(m => !existing.some(e => e.id === m.id));
-          
-          return {
-            conversations: {
-              ...state.conversations,
-              [caseId]: [...merged, ...newMessages]
-            },
-            loading: false
-          };
-        });
+      if (alreadyLoaded || hasLocalData) {
+        // Data is ready (even if it's an empty array). Stop here.
+        log.debug('Case already loaded, skipping fetch:', { caseId, resolvedCaseId, alreadyLoaded, hasLocalData });
+        return;
       }
+      // --- END CRITICAL FIX ---
+
+      set({ loading: true });
+
+      // If optimistic and unreconciled, use local data (already in state or empty)
+      if (isOptimisticId(caseId) && !idMappingManager.getRealId(caseId)) {
+        set({ loading: false });
+        return;
+      }
+
+      // Lazy-load conversation from backend
+      log.info('Lazy-loading conversation for case:', { caseId, resolvedCaseId });
+      const conversationData = await getCaseConversation(resolvedCaseId);
+      const messages = conversationData.messages || [];
+
+      // Transform backend messages
+      const backendMessages: OptimisticConversationItem[] = messages.map((msg: any) => ({
+        id: msg.message_id,
+        timestamp: msg.created_at,
+        turn_number: msg.turn_number,
+        optimistic: false,
+        originalId: msg.message_id,
+        question: msg.role === 'user' ? msg.content : undefined,
+        response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined
+      }));
+
+      // Merge logic
+      set(state => {
+        const existing = state.conversations[caseId] || [];
+        const backendMap = new Map(backendMessages.map(m => [m.id, m]));
+
+        const merged = existing.map(local => {
+          const backend = backendMap.get(local.id);
+          return backend || local;
+        });
+
+        const newMessages = backendMessages.filter(m => !existing.some(e => e.id === m.id));
+
+        // Mark this case as loaded to prevent refetching
+        const newLoadedSet = new Set(state.loadedConversationIds);
+        newLoadedSet.add(resolvedCaseId);
+
+        return {
+          conversations: {
+            ...state.conversations,
+            [caseId]: [...merged, ...newMessages]
+          },
+          loadedConversationIds: newLoadedSet,
+          loading: false
+        };
+      });
     } catch (error) {
       log.error('Error loading case:', error);
       set({ loading: false });

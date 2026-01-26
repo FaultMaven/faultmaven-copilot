@@ -22,6 +22,7 @@ interface ChatInterfaceProps {
   onDocumentView?: (docId: string) => void;
   onGenerateReports?: () => void;
   onNewChat?: () => void;
+  hasUnsavedNewChat?: boolean; // NEW: Track if this is a new unsaved chat
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -40,7 +41,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   caseEvidence,
   onDocumentView,
   onGenerateReports,
-  onNewChat
+  onNewChat,
+  hasUnsavedNewChat
 }) => {
   const { handlePageInject } = usePageContent();
 
@@ -49,11 +51,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const currentEvidence = activeCaseId ? caseEvidence?.[activeCaseId] : undefined;
 
   // Check if interaction is allowed
-  const canInteract = !!activeCase && 
-    activeCase.status !== 'resolved' && 
-    activeCase.status !== 'closed';
+  const canInteract = (!!activeCase &&
+    activeCase.status !== 'resolved' &&
+    activeCase.status !== 'closed') || hasUnsavedNewChat; // Allow interaction for new unsaved chats
 
-  if (!activeCaseId) {
+  // Show empty state only if NO active case AND NOT a new unsaved chat
+  if (!activeCaseId && !hasUnsavedNewChat) {
+    console.log('[ChatInterface] Showing empty state (no active case, no new chat)');
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-md p-6">
@@ -71,6 +75,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       </div>
     );
   }
+
+  console.log('[ChatInterface] Rendering chat interface', { activeCaseId, hasUnsavedNewChat, canInteract });
 
   return (
     <div className="flex flex-col h-full bg-white relative">

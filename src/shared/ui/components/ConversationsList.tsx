@@ -148,14 +148,25 @@ export function ConversationsList({
 
       // ARCHITECTURAL FIX: Notify parent with ONLY real backend cases (no optimistic contamination)
       onCasesLoaded?.(sanitizedRealCases);
-    } catch (err) {
+    } catch (err: any) {
       const full = err instanceof Error ? err.message : String(err);
       console.error('[ConversationsList] Failed to load cases:', full);
-      setError(`Failed to list chats: ${full}`);
-      setCases([]);
 
-      // Still notify parent even on error (with empty array)
-      onCasesLoaded?.([]);
+      // Special handling for rate limit errors - don't spam retries
+      if (err.name === 'RateLimitError' || err.status === 429) {
+        const retryAfter = err.retryAfter || 60;
+        console.warn(`[ConversationsList] Rate limited, will not retry for ${retryAfter}s`);
+        setError(`Rate limit reached. Please wait ${retryAfter} seconds before refreshing.`);
+
+        // Don't clear cases on rate limit - keep showing existing data
+        // onCasesLoaded?.([]) - DON'T notify parent, keep existing state
+      } else {
+        setError(`Failed to list chats: ${full}`);
+        setCases([]);
+
+        // Still notify parent even on error (with empty array)
+        onCasesLoaded?.([]);
+      }
     } finally {
       setLoading(false);
     }

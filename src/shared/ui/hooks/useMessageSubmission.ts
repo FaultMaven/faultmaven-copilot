@@ -15,7 +15,8 @@ import {
   submitQueryToCase,
   QueryRequest,
   createSession,
-  authManager
+  authManager,
+  generateCaseTitle
 } from '../../../lib/api';
 import { AuthenticationError } from '../../../lib/errors/types';
 import {
@@ -56,7 +57,7 @@ export interface UseMessageSubmissionProps {
   setInvestigationProgress: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   
   // Callbacks
-  createOptimisticCaseInBackground: (optimisticCaseId: string, title: string) => Promise<void>;
+  createOptimisticCaseInBackground: (optimisticCaseId: string, title: string) => Promise<string>;
   refreshSession: () => Promise<string>;
   showError: (error: any, context?: any) => void;
   showErrorWithRetry: (error: any, retryFn: () => Promise<void>, context?: any) => void;
@@ -184,12 +185,16 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       });
 
       // SUCCESS HANDLER
+      // Check if this is the first message (before updating conversations)
+      const currentConversation = props.conversations[caseId] || [];
+      const isFirstMessage = currentConversation.length <= 2; // User message + AI thinking message
+
       // Update conversations: replace optimistic messages with real data
       props.setConversations(prev => {
-           const currentConversation = prev[caseId] || [];
+           const conv = prev[caseId] || [];
            return {
              ...prev,
-             [caseId]: currentConversation.map(item => {
+             [caseId]: conv.map(item => {
                if (item.id === userMessageId) {
                  return {
                    ...item,
@@ -216,6 +221,9 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                    scopeAssessment: response.scope_assessment,
                    plan: response.plan,
                    nextActionHint: response.next_action_hint,
+                   newHypotheses: response.new_hypotheses,
+                   hypothesisTested: response.hypothesis_tested,
+                   testResult: response.test_result,
                    requiresAction: response.response_type === 'CONFIRMATION_REQUEST' || response.response_type === 'CLARIFICATION_REQUEST',
                    optimistic: false,
                    loading: false,
@@ -230,6 +238,28 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
          // Mark operation as completed
          pendingOpsManager.complete(aiMessageId);
          log.info('Message submission completed and UI updated');
+
+         // Generate smart title for first message
+         if (isFirstMessage) {
+           log.info('First message detected, generating smart title', { caseId, query: query.substring(0, 50) });
+           try {
+             const titleResult = await generateCaseTitle(caseId, { max_words: 6, hint: query });
+             if (titleResult.title && titleResult.title !== 'New troubleshooting case') {
+               props.setConversationTitles(prev => ({
+                 ...prev,
+                 [caseId]: titleResult.title
+               }));
+               props.setTitleSources(prev => ({
+                 ...prev,
+                 [caseId]: (titleResult.source as 'user' | 'backend' | 'system') || 'backend'
+               }));
+               log.info('Smart title generated', { caseId, title: titleResult.title });
+             }
+           } catch (error) {
+             log.warn('Failed to generate smart title', error);
+             // Non-critical - don't fail the message submission
+           }
+         }
 
     } catch (error) {
        // We rely on onFailure for the UI updates.
@@ -276,21 +306,24 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       log.debug('No active case, creating case via createOptimisticCaseInBackground');
 
       try {
-        // Generate optimistic case ID and create in background
+        // Generate optimistic case ID
         const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
-        targetCaseId = optimisticCaseId;
 
-        // Update UI with optimistic ID immediately
-        props.setActiveCaseId(targetCaseId);
+        // Update UI with optimistic ID immediately (for instant feedback)
+        props.setActiveCaseId(optimisticCaseId);
         props.setHasUnsavedNewChat(false);
 
         // Store in localStorage for persistence (frontend state management v2.0)
-        await browser.storage.local.set({ faultmaven_current_case: targetCaseId });
+        await browser.storage.local.set({ faultmaven_current_case: optimisticCaseId });
 
-        // Create actual case in background (will reconcile ID later)
-        await props.createOptimisticCaseInBackground(optimisticCaseId, 'New troubleshooting case');
+        // Create actual case on backend (will reconcile ID and update state)
+        // This function creates the case, gets the real UUID, updates all state, and returns the real ID
+        const realCaseId = await props.createOptimisticCaseInBackground(optimisticCaseId, 'New troubleshooting case');
 
-        log.info('Case created with optimistic ID', { caseId: targetCaseId });
+        // Use the real case ID for query submission
+        targetCaseId = realCaseId;
+
+        log.info('Case created and ID reconciled', { optimisticId: optimisticCaseId, realId: targetCaseId });
       } catch (error) {
         log.error('Failed to create case', error);
         props.showError('Failed to create case. Please try again.');
