@@ -16,7 +16,7 @@ import DocumentDetailsModal from "./components/DocumentDetailsModal";
 const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
-import { getKnowledgeDocument, createCase, CreateCaseRequest } from "../../lib/api";
+import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle } from "../../lib/api";
 import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
 
 // Layouts
@@ -436,7 +436,29 @@ function SidePanelAppContent() {
           onCaseSelect={handleCaseSelect}
           onNewChat={handleNewChatFromNav}
           onLogout={handleLogout}
-          onCaseTitleChange={() => {}} // TODO: Implement title change handler
+          onCaseTitleChange={async (caseId: string, newTitle: string) => {
+            // Update local state optimistically
+            setConversationTitles(prev => ({ ...prev, [caseId]: newTitle }));
+            setTitleSources(prev => ({ ...prev, [caseId]: 'user' }));
+
+            // Persist to backend
+            try {
+              await updateCaseTitle(caseId, newTitle);
+              log.info('[SidePanelApp] Case title updated successfully', { caseId, newTitle });
+            } catch (error) {
+              log.error('[SidePanelApp] Failed to update case title', { caseId, newTitle, error });
+              showError({
+                title: 'Failed to update title',
+                message: error instanceof Error ? error.message : 'Unknown error',
+                type: 'error'
+              });
+              // Revert optimistic update on failure
+              setConversationTitles(prev => {
+                const { [caseId]: _, ...rest } = prev;
+                return rest;
+              });
+            }
+          }}
           onPinToggle={(id) => {
             const newSet = new Set(pinnedCases);
             if (newSet.has(id)) newSet.delete(id);
