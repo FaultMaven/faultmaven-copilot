@@ -108,6 +108,22 @@ export async function authenticatedFetch(url: string, options: RequestInit = {})
       throw new AuthenticationError('Authentication required');
     }
 
+    // Handle 429 Rate Limit - extract retry-after and throw special error
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After') || response.headers.get('retry-after');
+      const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
+
+      const errorData = await response.json().catch(() => ({ detail: 'Rate limit exceeded' }));
+      const error: any = new Error(errorData.detail || `Rate limit exceeded. Please try again in ${retryAfterSeconds} seconds.`);
+      error.name = 'RateLimitError';
+      error.status = 429;
+      error.retryAfter = retryAfterSeconds;
+      error.response = { data: errorData };
+
+      log.warn(`Rate limit exceeded, retry after ${retryAfterSeconds}s`);
+      throw error;
+    }
+
     // Enrich non-OK responses with HTTP status for error classification
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
