@@ -13,10 +13,10 @@ Files are categorized based on their failure impact to prioritize migration work
 
 | File | Current State | Priority | Notes |
 |------|---------------|----------|-------|
-| `lib/utils/data-integrity.ts` | Needs review | P0 | Data corruption risk |
-| `lib/auth/token-manager.ts` | Done | Done | Uses createLogger |
-| `lib/optimistic/PendingOperationsManager.ts` | Needs review | P0 | Rollback failures |
-| `lib/optimistic/IdMappingManager.ts` | Needs review | P0 | ID sync failures |
+| `lib/utils/data-integrity.ts` | ✅ Done | Done | Uses createLogger |
+| `lib/auth/token-manager.ts` | ✅ Done | Done | Uses createLogger |
+| `lib/optimistic/PendingOperationsManager.ts` | ✅ Done | Done | Uses createLogger |
+| `lib/optimistic/IdMappingManager.ts` | ✅ Done | Done | Uses createLogger |
 
 ### Category 2: High Traffic (MEDIUM PRIORITY)
 
@@ -27,7 +27,19 @@ Files are categorized based on their failure impact to prioritize migration work
 |------|---------------|----------|-------|
 | `shared/ui/components/ChatInterface.tsx` | Needs review | P1 | High-frequency updates |
 | `shared/ui/SidePanelApp.tsx` | Needs review | P1 | Main app component |
-| `shared/ui/hooks/useMessageSubmission.ts` | Done | Done | Uses createLogger |
+| `shared/ui/hooks/useMessageSubmission.ts` | ✅ Done | Done | Uses createLogger |
+
+### Category 4: API & Services (ADDITIONAL)
+
+**Impact:** API debugging, network issues
+**Strategy:** Use `log.debug` for responses, `log.error` for failures
+
+| File | Current State | Priority | Notes |
+|------|---------------|----------|-------|
+| `lib/api/files-service.ts` | ✅ Done | Done | Uses createLogger |
+| `lib/capabilities.ts` | ✅ Done | Done | Uses createLogger |
+| `lib/errors/useErrorHandler.tsx` | ✅ Done | Done | Uses createLogger |
+| `entrypoints/page-content.content.ts` | ✅ Done | Done | Uses createLogger |
 
 ### Category 3: Legacy UI (GOLD STANDARD MIGRATION)
 
@@ -84,10 +96,11 @@ log.info('Case marked for deletion', { caseId, autoCleanupIn: '5s' });
 
 | Category | Total Files | Migrated | Remaining | % Complete |
 |----------|-------------|----------|-----------|------------|
-| Silent Failures | 4 | 1 | 3 | 25% |
+| Silent Failures | 4 | 4 | 0 | 100% |
 | High Traffic | 3 | 1 | 2 | 33% |
 | Legacy UI | 1 | 1 | 0 | 100% |
-| **TOTAL** | **8** | **3** | **5** | **38%** |
+| API & Services | 4 | 4 | 0 | 100% |
+| **TOTAL** | **12** | **10** | **2** | **83%** |
 
 ## Production Behavior
 

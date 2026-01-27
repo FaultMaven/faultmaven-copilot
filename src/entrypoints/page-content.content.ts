@@ -1,40 +1,40 @@
 // src/entrypoints/page-content.content.ts
 // NO import for defineContentScript
 import { browser } from 'wxt/browser';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('PageContent');
 
 export default defineContentScript({
   matches: ["<all_urls>"], // Allow content script on all HTTPS pages
   runAt: "document_idle",
   main() {
-    console.log(
-      `%c[page-content.content.ts] MAIN FUNCTION EXECUTED on: ${window.location.href}`,
-      "color: orange; font-weight:bold;"
-    );
+    log.debug('Content script initialized', { url: window.location.href });
 
     browser.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
-      console.log("[page-content.content.ts] Message received in listener. Message:", message, "Sender ID:", sender.id); // Log sender ID
+      log.debug('Message received', { action: message?.action, senderId: sender.id });
 
       if (message && message.action === "getPageContent") {
-        console.log("[page-content.content.ts] 'getPageContent' action matched.");
+        log.debug('Processing getPageContent action');
         try {
           const pageContent = document.documentElement.outerHTML;
-          console.log("[page-content.content.ts] Extracted outerHTML (snippet):", pageContent.substring(0, 100) + "...");
+          log.debug('Page content extracted', { contentLength: pageContent.length });
           sendResponse({
             status: "success",
-            content: pageContent,  // Changed from 'data' to 'content'
+            content: pageContent,
             url: window.location.href
           });
         } catch (e: any) {
-          console.error("[page-content.content.ts] Error getting page content:", e);
+          console.error("[PageContent] Error getting page content:", e);
           sendResponse({ status: "error", message: e.message || "Failed to get page content" });
         }
         return true; // Indicate that sendResponse will be called
       }
-      
-      console.log("[page-content.content.ts] Action not matched or message malformed for this listener. Request action:", message?.action);
-      return false; 
+
+      log.debug('Action not matched', { action: message?.action });
+      return false;
     });
 
-    console.log("[page-content.content.ts] Listener added. Script ready.");
+    log.debug('Listener added, script ready');
   }
 });

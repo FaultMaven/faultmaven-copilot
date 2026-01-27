@@ -1,5 +1,9 @@
 // src/lib/capabilities.ts
 
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('CapabilitiesManager');
+
 export interface BackendCapabilities {
   deploymentMode: 'self-hosted' | 'cloud';
   kbManagement: 'dashboard';
@@ -57,7 +61,7 @@ class CapabilitiesManager {
           await browser.storage.local.set({ backendCapabilities: caps });
         }
 
-        console.log('[CapabilitiesManager] Connected to:', caps.deploymentMode);
+        log.info('Connected to backend', { deploymentMode: caps.deploymentMode });
         return caps;
 
       } catch (error) {

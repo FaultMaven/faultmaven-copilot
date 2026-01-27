@@ -6,8 +6,10 @@ import {
   UserFacingError,
   ErrorContext,
   ErrorDisplayOptions,
-  ErrorAction
 } from './types';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('ErrorHandler');
 
 /**
  * Active error with display options and unique ID
@@ -89,7 +91,7 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const existing = existingErrors.find(e =>
         ErrorClassifier.shouldAggregate(e.error, userFacingError)
       );
-      console.log('[ErrorHandler] Aggregating similar error, not showing duplicate');
+      log.debug('Aggregating similar error, not showing duplicate');
       return existing?.id || '';
     }
 
