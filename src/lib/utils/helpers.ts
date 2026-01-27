@@ -1,4 +1,7 @@
 // src/lib/utils/helpers.ts
+// Legacy utilities - log function preserved for backward compatibility
+
+/* eslint-disable no-console, no-restricted-syntax */
 
 import { browser } from 'wxt/browser';
 

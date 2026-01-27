@@ -1,5 +1,9 @@
 // src/lib/utils/retry.ts
 
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('Retry');
+
 /**
  * Retry configuration options
  */
@@ -186,7 +190,9 @@ export async function retryWithRateLimit<T>(
       const retryAfter = getRetryAfterDelay(error);
       const actualDelay = retryAfter || delay;
 
-      console.log(`[Retry] Attempt ${attempt} failed, retrying in ${actualDelay}ms...`, {
+      log.info('Retry attempt failed', {
+        attempt,
+        retryDelayMs: actualDelay,
         error: error.message,
         status: error.status || error.response?.status
       });

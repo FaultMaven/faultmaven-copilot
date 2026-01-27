@@ -11,6 +11,9 @@
 import { browser } from "wxt/browser";
 import { getUserCases, getCaseConversation, authManager, UserCase } from "../api";
 import { OptimisticConversationItem } from "../optimistic";
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('PersistenceManager');
 
 // Backend API message format (from /api/v1/cases/{case_id}/messages)
 interface BackendMessage {
@@ -100,7 +103,7 @@ export class PersistenceManager {
       if (lastRecovery) {
         const timeSinceLastRecovery = Date.now() - lastRecovery;
         if (timeSinceLastRecovery < PersistenceManager.RECOVERY_COOLDOWN_MS) {
-          console.log('[PersistenceManager] Recovery cooldown active:', {
+          log.info('Recovery cooldown active', {
             timeSinceLastRecovery: `${Math.round(timeSinceLastRecovery / 1000)}s`,
             cooldownRemaining: `${Math.round((PersistenceManager.RECOVERY_COOLDOWN_MS - timeSinceLastRecovery) / 1000)}s`
           });
@@ -127,7 +130,7 @@ export class PersistenceManager {
       // Recovery needed if ANY DETERMINISTIC indicator is true
       const shouldRecover = hasReloadFlag || versionMismatch || sessionMismatch;
 
-      console.log('[PersistenceManager] Reload detection:', {
+      log.info('Reload detection', {
         isAuthenticated,
         shouldRecover,
         indicators: {
@@ -168,7 +171,7 @@ export class PersistenceManager {
         [PersistenceManager.RELOAD_FLAG_KEY]: true,
         [PersistenceManager.SESSION_ID_KEY]: browser.runtime.id
       });
-      console.log('[PersistenceManager] Reload flag set');
+      log.info('Reload flag set');
     } catch (error) {
       console.warn('[PersistenceManager] Failed to set reload flag:', error);
     }
@@ -180,7 +183,7 @@ export class PersistenceManager {
   static async clearReloadFlag(): Promise<void> {
     try {
       await browser.storage.local.remove([PersistenceManager.RELOAD_FLAG_KEY]);
-      console.log('[PersistenceManager] Reload flag cleared');
+      log.info('Reload flag cleared');
     } catch (error) {
       console.warn('[PersistenceManager] Failed to clear reload flag:', error);
     }
@@ -206,7 +209,7 @@ export class PersistenceManager {
         [PersistenceManager.LAST_RECOVERY_KEY]: now
       });
 
-      console.log('[PersistenceManager] 🔄 Starting conversation recovery from backend...');
+      log.info(' 🔄 Starting conversation recovery from backend...');
 
       // Check authentication
       const isAuthenticated = await authManager.isAuthenticated();
@@ -219,18 +222,18 @@ export class PersistenceManager {
       // Only fetch case metadata (IDs, titles, dates) - NOT conversation details
       // Conversations will be lazy-loaded when user opens a specific case
 
-      console.log('[PersistenceManager] 📡 Fetching case list (metadata only) from backend...');
+      log.info(' 📡 Fetching case list (metadata only) from backend...');
       const cases: UserCase[] = await getUserCases({
         limit: 50 // Reasonable default for initial load
       });
 
-      console.log('[PersistenceManager] ✅ Retrieved case list from backend:', {
+      log.info(' ✅ Retrieved case list from backend:', {
         count: cases.length,
         caseIds: cases.map(c => c.case_id)
       });
 
       if (cases.length === 0) {
-        console.log('[PersistenceManager] No cases found - new user or no chat history');
+        log.info('No cases found - new user or no chat history');
         result.strategy = 'no_recovery_needed';
         result.success = true;
         return result;
@@ -244,7 +247,7 @@ export class PersistenceManager {
       const recoveredConversations: Record<string, OptimisticConversationItem[]> = {};
 
       // Process case metadata only (no conversation fetching)
-      console.log('[PersistenceManager] 📋 Processing case metadata...');
+      log.info(' 📋 Processing case metadata...');
       for (const userCase of cases) {
         // Extract metadata only
         recoveredTitles[userCase.case_id] = userCase.title || `Chat-${new Date(userCase.created_at || Date.now()).toLocaleString()}`;
@@ -257,13 +260,13 @@ export class PersistenceManager {
         result.recoveredCases++;
       }
 
-      console.log('[PersistenceManager] ✅ Recovered case list:', {
+      log.info(' ✅ Recovered case list:', {
         totalCases: cases.length,
         caseIds: cases.map(c => c.case_id)
       });
 
       // Save recovered data to local storage
-      console.log('[PersistenceManager] 💾 Saving recovered metadata to local storage...');
+      log.info(' 💾 Saving recovered metadata to local storage...');
       await browser.storage.local.set({
         conversationTitles: recoveredTitles,
         titleSources: recoveredTitleSources,
@@ -280,7 +283,7 @@ export class PersistenceManager {
       result.success = true;
       result.strategy = 'metadata_only_recovery'; // New strategy: list only, conversations lazy-loaded
 
-      console.log('[PersistenceManager] ✅ Metadata recovery completed successfully:', {
+      log.info(' ✅ Metadata recovery completed successfully:', {
         recoveredCases: result.recoveredCases,
         strategy: result.strategy
       });
@@ -355,7 +358,7 @@ export class PersistenceManager {
    * Forces conversation recovery (for testing/debugging purposes)
    */
   static async forceRecovery(): Promise<RecoveryResult> {
-    console.log('[PersistenceManager] 🔧 Force recovery triggered');
+    log.info(' 🔧 Force recovery triggered');
     return await PersistenceManager.recoverConversationsFromBackend();
   }
 
@@ -363,7 +366,7 @@ export class PersistenceManager {
    * Test enhanced API with detailed debugging (for troubleshooting)
    */
   static async testEnhancedAPI(caseId?: string): Promise<void> {
-    console.log('[PersistenceManager] 🧪 Testing enhanced API with debugging...');
+    log.info(' 🧪 Testing enhanced API with debugging...');
 
     try {
       if (!await authManager.isAuthenticated()) {
@@ -373,21 +376,21 @@ export class PersistenceManager {
 
       // If no specific case ID provided, get the first case
       if (!caseId) {
-        console.log('[PersistenceManager] Fetching user cases...');
+        log.info('Fetching user cases');
         const cases = await getUserCases();
         if (!cases || cases.length === 0) {
           console.warn('[PersistenceManager] No cases found for testing');
           return;
         }
         caseId = cases[0].case_id;
-        console.log('[PersistenceManager] Using first case for testing:', caseId);
+        log.info('Using first case for testing', { caseId });
       }
 
       // Test the enhanced API with debug enabled
-      console.log('[PersistenceManager] 🔍 Testing enhanced /messages API...');
+      log.info(' 🔍 Testing enhanced /messages API...');
       const response = await getCaseConversation(caseId, true);
 
-      console.log('[PersistenceManager] 📊 Enhanced API Test Results:', {
+      log.info(' 📊 Enhanced API Test Results:', {
         caseId,
         totalCount: response.total_count,
         retrievedCount: response.retrieved_count,
@@ -402,9 +405,9 @@ export class PersistenceManager {
         console.error('[PersistenceManager] 🚨 ISSUE DETECTED: Messages exist but none retrieved');
         console.error('[PersistenceManager] Debug details:', response.debug_info);
       } else if (response.total_count === response.retrieved_count && response.messages?.length > 0) {
-        console.log('[PersistenceManager] ✅ API working correctly - all messages retrieved');
+        log.info(' ✅ API working correctly - all messages retrieved');
       } else if (response.total_count === 0) {
-        console.log('[PersistenceManager] ℹ️ Case is empty (no messages)');
+        log.info(' ℹ️ Case is empty (no messages)');
       } else {
         console.warn('[PersistenceManager] ⚠️ Partial retrieval:', {
           total: response.total_count,
@@ -435,7 +438,7 @@ export class PersistenceManager {
         PersistenceManager.RELOAD_FLAG_KEY,
         PersistenceManager.SESSION_ID_KEY
       ]);
-      console.log('[PersistenceManager] All persistence data cleared');
+      log.info('All persistence data cleared');
     } catch (error) {
       console.warn('[PersistenceManager] Failed to clear persistence data:', error);
     }

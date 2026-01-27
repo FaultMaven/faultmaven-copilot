@@ -13,6 +13,9 @@
 import React from 'react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ChatInterface } from '../components/ChatInterface';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('ContentArea');
 import type { UserCase, InvestigationProgress, UploadedData } from '../../../lib/api';
 import type { OptimisticConversationItem } from '../../../lib/optimistic';
 
@@ -76,7 +79,7 @@ const ContentAreaComponent = ({
 }: ContentAreaProps) => {
   // Render chat content (copilot tab)
   const renderChatContent = () => {
-    console.log('[ContentArea] Rendering chat content:', {
+    log.debug('Rendering chat content', {
       activeCaseId,
       hasUnsavedNewChat,
       shouldShowEmptyState: !activeCaseId && !hasUnsavedNewChat,
@@ -85,7 +88,7 @@ const ContentAreaComponent = ({
 
     // Show empty state if no active case and no new chat
     if (!activeCaseId && !hasUnsavedNewChat) {
-      console.log('[ContentArea] Showing empty state');
+      log.debug('Showing empty state');
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md p-6">

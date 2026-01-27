@@ -36,17 +36,16 @@ export default [
     },
     rules: {
       // ============================================
-      // LOGGING RULES - Staged Enforcement Strategy
+      // LOGGING RULES - Enforced (Migration Complete)
       // ============================================
 
-      // Stage 1: Warn on raw console.log (non-breaking)
-      // This identifies all locations without failing CI/CD
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      // Enforce structured logging - no raw console.log/debug/info
+      // Only console.warn and console.error are allowed
+      'no-console': ['error', { allow: ['warn', 'error'] }],
 
-      // Stage 2: Provide specific guidance via no-restricted-syntax
-      // Shows IDE tooltip suggesting createLogger alternative
+      // Provide specific guidance for each console method
       'no-restricted-syntax': [
-        'warn',
+        'error',
         {
           selector: "CallExpression[callee.object.name='console'][callee.property.name='log']",
           message: 'Use createLogger() instead of console.log. Import from ~/lib/utils/logger'

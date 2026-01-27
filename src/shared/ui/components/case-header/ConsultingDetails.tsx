@@ -10,6 +10,9 @@ import React, { useState, useEffect } from 'react';
 import type { ConsultingData, UploadedFileMetadata, UploadedFileDetailsResponse } from '../../../../types/case';
 import { filesApi } from '../../../../lib/api/files-service';
 import { EvidenceDetailsModal } from './EvidenceDetailsModal';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('ConsultingDetails');
 
 /**
  * Extended UploadedFileMetadata with evidence_count
@@ -58,13 +61,13 @@ export const ConsultingDetails: React.FC<ConsultingDetailsProps> = ({
   useEffect(() => {
     if (showFiles && files.length === 0) {
       const fetchFiles = async () => {
-        console.log('[ConsultingDetails] 📂 Fetching files for case:', caseId);
+        log.debug(' 📂 Fetching files for case:', caseId);
         setFilesLoading(true);
         setFilesError(null);
         try {
           const fetchedFiles = await filesApi.getUploadedFiles(caseId);
-          console.log('[ConsultingDetails] ✅ Files fetched:', fetchedFiles);
-          console.log('[ConsultingDetails] ✅ Files array length:', Array.isArray(fetchedFiles) ? fetchedFiles.length : 'NOT AN ARRAY');
+          log.debug(' ✅ Files fetched:', fetchedFiles);
+          log.debug(' ✅ Files array length:', Array.isArray(fetchedFiles) ? fetchedFiles.length : 'NOT AN ARRAY');
           setFiles(fetchedFiles);
         } catch (error) {
           console.error('[ConsultingDetails] ❌ Failed to fetch files:', error);
