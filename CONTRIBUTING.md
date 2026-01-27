@@ -62,6 +62,107 @@ pnpm test --watch
 *   We use TypeScript for all code.
 *   Pre-commit hooks are configured to run `npm run compile` and `npm run test` before committing.
 *   Please ensure your code has no linting or type errors.
+*   Run `pnpm lint` to check for ESLint warnings (including console.log usage).
+
+## Logging Best Practices
+
+We use a structured logging system to maintain clean, production-ready code. **Never use `console.log` directly**.
+
+### Quick Start
+
+```typescript
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('MyComponent');
+
+// Use appropriate log levels
+log.debug('Detailed state', { count: items.length });  // DEV only
+log.info('User action completed', { action: 'save' }); // DEV only
+log.warn('Recoverable issue', { retryCount: 2 });      // Always logged
+log.error('Operation failed', error);                  // Always logged
+```
+
+### Log Level Criteria
+
+Choose the appropriate log level based on these criteria:
+
+| Level | When to Use | Examples | Production |
+|-------|-------------|----------|------------|
+| `debug` | High-frequency data, verbose debugging | Raw API payloads, state dumps, loop iterations | Stripped |
+| `info` | Key lifecycle events, normal operations | "Session Started", "Case Selected", "Auth Refreshed" | Stripped |
+| `warn` | Recoverable issues needing attention | "API retry 2/3", "Falling back to cache", "Rate limit approaching" | Logged |
+| `error` | Action-required failures | "OAuth Token Expired", "Network Unavailable", "Data Corruption" | Logged |
+
+### Anti-Patterns to Avoid
+
+**Don't log full objects in production:**
+```typescript
+// BAD - Exposes sensitive data, performance cost
+log.info('API response', fullResponseObject);
+
+// GOOD - Log summary only
+log.debug('API response received', { status: res.status, itemCount: res.data.length });
+```
+
+**Don't use multiple logs for one action:**
+```typescript
+// BAD - Creates noise
+log.info('Starting operation...');
+log.info('Operation in progress', state);
+log.info('Operation complete', result);
+
+// GOOD - One meaningful log
+log.info('Operation completed', { duration: endTime - startTime, itemsProcessed: result.length });
+```
+
+**Don't use emojis in logs:**
+```typescript
+// BAD - Harder to grep/search
+log.info('Searching cases...');
+
+// GOOD - Clear text
+log.info('Searching cases', { query });
+```
+
+### Migration from console.log
+
+Our ESLint configuration warns when `console.log` is used. To migrate:
+
+1. **Add logger import:**
+   ```typescript
+   import { createLogger } from '~/lib/utils/logger';
+   const log = createLogger('ComponentName');
+   ```
+
+2. **Replace console calls:**
+   ```typescript
+   // Before
+   console.log('[MyComponent] User clicked', userId);
+
+   // After
+   log.info('User clicked', { userId });
+   ```
+
+3. **Classify correctly:**
+   - Debug details → `log.debug()`
+   - Normal operations → `log.info()`
+   - Issues → `log.warn()`
+   - Errors → `log.error()`
+
+### Environment Variables
+
+Control logging verbosity:
+
+```bash
+# Development (default)
+VITE_DEBUG=false  # info/warn/error only
+
+# Verbose debugging
+VITE_DEBUG=true   # All levels including debug
+
+# Production build
+# Only warn/error logged (debug/info completely stripped)
+```
 
 ## Pull Request Process
 
