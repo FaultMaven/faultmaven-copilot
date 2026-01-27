@@ -163,8 +163,9 @@ function SidePanelAppContent() {
         log.info('Creating case on backend', { optimisticId, title });
 
         // Create the case on the backend
+        // Backend auto-generates title in Case-MMDD-N format per API contract
         const caseRequest: CreateCaseRequest = {
-          title: title || 'New troubleshooting case',
+          title: title || undefined,  // undefined triggers backend auto-generation
           priority: 'low'
         };
 

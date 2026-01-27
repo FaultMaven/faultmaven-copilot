@@ -10,7 +10,6 @@ import {
 import {
   OptimisticConversationItem,
   OptimisticIdGenerator,
-  IdUtils,
   OptimisticUserCase
 } from '../../../lib/optimistic';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
@@ -87,9 +86,9 @@ export function useDataUpload({
         log.info('No active case, creating case via /api/v1/cases (v2.0)');
 
         try {
-          const caseTitle = IdUtils.generateChatTitle();
+          // Let backend auto-generate title per API contract
           const caseData = await createCase({
-            title: caseTitle,
+            title: undefined,  // Backend auto-generates Case-MMDD-N format
             priority: 'medium',
             metadata: {
               created_via: 'browser_extension',
@@ -111,7 +110,7 @@ export function useDataUpload({
           setActiveCase({
             case_id: newCaseId,
             owner_id: caseData.owner_id,
-            title: caseData.title || caseTitle,
+            title: caseData.title,  // Backend MUST provide title per contract
             status: caseData.status || 'consulting',
             created_at: caseData.created_at || new Date().toISOString(),
             updated_at: caseData.updated_at || new Date().toISOString(),

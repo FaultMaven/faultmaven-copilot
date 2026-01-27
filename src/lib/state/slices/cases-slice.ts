@@ -1,13 +1,12 @@
 import { StateCreator } from 'zustand';
-import { 
-  UserCase, 
-  OptimisticUserCase, 
-  OptimisticConversationItem, 
+import {
+  UserCase,
+  OptimisticUserCase,
+  OptimisticConversationItem,
   PendingOperation,
   pendingOpsManager,
   idMappingManager,
   OptimisticIdGenerator,
-  IdUtils,
   TitleSource,
   IdMappingState
 } from '../../optimistic';
@@ -225,10 +224,9 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       let targetCaseId = activeCaseId;
       
       if (!targetCaseId) {
-        // Create new case logic (simplified from SidePanelApp)
-        const caseTitle = IdUtils.generateChatTitle();
+        // Create new case - let backend auto-generate title per API contract
         const caseData = await createCase({
-          title: caseTitle,
+          title: undefined,  // Backend auto-generates Case-MMDD-N format
           priority: 'medium',
           metadata: { created_via: 'browser_extension', auto_generated: true }
         });
