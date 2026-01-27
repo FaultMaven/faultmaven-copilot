@@ -15,6 +15,9 @@ import {
   type OptimisticCase
 } from '../../../lib/utils/data-integrity';
 import { idMappingManager } from '../../../lib/optimistic';
+import { createLogger } from '../../../lib/utils/logger';
+
+const log = createLogger('ConversationsList');
 
 interface ConversationsListProps {
   activeSessionId?: string; // kept for compatibility
@@ -70,14 +73,14 @@ export function ConversationsList({
   // Sync parent conversationTitles changes to local caseTitles state
   useEffect(() => {
     if (conversationTitles && Object.keys(conversationTitles).length > 0) {
-      console.log('[ConversationsList] Syncing conversationTitles to local caseTitles:', conversationTitles);
+      log.debug('Syncing conversation titles from parent', { count: Object.keys(conversationTitles).length });
       setCaseTitles(prev => ({
         ...prev,
         ...conversationTitles // Merge parent titles into local state
       }));
     }
   }, [conversationTitles]);
-  
+
 
   // Auto-clear title generation status after 4 seconds
   useEffect(() => {
@@ -88,6 +91,7 @@ export function ConversationsList({
       return () => clearTimeout(timer);
     }
   }, [titleGenStatus.message]);
+
   // ARCHITECTURAL FIX: Use strict data separation utilities
   const mergeWithPending = (baseCases: RealCase[]): ValidatedCase[] => {
     // DEFENSE: Use defensive merging with violation detection
@@ -97,18 +101,12 @@ export function ConversationsList({
       'ConversationsList'
     );
 
-    // Log merge statistics (commented out to reduce console noise)
-    // console.log('[ConversationsList] STRICT MERGE result:', {
-    //   totalCases: mergeResult.cases.length,
-    //   realCases: mergeResult.realCount,
-    //   optimisticCases: mergeResult.optimisticCount,
-    //   violations: mergeResult.violations.length,
-    //   caseIds: mergeResult.cases.map(c => `${c.case_id} (${c.source})`)
-    // });
-
     // Report violations
     if (mergeResult.violations.length > 0) {
-      console.error('[ConversationsList] Data integrity violations:', mergeResult.violations);
+      log.error('Data integrity violations detected', {
+        count: mergeResult.violations.length,
+        violations: mergeResult.violations
+      });
     }
 
     return mergeResult.cases;
@@ -120,7 +118,12 @@ export function ConversationsList({
       setError(null);
       const list = await getUserCases({ limit: 100, offset: 0 });
 
-      console.log('[ConversationsList] 🔍 RAW API RESPONSE from getUserCases:', JSON.stringify(list, null, 2));
+      // ✅ PERFORMANCE WIN: Direct object access instead of JSON.stringify
+      // JSON.stringify is computationally expensive and unnecessary
+      log.debug('Fetched cases from API', {
+        count: list?.length || 0,
+        hasOptimistic: (pendingCases?.length || 0) > 0
+      });
 
       // DEFENSIVE: Strictly sanitize backend data
       const sanitizedRealCases = sanitizeBackendCases(list || [], 'loadCases');
@@ -129,33 +132,28 @@ export function ConversationsList({
       const filteredCases = sanitizedRealCases.filter(c => !recentlyDeleted.has(c.case_id));
 
       if (filteredCases.length < sanitizedRealCases.length) {
-        console.log('[ConversationsList] 🛡️ Filtered out recently deleted cases:', {
-          total: sanitizedRealCases.length,
+        log.info('Filtered recently deleted cases', {
+          received: sanitizedRealCases.length,
           filtered: filteredCases.length,
-          removed: Array.from(recentlyDeleted)
+          removedCount: sanitizedRealCases.length - filteredCases.length
         });
       }
 
-      console.log('[ConversationsList] ✅ SANITIZED backend cases:', {
-        received: list?.length || 0,
-        sanitized: filteredCases.length,
-        caseIds: filteredCases.map(c => c.case_id)
-      });
-
       const sorted = mergeWithPending(filteredCases);
       setCases(filteredCases); // Store only real cases in state
-      console.log('[ConversationsList] Backend cases stored in state:', filteredCases.map(c => c.case_id));
+
+      log.debug('Backend cases stored in state', { count: filteredCases.length });
 
       // ARCHITECTURAL FIX: Notify parent with ONLY real backend cases (no optimistic contamination)
       onCasesLoaded?.(sanitizedRealCases);
     } catch (err: any) {
       const full = err instanceof Error ? err.message : String(err);
-      console.error('[ConversationsList] Failed to load cases:', full);
+      log.error('Failed to load cases', err);
 
       // Special handling for rate limit errors - don't spam retries
       if (err.name === 'RateLimitError' || err.status === 429) {
         const retryAfter = err.retryAfter || 60;
-        console.warn(`[ConversationsList] Rate limited, will not retry for ${retryAfter}s`);
+        log.warn('Rate limited', { retryAfter });
         setError(`Rate limit reached. Please wait ${retryAfter} seconds before refreshing.`);
 
         // Don't clear cases on rate limit - keep showing existing data
@@ -181,26 +179,21 @@ export function ConversationsList({
   };
 
   const updateCaseTitle = (caseId: string, title: string) => {
-    console.log('[ConversationsList] updateCaseTitle called:', { caseId, title });
-    console.log('[ConversationsList] Current caseTitles before update:', caseTitles);
-    setCaseTitles(prev => {
-      const updated = { ...prev, [caseId]: title };
-      console.log('[ConversationsList] Updated caseTitles:', updated);
-      return updated;
-    });
+    log.debug('Updating case title in local state', { caseId, title });
+    setCaseTitles(prev => ({ ...prev, [caseId]: title }));
   };
 
   const handleRenameCase = async (caseId: string, newTitle: string) => {
     const title = (newTitle || '').trim();
     if (!title) return;
-    console.log('[ConversationsList] handleRenameCase called:', { caseId, title });
+
+    // ✅ CONSOLIDATED: Single log instead of 3 separate logs
+    log.info('Case title renamed', { caseId, newTitle: title });
 
     // OPTIMISTIC UPDATE: Update local state immediately
-    console.log('[ConversationsList] Updating local caseTitles...');
     updateCaseTitle(caseId, title);
 
     // Notify parent component - parent handles backend sync
-    console.log('[ConversationsList] Notifying parent component (parent will handle backend sync)...');
     onCaseTitleChange?.(caseId, title);
 
     // NOTE: Backend sync is now handled by parent (SidePanelApp.handleOptimisticTitleUpdate)
@@ -208,31 +201,29 @@ export function ConversationsList({
   };
 
   const handleGenerateTitle = async (caseId: string, sessionIdGuess?: string) => {
-    console.log('[ConversationsList] handleGenerateTitle called for case:', caseId);
-
     try {
       // ARCHITECTURAL FIX: Resolve optimistic IDs to real IDs for API calls
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
 
-      console.log('[ConversationsList] Calling generateCaseTitle API...', {
-        selectedId: caseId,
-        resolvedId: resolvedCaseId,
+      log.info('Generating smart title', {
+        caseId: resolvedCaseId,
         isOptimistic: isOptimisticId(caseId)
       });
 
       const { title, source } = await generateCaseTitle(resolvedCaseId, { max_words: 8 });
-      console.log('[ConversationsList] API response - title:', title, 'source:', source);
 
       const newTitle = (title || '').trim();
       if (!newTitle) {
-        console.log('[ConversationsList] Empty title returned - insufficient context');
+        log.debug('Smart title generation returned empty', { reason: 'insufficient_context' });
         setTitleGenStatus({ message: "More conversation needed for a meaningful title", type: "info" });
         return;
       }
 
-      console.log('[ConversationsList] Applying new title:', newTitle);
+      // ✅ SENTRY BREADCRUMB: This info log will be attached to error reports
+      log.info('Smart title generated', { caseId, source });
+
       // Update local state only - backend already persisted the title
       updateCaseTitle(caseId, newTitle);
       // Note: No need to call onCaseTitleChange() since backend already persisted the title
@@ -244,12 +235,11 @@ export function ConversationsList({
         setTitleGenStatus({ message: "Title generated successfully", type: "success" });
       }
     } catch (e: any) {
-      console.error('[ConversationsList] Title generation error:', e);
       const errorMessage = e?.message || 'Title generation failed';
+      log.warn('Smart title generation failed', { error: errorMessage, caseId });
 
       // Display the exact backend error message to user (no interpretation)
       // Backend handles validation and provides user-friendly messages
-      console.info('[ConversationsList] Backend response:', errorMessage);
       setTitleGenStatus({
         message: errorMessage,  // Show backend message as-is
         type: "info"  // Treat backend validation messages as info, not errors
@@ -263,7 +253,7 @@ export function ConversationsList({
     try {
       // Add to recently deleted set BEFORE API call (defensive filtering)
       setRecentlyDeleted(prev => new Set(prev).add(caseId));
-      console.log('[ConversationsList] 🛡️ Added to recentlyDeleted:', caseId);
+      log.info('Case marked for deletion', { caseId, autoCleanupIn: '5s' });
 
       // Auto-clear from recentlyDeleted after 5 seconds
       // Store timeout ID so we can cancel it if delete fails
@@ -271,7 +261,7 @@ export function ConversationsList({
         setRecentlyDeleted(prev => {
           const newSet = new Set(prev);
           newSet.delete(caseId);
-          console.log('[ConversationsList] 🧹 Auto-cleared from recentlyDeleted:', caseId);
+          log.debug('Auto-cleared from deletion filter', { caseId });
           return newSet;
         });
       }, 5000);
@@ -288,8 +278,10 @@ export function ConversationsList({
             const sorted = [...remaining].sort((a,b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
             const next = sorted[0];
             if (next && next.case_id) {
+              log.info('Auto-switching to next case after delete', { nextCaseId: next.case_id });
               onCaseSelect && onCaseSelect(next.case_id);
             } else {
+              log.info('No remaining cases, starting new session');
               onNewSession && onNewSession('');
             }
           }
@@ -300,7 +292,7 @@ export function ConversationsList({
       // Refresh from server to ensure list reflects backend state
       try { await loadCases(); } catch {}
     } catch (e: any) {
-      console.error('[ConversationsList] Delete failed:', { caseId, error: e.message || e });
+      log.error('Case deletion failed', { caseId, error: e.message || e });
 
       // Cancel the auto-clear timeout since delete failed
       if (timeoutId) {
@@ -405,17 +397,6 @@ export function ConversationsList({
     optimisticCases: pendingCases
   };
   validateStateIntegrity(currentState, 'ConversationsList');
-
-  // DEBUG: Enhanced logging with data separation info
-  // Debug logging removed to prevent console spam - enable only when debugging
-  // console.log('[ConversationsList] 🔍 COMPONENT STATE:', {
-  //   realCasesInState: cases.length,
-  //   optimisticCasesInProps: pendingCases?.length || 0,
-  //   mergedCasesTotal: mergedCases.length,
-  //   refreshTrigger,
-  //   loading
-  // });
-  // debugDataSeparation(mergedCases, 'MergedCases');
 
   if (loading && mergedCases.length === 0) {
     return (
