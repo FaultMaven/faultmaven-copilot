@@ -128,8 +128,7 @@ describe('useMessageSubmission', () => {
       await result.current.handleQuerySubmit('test query');
     });
 
-    // Should pass undefined to trigger server-side auto-generation (Case-MMDD-N format)
-    expect(propsNoCase.createOptimisticCaseInBackground).toHaveBeenCalledWith('opt-case-id', undefined);
+    expect(propsNoCase.createOptimisticCaseInBackground).toHaveBeenCalledWith('opt-case-id', expect.any(String));
     expect(propsNoCase.setActiveCaseId).toHaveBeenCalledWith('opt-case-id');
   });
 

@@ -163,9 +163,8 @@ function SidePanelAppContent() {
         log.info('Creating case on backend', { optimisticId, title });
 
         // Create the case on the backend
-        // Pass undefined for title to trigger server-side auto-generation (Case-MMDD-N format)
         const caseRequest: CreateCaseRequest = {
-          title: title || undefined,  // undefined triggers auto-generation, not hardcoded string
+          title: title || 'New troubleshooting case',
           priority: 'low'
         };
 
