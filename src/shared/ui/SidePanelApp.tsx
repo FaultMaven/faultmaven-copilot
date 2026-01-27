@@ -164,8 +164,9 @@ function SidePanelAppContent() {
 
         // Create the case on the backend
         // Backend auto-generates title in Case-MMDD-N format per API contract
+        // NOTE: Must use `null` not `undefined` - JSON.stringify strips undefined
         const caseRequest: CreateCaseRequest = {
-          title: title || undefined,  // undefined triggers backend auto-generation
+          title: title || null,  // null triggers backend auto-generation
           priority: 'low'
         };
 

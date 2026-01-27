@@ -278,7 +278,19 @@ try {
 
 ### Case Title Generation
 
-Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). Frontend MUST trust the backend per API contract - do NOT pass a title to `createCase()`.
+Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). To trigger auto-generation:
+
+```typescript
+// ✅ CORRECT: Use null - JSON.stringify preserves null
+createCase({ title: null, priority: 'medium' });
+// Sends: {"title":null,"priority":"medium"}
+
+// ❌ WRONG: undefined gets stripped by JSON.stringify
+createCase({ title: undefined, priority: 'medium' });
+// Sends: {"priority":"medium"} - backend uses default title!
+```
+
+**Important**: `JSON.stringify` removes `undefined` values but preserves `null`. Always use `title: null` to trigger backend auto-generation.
 
 ### API Response Polling
 
