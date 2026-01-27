@@ -81,7 +81,7 @@ export interface Case {
 }
 
 export interface CreateCaseRequest {
-  title?: string | null;  // null triggers backend auto-generation (Case-MMDD-N format)
+  title: string | null;  // null = backend auto-generates Case-MMDD-N, string = use provided title
   priority?: 'low' | 'medium' | 'high' | 'critical';
   metadata?: Record<string, any>;
   initial_message?: string;

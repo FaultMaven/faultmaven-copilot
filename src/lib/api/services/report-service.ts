@@ -1,5 +1,5 @@
 import config, { getApiUrl } from "../../../config";
-import { authenticatedFetch } from "../client";
+import { authenticatedFetch, prepareBody } from "../client";
 import { 
   APIError, 
   CaseClosureRequest, 
@@ -36,7 +36,7 @@ export async function generateReports(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      body: prepareBody(request),
       credentials: 'include'
     }
   );
@@ -100,7 +100,7 @@ export async function closeCase(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      body: prepareBody(request),
       credentials: 'include'
     }
   );

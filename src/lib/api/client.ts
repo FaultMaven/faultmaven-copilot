@@ -8,6 +8,31 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('APIClient');
 
 /**
+ * Prepares a request body for JSON serialization.
+ *
+ * Converts undefined values to null to ensure consistent backend behavior.
+ * This addresses the TypeScript-to-REST semantic mismatch where JSON.stringify
+ * silently strips undefined values, which can cause unexpected backend defaults.
+ *
+ * Design rationale:
+ * - undefined → null: Explicitly tells backend "this field is empty"
+ * - Missing field: Use optional types (field?: T) and don't include in object
+ * - null: Preserved as-is
+ * - Other values: Preserved as-is
+ *
+ * @param body - The request body object to serialize
+ * @returns JSON string with undefined values converted to null
+ */
+export function prepareBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined;
+
+  return JSON.stringify(body, (_key, value) => {
+    // Convert undefined to null for explicit backend signaling
+    return value === undefined ? null : value;
+  });
+}
+
+/**
  * Handles authentication errors and triggers re-authentication
  */
 async function handleAuthError(): Promise<void> {

@@ -276,21 +276,49 @@ try {
 }
 ```
 
-### Case Title Generation
+### API Request Serialization (prepareBody)
 
-Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). To trigger auto-generation:
+All API service functions use `prepareBody()` for JSON serialization. This utility converts `undefined` → `null` to ensure consistent backend behavior:
 
 ```typescript
-// ✅ CORRECT: Use null - JSON.stringify preserves null
+import { prepareBody } from '~/lib/api/client';
+
+// prepareBody converts undefined values to null
+prepareBody({ title: undefined, priority: 'medium' });
+// Returns: '{"title":null,"priority":"medium"}'
+
+// This addresses the TypeScript-to-REST semantic mismatch where
+// JSON.stringify silently strips undefined values
+```
+
+**Design rationale:**
+- `undefined` → `null`: Explicitly tells backend "this field is empty"
+- Field not in object: Truly missing (use for partial updates)
+- Use explicit types (`field: string | null`) to force conscious decisions
+
+### Case Title Generation
+
+Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). The `CreateCaseRequest` type enforces explicit intent:
+
+```typescript
+interface CreateCaseRequest {
+  title: string | null;  // Required - must explicitly choose
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+}
+
+// ✅ CORRECT: Explicit null triggers auto-generation
 createCase({ title: null, priority: 'medium' });
 // Sends: {"title":null,"priority":"medium"}
 
-// ❌ WRONG: undefined gets stripped by JSON.stringify
-createCase({ title: undefined, priority: 'medium' });
-// Sends: {"priority":"medium"} - backend uses default title!
+// ✅ CORRECT: Provide explicit title
+createCase({ title: 'My Case', priority: 'medium' });
+// Sends: {"title":"My Case","priority":"medium"}
 ```
 
-**Important**: `JSON.stringify` removes `undefined` values but preserves `null`. Always use `title: null` to trigger backend auto-generation.
+**Three title scenarios:**
+1. **New case creation**: `title: null` → Backend generates `Case-MMDD-N`
+2. **Manual rename**: `PUT /api/v1/cases/{id}` with explicit title string
+3. **LLM auto-generate**: `POST /api/v1/cases/{id}/title` triggers AI summarization
 
 ### API Response Polling
 
