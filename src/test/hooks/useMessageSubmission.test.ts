@@ -128,7 +128,8 @@ describe('useMessageSubmission', () => {
       await result.current.handleQuerySubmit('test query');
     });
 
-    expect(propsNoCase.createOptimisticCaseInBackground).toHaveBeenCalledWith('opt-case-id', expect.any(String));
+    // null triggers backend auto-generation of Case-MMDD-N format
+    expect(propsNoCase.createOptimisticCaseInBackground).toHaveBeenCalledWith('opt-case-id', null);
     expect(propsNoCase.setActiveCaseId).toHaveBeenCalledWith('opt-case-id');
   });
 

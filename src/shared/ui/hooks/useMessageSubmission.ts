@@ -57,7 +57,7 @@ export interface UseMessageSubmissionProps {
   setInvestigationProgress: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   
   // Callbacks
-  createOptimisticCaseInBackground: (optimisticCaseId: string, title: string) => Promise<string>;
+  createOptimisticCaseInBackground: (optimisticCaseId: string, title: string | null) => Promise<string>;
   refreshSession: () => Promise<string>;
   showError: (error: any, context?: any) => void;
   showErrorWithRetry: (error: any, retryFn: () => Promise<void>, context?: any) => void;
@@ -319,7 +319,8 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
 
         // Create actual case on backend (will reconcile ID and update state)
         // This function creates the case, gets the real UUID, updates all state, and returns the real ID
-        const realCaseId = await props.createOptimisticCaseInBackground(optimisticCaseId, 'New troubleshooting case');
+        // Pass null to trigger backend auto-generation of Case-MMDD-N format
+        const realCaseId = await props.createOptimisticCaseInBackground(optimisticCaseId, null);
 
         // Use the real case ID for query submission
         targetCaseId = realCaseId;
