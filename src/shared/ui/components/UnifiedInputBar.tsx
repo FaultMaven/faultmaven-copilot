@@ -80,7 +80,7 @@ export function UnifiedInputBar({
 
     if (newMode !== inputMode) {
       setInputMode(newMode);
-      log.debug(` 🔄 Mode switched to ${newMode} (${lineCount} lines)`);
+      log.debug('Mode switched', { newMode, lineCount });
     }
   }, [input, inputMode]);
 
@@ -178,7 +178,7 @@ export function UnifiedInputBar({
       } finally {
         // CRITICAL: Always clear selected data and unlock input, even on error
         // This ensures the input is never stuck in locked state
-        log.debug(' 🔓 Unlocking input after upload (finally block)');
+        log.debug('Unlocking input after upload');
         setIsUploadingData(false);
         setSelectedFile(null);
         setCapturedPageUrl(null);
