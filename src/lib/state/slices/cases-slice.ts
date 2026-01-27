@@ -57,7 +57,7 @@ export interface CasesSlice {
   setActiveCaseId: (caseId: string | undefined) => void;
   loadUserCases: () => Promise<void>;
   handleCaseSelect: (caseId: string) => Promise<void>;
-  createOptimisticCase: (title: string) => Promise<void>;
+  createOptimisticCase: (title: string | null) => Promise<void>;
   submitQuery: (query: string) => Promise<void>;
   handleOptimisticTitleUpdate: (caseId: string, newTitle: string) => Promise<void>;
   handleDataUpload: (caseId: string, uploadResponse: UploadedData, file: File) => void;
@@ -206,7 +206,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
     }
   },
 
-  createOptimisticCase: async (title: string) => {
+  createOptimisticCase: async (title: string | null) => {
     // This will be triggered by creating a new session implicitly
     // We'll implement the explicit creation logic if needed, but 
     // SidePanelApp uses session-based creation primarily.
