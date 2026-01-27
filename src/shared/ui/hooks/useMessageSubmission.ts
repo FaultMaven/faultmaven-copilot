@@ -244,7 +244,8 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
            log.info('First message detected, generating smart title', { caseId, query: query.substring(0, 50) });
            try {
              const titleResult = await generateCaseTitle(caseId, { max_words: 6, hint: query });
-             if (titleResult.title && titleResult.title !== 'New troubleshooting case') {
+             // Trust all backend-generated titles (backend auto-generates Case-MMDD-N per contract)
+             if (titleResult.title) {
                props.setConversationTitles(prev => ({
                  ...prev,
                  [caseId]: titleResult.title

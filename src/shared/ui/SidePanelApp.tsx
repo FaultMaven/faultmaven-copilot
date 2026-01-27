@@ -193,10 +193,10 @@ function SidePanelAppContent() {
         // Update conversation titles
         setConversationTitles(prev => {
           const updated = { ...prev };
-          const optimisticTitle = prev[optimisticId];
 
-          // Always set the real case ID title (either from optimistic or from backend)
-          updated[realCaseId] = newCase.title || optimisticTitle || title || 'New troubleshooting case';
+          // Backend MUST provide title per API contract (openapi.locked.yaml:5909)
+          // "Case title (optional, auto-generated if not provided)"
+          updated[realCaseId] = newCase.title;
 
           // Remove optimistic ID if different
           if (optimisticId !== realCaseId && updated[optimisticId]) {

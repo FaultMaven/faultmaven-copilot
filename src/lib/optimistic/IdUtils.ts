@@ -1,7 +1,10 @@
 /**
  * IdUtils - Utility functions for ID and title generation
  *
- * Generates case names in format: Case-MMDD-N
+ * **IMPORTANT**: Title generation is primarily a BACKEND responsibility per API contract.
+ * Backend auto-generates titles in Case-MMDD-N format when not provided.
+ * Frontend methods here are for OPTIMISTIC UI display only.
+ *
  * Example: Case-1028-1, Case-1028-2
  */
 
@@ -11,11 +14,21 @@ interface CaseWithTitle {
 
 export class IdUtils {
   /**
-   * Generate a unique case title in format: Case-MMDD-N
+   * Generate a unique case title in format: Case-MMDD-N for OPTIMISTIC UI DISPLAY ONLY.
+   *
+   * **IMPORTANT**: Backend is the authoritative source for case titles per API contract
+   * (openapi.locked.yaml:5909). Backend auto-generates titles when not provided.
+   *
+   * This method is ONLY used for:
+   * - Optimistic UI updates while case creation is in-flight
+   * - Display purposes before backend response arrives
+   *
+   * Backend-provided titles ALWAYS take precedence over optimistic titles.
+   *
    * Example: Case-1028-1, Case-1028-2, Case-1028-3
    *
    * @param existingCases - Optional list of existing cases for determining sequence number
-   * @returns Case title like "Case-1028-1"
+   * @returns Case title like "Case-1028-1" (for optimistic display only)
    */
   static generateChatTitle(existingCases?: CaseWithTitle[]): string {
     const now = new Date();

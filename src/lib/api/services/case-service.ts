@@ -158,19 +158,35 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
     body: JSON.stringify(data || {}),
     credentials: 'include'
   });
-  
+
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({} as any));
     throw new Error(errorData.detail || `Failed to create case: ${response.status}`);
   }
   const json = await response.json().catch(() => ({} as any));
+
+  let caseData: UserCase | null = null;
   if (json && json.case && json.case.case_id) {
-    return json.case as UserCase;
+    caseData = json.case as UserCase;
+  } else if (json && json.case_id) {
+    caseData = json as UserCase;
   }
-  if (json && json.case_id) {
-    return json as UserCase;
+
+  if (!caseData) {
+    throw new Error('Invalid CaseResponse shape from server');
   }
-  throw new Error('Invalid CaseResponse shape from server');
+
+  // CONTRACT VALIDATION: Backend MUST provide title per API contract
+  // openapi.locked.yaml:5909 - "Case title (optional, auto-generated if not provided)"
+  // Backend is required to auto-generate title if not provided in request
+  if (!caseData.title) {
+    throw new Error(
+      'Backend contract violation: title is required in response (openapi.locked.yaml:6132). ' +
+      'Backend must auto-generate title when not provided in request (openapi.locked.yaml:5909).'
+    );
+  }
+
+  return caseData;
 }
 
 export async function archiveCase(caseId: string): Promise<void> {
