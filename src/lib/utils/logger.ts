@@ -5,6 +5,8 @@
  * Only debug logs are suppressed in production; errors are always logged.
  */
 
+/* eslint-disable no-console, no-restricted-syntax */
+
 const IS_DEV = import.meta.env.DEV;
 const IS_DEBUG = import.meta.env.VITE_DEBUG === 'true';
 

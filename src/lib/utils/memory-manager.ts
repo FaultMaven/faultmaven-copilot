@@ -12,6 +12,9 @@
  */
 
 import { OptimisticConversationItem } from '../optimistic/types';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('MemoryManager');
 
 export interface MemoryManagerConfig {
   /**
@@ -65,7 +68,7 @@ export class MemoryManager {
       return messages; // No cleanup needed
     }
 
-    console.log('[MemoryManager] Cleaning up conversation', {
+    log.debug('Cleaning up conversation', {
       totalMessages: messages.length,
       maxAllowed: this.config.maxMessagesPerConversation
     });
@@ -93,7 +96,7 @@ export class MemoryManager {
       return timeA - timeB;
     });
 
-    console.log('[MemoryManager] Cleanup complete', {
+    log.debug('Cleanup complete', {
       removed: messages.length - cleaned.length,
       kept: cleaned.length,
       optimisticKept: optimisticMessages.length
@@ -122,7 +125,7 @@ export class MemoryManager {
       return conversations; // No cleanup needed
     }
 
-    console.log('[MemoryManager] Cleaning up conversations', {
+    log.debug('Cleaning up conversations', {
       total: caseIds.length,
       maxAllowed: this.config.maxOldConversations + 1
     });
@@ -169,7 +172,7 @@ export class MemoryManager {
       cleaned[caseId] = conversations[caseId];
     });
 
-    console.log('[MemoryManager] Conversations cleanup complete', {
+    log.debug('Conversations cleanup complete', {
       removed: caseIds.length - casesToKeep.size,
       kept: casesToKeep.size,
       protected: protectedCases.size

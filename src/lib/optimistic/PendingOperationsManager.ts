@@ -5,6 +5,10 @@
  * optimistic updates that fail or are never used.
  */
 
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('PendingOpsManager');
+
 export interface PendingOperation {
   id: string;
   type: 'create_case' | 'submit_message' | 'submit_query' | 'update_title';
@@ -29,7 +33,7 @@ export class PendingOperationsManager {
    * Add a new pending operation
    */
   add(operation: PendingOperation): void {
-    console.log('[PendingOpsManager] Adding operation:', operation.id, operation.type);
+    log.debug('Adding operation', { id: operation.id, type: operation.type });
     this.operations.set(operation.id, operation);
   }
 
@@ -59,7 +63,7 @@ export class PendingOperationsManager {
     if (operation) {
       operation.status = 'completed';
       operation.completedAt = Date.now();
-      console.log('[PendingOpsManager] Operation completed:', id);
+      log.debug('Operation completed', { id, type: operation.type });
     }
   }
 
@@ -74,11 +78,11 @@ export class PendingOperationsManager {
       operation.completedAt = Date.now();
 
       if (executeRollback) {
-        console.log('[PendingOpsManager] Rolling back failed operation:', id);
+        log.warn('Rolling back failed operation', { id, error });
         try {
           operation.rollbackFn();
         } catch (rollbackError) {
-          console.error('[PendingOpsManager] Rollback failed:', rollbackError);
+          log.error('Rollback failed', rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError)));
         }
       }
     }
@@ -92,7 +96,7 @@ export class PendingOperationsManager {
     if (operation && operation.retryFn) {
       operation.status = 'pending';
       operation.error = undefined;
-      console.log('[PendingOpsManager] Retrying operation:', id);
+      log.info('Retrying operation', { id, type: operation.type });
 
       try {
         await operation.retryFn();
@@ -108,7 +112,7 @@ export class PendingOperationsManager {
    */
   remove(id: string): void {
     if (this.operations.delete(id)) {
-      console.log('[PendingOpsManager] Operation removed:', id);
+      log.debug('Operation removed', { id });
     }
   }
 
@@ -146,7 +150,7 @@ export class PendingOperationsManager {
     toRemove.forEach(id => this.remove(id));
 
     if (toRemove.length > 0) {
-      console.log('[PendingOpsManager] Cleaned up old operations:', toRemove.length);
+      log.info('Cleaned up old operations', { count: toRemove.length });
     }
   }
 
@@ -172,7 +176,7 @@ export class PendingOperationsManager {
           );
 
           if (!hasUserMessages) {
-            console.log('[PendingOpsManager] Cleaning up unused case:', caseId);
+            log.info('Cleaning up unused case', { caseId, ageMs: age });
             // Execute rollback to remove unused case
             operation.rollbackFn();
             this.remove(operation.id);

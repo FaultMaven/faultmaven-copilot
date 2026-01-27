@@ -13,6 +13,9 @@
 
 import { UserCase } from '../api';
 import { OptimisticUserCase } from '../optimistic/types';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('DataIntegrity');
 
 // ============================================================================
 // Type Definitions for Strict Data Separation
@@ -280,29 +283,33 @@ export const validateStateIntegrity = (state: {
  * Debug utility to inspect data separation
  */
 export const debugDataSeparation = (data: any, label: string = 'Unknown') => {
-  console.group(`[DataIntegrity] Debug: ${label}`);
-
   if (Array.isArray(data)) {
     const realIds = data.filter(item => item?.case_id && isRealId(item.case_id));
     const optIds = data.filter(item => item?.case_id && isOptimisticId(item.case_id));
     const invalidIds = data.filter(item => item?.case_id && !isRealId(item.case_id) && !isOptimisticId(item.case_id));
 
-    console.log('Real IDs:', realIds.map(item => item.case_id));
-    console.log('Optimistic IDs:', optIds.map(item => item.case_id));
+    log.debug(`Debug ${label}`, {
+      realIds: realIds.map(item => item.case_id),
+      optimisticIds: optIds.map(item => item.case_id),
+      invalidIds: invalidIds.length > 0 ? invalidIds.map(item => item.case_id) : undefined
+    });
+
     if (invalidIds.length > 0) {
-      console.warn('Invalid IDs:', invalidIds.map(item => item.case_id));
+      log.warn(`Invalid IDs found in ${label}`, { invalidIds: invalidIds.map(item => item.case_id) });
     }
   } else if (typeof data === 'object' && data !== null) {
     const realIds = Object.keys(data).filter(isRealId);
     const optIds = Object.keys(data).filter(isOptimisticId);
     const invalidIds = Object.keys(data).filter(id => !isRealId(id) && !isOptimisticId(id));
 
-    console.log('Real IDs:', realIds);
-    console.log('Optimistic IDs:', optIds);
+    log.debug(`Debug ${label}`, {
+      realIds,
+      optimisticIds: optIds,
+      invalidIds: invalidIds.length > 0 ? invalidIds : undefined
+    });
+
     if (invalidIds.length > 0) {
-      console.warn('Invalid IDs:', invalidIds);
+      log.warn(`Invalid IDs found in ${label}`, { invalidIds });
     }
   }
-
-  console.groupEnd();
 };

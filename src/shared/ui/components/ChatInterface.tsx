@@ -4,6 +4,9 @@ import { UnifiedInputBar } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase, UploadedData } from '../../../lib/api';
 import { usePageContent } from '../hooks/usePageContent';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('ChatInterface');
 
 interface ChatInterfaceProps {
   activeCaseId?: string;
@@ -59,7 +62,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   // Show empty state only if NO active case AND NOT a new unsaved chat
   if (!activeCaseId && !hasUnsavedNewChat) {
-    console.log('[ChatInterface] Showing empty state (no active case, no new chat)');
+    log.debug('Showing empty state', { reason: 'no active case, no new chat' });
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-md p-6">
@@ -78,7 +81,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     );
   }
 
-  console.log('[ChatInterface] Rendering chat interface', { activeCaseId, hasUnsavedNewChat, canInteract });
+  log.debug('Rendering chat interface', { activeCaseId, hasUnsavedNewChat, canInteract });
 
   return (
     <div className="flex flex-col h-full bg-white relative">

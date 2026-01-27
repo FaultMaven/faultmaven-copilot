@@ -343,16 +343,12 @@ function SidePanelAppContent() {
   };
 
   const handleNewChatFromNav = () => {
-    console.log('[SidePanelApp] handleNewChatFromNav called - setting up new chat');
+    log.debug('Setting up new chat from nav');
     setActiveTab('copilot');
     setActiveCaseId(null);
     setActiveCase(null);
     setHasUnsavedNewChat(true);
-    console.log('[SidePanelApp] New chat state updated:', {
-      activeTab: 'copilot',
-      activeCaseId: null,
-      hasUnsavedNewChat: true
-    });
+    log.debug('New chat state updated', { activeTab: 'copilot', activeCaseId: null, hasUnsavedNewChat: true });
   };
 
   const handleCaseSelect = async (caseId: string) => {

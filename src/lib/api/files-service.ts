@@ -5,6 +5,9 @@
 import type { UploadedFileMetadata, UploadedFileDetailsResponse } from '../../types/case';
 import { getApiUrl } from '../../config';
 import { getAuthHeaders } from './fetch-utils';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('FilesService');
 
 /**
  * Fetch uploaded files list for a case
@@ -26,8 +29,7 @@ async function getUploadedFiles(caseId: string): Promise<UploadedFileMetadata[]>
   }
 
   const data = await response.json();
-  console.log('[FilesService] API response:', data);
-  console.log('[FilesService] Extracted files:', data.files);
+  log.debug('Fetched uploaded files', { caseId, fileCount: data.files?.length ?? 0 });
   return data.files || [];
 }
 
@@ -57,7 +59,7 @@ async function getUploadedFileDetails(
   }
 
   const data = await response.json();
-  console.log('[FilesService] File details response:', data);
+  log.debug('Fetched file details', { caseId, fileId });
   return data;
 }
 

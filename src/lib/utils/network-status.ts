@@ -1,6 +1,9 @@
 // src/lib/utils/network-status.ts
 
 import { getApiUrl } from '../../config';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('NetworkStatus');
 
 /**
  * Network status monitor for detecting connectivity issues
@@ -69,12 +72,12 @@ export class NetworkStatusMonitor {
       this.isMonitoring = true;
 
       const handleOnline = () => {
-        console.log('[NetworkStatus] Browser online event');
+        log.info('Browser online event');
         this.notifyListeners(true);
       };
 
       const handleOffline = () => {
-        console.log('[NetworkStatus] Browser offline event');
+        log.info('Browser offline event');
         this.notifyListeners(false);
       };
 

@@ -5,6 +5,10 @@
  * real IDs returned from the backend API.
  */
 
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('IdMappingManager');
+
 export interface IdMapping {
   optimisticId: string;
   realId: string;
@@ -44,7 +48,7 @@ export class IdMappingManager {
     };
 
     this.mappings.set(optimisticId, mapping);
-    console.log('[IdMappingManager] Added mapping:', optimisticId, '->', realId);
+    log.debug('Added mapping', { optimisticId, realId, type });
   }
 
   /**
@@ -87,7 +91,7 @@ export class IdMappingManager {
   removeMapping(optimisticId: string): boolean {
     const removed = this.mappings.delete(optimisticId);
     if (removed) {
-      console.log('[IdMappingManager] Removed mapping:', optimisticId);
+      log.debug('Removed mapping', { optimisticId });
     }
     return removed;
   }
@@ -135,7 +139,7 @@ export class IdMappingManager {
     toRemove.forEach(id => this.removeMapping(id));
 
     if (toRemove.length > 0) {
-      console.log('[IdMappingManager] Cleaned up old mappings:', toRemove.length);
+      log.info('Cleaned up old mappings', { count: toRemove.length });
     }
   }
 
@@ -172,7 +176,7 @@ export class IdMappingManager {
   clear(): void {
     const count = this.mappings.size;
     this.mappings.clear();
-    console.log('[IdMappingManager] Cleared all mappings:', count);
+    log.info('Cleared all mappings', { count });
   }
 
   /**

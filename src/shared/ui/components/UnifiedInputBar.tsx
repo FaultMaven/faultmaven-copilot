@@ -13,6 +13,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { browser } from 'wxt/browser';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('UnifiedInputBar');
 import { INPUT_LIMITS } from '../layouts/constants';
 
 export interface UnifiedInputBarProps {
@@ -77,7 +80,7 @@ export function UnifiedInputBar({
 
     if (newMode !== inputMode) {
       setInputMode(newMode);
-      console.log(`[UnifiedInputBar] 🔄 Mode switched to ${newMode} (${lineCount} lines)`);
+      log.debug('Mode switched', { newMode, lineCount });
     }
   }, [input, inputMode]);
 
@@ -175,7 +178,7 @@ export function UnifiedInputBar({
       } finally {
         // CRITICAL: Always clear selected data and unlock input, even on error
         // This ensures the input is never stuck in locked state
-        console.log('[UnifiedInputBar] 🔓 Unlocking input after upload (finally block)');
+        log.debug('Unlocking input after upload');
         setIsUploadingData(false);
         setSelectedFile(null);
         setCapturedPageUrl(null);
@@ -263,7 +266,7 @@ export function UnifiedInputBar({
       if (tab.url) {
         setCapturedPageUrl(tab.url);
         setInputMode('data'); // Switch to data mode
-        console.log('[UnifiedInputBar] Page captured:', tab.url, `(${pageHtmlContent.length} bytes)`);
+        log.debug('Page captured', { url: tab.url, bytes: pageHtmlContent.length });
       } else {
         throw new Error('Could not retrieve current page URL');
       }
@@ -341,7 +344,7 @@ export function UnifiedInputBar({
     setValidationError(null);
     setSelectedFile(file);
     setInputMode('data');
-    console.log('[UnifiedInputBar] File dropped:', file.name);
+    log.debug('File dropped', { fileName: file.name });
   };
 
   // Calculate dynamic textarea rows
