@@ -1,6 +1,6 @@
 import { getApiUrl } from "../../../config";
 import { UserCase, UserCaseStatus } from "../../../types/case";
-import { authenticatedFetchWithRetry } from "../client";
+import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { 
   AgentResponse, 
@@ -155,7 +155,7 @@ export async function getUserCases(filters?: {
 export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases`, {
     method: 'POST',
-    body: JSON.stringify(data || {}),
+    body: prepareBody(data),
     credentials: 'include'
   });
 
@@ -215,7 +215,7 @@ export async function deleteCase(caseId: string): Promise<void> {
 export async function updateCaseTitle(caseId: string, title: string): Promise<void> {
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
     method: 'PUT',
-    body: JSON.stringify({ title } as CaseUpdateRequest),
+    body: prepareBody({ title } as CaseUpdateRequest),
     credentials: 'include'
   });
   
@@ -267,7 +267,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
 
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/queries`, {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: prepareBody(body),
     credentials: 'include'
   });
 
@@ -465,7 +465,7 @@ export async function generateCaseTitle(
   if (options?.hint) body.hint = options.hint;
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/title`, {
     method: 'POST',
-    body: Object.keys(body).length ? JSON.stringify(body) : undefined,
+    body: Object.keys(body).length ? prepareBody(body) : undefined,
     credentials: 'include'
   });
   

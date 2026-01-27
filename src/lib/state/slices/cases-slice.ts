@@ -225,8 +225,9 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       
       if (!targetCaseId) {
         // Create new case - let backend auto-generate title per API contract
+        // NOTE: Must use `null` not `undefined` - JSON.stringify strips undefined
         const caseData = await createCase({
-          title: undefined,  // Backend auto-generates Case-MMDD-N format
+          title: null,  // null triggers backend auto-generation (Case-MMDD-N format)
           priority: 'medium',
           metadata: { created_via: 'browser_extension', auto_generated: true }
         });

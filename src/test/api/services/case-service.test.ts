@@ -5,7 +5,12 @@ import * as client from '../../../lib/api/client';
 // Mock client
 vi.mock('../../../lib/api/client', () => ({
   authenticatedFetchWithRetry: vi.fn(),
-  authenticatedFetch: vi.fn()
+  authenticatedFetch: vi.fn(),
+  // Use actual prepareBody implementation - it's a pure function
+  prepareBody: (body: unknown) => {
+    if (body === undefined || body === null) return undefined;
+    return JSON.stringify(body, (_key, value) => value === undefined ? null : value);
+  }
 }));
 
 // Mock config
@@ -80,13 +85,14 @@ describe('Case Service', () => {
 
       const result = await caseService.submitQueryToCase(caseId, queryRequest);
 
+      // prepareBody converts undefined → null for backend compatibility
       expect(client.authenticatedFetchWithRetry).toHaveBeenCalledWith(
         `https://api.test/api/v1/cases/${caseId}/queries`,
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({
             message: queryRequest.query,
-            attachments: undefined
+            attachments: null  // undefined converted to null by prepareBody
           })
         })
       );

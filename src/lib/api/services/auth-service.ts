@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import config, { getApiUrl } from "../../../config";
 import { authManager } from "../../auth/auth-manager";
-import { authenticatedFetch } from "../client";
+import { authenticatedFetch, prepareBody } from "../client";
 import { APIError, AuthState, AuthTokenResponse, UserProfile } from "../types";
 
 export async function devLogin(
@@ -13,7 +13,7 @@ export async function devLogin(
     const response = await fetch(`${await getApiUrl()}/api/v1/auth/dev-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: prepareBody({
         username,
         email,
         display_name: displayName

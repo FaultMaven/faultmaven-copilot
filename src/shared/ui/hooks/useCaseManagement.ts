@@ -192,8 +192,9 @@ async function createNewCaseViaAPI(): Promise<string> {
 
   // Create case with minimal data - owner_id auto-populated from session
   // Backend auto-generates title in format: Case-MMDD-N
+  // NOTE: Must use `null` not `undefined` - JSON.stringify strips undefined
   const request: CreateCaseRequest = {
-    title: undefined,  // Let backend auto-generate
+    title: null,  // null triggers backend auto-generation
     priority: 'medium',
     metadata: {
       created_via: 'browser_extension',

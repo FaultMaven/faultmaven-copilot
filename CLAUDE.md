@@ -276,9 +276,49 @@ try {
 }
 ```
 
+### API Request Serialization (prepareBody)
+
+All API service functions use `prepareBody()` for JSON serialization. This utility converts `undefined` → `null` to ensure consistent backend behavior:
+
+```typescript
+import { prepareBody } from '~/lib/api/client';
+
+// prepareBody converts undefined values to null
+prepareBody({ title: undefined, priority: 'medium' });
+// Returns: '{"title":null,"priority":"medium"}'
+
+// This addresses the TypeScript-to-REST semantic mismatch where
+// JSON.stringify silently strips undefined values
+```
+
+**Design rationale:**
+- `undefined` → `null`: Explicitly tells backend "this field is empty"
+- Field not in object: Truly missing (use for partial updates)
+- Use explicit types (`field: string | null`) to force conscious decisions
+
 ### Case Title Generation
 
-Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). Frontend MUST trust the backend per API contract - do NOT pass a title to `createCase()`.
+Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). The `CreateCaseRequest` type enforces explicit intent:
+
+```typescript
+interface CreateCaseRequest {
+  title: string | null;  // Required - must explicitly choose
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+}
+
+// ✅ CORRECT: Explicit null triggers auto-generation
+createCase({ title: null, priority: 'medium' });
+// Sends: {"title":null,"priority":"medium"}
+
+// ✅ CORRECT: Provide explicit title
+createCase({ title: 'My Case', priority: 'medium' });
+// Sends: {"title":"My Case","priority":"medium"}
+```
+
+**Three title scenarios:**
+1. **New case creation**: `title: null` → Backend generates `Case-MMDD-N`
+2. **Manual rename**: `PUT /api/v1/cases/{id}` with explicit title string
+3. **LLM auto-generate**: `POST /api/v1/cases/{id}/title` triggers AI summarization
 
 ### API Response Polling
 
