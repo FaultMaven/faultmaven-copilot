@@ -58,10 +58,13 @@ export async function createFreshSession(metadata?: Record<string, any>): Promis
 
   const requestBody = metadata ? { metadata } : {};
 
+  // Include auth headers so backend can associate session with authenticated user
+  const authHeaders = await getAuthHeaders();
+
   const response = await fetch(url.toString(), {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      ...authHeaders,
     },
     body: JSON.stringify(requestBody),
   });
