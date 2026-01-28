@@ -22,8 +22,17 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
       // Try to get OAuth token from TokenManager first (with auto-refresh)
       try {
         const accessToken = await tokenManager.getValidAccessToken();
+        log.debug('TokenManager returned:', { hasToken: !!accessToken });
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
+        } else {
+          // TokenManager returned null - try fallback
+          log.debug('TokenManager returned null, trying AuthManager fallback');
+          const authState = await authManager.getAuthState();
+          log.debug('AuthManager fallback:', { hasAuthState: !!authState, hasToken: !!authState?.access_token });
+          if (authState?.access_token) {
+            headers['Authorization'] = `Bearer ${authState.access_token}`;
+          }
         }
       } catch (tokenError) {
         log.debug('TokenManager failed, falling back to AuthManager:', tokenError);
@@ -58,10 +67,13 @@ export async function createFreshSession(metadata?: Record<string, any>): Promis
 
   const requestBody = metadata ? { metadata } : {};
 
+  // Include auth headers so backend can associate session with authenticated user
+  const authHeaders = await getAuthHeaders();
+
   const response = await fetch(url.toString(), {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      ...authHeaders,
     },
     body: JSON.stringify(requestBody),
   });

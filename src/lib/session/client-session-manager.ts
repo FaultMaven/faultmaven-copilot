@@ -2,6 +2,7 @@ import { getApiUrl } from "../../config";
 import config from "../../config";
 import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
+import { getAuthHeaders } from '../api/fetch-utils';
 
 const log = createLogger('ClientSessionManager');
 
@@ -119,10 +120,17 @@ export class ClientSessionManager {
 
     log.info('Creating session with client_id:', clientId.slice(0, 8) + '...');
 
+    // Include auth headers so backend can associate session with authenticated user
+    const authHeaders = await getAuthHeaders();
+
+    // Debug: Log if Authorization header is present
+    const hasAuth = 'Authorization' in authHeaders;
+    log.info('Session creation auth headers:', { hasAuthorization: hasAuth });
+
     const response = await fetch(`${apiUrl}/api/v1/sessions`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        ...authHeaders,
       },
       body: JSON.stringify(requestBody),
     });
