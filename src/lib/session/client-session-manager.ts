@@ -123,6 +123,10 @@ export class ClientSessionManager {
     // Include auth headers so backend can associate session with authenticated user
     const authHeaders = await getAuthHeaders();
 
+    // Debug: Log if Authorization header is present
+    const hasAuth = 'Authorization' in authHeaders;
+    log.info('Session creation auth headers:', { hasAuthorization: hasAuth });
+
     const response = await fetch(`${apiUrl}/api/v1/sessions`, {
       method: 'POST',
       headers: {
