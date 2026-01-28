@@ -92,7 +92,7 @@ export async function getAuthConfig(): Promise<AuthConfig> {
   }
 
   try {
-    const apiUrl = getApiUrl();
+    const apiUrl = await getApiUrl();
     const response = await fetch(`${apiUrl}/api/v1/auth/config`, {
       method: 'GET',
       headers: {
@@ -152,7 +152,7 @@ export async function getAuthConfig(): Promise<AuthConfig> {
  */
 export async function initiateOIDCLogin(redirectUri: string): Promise<OIDCInitiateResponse> {
   try {
-    const apiUrl = getApiUrl();
+    const apiUrl = await getApiUrl();
 
     // Generate PKCE code verifier and challenge (for browser extension security)
     const codeVerifier = generateCodeVerifier();
@@ -202,7 +202,7 @@ export async function initiateOIDCLogin(redirectUri: string): Promise<OIDCInitia
  */
 export async function handleOIDCCallback(code: string, state: string): Promise<any> {
   try {
-    const apiUrl = getApiUrl();
+    const apiUrl = await getApiUrl();
 
     // Retrieve code verifier from storage
     let codeVerifier: string | undefined;
