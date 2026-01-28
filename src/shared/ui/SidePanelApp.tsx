@@ -150,6 +150,7 @@ function SidePanelAppContent() {
     activeCaseId: activeCaseId || undefined,
     hasUnsavedNewChat,
     conversations,
+    titleSources,
     setActiveCaseId,
     setHasUnsavedNewChat,
     setConversations,

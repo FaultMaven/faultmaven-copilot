@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Session } from '../../../lib/api';
+import { TITLE_GENERATION_THRESHOLD } from '../hooks/useMessageSubmission';
 
 interface ConversationItemProps {
   session: Session;
@@ -251,9 +252,9 @@ export function ConversationItem({
               {onGenerateTitle && !isUnsavedNew && (
                 <button
                   onClick={handleMenuAction(() => onGenerateTitle(session.session_id))}
-                  disabled={messageCount < 5}
+                  disabled={messageCount < TITLE_GENERATION_THRESHOLD}
                   className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
-                    messageCount < 5
+                    messageCount < TITLE_GENERATION_THRESHOLD
                       ? 'text-gray-400 cursor-not-allowed'
                       : 'text-gray-700 hover:bg-gray-100'
                   }`}
