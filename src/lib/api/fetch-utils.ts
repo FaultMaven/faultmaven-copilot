@@ -22,7 +22,7 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
       // Try to get OAuth token from TokenManager first (with auto-refresh)
       try {
         const accessToken = await tokenManager.getValidAccessToken();
-        // Use warn level for debugging in prod builds
+        // Use warn level for visibility in production builds
         log.warn('TokenManager returned:', { hasToken: !!accessToken });
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
