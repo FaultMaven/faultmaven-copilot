@@ -39,13 +39,17 @@ import type { ConflictResolution } from '../components/ConflictResolutionModal';
 
 const log = createLogger('useMessageSubmission');
 
+// Minimum messages before auto-generating title (must match ConversationItem.tsx)
+export const TITLE_GENERATION_THRESHOLD = 5;
+
 export interface UseMessageSubmissionProps {
   // Current state
   sessionId: string | null;
   activeCaseId: string | undefined;
   hasUnsavedNewChat: boolean;
   conversations: Record<string, OptimisticConversationItem[]>;
-  
+  titleSources: Record<string, 'user' | 'backend' | 'system'>;
+
   // State setters (sessionId managed by useSessionManagement hook, not needed here)
   setActiveCaseId: (id: string | undefined) => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
@@ -185,9 +189,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       });
 
       // SUCCESS HANDLER
-      // Check if this is the first message (before updating conversations)
       const currentConversation = props.conversations[caseId] || [];
-      const isFirstMessage = currentConversation.length <= 2; // User message + AI thinking message
 
       // Update conversations: replace optimistic messages with real data
       props.setConversations(prev => {
@@ -239,12 +241,23 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
          pendingOpsManager.complete(aiMessageId);
          log.info('Message submission completed and UI updated');
 
-         // Generate smart title for first message
-         if (isFirstMessage) {
-           log.info('First message detected, generating smart title', { caseId, query: query.substring(0, 50) });
+         // Auto-generate smart title when message count first reaches threshold
+         // Each conversation item represents one message (user or AI), so divide by 2 for exchanges
+         // After this submission, we have the user message + AI response = 2 new items
+         const currentMessageCount = Math.ceil(currentConversation.length / 2);
+         const titleSource = props.titleSources[caseId];
+         const isUserRenamed = titleSource === 'user';
+         const shouldAutoGenerateTitle =
+           currentMessageCount === TITLE_GENERATION_THRESHOLD && !isUserRenamed;
+
+         if (shouldAutoGenerateTitle) {
+           log.info('Message threshold reached, auto-generating smart title', {
+             caseId,
+             messageCount: currentMessageCount,
+             threshold: TITLE_GENERATION_THRESHOLD
+           });
            try {
-             const titleResult = await generateCaseTitle(caseId, { max_words: 6, hint: query });
-             // Trust all backend-generated titles (backend auto-generates Case-MMDD-N per contract)
+             const titleResult = await generateCaseTitle(caseId, { max_words: 6 });
              if (titleResult.title) {
                props.setConversationTitles(prev => ({
                  ...prev,
@@ -252,14 +265,16 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                }));
                props.setTitleSources(prev => ({
                  ...prev,
-                 [caseId]: (titleResult.source as 'user' | 'backend' | 'system') || 'backend'
+                 [caseId]: 'backend'
                }));
-               log.info('Smart title generated', { caseId, title: titleResult.title });
+               log.info('Smart title auto-generated', { caseId, title: titleResult.title });
              }
            } catch (error) {
-             log.warn('Failed to generate smart title', error);
-             // Non-critical - don't fail the message submission
+             log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
+             // Non-critical - silently ignore, user can manually request later
            }
+         } else if (currentMessageCount > TITLE_GENERATION_THRESHOLD) {
+           log.debug('Past auto-generation threshold, skipping', { messageCount: currentMessageCount });
          }
 
     } catch (error) {

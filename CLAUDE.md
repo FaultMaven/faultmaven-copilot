@@ -85,12 +85,15 @@ src/
 │   ├── auth-bridge.content.ts           # OAuth bridge content script
 │   ├── page-content.content.ts          # Page content capture
 │   ├── sidepanel_manual/main.tsx        # React side panel entry
-│   └── options/main.tsx                 # Extension options page
+│   ├── options/main.tsx                 # Extension options page
+│   └── oidc-callback.html               # OIDC callback handler
 │
 ├── lib/                       # Core business logic
 │   ├── api/                             # API layer
-│   │   ├── client.ts                    # Authenticated fetch with retry
+│   │   ├── client.ts                    # Authenticated fetch with retry + prepareBody
+│   │   ├── fetch-utils.ts               # Auth header utilities
 │   │   ├── query-client.ts              # TanStack Query configuration
+│   │   ├── session-core.ts              # Session lifecycle management
 │   │   ├── services/                    # Service modules
 │   │   │   ├── auth-service.ts          # Authentication endpoints
 │   │   │   ├── case-service.ts          # Case CRUD & conversations
@@ -101,8 +104,13 @@ src/
 │   │
 │   ├── auth/                            # Authentication
 │   │   ├── auth-manager.ts              # Centralized auth state
+│   │   ├── auth-config.ts               # Auth mode detection (local/OIDC)
+│   │   ├── auth-client.ts               # Auth client interface
 │   │   ├── dashboard-oauth.ts           # OAuth flow (PKCE)
-│   │   └── token-manager.ts             # Token management
+│   │   ├── local-auth-client.ts         # Local username/password auth
+│   │   ├── oauth-client.ts              # OAuth client implementation
+│   │   ├── oidc-callback.ts             # OIDC callback handler
+│   │   └── token-manager.ts             # Token storage & refresh
 │   │
 │   ├── state/                           # Zustand stores
 │   │   ├── store.ts                     # Main store composition
@@ -113,21 +121,34 @@ src/
 │   │       └── ui-slice.ts              # UI state (modals, sidebar)
 │   │
 │   ├── errors/                          # Error handling
-│   │   ├── types.ts                     # Error class hierarchy
+│   │   ├── types.ts                     # UserFacingError class hierarchy
 │   │   ├── classifier.ts                # Error classification
-│   │   └── recovery-strategies.ts       # Recovery implementations
+│   │   ├── recovery-strategies.ts       # Recovery implementations
+│   │   ├── index.ts                     # Exports
+│   │   └── useErrorHandler.tsx          # React error hook
 │   │
 │   ├── optimistic/                      # Optimistic update system
-│   │   ├── OptimisticIdGenerator.ts     # Generate optimistic IDs
+│   │   ├── OptimisticIdGenerator.ts     # Generate optimistic IDs (opt_*)
 │   │   ├── IdMappingManager.ts          # Map optimistic → real IDs
 │   │   ├── PendingOperationsManager.ts  # Track pending operations
-│   │   └── ConflictResolver.ts          # Conflict detection/resolution
+│   │   ├── ConflictResolver.ts          # Conflict detection/resolution
+│   │   ├── MergeStrategies.ts           # Data merge strategies
+│   │   ├── IdUtils.ts                   # ID utilities
+│   │   └── types.ts                     # Optimistic type definitions
+│   │
+│   ├── session/                         # Session management
+│   │   └── client-session-manager.ts    # Client-side session handling
 │   │
 │   └── utils/                           # Utilities
-│       ├── logger.ts                    # Centralized logging
+│       ├── logger.ts                    # Centralized logging (createLogger)
 │       ├── messaging.ts                 # EventBus for cross-context
 │       ├── resilient-operation.ts       # Retry wrapper
-│       └── persistence-manager.ts       # Data persistence
+│       ├── persistence-manager.ts       # Data persistence
+│       ├── data-integrity.ts            # Strict data separation utilities
+│       ├── network-status.ts            # Network connectivity detection
+│       ├── memory-manager.ts            # Memory management
+│       ├── api-error-handler.ts         # API error handling utilities
+│       └── helpers.ts                   # General utilities
 │
 ├── shared/ui/                 # React UI layer
 │   ├── SidePanelApp.tsx                 # Main app component
@@ -135,12 +156,24 @@ src/
 │   │   ├── ChatWindow.tsx               # Conversation display
 │   │   ├── ConversationsList.tsx        # Case list sidebar
 │   │   ├── AuthScreen.tsx               # Login screen
+│   │   ├── LocalLoginForm.tsx           # Local auth form
+│   │   ├── HypothesisTracker.tsx        # Hypothesis tracking display
+│   │   ├── case-header/                 # Case header components
+│   │   │   ├── EnhancedCaseHeader.tsx   # Phase-adaptive header
+│   │   │   ├── HeaderSummary.tsx        # Header summary
+│   │   │   ├── ConsultingDetails.tsx    # Consulting phase details
+│   │   │   ├── InvestigatingDetails.tsx # Investigation details
+│   │   │   └── ResolvedDetails.tsx      # Resolved case details
 │   │   └── ...                          # Many more components
 │   ├── hooks/                           # Custom hooks
 │   │   ├── useAuth.ts                   # Authentication hook
 │   │   ├── useSessionManagement.ts      # Session hook
-│   │   └── useCaseManagement.ts         # Case management hook
+│   │   ├── useCaseManagement.ts         # Case management hook
+│   │   ├── useMessageSubmission.ts      # Message submission hook
+│   │   └── usePendingOperations.ts      # Pending operations hook
 │   └── layouts/                         # Layout components
+│       ├── CollapsibleNavigation.tsx    # Navigation layout
+│       └── ContentArea.tsx              # Content area layout
 │
 ├── types/                     # Shared TypeScript types
 │   ├── api.generated.ts                 # Auto-generated API types
@@ -151,7 +184,10 @@ src/
     ├── api/                             # API tests
     ├── components/                      # Component tests
     ├── hooks/                           # Hook tests
-    └── integration/                     # Integration tests
+    ├── integration/                     # Integration tests
+    ├── lib/auth/                        # Auth tests
+    ├── session/                         # Session tests
+    └── utils/                           # Utility tests
 ```
 
 ### Path Aliases
@@ -165,16 +201,49 @@ Example: `import { createLogger } from '~/lib/utils/logger'`
 
 1. **State Management**: Zustand stores with 4 slices (`AuthSlice`, `SessionSlice`, `CasesSlice`, `UISlice`)
 2. **Optimistic UI**: Immediate feedback with background reconciliation and rollback
-3. **Event Bus**: Typed `EventBus` for Background ↔ Sidepanel ↔ Content script communication
-4. **Resilience**: `resilientOperation` pattern for retries and offline handling
-5. **Logging**: Centralized `createLogger` utility (replaces console.log)
-6. **Error Handling**: `UserFacingError` hierarchy with recovery strategies
+3. **Data Integrity**: Strict separation between optimistic (`opt_*`) and real IDs
+4. **Event Bus**: Typed `EventBus` for Background ↔ Sidepanel ↔ Content script communication
+5. **Resilience**: `resilientOperation` pattern for retries and offline handling
+6. **Logging**: Centralized `createLogger` utility (replaces console.log)
+7. **Error Handling**: `UserFacingError` hierarchy with recovery strategies
+
+### Authentication Modes
+
+The extension supports two authentication modes, determined by backend configuration:
+
+**1. Local Auth (`AUTH_MODE=local`)**
+- Direct username/password authentication
+- Used for self-hosted deployments
+- Implemented in `src/lib/auth/local-auth-client.ts`
+- Endpoints: `POST /api/v1/auth/login`, `POST /api/v1/auth/register`
+
+**2. OAuth (`AUTH_MODE=oauth`)**
+- PKCE-based OAuth flow via Dashboard
+- Used for cloud deployments
+- Implemented in `src/lib/auth/dashboard-oauth.ts`
+- Endpoints: `POST /api/v1/auth/login/initiate`, `GET /api/v1/auth/callback`
+
+Auth mode is auto-detected via `GET /api/v1/auth/config`.
+
+### Deployment Modes
+
+**Cloud Deployment** (default):
+- Dashboard: `https://app.faultmaven.ai`
+- API: `https://api.faultmaven.ai` (derived from dashboard URL)
+- OAuth authentication
+
+**Self-Hosted Deployment**:
+- Dashboard: `http://localhost:3333` (or configured URL)
+- API: Derived by replacing port 3333 → 8090
+- Local authentication support
+
+URL configuration is done via the Settings page and stored in `browser.storage.local`.
 
 ### Testing Infrastructure
 
 - **Vitest**: Fast testing with jsdom environment
 - **React Testing Library**: Component testing
-- **Coverage**: 133+ tests with ~100% pass rate
+- **Coverage**: 17+ test files covering API, hooks, components, and integration
 - **Mocks**: Browser API and Fetch mocked in `src/test/setup.ts`
 
 ## Development Guidelines
@@ -190,6 +259,23 @@ log.debug('Debug message', data);   // Dev only
 log.info('Info message', data);     // Dev only
 log.warn('Warning', data);          // Always logged
 log.error('Error', error);          // Always logged
+```
+
+**Structured Logging Best Practices** (gold standard from ConversationsList):
+```typescript
+// ✅ GOOD: Use structured data objects
+log.debug('Fetched cases', { count: list.length, hasOptimistic: pending.length > 0 });
+
+// ❌ BAD: JSON.stringify (computationally expensive)
+log.debug('Fetched cases', JSON.stringify(list));
+
+// ✅ GOOD: Single consolidated log
+log.info('Case renamed', { caseId, newTitle });
+
+// ❌ BAD: Multiple logs for same operation
+log.info('Renaming case...');
+log.info(`Case ID: ${caseId}`);
+log.info(`New title: ${newTitle}`);
 ```
 
 **State Access** - Use custom hooks to access Zustand stores:
@@ -240,6 +326,37 @@ Each error provides:
 - `recovery` - Strategy for handling
 - `getDisplayOptions()` - Toast/modal/inline configuration
 
+### Data Integrity for Optimistic Updates
+
+The `src/lib/utils/data-integrity.ts` module enforces strict separation between optimistic and real data:
+
+**ID Format Rules:**
+- Optimistic IDs: Always start with `opt_` (e.g., `opt_case_abc123`)
+- Real IDs: Never start with `opt_` (UUIDs from backend)
+
+**Key Functions:**
+```typescript
+import {
+  isOptimisticId,          // Check if ID is optimistic
+  isRealId,                // Check if ID is real
+  sanitizeBackendCases,    // Extract only real cases from mixed data
+  sanitizeOptimisticCases, // Extract only optimistic cases
+  mergeOptimisticAndReal,  // Safely merge with conflict detection
+  validateStateIntegrity   // Validate state has no mixed IDs
+} from '~/lib/utils/data-integrity';
+
+// Safe merging with violation tracking
+const { cases, violations } = mergeOptimisticAndReal(
+  backendCases,
+  pendingCases,
+  'ComponentName'
+);
+
+if (violations.length > 0) {
+  log.error('Data integrity violations', { violations });
+}
+```
+
 ### Optimistic Updates Pattern
 
 Three-step process for immediate UI feedback:
@@ -250,7 +367,7 @@ Three-step process for immediate UI feedback:
 
 ```typescript
 // 1. Generate optimistic ID and update UI
-const optimisticId = OptimisticIdGenerator.generateMessageId();
+const optimisticId = OptimisticIdGenerator.generateCaseId();
 set(state => ({
   conversations: {
     ...state.conversations,
@@ -319,6 +436,33 @@ createCase({ title: 'My Case', priority: 'medium' });
 1. **New case creation**: `title: null` → Backend generates `Case-MMDD-N`
 2. **Manual rename**: `PUT /api/v1/cases/{id}` with explicit title string
 3. **LLM auto-generate**: `POST /api/v1/cases/{id}/title` triggers AI summarization
+
+### Case Status Lifecycle
+
+Cases follow a defined status lifecycle with specific transitions:
+
+| Status | Description | Valid Transitions |
+|--------|-------------|-------------------|
+| `consulting` | Q&A mode - exploring the issue | `investigating`, `closed` |
+| `investigating` | Active troubleshooting | `resolved`, `closed` |
+| `resolved` | Issue resolved (terminal) | - |
+| `closed` | Closed without resolution (terminal) | - |
+
+```typescript
+import {
+  normalizeStatus,
+  getValidTransitions,
+  isTerminalStatus,
+  getStatusChangeMessage
+} from '~/lib/api/services/case-service';
+
+// Get valid transitions for current status
+const transitions = getValidTransitions('consulting'); // ['investigating', 'closed']
+
+// Get predefined message for status change
+const msg = getStatusChangeMessage('consulting', 'investigating');
+// "I want to start a formal investigation to find the root cause."
+```
 
 ### API Response Polling
 

@@ -61,6 +61,7 @@ describe('useMessageSubmission', () => {
     activeCaseId: 'case-123',
     hasUnsavedNewChat: false,
     conversations: {},
+    titleSources: {} as Record<string, 'user' | 'backend' | 'system'>,
     setActiveCaseId: vi.fn(),
     setHasUnsavedNewChat: vi.fn(),
     setConversations: vi.fn(),
