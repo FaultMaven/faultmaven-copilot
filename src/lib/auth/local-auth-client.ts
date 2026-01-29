@@ -244,9 +244,17 @@ export class LocalAuthClient {
    *
    * Uses same storage keys as OAuthClient for TokenManager compatibility.
    * Also stores composite authState object for authManager compatibility.
+   *
+   * IMPORTANT: Clears old troubleshooting session to force fresh session creation
+   * with the newly authenticated user.
    */
   private async storeTokens(tokenResponse: AuthTokenResponse): Promise<void> {
     const expiresAt = Date.now() + (tokenResponse.expires_in * 1000);
+
+    // Clear old troubleshooting session so a fresh one is created with the authenticated user
+    // This prevents the backend from using an old anonymous session's user_id
+    await browser.storage.local.remove(['sessionId', 'faultmaven_client_id']);
+    log.info('Cleared old session data for fresh session creation');
 
     // Store individual keys (for TokenManager compatibility)
     await browser.storage.local.set({
