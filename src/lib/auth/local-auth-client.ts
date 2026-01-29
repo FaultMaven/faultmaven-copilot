@@ -10,7 +10,6 @@
 import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
-import { clientSessionManager } from '../session/client-session-manager';
 import type { AuthTokenResponse, APIError } from '../api/types';
 
 const log = createLogger('LocalAuthClient');
@@ -245,21 +244,10 @@ export class LocalAuthClient {
    *
    * Uses same storage keys as OAuthClient for TokenManager compatibility.
    * Also stores composite authState object for authManager compatibility.
-   *
-   * IMPORTANT: Clears old troubleshooting session to force fresh session creation
-   * with the newly authenticated user.
    */
   private async storeTokens(tokenResponse: AuthTokenResponse): Promise<void> {
     const expiresAt = Date.now() + (tokenResponse.expires_in * 1000);
 
-    // Clear old troubleshooting session so a fresh one is created with the authenticated user
-    // This clears BOTH in-memory cache AND storage - critical because ClientSessionManager
-    // caches the clientId in memory, so just clearing storage is not enough
-    await clientSessionManager.clearClientId();
-    await browser.storage.local.remove(['sessionId']);
-    log.info('Cleared old session data (clientId + sessionId) for fresh session creation');
-
-    // Store individual keys (for TokenManager compatibility)
     await browser.storage.local.set({
       access_token: tokenResponse.access_token,
       token_type: tokenResponse.token_type,
