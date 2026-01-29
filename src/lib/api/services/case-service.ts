@@ -192,20 +192,38 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
 
   log.debug('createCase response', { json });
 
-  // API returns CaseSummary directly with case_id at root level
-  // Handle both wrapped { case: {...} } and direct {...} formats for compatibility
+  // API may return CaseSummary in various wrapper formats
+  // Handle: { case: {...} }, { data: {...} }, direct {...}, or nested in any key with case_id
   let caseData: any = null;
+
   if (json && json.case && json.case.case_id) {
+    // Wrapped in "case" key
     caseData = json.case;
+  } else if (json && json.data && json.data.case_id) {
+    // Wrapped in "data" key
+    caseData = json.data;
   } else if (json && json.case_id) {
+    // Direct CaseSummary at root
     caseData = json;
+  } else if (json && typeof json === 'object') {
+    // Try to find case_id in any nested object
+    for (const key of Object.keys(json)) {
+      if (json[key] && typeof json[key] === 'object' && json[key].case_id) {
+        log.debug('Found case_id in nested key', { key });
+        caseData = json[key];
+        break;
+      }
+    }
   }
 
   if (!caseData) {
+    // Log detailed info for debugging
+    const keys = json ? Object.keys(json) : [];
     log.error('Invalid CaseResponse shape', {
       hasJson: !!json,
-      keys: json ? Object.keys(json) : [],
-      json
+      keys: keys.join(', '),
+      firstLevelValues: keys.map(k => ({ key: k, type: typeof json[k], hasNestedCaseId: json[k]?.case_id ? true : false })),
+      jsonStringified: JSON.stringify(json).slice(0, 500)  // First 500 chars
     });
     throw new Error('Invalid CaseResponse shape from server');
   }
