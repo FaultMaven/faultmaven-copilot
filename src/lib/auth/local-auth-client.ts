@@ -10,6 +10,7 @@
 import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
+import { clientSessionManager } from '../session/client-session-manager';
 import type { AuthTokenResponse, APIError } from '../api/types';
 
 const log = createLogger('LocalAuthClient');
@@ -252,9 +253,11 @@ export class LocalAuthClient {
     const expiresAt = Date.now() + (tokenResponse.expires_in * 1000);
 
     // Clear old troubleshooting session so a fresh one is created with the authenticated user
-    // This prevents the backend from using an old anonymous session's user_id
-    await browser.storage.local.remove(['sessionId', 'faultmaven_client_id']);
-    log.info('Cleared old session data for fresh session creation');
+    // This clears BOTH in-memory cache AND storage - critical because ClientSessionManager
+    // caches the clientId in memory, so just clearing storage is not enough
+    await clientSessionManager.clearClientId();
+    await browser.storage.local.remove(['sessionId']);
+    log.info('Cleared old session data (clientId + sessionId) for fresh session creation');
 
     // Store individual keys (for TokenManager compatibility)
     await browser.storage.local.set({

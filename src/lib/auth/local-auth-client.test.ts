@@ -36,6 +36,12 @@ vi.mock('../utils/logger', () => ({
   })
 }));
 
+vi.mock('../session/client-session-manager', () => ({
+  clientSessionManager: {
+    clearClientId: vi.fn().mockResolvedValue(undefined)
+  }
+}));
+
 // Import mocked browser after mocking
 import { browser } from 'wxt/browser';
 
