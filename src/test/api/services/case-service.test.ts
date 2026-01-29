@@ -34,14 +34,13 @@ describe('Case Service', () => {
 
   describe('createCase', () => {
     it('should create a case successfully', async () => {
+      // API returns CaseSummary directly at root level per OpenAPI spec
       const responseData = {
-        case: {
-          case_id: 'case-123',
-          title: 'New Case',
-          status: 'consulting',
-          created_at: '2024-01-01T00:00:00Z',
-          user_id: 'user-1'
-        }
+        case_id: 'case-123',
+        title: 'New Case',
+        status: 'consulting',
+        created_at: '2024-01-01T00:00:00Z',
+        user_id: 'user-1'
       };
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
 
