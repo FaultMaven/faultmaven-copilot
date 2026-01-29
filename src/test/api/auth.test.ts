@@ -400,17 +400,18 @@ describe('Authentication API', () => {
     });
 
     it('createCase includes auth headers', async () => {
+      // API returns CaseSummary directly at root level per OpenAPI spec
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: {
           get: vi.fn().mockReturnValue('test-correlation-id')
         },
         json: () => Promise.resolve({
-          case: {
-            case_id: 'case-123',
-            title: 'Test Case',
-            status: 'active'
-          }
+          case_id: 'case-123',
+          title: 'Test Case',
+          status: 'consulting',
+          created_at: '2024-01-01T00:00:00Z',
+          user_id: 'user-1'
         })
       });
 
