@@ -9,6 +9,7 @@
 import { browser } from 'wxt/browser';
 import { handleOIDCCallback } from './auth-config';
 import { authManager } from '../api';
+import { clientSessionManager } from '../session/client-session-manager';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('OIDCCallback');
@@ -43,6 +44,11 @@ async function handleCallback() {
 
     // Store authentication state
     await authManager.saveAuthState(authResponse);
+
+    // Clear old session so a fresh one is created with the authenticated user
+    await clientSessionManager.clearClientId();
+    await browser.storage.local.remove(['sessionId']);
+    log.info('Cleared old session for authenticated user');
 
     // Notify extension background script
     try {
