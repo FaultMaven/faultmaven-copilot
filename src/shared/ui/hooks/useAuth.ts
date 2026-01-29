@@ -6,7 +6,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { browser } from 'wxt/browser';
 import { devLogin, logoutAuth, authManager, User } from '../../../lib/api';
+import { clientSessionManager } from '../../../lib/session/client-session-manager';
 import { AuthenticationError } from '../../../lib/errors/types';
 import { createLogger } from '../../../lib/utils/logger';
 import { hasRole, isAdmin, ROLES } from '../../../lib/utils/roles';
@@ -111,6 +113,12 @@ export function useAuth() {
     try {
       log.info('Attempting login', { username });
       await devLogin(username);
+
+      // Clear old session so a fresh one is created with the authenticated user
+      // This prevents requests from using an old anonymous session's user_id
+      await clientSessionManager.clearClientId();
+      await browser.storage.local.remove(['sessionId']);
+      log.info('Cleared old session for authenticated user');
 
       // Load user data after successful login
       const user = await authManager.getCurrentUser();
