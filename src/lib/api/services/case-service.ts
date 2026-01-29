@@ -87,7 +87,11 @@ export function isTerminalStatus(status: string): boolean {
 /**
  * Normalize status string to UserCaseStatus type
  */
-export function normalizeStatus(status: string): UserCaseStatus {
+export function normalizeStatus(status: string | undefined | null): UserCaseStatus {
+  if (!status) {
+    log.warn('Empty status, defaulting to consulting');
+    return 'consulting';
+  }
   const normalized = status.toLowerCase();
 
   if (normalized === 'consulting') return 'consulting';
@@ -149,7 +153,20 @@ export async function getUserCases(filters?: {
     return [];
   }
 
-  return data.cases as UserCase[];
+  // Map API CaseSummary fields to UserCase interface
+  // API returns user_id, UserCase expects owner_id
+  return data.cases.map((c: any) => ({
+    case_id: c.case_id,
+    title: c.title,
+    status: normalizeStatus(c.status),
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+    description: c.description,
+    priority: c.priority,
+    resolved_at: c.resolved_at,
+    message_count: c.current_turn || c.message_count || 0,
+    owner_id: c.user_id || c.owner_id || ''  // API uses user_id
+  }));
 }
 
 export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
@@ -163,30 +180,60 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
     const errorData: APIError = await response.json().catch(() => ({} as any));
     throw new Error(errorData.detail || `Failed to create case: ${response.status}`);
   }
-  const json = await response.json().catch(() => ({} as any));
 
-  let caseData: UserCase | null = null;
+  // Parse response - API returns CaseSummary directly per OpenAPI spec
+  let json: any;
+  try {
+    json = await response.json();
+  } catch (parseError) {
+    log.error('Failed to parse createCase response as JSON', { parseError });
+    throw new Error('Invalid JSON response from server');
+  }
+
+  log.debug('createCase response', { json });
+
+  // API returns CaseSummary directly with case_id at root level
+  // Handle both wrapped { case: {...} } and direct {...} formats for compatibility
+  let caseData: any = null;
   if (json && json.case && json.case.case_id) {
-    caseData = json.case as UserCase;
+    caseData = json.case;
   } else if (json && json.case_id) {
-    caseData = json as UserCase;
+    caseData = json;
   }
 
   if (!caseData) {
+    log.error('Invalid CaseResponse shape', {
+      hasJson: !!json,
+      keys: json ? Object.keys(json) : [],
+      json
+    });
     throw new Error('Invalid CaseResponse shape from server');
   }
 
+  // Map API field names to UserCase interface
+  // API returns user_id, UserCase expects owner_id
+  const userCase: UserCase = {
+    case_id: caseData.case_id,
+    title: caseData.title,
+    status: normalizeStatus(caseData.status),
+    created_at: caseData.created_at,
+    updated_at: caseData.updated_at,
+    description: caseData.description,
+    priority: caseData.priority,
+    resolved_at: caseData.resolved_at,
+    message_count: caseData.current_turn || caseData.message_count || 0,
+    owner_id: caseData.user_id || caseData.owner_id || ''  // API uses user_id
+  };
+
   // CONTRACT VALIDATION: Backend MUST provide title per API contract
-  // openapi.locked.yaml:5909 - "Case title (optional, auto-generated if not provided)"
-  // Backend is required to auto-generate title if not provided in request
-  if (!caseData.title) {
+  if (!userCase.title) {
     throw new Error(
       'Backend contract violation: title is required in response (openapi.locked.yaml:6132). ' +
       'Backend must auto-generate title when not provided in request (openapi.locked.yaml:5909).'
     );
   }
 
-  return caseData;
+  return userCase;
 }
 
 export async function archiveCase(caseId: string): Promise<void> {

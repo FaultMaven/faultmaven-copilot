@@ -34,7 +34,15 @@ describe('Case Service', () => {
 
   describe('createCase', () => {
     it('should create a case successfully', async () => {
-      const responseData = { case: { case_id: 'case-123', title: 'New Case' } };
+      const responseData = {
+        case: {
+          case_id: 'case-123',
+          title: 'New Case',
+          status: 'consulting',
+          created_at: '2024-01-01T00:00:00Z',
+          user_id: 'user-1'
+        }
+      };
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
 
       const request = {
@@ -52,13 +60,18 @@ describe('Case Service', () => {
           body: JSON.stringify(request)
         })
       );
-      expect(result).toEqual(responseData.case);
+      expect(result.case_id).toEqual('case-123');
+      expect(result.title).toEqual('New Case');
+      expect(result.owner_id).toEqual('user-1'); // Maps user_id -> owner_id
     });
   });
 
   describe('getUserCases', () => {
     it('should fetch user cases', async () => {
-      const mockCases = [{ case_id: '1' }, { case_id: '2' }];
+      const mockCases = [
+        { case_id: '1', title: 'Case 1', status: 'consulting', created_at: '2024-01-01', user_id: 'user-1' },
+        { case_id: '2', title: 'Case 2', status: 'investigating', created_at: '2024-01-02', user_id: 'user-2' }
+      ];
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: mockCases }));
 
       const result = await caseService.getUserCases();
@@ -67,7 +80,11 @@ describe('Case Service', () => {
         expect.stringContaining('/api/v1/cases'),
         expect.objectContaining({ method: 'GET' })
       );
-      expect(result).toEqual(mockCases);
+      expect(result.length).toEqual(2);
+      expect(result[0].case_id).toEqual('1');
+      expect(result[0].owner_id).toEqual('user-1'); // Maps user_id -> owner_id
+      expect(result[1].case_id).toEqual('2');
+      expect(result[1].owner_id).toEqual('user-2');
     });
   });
 
