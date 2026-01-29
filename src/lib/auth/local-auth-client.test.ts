@@ -129,12 +129,8 @@ describe('LocalAuthClient', () => {
         })
       );
 
-      // Verify auth state change was broadcasted
-      // Note: broadcastAuthStateChange fetches user from storage, which is empty in test
-      expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
-        type: 'auth_state_changed',
-        authState: null
-      });
+      // Note: auth_state_changed is NOT broadcasted here.
+      // The caller (useAuth) broadcasts after clearing the old session.
     });
 
     it('should successfully sign in with only username (no password)', async () => {
@@ -287,8 +283,8 @@ describe('LocalAuthClient', () => {
       // Verify tokens were stored
       expect(browser.storage.local.set).toHaveBeenCalled();
 
-      // Verify auth state change was broadcasted
-      expect(browser.runtime.sendMessage).toHaveBeenCalled();
+      // Note: auth_state_changed is NOT broadcasted here.
+      // The caller broadcasts after clearing the old session.
     });
 
     it('should handle registration failure (username taken)', async () => {
