@@ -97,8 +97,9 @@ export class LocalAuthClient {
         user_id: tokenResponse.user.user_id
       });
 
-      // Broadcast auth state change
-      await this.broadcastAuthStateChange();
+      // Note: Don't broadcast auth_state_changed here.
+      // useAuth.login() will broadcast AFTER clearing the old session,
+      // preventing race conditions where components react before session is cleared.
 
       return {
         success: true,
@@ -171,8 +172,8 @@ export class LocalAuthClient {
         user_id: tokenResponse.user.user_id
       });
 
-      // Broadcast auth state change
-      await this.broadcastAuthStateChange();
+      // Note: Don't broadcast auth_state_changed here.
+      // Caller will broadcast AFTER clearing the old session.
 
       return {
         success: true,
