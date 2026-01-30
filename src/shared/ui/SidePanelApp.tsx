@@ -361,6 +361,32 @@ function SidePanelAppContent() {
     setHasUnsavedNewChat(false);
     setActiveTab('copilot');
 
+    // Set activeCase immediately to enable chat interaction (canInteract depends on !!activeCase)
+    const optimisticCase = optimisticCases.find(c => c.case_id === caseId);
+    if (optimisticCase) {
+      // Use optimistic case data
+      setActiveCase({
+        case_id: optimisticCase.case_id,
+        title: optimisticCase.title || conversationTitles[caseId] || 'New Case',
+        status: optimisticCase.status || 'consulting',
+        created_at: optimisticCase.created_at || new Date().toISOString(),
+        updated_at: optimisticCase.updated_at || new Date().toISOString(),
+        owner_id: optimisticCase.owner_id || '',
+        message_count: conversations[caseId]?.length || 0
+      });
+    } else {
+      // Set minimal case data - ChatWindow will load full data
+      setActiveCase({
+        case_id: caseId,
+        title: conversationTitles[caseId] || 'Loading...',
+        status: 'consulting',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        owner_id: '',
+        message_count: conversations[caseId]?.length || 0
+      });
+    }
+
     // Resolve optimistic IDs to real IDs
     const resolvedCaseId = isOptimisticId(caseId)
       ? idMappingManager.getRealId(caseId) || caseId
