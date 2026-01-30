@@ -16,7 +16,8 @@ import DocumentDetailsModal from "./components/DocumentDetailsModal";
 const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
-import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle } from "../../lib/api";
+import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation } from "../../lib/api";
+import { isOptimisticId } from "../../lib/utils/data-integrity";
 import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
 
 // Layouts
@@ -70,6 +71,7 @@ function SidePanelAppContent() {
   const [pendingOperations, setPendingOperations] = useState<Record<string, PendingOperation>>({});
   const [optimisticCases, setOptimisticCases] = useState<OptimisticUserCase[]>([]);
   const [pinnedCases, setPinnedCases] = useState<Set<string>>(new Set());
+  const [loadedConversationIds, setLoadedConversationIds] = useState<Set<string>>(new Set());
   const [activeCase, setActiveCase] = useState<any | null>(null); // Should be UserCase
   const [investigationProgress, setInvestigationProgress] = useState<Record<string, any>>({});
   const [caseEvidence, setCaseEvidence] = useState<Record<string, any[]>>({}); // Should be UploadedData[]
@@ -354,11 +356,109 @@ function SidePanelAppContent() {
   };
 
   const handleCaseSelect = async (caseId: string) => {
-    // Basic implementation - actual logic should be in useCaseManagement or similar
-    // For now, setting active ID triggers effects in components
+    // Set UI state immediately
     setActiveCaseId(caseId);
     setHasUnsavedNewChat(false);
     setActiveTab('copilot');
+
+    // Set activeCase immediately to enable chat interaction (canInteract depends on !!activeCase)
+    const optimisticCase = optimisticCases.find(c => c.case_id === caseId);
+    if (optimisticCase) {
+      // Use optimistic case data
+      setActiveCase({
+        case_id: optimisticCase.case_id,
+        title: optimisticCase.title || conversationTitles[caseId] || 'New Case',
+        status: optimisticCase.status || 'consulting',
+        created_at: optimisticCase.created_at || new Date().toISOString(),
+        updated_at: optimisticCase.updated_at || new Date().toISOString(),
+        owner_id: optimisticCase.owner_id || '',
+        message_count: conversations[caseId]?.length || 0
+      });
+    } else {
+      // Set minimal case data - ChatWindow will load full data
+      setActiveCase({
+        case_id: caseId,
+        title: conversationTitles[caseId] || 'Loading...',
+        status: 'consulting',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        owner_id: '',
+        message_count: conversations[caseId]?.length || 0
+      });
+    }
+
+    // Resolve optimistic IDs to real IDs
+    const resolvedCaseId = isOptimisticId(caseId)
+      ? idMappingManager.getRealId(caseId) || caseId
+      : caseId;
+
+    // Check if we have already loaded this conversation
+    const alreadyLoaded = loadedConversationIds.has(resolvedCaseId);
+    const hasLocalData = (conversations[caseId]?.length > 0) || (conversations[resolvedCaseId]?.length > 0);
+
+    if (alreadyLoaded || hasLocalData) {
+      log.debug('Case already loaded, skipping fetch', { caseId, resolvedCaseId, alreadyLoaded, hasLocalData });
+      return;
+    }
+
+    // If optimistic and unreconciled, use local data (don't fetch from backend)
+    if (isOptimisticId(caseId) && !idMappingManager.getRealId(caseId)) {
+      log.debug('Optimistic case not yet reconciled, skipping fetch', { caseId });
+      return;
+    }
+
+    // Lazy-load conversation from backend
+    try {
+      log.info('Lazy-loading conversation for case', { caseId, resolvedCaseId });
+      const conversationData = await getCaseConversation(resolvedCaseId);
+      const messages = conversationData.messages || [];
+
+      // Transform backend messages to OptimisticConversationItem format
+      const backendMessages: OptimisticConversationItem[] = messages.map((msg: any) => ({
+        id: msg.message_id,
+        timestamp: msg.created_at,
+        turn_number: msg.turn_number,
+        optimistic: false,
+        originalId: msg.message_id,
+        question: msg.role === 'user' ? msg.content : undefined,
+        response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
+        case_status: msg.case_status,
+        closure_reason: msg.closure_reason ?? null,
+        closed_at: msg.closed_at ?? null
+      }));
+
+      // Merge with existing local messages (if any)
+      setConversations(prev => {
+        const existing = prev[caseId] || [];
+        const backendMap = new Map(backendMessages.map(m => [m.id, m]));
+
+        // Preserve local messages, update with backend data if available
+        const merged = existing.map(local => {
+          const backend = backendMap.get(local.id);
+          return backend || local;
+        });
+
+        // Add new messages from backend that aren't in local
+        const newMessages = backendMessages.filter(m => !existing.some(e => e.id === m.id));
+
+        return {
+          ...prev,
+          [caseId]: [...merged, ...newMessages]
+        };
+      });
+
+      // Mark this case as loaded to prevent refetching
+      setLoadedConversationIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(resolvedCaseId);
+        return newSet;
+      });
+
+      log.debug('Conversation loaded successfully', { caseId, messageCount: backendMessages.length });
+    } catch (error) {
+      log.error('Failed to load conversation', { caseId, resolvedCaseId, error });
+      // Don't show error to user for load failures - they can still type new messages
+    }
   };
 
   // Modals state
