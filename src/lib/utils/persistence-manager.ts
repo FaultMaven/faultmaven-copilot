@@ -247,9 +247,14 @@ export class PersistenceManager {
       const recoveredConversations: Record<string, OptimisticConversationItem[]> = {};
 
       // Process case metadata only (no conversation fetching)
+      // Updated 2026-01-30: Full UserCase objects now include organization_id, description, closure_reason, closed_at
+      // per backend storage fixes (commit b434152a). These fields are automatically included in the
+      // getUserCases() response and will be available when UI components access the case data.
       log.info(' 📋 Processing case metadata...');
       for (const userCase of cases) {
         // Extract metadata only
+        // Note: userCase now contains organization_id, description, closure_reason, closed_at
+        // These fields are preserved in the UserCase objects returned by getUserCases()
         recoveredTitles[userCase.case_id] = userCase.title || `Chat-${new Date(userCase.created_at || Date.now()).toLocaleString()}`;
         recoveredTitleSources[userCase.case_id] = 'backend';
 

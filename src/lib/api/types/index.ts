@@ -11,6 +11,7 @@ export interface AuthState {
     is_dev_user: boolean;
     is_active: boolean;
     roles?: string[];
+    organization_id?: string; // Multi-tenant organization context per commit b434152a
   };
 }
 
@@ -78,10 +79,14 @@ export interface Case {
   resolved_at?: string;
   message_count?: number;
   owner_id: string;
+  organization_id: string; // Required per multi-tenant storage fixes (commit b434152a)
+  closure_reason: string | null; // Required for terminal states per commit b434152a
+  closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
 }
 
 export interface CreateCaseRequest {
   title: string | null;  // null = backend auto-generates Case-MMDD-N, string = use provided title
+  description?: string;  // Problem description - can be set during creation per commit b434152a
   priority?: 'low' | 'medium' | 'high' | 'critical';
   metadata?: Record<string, any>;
   initial_message?: string;
@@ -92,6 +97,8 @@ export interface CaseUpdateRequest {
   description?: string;
   status?: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
+  closure_reason?: string; // Required when transitioning to terminal state per commit b434152a
+  closed_at?: string; // Auto-set by backend when reaching terminal state per commit b434152a
 }
 
 export interface Message {

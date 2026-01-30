@@ -155,6 +155,7 @@ export async function getUserCases(filters?: {
 
   // Map API CaseSummary fields to UserCase interface
   // API returns user_id, UserCase expects owner_id
+  // Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
   return data.cases.map((c: any) => ({
     case_id: c.case_id,
     title: c.title,
@@ -165,7 +166,10 @@ export async function getUserCases(filters?: {
     priority: c.priority,
     resolved_at: c.resolved_at,
     message_count: c.current_turn || c.message_count || 0,
-    owner_id: c.user_id || c.owner_id || ''  // API uses user_id
+    owner_id: c.user_id || c.owner_id || '',  // API uses user_id
+    organization_id: c.organization_id || '',  // Multi-tenant field per commit b434152a
+    closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
+    closed_at: c.closed_at ?? null  // Terminal state timestamp per commit b434152a
   }));
 }
 
@@ -192,6 +196,7 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
 
   // Map API field names to UserCase interface
   // API returns user_id, UserCase expects owner_id
+  // Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
   const userCase: UserCase = {
     case_id: caseData.case_id,
     title: caseData.title,
@@ -202,7 +207,10 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
     priority: caseData.priority,
     resolved_at: caseData.resolved_at,
     message_count: caseData.current_turn || caseData.message_count || 0,
-    owner_id: caseData.user_id || caseData.owner_id || ''  // API uses user_id
+    owner_id: caseData.user_id || caseData.owner_id || '',  // API uses user_id
+    organization_id: caseData.organization_id || '',  // Multi-tenant field per commit b434152a
+    closure_reason: caseData.closure_reason ?? null,  // Terminal state field per commit b434152a
+    closed_at: caseData.closed_at ?? null  // Terminal state timestamp per commit b434152a
   };
 
   // CONTRACT VALIDATION: Backend MUST provide title per API contract
@@ -245,10 +253,49 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
     body: prepareBody({ title } as CaseUpdateRequest),
     credentials: 'include'
   });
-  
+
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || `Failed to update case: ${response.status}`);
+  }
+}
+
+/**
+ * Update case status with terminal state validation
+ * Added 2026-01-30: Handle closure_reason and closed_at for terminal states per commit b434152a
+ */
+export async function updateCaseStatus(
+  caseId: string,
+  status: UserCaseStatus,
+  closureReason?: string
+): Promise<void> {
+  const isTerminal = isTerminalStatus(status);
+
+  // Validate terminal state requirements per backend validation (models.py:3158-3202)
+  if (isTerminal && !closureReason) {
+    throw new Error('Terminal states (resolved/closed) require closure_reason');
+  }
+
+  const updateData: CaseUpdateRequest = {
+    status,
+    closure_reason: closureReason,
+    closed_at: isTerminal ? new Date().toISOString() : undefined
+  };
+
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
+    method: 'PUT',
+    body: prepareBody(updateData),
+    credentials: 'include'
+  });
+
+  if (response.status === 422) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(`Validation failed: ${errorData.detail || 'Invalid status transition'}`);
+  }
+
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to update case status: ${response.status}`);
   }
 }
 

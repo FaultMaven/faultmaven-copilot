@@ -122,16 +122,20 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         : caseId;
 
       // Update active case object (Metadata only)
+      // Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
       if (!activeCase || activeCase.case_id !== caseId) {
         set({
           activeCase: {
             case_id: caseId,
             owner_id: '', // Will be populated
+            organization_id: '', // Will be populated per commit b434152a
             title: conversationTitles[caseId] || 'Loading...',
             status: 'consulting',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            message_count: 0
+            message_count: 0,
+            closure_reason: null, // Terminal state field per commit b434152a
+            closed_at: null // Terminal state timestamp per commit b434152a
           }
         });
       }
@@ -165,6 +169,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       const messages = conversationData.messages || [];
 
       // Transform backend messages
+      // Updated 2026-01-30: Preserve case state fields from backend messages per commit b434152a
       const backendMessages: OptimisticConversationItem[] = messages.map((msg: any) => ({
         id: msg.message_id,
         timestamp: msg.created_at,
@@ -172,7 +177,11 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         optimistic: false,
         originalId: msg.message_id,
         question: msg.role === 'user' ? msg.content : undefined,
-        response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined
+        response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
+        // Case state tracking fields (track case state at time of message creation)
+        case_status: msg.case_status,  // Case status when message was created
+        closure_reason: msg.closure_reason ?? null,  // If case was closed in this turn
+        closed_at: msg.closed_at ?? null  // Timestamp if case reached terminal state
       }));
 
       // Merge logic

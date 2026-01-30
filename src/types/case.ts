@@ -22,6 +22,7 @@ export type UserCaseStatus = CaseStatus;
 /**
  * User Case Interface
  * Consolidates definitions from api.ts and optimistic/types.ts
+ * Updated 2026-01-30: Added organization_id, closure_reason, closed_at per backend storage fixes
  */
 export interface UserCase {
   case_id: string;
@@ -34,6 +35,9 @@ export interface UserCase {
   resolved_at?: string;
   message_count?: number;
   owner_id: string; // Required per v2.0 security
+  organization_id: string; // Required per multi-tenant storage fixes (commit b434152a)
+  closure_reason: string | null; // Required for terminal states (RESOLVED, CLOSED) per commit b434152a
+  closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
 }
 
 // Consulting Phase Types

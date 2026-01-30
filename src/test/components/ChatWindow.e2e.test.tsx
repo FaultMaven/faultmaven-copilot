@@ -53,7 +53,10 @@ describe('ChatInterface e2e', () => {
           title: 'Test Case',
           status: 'consulting',
           created_at: new Date().toISOString(),
-          owner_id: 'user-1'
+          owner_id: 'user-1',
+          organization_id: 'org-1',
+          closure_reason: null,
+          closed_at: null
         }}
         loading={false}
         submitting={false}
@@ -96,7 +99,10 @@ describe('ChatInterface e2e', () => {
           title: 'Test Case',
           status: 'consulting',
           created_at: new Date().toISOString(),
-          owner_id: 'user-1'
+          owner_id: 'user-1',
+          organization_id: 'org-1',
+          closure_reason: null,
+          closed_at: null
         }}
         loading={false}
         submitting={false}

@@ -22,6 +22,7 @@ export type { UserCase };
 
 /**
  * Base conversation item interface - matches ChatWindow.tsx (v3.1.0)
+ * Updated 2026-01-30: Added case state tracking fields per backend message storage (commit b434152a)
  */
 export interface ConversationItem {
   id: string;
@@ -37,6 +38,12 @@ export interface ConversationItem {
   evidenceRequests?: EvidenceRequest[];
   investigationMode?: InvestigationMode;
   caseStatus?: CaseStatus;
+
+  // Case state tracking fields (added 2026-01-30 per commit b434152a)
+  // These track case state at the time the message was created
+  case_status?: CaseStatus;  // Case status when this message was created
+  closure_reason?: string | null;  // If case was closed in this turn
+  closed_at?: string | null;  // Timestamp if case reached terminal state
 
   // DEPRECATED v3.0.0 fields (kept for backward compatibility)
   suggestedActions?: SuggestedAction[] | null;
@@ -80,9 +87,11 @@ export interface OptimisticConversationItem extends ConversationItem {
 /**
  * Optimistic user case with additional metadata
  * v2.0: owner_id is optional here (populated when real data arrives)
+ * Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
  */
-export interface OptimisticUserCase extends Omit<UserCase, 'owner_id'> {
+export interface OptimisticUserCase extends Omit<UserCase, 'owner_id' | 'organization_id'> {
   owner_id?: string;  // Optional for optimistic cases, required for real cases
+  organization_id?: string;  // Optional for optimistic cases, populated when real data arrives per commit b434152a
   optimistic?: boolean;
   failed?: boolean;
   pendingOperationId?: string;
