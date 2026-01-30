@@ -359,6 +359,15 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
 
     log.debug('Creating optimistic messages', { userMessageId, aiMessageId, targetCaseId });
 
+    // Calculate turn_number for optimistic messages
+    // Per API contract: "Turn number in conversation (user messages increment turn)"
+    // Each turn = one user message + one agent response
+    const existingMessages = props.conversations[targetCaseId] || [];
+    const highestTurn = existingMessages.reduce((max, msg) =>
+      Math.max(max, msg.turn_number || 0), 0
+    );
+    const nextTurnNumber = highestTurn + 1;
+
     // IMMEDIATE UI UPDATE 1: Add user message to conversation (0ms)
     const userMessage: OptimisticConversationItem = {
       id: userMessageId,
@@ -366,6 +375,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       response: '',
       error: false,
       timestamp: messageTimestamp,
+      turn_number: nextTurnNumber,
       optimistic: true,
       loading: false,
       failed: false,
@@ -374,12 +384,14 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     } as OptimisticConversationItem;
 
     // IMMEDIATE UI UPDATE 2: Add AI "thinking" message (0ms)
+    // Same turn_number as user message (they're part of the same turn)
     const aiThinkingMessage: OptimisticConversationItem = {
       id: aiMessageId,
       question: '',
       response: '',
       error: false,
       timestamp: messageTimestamp,
+      turn_number: nextTurnNumber,
       optimistic: true,
       loading: true,
       failed: false,
