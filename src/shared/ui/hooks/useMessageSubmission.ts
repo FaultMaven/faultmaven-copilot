@@ -137,19 +137,18 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
           // Mark operation as failed in pendingOpsManager
           pendingOpsManager.fail(aiMessageId, error.message);
 
-          // Update turn message to show error state
-          // Match by userMessageId (the turn item) or pendingOperationId (for tracking)
+          // Update AI message to show error state
           props.setConversations(prev => {
             const currentConversation = prev[caseId] || [];
-            const errorMessage = formatErrorForChat(error);
-
+            const userMessage = formatErrorForChat(error);
+            
             return {
               ...prev,
               [caseId]: currentConversation.map(item => {
-                if (item.id === userMessageId || item.pendingOperationId === aiMessageId) {
+                if (item.id === aiMessageId) {
                   return {
                     ...item,
-                    response: errorMessage,
+                    response: userMessage,
                     error: true,
                     optimistic: false,
                     loading: false,
@@ -192,15 +191,19 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       // SUCCESS HANDLER
       const currentConversation = props.conversations[caseId] || [];
 
-      // Update conversations: Update the single turn item with response data
-      // Since we now use one item per turn (question + response), we match by userMessageId
+      // Update conversations: replace optimistic messages with real data
       props.setConversations(prev => {
            const conv = prev[caseId] || [];
            return {
              ...prev,
              [caseId]: conv.map(item => {
-               // Match by userMessageId (the single turn item) or pendingOperationId (for response tracking)
-               if (item.id === userMessageId || item.pendingOperationId === aiMessageId) {
+               if (item.id === userMessageId) {
+                 return {
+                   ...item,
+                   optimistic: false,
+                   originalId: userMessageId
+                 } as OptimisticConversationItem;
+               } else if (item.id === aiMessageId) {
                  return {
                    ...item,
                    response: response.content,
@@ -226,7 +229,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                    requiresAction: response.response_type === 'CONFIRMATION_REQUEST' || response.response_type === 'CLARIFICATION_REQUEST',
                    optimistic: false,
                    loading: false,
-                   originalId: userMessageId
+                   originalId: aiMessageId
                  } as OptimisticConversationItem;
                }
                return item;
@@ -356,35 +359,38 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
 
     log.debug('Creating optimistic messages', { userMessageId, aiMessageId, targetCaseId });
 
-    // Calculate turn number based on existing conversation length
-    // Each conversation item represents one turn (question + response pair)
-    const existingConversation = props.conversations[targetCaseId] || [];
-    const nextTurnNumber = existingConversation.length + 1;
-
-    // Create a SINGLE conversation item with question and loading response
-    // This matches the format used after backend reload (paired by turn_number)
-    const turnMessage: OptimisticConversationItem = {
+    // IMMEDIATE UI UPDATE 1: Add user message to conversation (0ms)
+    const userMessage: OptimisticConversationItem = {
       id: userMessageId,
       question: query,
-      response: '', // Empty until response arrives
+      response: '',
       error: false,
       timestamp: messageTimestamp,
-      turn_number: nextTurnNumber,
       optimistic: true,
-      loading: true, // Shows "thinking" indicator for response
+      loading: false,
       failed: false,
-      pendingOperationId: aiMessageId, // Track by AI message ID for response update
+      pendingOperationId: userMessageId,
       originalId: userMessageId
     } as OptimisticConversationItem;
 
-    // Keep reference for backward compatibility with rollback/retry logic
-    const userMessage = turnMessage;
-    const aiThinkingMessage = turnMessage; // Same item, response will be updated in place
+    // IMMEDIATE UI UPDATE 2: Add AI "thinking" message (0ms)
+    const aiThinkingMessage: OptimisticConversationItem = {
+      id: aiMessageId,
+      question: '',
+      response: '',
+      error: false,
+      timestamp: messageTimestamp,
+      optimistic: true,
+      loading: true,
+      failed: false,
+      pendingOperationId: aiMessageId,
+      originalId: aiMessageId
+    } as OptimisticConversationItem;
 
-    // Update conversation immediately - add ONE item per turn
+    // Update conversation immediately
     props.setConversations(prev => ({
       ...prev,
-      [targetCaseId!]: [...(prev[targetCaseId!] || []), turnMessage]
+      [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiThinkingMessage]
     }));
 
     // Focus/highlight the active case in the sidebar
@@ -397,14 +403,13 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       id: aiMessageId,
       type: 'submit_query',
       status: 'pending',
-      optimisticData: { userMessage, aiThinkingMessage: turnMessage, query, caseId: targetCaseId },
+      optimisticData: { userMessage, aiThinkingMessage, query, caseId: targetCaseId },
       rollbackFn: () => {
         log.debug('Rolling back failed message submission');
-        // Remove the single turn item (we now use one item per turn)
         props.setConversations(prev => ({
           ...prev,
           [targetCaseId!]: (prev[targetCaseId!] || []).filter(
-            item => item.id !== userMessageId
+            item => item.id !== userMessageId && item.id !== aiMessageId
           )
         }));
       },

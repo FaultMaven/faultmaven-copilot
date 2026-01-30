@@ -413,47 +413,39 @@ function SidePanelAppContent() {
       const conversationData = await getCaseConversation(resolvedCaseId);
       const messages = conversationData.messages || [];
 
-      // Group messages by turn_number to pair user questions with assistant responses
-      // This prevents duplicate display when backend returns separate user/assistant messages
-      const turnMap = new Map<number, { user?: any; assistant?: any }>();
-
-      messages.forEach((msg: any) => {
-        const turnNum = msg.turn_number || 1;
-        if (!turnMap.has(turnNum)) {
-          turnMap.set(turnNum, {});
-        }
-        const turn = turnMap.get(turnNum)!;
-        if (msg.role === 'user') {
-          turn.user = msg;
-        } else if (msg.role === 'agent' || msg.role === 'assistant') {
-          turn.assistant = msg;
-        }
-      });
-
-      // Transform grouped turns into OptimisticConversationItem format
-      // Each turn becomes ONE conversation item with both question and response
-      const backendMessages: OptimisticConversationItem[] = Array.from(turnMap.entries())
-        .sort(([a], [b]) => a - b) // Sort by turn number
-        .map(([turnNum, turn]) => ({
-          // Use user message ID if available, otherwise assistant message ID
-          id: turn.user?.message_id || turn.assistant?.message_id || `turn-${turnNum}`,
-          timestamp: turn.user?.created_at || turn.assistant?.created_at || new Date().toISOString(),
-          turn_number: turnNum,
-          optimistic: false,
-          originalId: turn.user?.message_id || turn.assistant?.message_id,
-          question: turn.user?.content,
-          response: turn.assistant?.content,
-          case_status: turn.assistant?.case_status || turn.user?.case_status,
-          closure_reason: turn.assistant?.closure_reason ?? turn.user?.closure_reason ?? null,
-          closed_at: turn.assistant?.closed_at ?? turn.user?.closed_at ?? null
-        }));
-
-      // Replace local messages entirely with backend data (backend is source of truth after reload)
-      // This prevents duplicates from optimistic messages with different IDs
-      setConversations(prev => ({
-        ...prev,
-        [caseId]: backendMessages
+      // Transform backend messages to OptimisticConversationItem format
+      const backendMessages: OptimisticConversationItem[] = messages.map((msg: any) => ({
+        id: msg.message_id,
+        timestamp: msg.created_at,
+        turn_number: msg.turn_number,
+        optimistic: false,
+        originalId: msg.message_id,
+        question: msg.role === 'user' ? msg.content : undefined,
+        response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
+        case_status: msg.case_status,
+        closure_reason: msg.closure_reason ?? null,
+        closed_at: msg.closed_at ?? null
       }));
+
+      // Merge with existing local messages (if any)
+      setConversations(prev => {
+        const existing = prev[caseId] || [];
+        const backendMap = new Map(backendMessages.map(m => [m.id, m]));
+
+        // Preserve local messages, update with backend data if available
+        const merged = existing.map(local => {
+          const backend = backendMap.get(local.id);
+          return backend || local;
+        });
+
+        // Add new messages from backend that aren't in local
+        const newMessages = backendMessages.filter(m => !existing.some(e => e.id === m.id));
+
+        return {
+          ...prev,
+          [caseId]: [...merged, ...newMessages]
+        };
+      });
 
       // Mark this case as loaded to prevent refetching
       setLoadedConversationIds(prev => {
