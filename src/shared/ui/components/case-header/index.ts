@@ -6,6 +6,6 @@
 
 export { EnhancedCaseHeader } from './EnhancedCaseHeader';
 export { HeaderSummary } from './HeaderSummary';
-export { ConsultingDetails } from './ConsultingDetails';
+export { InquiryDetails } from './InquiryDetails';
 export { InvestigatingDetails } from './InvestigatingDetails';
 export { ResolvedDetails } from './ResolvedDetails';

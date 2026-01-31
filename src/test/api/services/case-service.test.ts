@@ -38,7 +38,7 @@ describe('Case Service', () => {
       const responseData = {
         case_id: 'case-123',
         title: 'New Case',
-        status: 'consulting',
+        status: 'inquiry',
         created_at: '2024-01-01T00:00:00Z',
         user_id: 'user-1'
       };
@@ -68,7 +68,7 @@ describe('Case Service', () => {
   describe('getUserCases', () => {
     it('should fetch user cases', async () => {
       const mockCases = [
-        { case_id: '1', title: 'Case 1', status: 'consulting', created_at: '2024-01-01', user_id: 'user-1' },
+        { case_id: '1', title: 'Case 1', status: 'inquiry', created_at: '2024-01-01', user_id: 'user-1' },
         { case_id: '2', title: 'Case 2', status: 'investigating', created_at: '2024-01-02', user_id: 'user-2' }
       ];
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: mockCases }));
@@ -118,12 +118,12 @@ describe('Case Service', () => {
 
   describe('Utility Functions', () => {
     it('should return valid transitions', () => {
-      const transitions = caseService.getValidTransitions('consulting');
+      const transitions = caseService.getValidTransitions('inquiry');
       expect(transitions).toEqual(['investigating', 'closed']);
     });
 
     it('should get correct status change message', () => {
-      const msg = caseService.getStatusChangeMessage('consulting', 'investigating');
+      const msg = caseService.getStatusChangeMessage('inquiry', 'investigating');
       expect(msg).toBe('I want to start a formal investigation to find the root cause.');
     });
   });

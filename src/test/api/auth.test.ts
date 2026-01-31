@@ -409,7 +409,7 @@ describe('Authentication API', () => {
         json: () => Promise.resolve({
           case_id: 'case-123',
           title: 'Test Case',
-          status: 'consulting',
+          status: 'inquiry',
           created_at: '2024-01-01T00:00:00Z',
           user_id: 'user-1'
         })

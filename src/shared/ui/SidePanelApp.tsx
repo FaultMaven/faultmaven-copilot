@@ -63,7 +63,7 @@ function SidePanelAppContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [hasUnsavedNewChat, setHasUnsavedNewChat] = useState(false);
   const [refreshSessions, setRefreshSessions] = useState(0);
-  
+
   // --- Data State ---
   const [conversations, setConversations] = useState<Record<string, OptimisticConversationItem[]>>({});
   const [conversationTitles, setConversationTitles] = useState<Record<string, string>>({});
@@ -251,12 +251,12 @@ function SidePanelAppContent() {
       }
     },
     refreshSession: async () => {
-        return refreshSession();
+      return refreshSession();
     },
     showError,
     showErrorWithRetry: (error, retryFn, context) => {
-        // Implement retry logic wrapper if needed, or pass directly
-        showError(error instanceof Error ? error.message : String(error));
+      // Implement retry logic wrapper if needed, or pass directly
+      showError(error instanceof Error ? error.message : String(error));
     },
     showConflictResolution
   });
@@ -276,7 +276,7 @@ function SidePanelAppContent() {
   });
 
   // --- UI Handlers ---
-  
+
   // Initialize first-run status and capabilities
   useEffect(() => {
     const initializeApp = async () => {
@@ -368,7 +368,7 @@ function SidePanelAppContent() {
       setActiveCase({
         case_id: optimisticCase.case_id,
         title: optimisticCase.title || conversationTitles[caseId] || 'New Case',
-        status: optimisticCase.status || 'consulting',
+        status: optimisticCase.status || 'inquiry',
         created_at: optimisticCase.created_at || new Date().toISOString(),
         updated_at: optimisticCase.updated_at || new Date().toISOString(),
         owner_id: optimisticCase.owner_id || '',
@@ -379,7 +379,7 @@ function SidePanelAppContent() {
       setActiveCase({
         case_id: caseId,
         title: conversationTitles[caseId] || 'Loading...',
-        status: 'consulting',
+        status: 'inquiry',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         owner_id: '',
@@ -471,7 +471,7 @@ function SidePanelAppContent() {
       const document = await getKnowledgeDocument(documentId);
       setViewingDocument(document);
       setIsDocumentModalOpen(true);
-    } catch {}
+    } catch { }
   };
 
   // --- Render ---
@@ -564,8 +564,8 @@ function SidePanelAppContent() {
             else newSet.add(id);
             setPinnedCases(newSet);
           }}
-          onAfterDelete={() => {}} // TODO: Implement deletion handler
-          onCasesLoaded={() => {}}
+          onAfterDelete={() => { }} // TODO: Implement deletion handler
+          onCasesLoaded={() => { }}
         />
 
         <ContentArea
@@ -594,7 +594,7 @@ function SidePanelAppContent() {
       <ToastContainer
         activeErrors={getErrorsByType('toast')}
         onDismiss={dismissError}
-        onRetry={async () => {}}
+        onRetry={async () => { }}
         position="top-right"
       />
 
@@ -624,12 +624,12 @@ function SidePanelAppContent() {
         mergeResult={conflictResolutionData.mergeResult}
         availableBackups={conflictResolutionData.conflict ? conflictResolver.getBackupsForCase(conflictResolutionData.conflict.affectedData.caseId || '') : []}
         onResolve={(res) => {
-            if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback(res);
-            setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
+          if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback(res);
+          setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
         }}
         onCancel={() => {
-            if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback({ choice: 'keep_local' });
-            setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
+          if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback({ choice: 'keep_local' });
+          setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
         }}
       />
 

@@ -112,7 +112,7 @@ export function useDataUpload({
             case_id: newCaseId,
             owner_id: caseData.owner_id,
             title: caseData.title,  // Backend MUST provide title per contract
-            status: caseData.status || 'consulting',
+            status: caseData.status || 'inquiry',
             created_at: caseData.created_at || new Date().toISOString(),
             updated_at: caseData.updated_at || new Date().toISOString(),
             message_count: 0
@@ -179,8 +179,8 @@ export function useDataUpload({
 
       const sourceMetadata: SourceMetadata = {
         source_type: dataSource === 'file' ? 'file_upload'
-                   : dataSource === 'page' ? 'page_capture'
-                   : 'text_paste'
+          : dataSource === 'page' ? 'page_capture'
+            : 'text_paste'
       };
 
       if (capturedUrl) {
@@ -255,13 +255,13 @@ export function useDataUpload({
 
     } catch (error) {
       log.error('Data upload error:', error);
-      
+
       const errorInfo = classifyError(error, 'data_upload');
       const friendlyMessage = formatErrorForAlert(errorInfo);
-      
-      return { 
-        success: false, 
-        message: friendlyMessage 
+
+      return {
+        success: false,
+        message: friendlyMessage
       };
     } finally {
       setLoading(false);

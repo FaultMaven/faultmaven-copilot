@@ -130,7 +130,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
             owner_id: '', // Will be populated
             organization_id: '', // Will be populated per commit b434152a
             title: conversationTitles[caseId] || 'Loading...',
-            status: 'consulting',
+            status: 'inquiry',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             message_count: 0,

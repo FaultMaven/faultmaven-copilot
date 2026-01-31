@@ -2,17 +2,17 @@ import { getApiUrl } from "../../../config";
 import { UserCase, UserCaseStatus } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
-import { 
-  AgentResponse, 
-  APIError, 
-  CaseUpdateRequest, 
-  CreateCaseRequest, 
-  InvestigationMode, 
-  QueryRequest, 
-  ResponseType, 
-  SourceMetadata, 
-  TitleResponse, 
-  UploadedData 
+import {
+  AgentResponse,
+  APIError,
+  CaseUpdateRequest,
+  CreateCaseRequest,
+  InvestigationMode,
+  QueryRequest,
+  ResponseType,
+  SourceMetadata,
+  TitleResponse,
+  UploadedData
 } from "../types";
 
 const log = createLogger('CaseService');
@@ -22,7 +22,7 @@ const log = createLogger('CaseService');
  * Allowed status transitions
  */
 export const ALLOWED_TRANSITIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
-  consulting: ['investigating', 'closed'],
+  inquiry: ['investigating', 'closed'],
   investigating: ['resolved', 'closed'],
   resolved: [],     // Terminal
   closed: []        // Terminal
@@ -32,7 +32,7 @@ export const ALLOWED_TRANSITIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
  * Human-readable status labels
  */
 export const STATUS_LABELS: Record<UserCaseStatus, string> = {
-  consulting: 'Consulting',
+  inquiry: 'Inquiry',
   investigating: 'Investigating',
   resolved: 'Resolved',
   closed: 'Closed'
@@ -42,7 +42,7 @@ export const STATUS_LABELS: Record<UserCaseStatus, string> = {
  * Status descriptions for tooltips
  */
 export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
-  consulting: 'Q&A mode - exploring the issue',
+  inquiry: 'Q&A mode - exploring the issue',
   investigating: 'Active troubleshooting - systematic investigation',
   resolved: 'Issue resolved with root cause and solution',
   closed: 'Case closed without resolution'
@@ -52,8 +52,8 @@ export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
  * Predefined messages for status change requests
  */
 export const STATUS_CHANGE_MESSAGES: Record<string, string> = {
-  'consulting_to_investigating': 'I want to start a formal investigation to find the root cause.',
-  'consulting_to_closed': "Close this case. I don't need further investigation.",
+  'inquiry_to_investigating': 'I want to start a formal investigation to find the root cause.',
+  'inquiry_to_closed': "Close this case. I don't need further investigation.",
   'investigating_to_resolved': 'The issue is resolved. Generate final documentation with root cause and solution.',
   'investigating_to_closed': 'Close this case as unresolved. Summarize what we found so far.'
 };
@@ -89,18 +89,18 @@ export function isTerminalStatus(status: string): boolean {
  */
 export function normalizeStatus(status: string | undefined | null): UserCaseStatus {
   if (!status) {
-    log.warn('Empty status, defaulting to consulting');
-    return 'consulting';
+    log.warn('Empty status, defaulting to inquiry');
+    return 'inquiry';
   }
   const normalized = status.toLowerCase();
 
-  if (normalized === 'consulting') return 'consulting';
+  if (normalized === 'inquiry' || normalized === 'inquiry') return 'inquiry';
   if (normalized === 'investigating') return 'investigating';
   if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved';
   if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed';
 
-  log.warn('Unknown status, defaulting to consulting', { status });
-  return 'consulting';
+  log.warn('Unknown status, defaulting to inquiry', { status });
+  return 'inquiry';
 }
 
 /**
@@ -316,7 +316,7 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
   }
 
   const data = await response.json();
-  
+
   if (data.total_count > 0 && data.retrieved_count === 0) {
     log.error('Message retrieval failure detected', {
       caseId,
@@ -352,7 +352,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
       const inner = errJson?.detail?.error?.message || errJson?.detail || errJson;
       if (typeof inner === 'string') detail = inner;
       else detail = JSON.stringify(inner);
-    } catch {}
+    } catch { }
     throw new Error(`422 Unprocessable Entity: ${detail}`);
   }
 
@@ -398,7 +398,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
       elapsed += delay;
       delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
     }
-    throw new Error(`Async query polling timed out after ${Math.round(POLL_MAX_TOTAL_MS/1000)}s`);
+    throw new Error(`Async query polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
   }
 
   // Handle 201 Created
@@ -409,8 +409,8 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
         if (immediate && immediate.content && immediate.response_type) return immediate as AgentResponse;
         if (immediate?.response?.content && immediate?.response?.response_type) return immediate.response as AgentResponse;
       }
-    } catch {}
-    
+    } catch { }
+
     const createdLoc = response.headers.get('Location');
     if (createdLoc) {
       const createdUrl = new URL(createdLoc, await getApiUrl()).toString();
@@ -451,7 +451,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
         elapsed += delay;
         delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
       }
-      throw new Error(`Created query polling timed out after ${Math.round(POLL_MAX_TOTAL_MS/1000)}s`);
+      throw new Error(`Created query polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
     }
   }
 
@@ -500,13 +500,13 @@ export async function uploadDataToCase(
   form.append('file', file);
   if (description) form.append('description', description);
   if (sourceMetadata) form.append('source_metadata', JSON.stringify(sourceMetadata));
-  
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/data`, { 
-    method: 'POST', 
-    body: form, 
-    credentials: 'include' 
+
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/data`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include'
   });
-  
+
   if (response.status === 202) {
     const jobLocation = response.headers.get('Location');
     if (!jobLocation) throw new Error('Missing job Location header');
@@ -519,7 +519,7 @@ export async function uploadDataToCase(
     }
     throw new Error('Upload job polling timed out');
   }
-  
+
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
     if (response.status === 404) {
@@ -542,7 +542,7 @@ export async function generateCaseTitle(
     body: Object.keys(body).length ? prepareBody(body) : undefined,
     credentials: 'include'
   });
-  
+
   if (response.status === 422) {
     throw new Error('Insufficient context to generate title');
   }
@@ -553,5 +553,5 @@ export async function generateCaseTitle(
   const result: TitleResponse = await response.json();
   const t = (result?.title || '').trim();
   const source = response.headers.get('x-title-source') || undefined;
-  return { title: t, source }; 
+  return { title: t, source };
 }

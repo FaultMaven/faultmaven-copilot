@@ -224,6 +224,8 @@ export interface InvestigationProgress {
   evidence_collected: number;
   evidence_requested: number;
   anomaly_frame?: AnomalyFrame;
+  // Milestones tracking
+  completed_milestone_ids?: string[];
 }
 
 export interface AcquisitionGuidance {

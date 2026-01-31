@@ -1,18 +1,18 @@
 /**
- * ConsultingDetails Component
+ * InquiryDetails Component
  *
- * Expanded header content for CONSULTING phase
+ * Expanded header content for INQUIRY phase
  * Shows: Problem statement draft, confirmation status, severity estimate
  * Design based on: ui-mockups-text-diagrams.md lines 88-107
  */
 
 import React, { useState, useEffect } from 'react';
-import type { ConsultingData, UploadedFileMetadata, UploadedFileDetailsResponse } from '../../../../types/case';
+import type { InquiryData, UploadedFileMetadata, UploadedFileDetailsResponse } from '../../../../types/case';
 import { filesApi } from '../../../../lib/api/files-service';
 import { EvidenceDetailsModal } from './EvidenceDetailsModal';
 import { createLogger } from '~/lib/utils/logger';
 
-const log = createLogger('ConsultingDetails');
+const log = createLogger('InquiryDetails');
 
 /**
  * Extended UploadedFileMetadata with evidence_count
@@ -33,8 +33,8 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-interface ConsultingDetailsProps {
-  data: ConsultingData;
+interface InquiryDetailsProps {
+  data: InquiryData;
   caseId: string;
   uploadedFilesCount: number;
   showFiles: boolean;
@@ -42,7 +42,7 @@ interface ConsultingDetailsProps {
   onScrollToTurn?: (turnNumber: number) => void;
 }
 
-export const ConsultingDetails: React.FC<ConsultingDetailsProps> = ({
+export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
   data,
   caseId,
   uploadedFilesCount,
@@ -70,7 +70,7 @@ export const ConsultingDetails: React.FC<ConsultingDetailsProps> = ({
           log.debug(' ✅ Files array length:', Array.isArray(fetchedFiles) ? fetchedFiles.length : 'NOT AN ARRAY');
           setFiles(fetchedFiles);
         } catch (error) {
-          console.error('[ConsultingDetails] ❌ Failed to fetch files:', error);
+          console.error('[InquiryDetails] ❌ Failed to fetch files:', error);
           setFilesError(error instanceof Error ? error.message : 'Failed to load files');
         } finally {
           setFilesLoading(false);
@@ -88,7 +88,7 @@ export const ConsultingDetails: React.FC<ConsultingDetailsProps> = ({
       const details = await filesApi.getUploadedFileDetails(caseId, fileId);
       setEvidenceDetails(details);
     } catch (error) {
-      console.error('[ConsultingDetails] Failed to fetch evidence details:', error);
+      console.error('[InquiryDetails] Failed to fetch evidence details:', error);
     } finally {
       setEvidenceLoading(false);
     }
@@ -99,14 +99,13 @@ export const ConsultingDetails: React.FC<ConsultingDetailsProps> = ({
     setEvidenceDetails(null);
   };
 
-  // Defensive: Handle null consulting data for brand new cases (current_turn: 0)
+  // Defensive: Handle null inquiry data for brand new cases (current_turn: 0)
   // This is non-critical - user can still chat and interact normally
-  // Backend should fix: case_ui_adapter.py _transform_consulting() to always return valid object
   if (!data) {
-    console.warn('[ConsultingDetails] Backend sent null consulting data - API contract violation. Case still functional.');
+    console.warn('[InquiryDetails] Backend sent null inquiry data - API contract violation. Case still functional.');
     return (
       <div className="px-4 pb-4 space-y-3 text-sm text-gray-600">
-        <p className="italic">Consultation starting - problem statement will appear after first interaction.</p>
+        <p className="italic">Inquiry starting - problem statement will appear after first interaction.</p>
       </div>
     );
   }

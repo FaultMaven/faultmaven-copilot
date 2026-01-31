@@ -34,7 +34,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'consulting':
+      case 'inquiry':
         return '💬';
       case 'investigating':
         return '🔍';
@@ -51,7 +51,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
   // Get files count based on phase
   const getFilesCount = () => {
-    if (caseData.status === 'consulting') {
+    if (caseData.status === 'inquiry') {
       return 'uploaded_files_count' in caseData ? caseData.uploaded_files_count : 0;
     } else if (caseData.status === 'investigating') {
       return caseData.latest_evidence?.length || 0;
@@ -61,9 +61,9 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     return 0;
   };
 
-  // Get turn number (only available in consulting phase)
+  // Get turn number (only available in inquiry phase)
   const getTurnInfo = () => {
-    if (caseData.status === 'consulting') {
+    if (caseData.status === 'inquiry') {
       return ` · Turn ${caseData.current_turn}`;
     }
     return '';
@@ -76,7 +76,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     if (currentStatus === 'resolved' || currentStatus === 'closed') {
       return []; // Terminal states - no transitions
     }
-    if (currentStatus === 'consulting') {
+    if (currentStatus === 'inquiry') {
       return ['investigating' as UserCaseStatus, 'closed' as UserCaseStatus];
     }
     if (currentStatus === 'investigating') {

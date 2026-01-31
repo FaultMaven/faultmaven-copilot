@@ -25,7 +25,7 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
 
   const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
-      consulting: 'Consulting',
+      inquiry: 'Inquiry',
       investigating: 'Investigating',
       resolved: 'Resolved',
       closed: 'Closed'

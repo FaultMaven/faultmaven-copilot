@@ -7,10 +7,10 @@
 
 import React, { useState } from 'react';
 import type { CaseUIResponse, UploadedFileMetadata } from '../../../../types/case';
-import { isCaseConsulting, isCaseInvestigating, isCaseResolved } from '../../../../types/case';
+import { isCaseInquiry, isCaseInvestigating, isCaseResolved } from '../../../../types/case';
 import type { UserCaseStatus } from '../../../../lib/api';
 import { HeaderSummary } from './HeaderSummary';
-import { ConsultingDetails } from './ConsultingDetails';
+import { InquiryDetails } from './InquiryDetails';
 import { InvestigatingDetails } from './InvestigatingDetails';
 import { ResolvedDetails } from './ResolvedDetails';
 import { StatusChangeRequestModal } from './StatusChangeRequestModal';
@@ -122,10 +122,10 @@ function renderDetails(
   setShowFiles: (show: boolean) => void,
   onScrollToTurn?: (turnNumber: number) => void
 ): React.ReactNode {
-  if (isCaseConsulting(caseData)) {
+  if (isCaseInquiry(caseData)) {
     return (
-      <ConsultingDetails
-        data={caseData.consulting}
+      <InquiryDetails
+        data={caseData.inquiry}
         caseId={caseData.case_id}
         uploadedFilesCount={'uploaded_files_count' in caseData ? caseData.uploaded_files_count : 0}
         showFiles={showFiles}

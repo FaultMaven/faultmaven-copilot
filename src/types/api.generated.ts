@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/v1/data/{data_id}/analyze": {
+    "/api/v1/cases/{case_id}/sessions/{session_id}/execute": {
         parameters: {
             query?: never;
             header?: never;
@@ -14,25 +14,42 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Analyze Data
-         * @description Analyze uploaded data with clean delegation
+         * Execute AI agent for troubleshooting investigation
+         * @description Execute an AI agent to analyze the case and generate recommendations.
+         *     Supports streaming (SSE) or non-streaming mode.
          *
-         *     Args:
-         *         data_id: Data identifier to analyze
-         *         analysis_request: Request containing session_id and analysis parameters
-         *         data_service: Injected DataService
+         *     **Authentication:**
+         *     - JWT Bearer token: Authorization: Bearer <token>
          *
-         *     Returns:
-         *         DataInsightsResponse with analysis results
+         *     **Streaming Mode (stream=true, default):**
+         *     Returns Server-Sent Events (SSE) with real-time updates including:
+         *     - `started`: Execution has begun
+         *     - `thinking`: Agent is reasoning/processing
+         *     - `tool_call`: Tool invocation requested
+         *     - `tool_result`: Tool execution completed
+         *     - `response`: Incremental response chunk
+         *     - `error`: Error occurred
+         *     - `completed`: Execution finished
+         *
+         *     **Non-Streaming Mode (stream=false):**
+         *     Returns complete AgentExecutionResponse when done.
+         *
+         *     The agent will:
+         *     - Analyze case context and previous conversation
+         *     - Use available tools (read evidence, search knowledge)
+         *     - Generate hypotheses and recommendations
+         *     - Stream thinking process in real-time
+         *
+         *     Token usage is tracked and the session will auto-pause if budget is exceeded.
          */
-        post: operations["analyze_data_api_v1_data__data_id__analyze_post"];
+        post: operations["execute_agent_api_v1_cases__case_id__sessions__session_id__execute_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/data/sessions/{session_id}": {
+    "/api/v1/cases/{case_id}/sessions/{session_id}/executions": {
         parameters: {
             query?: never;
             header?: never;
@@ -40,19 +57,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Session Data
-         * @description Get all data for a session with clean delegation
+         * List executions for case
+         * @description List all agent executions for the case.
          *
-         *     Args:
-         *         session_id: Session identifier
-         *         limit: Maximum number of results
-         *         offset: Pagination offset
-         *         data_service: Injected DataService
-         *
-         *     Returns:
-         *         List of UploadedData for the session
+         *     **Note**: Executions are stored at the case level, not the session level.
+         *     The session_id in the path is for URL consistency with the execute endpoint,
+         *     but filtering is done by case_id. All executions for the case are returned
+         *     regardless of which session initiated them.
          */
-        get: operations["get_session_data_api_v1_data_sessions__session_id__get"];
+        get: operations["list_executions_api_v1_cases__case_id__sessions__session_id__executions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -61,7 +74,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/data/sessions/{session_id}/batch-process": {
+    "/api/v1/cases/{case_id}/sessions/{session_id}/executions/{execution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get execution by ID
+         * @description Get details of a specific agent execution.
+         */
+        get: operations["get_execution_api_v1_cases__case_id__sessions__session_id__executions__execution_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions/{session_id}/executions/{execution_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -71,25 +104,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Batch Process Session Data
-         * @description Batch process data for a session
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *         batch_request: Request with data_ids to process
-         *         data_service: Injected DataService
-         *
-         *     Returns:
-         *         Batch processing job information
+         * Cancel running execution
+         * @description Cancel a running agent execution.
          */
-        post: operations["batch_process_session_data_api_v1_data_sessions__session_id__batch_process_post"];
+        post: operations["cancel_execution_api_v1_cases__case_id__sessions__session_id__executions__execution_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/data/health": {
+    "/api/v1/auth/config": {
         parameters: {
             query?: never;
             header?: never;
@@ -97,548 +122,42 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Health Check
-         * @description Health check endpoint with service delegation
+         * Get Auth Config
+         * @description Auth configuration discovery endpoint.
          *
-         *     Returns:
-         *         Service health status
+         *     Returns the authentication configuration for the current deployment.
+         *     Frontend uses this to determine which auth flow to implement.
+         *
+         *     **Local Mode Response:**
+         *     ```json
+         *     {
+         *       "auth_mode": "local",
+         *       "login_endpoint": "/api/v1/auth/login",
+         *       "register_endpoint": "/api/v1/auth/register",
+         *       "supports_registration": true,
+         *       "oauth": null
+         *     }
+         *     ```
+         *
+         *     **Cloud Mode Response:**
+         *     ```json
+         *     {
+         *       "auth_mode": "oauth",
+         *       "login_endpoint": null,
+         *       "register_endpoint": null,
+         *       "supports_registration": false,
+         *       "oauth": {
+         *         "authorize_url": "/auth/oauth/authorize",
+         *         "token_url": "/auth/oauth/token",
+         *         "client_id": "faultmaven-copilot",
+         *         "scopes": ["openid", "profile", "email", "cases:read", "cases:write"]
+         *       }
+         *     }
+         *     ```
          */
-        get: operations["health_check_api_v1_data_health_get"];
+        get: operations["get_auth_config_api_v1_auth_config_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/data/{data_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Data
-         * @description Get data by ID
-         *
-         *     Args:
-         *         data_id: Data identifier
-         *         data_service: Injected DataService
-         *
-         *     Returns:
-         *         Data information
-         */
-        get: operations["get_data_api_v1_data__data_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Data
-         * @description Delete uploaded data with clean delegation
-         *
-         *     Args:
-         *         data_id: Data identifier to delete
-         *         session_id: Session identifier for access control (query parameter)
-         *         data_service: Injected DataService
-         *
-         *     Returns:
-         *         Success confirmation
-         */
-        delete: operations["delete_data_api_v1_data__data_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/documents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Documents
-         * @description List knowledge base documents with optional filtering
-         *
-         *     Args:
-         *         document_type: Filter by document type
-         *         tags: Filter by tags (comma-separated)
-         *         limit: Maximum number of documents to return
-         *         offset: Number of documents to skip
-         *
-         *     Returns:
-         *         List of documents
-         */
-        get: operations["list_documents_api_v1_knowledge_documents_get"];
-        put?: never;
-        /**
-         * Upload Document
-         * @description Upload a document to the knowledge base
-         *
-         *     Args:
-         *         file: Document file to upload
-         *         title: Document title
-         *         document_type: Type of document
-         *         tags: Comma-separated tags
-         *         source_url: Source URL if applicable
-         *
-         *     Returns:
-         *         Upload job information
-         */
-        post: operations["upload_document_api_v1_knowledge_documents_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/documents/{document_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Document
-         * @description Get a specific knowledge base document
-         *
-         *     Args:
-         *         document_id: Document identifier
-         *
-         *     Returns:
-         *         Document details
-         */
-        get: operations["get_document_api_v1_knowledge_documents__document_id__get"];
-        /**
-         * Update Document
-         * @description Update document metadata and content.
-         */
-        put: operations["update_document_api_v1_knowledge_documents__document_id__put"];
-        post?: never;
-        /**
-         * Delete Document
-         * @description Delete a knowledge base document
-         *
-         *     Args:
-         *         document_id: Document identifier
-         *
-         *     Returns:
-         *         Deletion confirmation
-         */
-        delete: operations["delete_document_api_v1_knowledge_documents__document_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/jobs/{job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Job Status
-         * @description Get the status of a knowledge base ingestion job
-         *
-         *     Args:
-         *         job_id: Job identifier
-         *
-         *     Returns:
-         *         Job status information
-         */
-        get: operations["get_job_status_api_v1_knowledge_jobs__job_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Search Documents
-         * @description Search knowledge base documents
-         *
-         *     Args:
-         *         request: Search request with query and filters
-         *
-         *     Returns:
-         *         Search results
-         */
-        post: operations["search_documents_api_v1_knowledge_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/documents/bulk-update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk Update Documents
-         * @description Bulk update document metadata.
-         */
-        post: operations["bulk_update_documents_api_v1_knowledge_documents_bulk_update_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/documents/bulk-delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk Delete Documents
-         * @description Bulk delete documents.
-         */
-        post: operations["bulk_delete_documents_api_v1_knowledge_documents_bulk_delete_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Knowledge Stats
-         * @description Get knowledge base statistics.
-         */
-        get: operations["get_knowledge_stats_api_v1_knowledge_stats_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/analytics/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Search Analytics
-         * @description Get search analytics and insights.
-         */
-        get: operations["get_search_analytics_api_v1_knowledge_analytics_search_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Sessions
-         * @description List all sessions with optional filtering.
-         *
-         *     Args:
-         *         user_id: Optional user ID filter
-         *         session_type: Optional session type filter
-         *         usage_type: Optional usage type filter (alias for session_type)
-         *         limit: Maximum number of sessions to return
-         *         offset: Number of sessions to skip
-         *
-         *     Returns:
-         *         List of sessions
-         */
-        get: operations["list_sessions_api_v1_sessions_get"];
-        put?: never;
-        /**
-         * Create Session
-         * @description Create or resume a troubleshooting session.
-         *
-         *     **Session Creation & Resumption:**
-         *     - If `client_id` is provided and matches an active session, that session is resumed
-         *     - If `client_id` matches an expired session, returns 404/410 error (frontend creates new session)
-         *     - If `client_id` is new or not provided, creates fresh session
-         *
-         *     **Session Timeout:**
-         *     - Sessions automatically expire after `timeout_minutes` of inactivity
-         *     - Default timeout: 180 minutes (3 hours)
-         *     - Min timeout: 60 minutes, Max timeout: 480 minutes
-         *     - Expired sessions cannot be resumed and return 404/410 errors
-         *
-         *     **Frontend Crash Recovery:**
-         *     - Browser crashes: Session resumes if within timeout window
-         *     - Extended downtime: Session expires, new session created automatically
-         *
-         *     Args:
-         *         request: Session creation parameters including optional client_id and timeout
-         *         user_id: Optional user identifier (query param)
-         *
-         *     Returns:
-         *         Session creation/resumption response with expiration information
-         */
-        post: operations["create_session_api_v1_sessions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session
-         * @description Retrieve a specific session by ID.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Session details
-         */
-        get: operations["get_session_api_v1_sessions__session_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Session
-         * @description Delete a specific session.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Deletion confirmation
-         */
-        delete: operations["delete_session_api_v1_sessions__session_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/cases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Session Cases
-         * @description List all cases associated with a session.
-         *
-         *     CRITICAL: Must return 200 [] for empty results, NOT 404
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *         limit: Maximum number of cases to return (1-100)
-         *         offset: Number of cases to skip for pagination
-         *
-         *     Returns:
-         *         List of cases (empty list if no cases found)
-         */
-        get: operations["list_session_cases_api_v1_sessions__session_id__cases_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cleanup Expired Sessions
-         * @description Clean up expired sessions (admin/testing endpoint).
-         *
-         *     This endpoint triggers immediate cleanup of expired sessions.
-         *     In production, this runs automatically every 30 minutes.
-         *
-         *     Returns:
-         *         Number of sessions cleaned up
-         */
-        post: operations["cleanup_expired_sessions_api_v1_sessions_cleanup_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/heartbeat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Session Heartbeat
-         * @description Update session activity timestamp (heartbeat).
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Heartbeat confirmation
-         */
-        post: operations["session_heartbeat_api_v1_sessions__session_id__heartbeat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session Stats
-         * @description Get session statistics and activity summary.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Session statistics
-         */
-        get: operations["get_session_stats_api_v1_sessions__session_id__stats_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cleanup Session
-         * @description Clean up session data and temporary files.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Cleanup confirmation
-         */
-        post: operations["cleanup_session_api_v1_sessions__session_id__cleanup_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/recovery-info": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session Recovery Info
-         * @description Get session recovery information for restoring lost sessions.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Recovery information
-         */
-        get: operations["get_session_recovery_info_api_v1_sessions__session_id__recovery_info_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Restore Session
-         * @description Restore a session from backup or recovery state.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *         restore_request: Restoration parameters
-         *
-         *     Returns:
-         *         Restoration confirmation
-         */
-        post: operations["restore_session_api_v1_sessions__session_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -655,26 +174,49 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Dev Login
-         * @description Development login endpoint
+         * Local Login
+         * @deprecated
+         * @description Deprecated: Use /login instead
+         */
+        post: operations["local_login_api_v1_auth_dev_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Local Login
+         * @description Internal login implementation for local mode.
          *
-         *     Authenticates existing users and generates authentication tokens.
-         *     This endpoint is designed for development environments and will be replaced
-         *     with production OAuth2/OIDC integration later.
+         *     Authenticates users and generates JWT tokens.
+         *
+         *     **Important:** Users must be created before login. Use `./faultmaven.sh create-user`
+         *     to create accounts.
          *
          *     **Flow:**
          *     1. Validate username format
-         *     2. Find existing user (returns 401 if user doesn't exist)
-         *     3. Generate authentication token
-         *     4. Return token with user profile
+         *     2. Find existing user
+         *     3. If user doesn't exist: Return 401 (user must be created first)
+         *     4. Generate JWT access token
+         *     5. Return token with user profile
          *
          *     **Security:**
-         *     - Only authenticates existing users (no account creation)
-         *     - Tokens expire after 24 hours
+         *     - Users must exist before login (no auto-creation)
+         *     - JWT tokens (not opaque tokens) for middleware uniformity
          *     - Input validation and sanitization
-         *     - Proper OAuth2 error responses
+         *     - Proper OAuth2-compatible error responses
          */
-        post: operations["dev_login_api_v1_auth_dev_login_post"];
+        post: operations["local_login_api_v1_auth_login_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -691,28 +233,98 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Dev Register
-         * @description Development registration endpoint
+         * Local Register
+         * @deprecated
+         * @description Deprecated: Use /register instead
+         */
+        post: operations["local_register_api_v1_auth_dev_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Local Register
+         * @description Local mode registration endpoint.
          *
-         *     Creates a new user account and generates an authentication token.
-         *     This endpoint is designed for development environments and will be replaced
-         *     with production registration flows later.
+         *     Creates a new user account and generates a JWT token.
+         *     Available only when AUTH_MODE=local.
          *
          *     **Flow:**
          *     1. Validate username format
          *     2. Check if user already exists (returns 409 if exists)
          *     3. Create new user account
-         *     4. Generate authentication token
+         *     4. Generate JWT access token
          *     5. Return token with user profile
          *
          *     **Security:**
          *     - Prevents duplicate account creation
-         *     - Tokens expire after 24 hours
+         *     - JWT tokens (not opaque tokens) for middleware uniformity
          *     - Input validation and sanitization
          *     - Auto-generates email and display name if not provided
          */
-        post: operations["dev_register_api_v1_auth_dev_register_post"];
+        post: operations["local_register_api_v1_auth_register_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/dev-list-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dev List Users
+         * @description Development endpoint to list all users.
+         *
+         *     Returns a list of all users in the system for development/debugging.
+         *     This endpoint is only available in development environments.
+         *
+         *     **Security**: Gated by require_development_environment dependency.
+         */
+        get: operations["dev_list_users_api_v1_auth_dev_list_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/dev-delete-user/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Dev Delete User
+         * @description Development endpoint to delete a user by username.
+         *
+         *     Deletes (soft delete) a user by username for development/debugging.
+         *     This endpoint is only available in development environments.
+         *
+         *     **Security**: Gated by require_development_environment dependency.
+         */
+        delete: operations["dev_delete_user_api_v1_auth_dev_delete_user__username__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -803,10 +415,11 @@ export interface paths {
         put?: never;
         /**
          * Dev Revoke All User Tokens
-         * @description Development endpoint: Revoke all tokens for current user
+         * @description Development endpoint: Revoke all tokens for current user.
          *
-         *     **WARNING:** This endpoint is for development use only.
-         *     It will be removed in production builds.
+         *     This endpoint is only available in development environments.
+         *
+         *     **Security**: Gated by require_development_environment dependency.
          */
         post: operations["dev_revoke_all_user_tokens_api_v1_auth_dev_revoke_all_tokens_post"];
         delete?: never;
@@ -886,7 +499,7 @@ export interface paths {
          * @description Create a new troubleshooting case (v2.0 milestone-based)
          *
          *     Creates a new case with milestone-based investigation tracking.
-         *     Initial status is CONSULTING (problem definition phase).
+         *     Initial status is INQUIRY (problem definition phase).
          *
          *     Returns CaseSummary with basic case info and milestone progress.
          */
@@ -909,7 +522,7 @@ export interface paths {
          * @description Get phase-adaptive UI-optimized case response.
          *
          *     Returns different response schemas based on case status:
-         *     - CONSULTING: Focus on problem understanding, clarifying questions
+         *     - INQUIRY: Focus on problem understanding, clarifying questions
          *     - INVESTIGATING: Milestone progress, hypotheses, evidence, working conclusion
          *     - RESOLVED: Root cause, solution, verification, resolution summary
          *
@@ -1260,6 +873,7 @@ export interface paths {
          *     Args:
          *         case_id: Case identifier
          *         include_history: If True, return all report versions; if False, only current
+         *         report_type: Optional filter by report type (incident_report, runbook, post_mortem)
          *
          *     Returns:
          *         List of CaseReport objects
@@ -1342,7 +956,7 @@ export interface paths {
          * List uploaded files with evidence counts
          * @description Get all uploaded files for a case with metadata and evidence linkage counts.
          */
-        get: operations["list_uploaded_files_api_v1_cases__case_id__uploaded_files_get"];
+        get: operations["list_uploaded_files_v2"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1362,7 +976,7 @@ export interface paths {
          * Get uploaded file details with derived evidence
          * @description Retrieve detailed information about an uploaded file including all evidence derived from it and hypothesis linkage.
          */
-        get: operations["get_uploaded_file_details_api_v1_cases__case_id__uploaded_files__file_id__get"];
+        get: operations["get_uploaded_file_details_v2"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1391,84 +1005,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users/{user_id}/kb/documents": {
+    "/api/v1/cases/{case_id}/share": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * List User Kb Documents
-         * @description List all documents in user's knowledge base.
-         *
-         *     Returns metadata for all documents in the user's KB, with optional filtering
-         *     by category and pagination support.
-         *
-         *     **Access Control**: Users can only list their own documents.
-         *
-         *     **Query Parameters**:
-         *     - `limit`: Maximum number of documents to return (default: all)
-         *     - `offset`: Number of documents to skip for pagination (default: 0)
-         *     - `category`: Filter by document category (optional)
-         *
-         *     **Example**:
-         *     ```bash
-         *     # List all documents
-         *     curl "http://localhost:8090/api/v1/users/alice/kb/documents" \
-         *       -H "Authorization: Bearer dev_token"
-         *
-         *     # List database runbooks only
-         *     curl "http://localhost:8090/api/v1/users/alice/kb/documents?category=database" \
-         *       -H "Authorization: Bearer dev_token"
-         *
-         *     # Paginate (10 documents at a time)
-         *     curl "http://localhost:8090/api/v1/users/alice/kb/documents?limit=10&offset=0" \
-         *       -H "Authorization: Bearer dev_token"
-         *     ```
-         */
-        get: operations["list_user_kb_documents_api_v1_users__user_id__kb_documents_get"];
+        get?: never;
         put?: never;
         /**
-         * Upload User Kb Document
-         * @description Upload a document to user's personal knowledge base.
-         *
-         *     Accepts runbooks, procedures, troubleshooting guides, and documentation.
-         *     Documents are preprocessed to extract key information and stored permanently
-         *     in the user's knowledge base for future agent queries.
-         *
-         *     **Access Control**: Users can only upload to their own knowledge base.
-         *
-         *     **File Types Supported**:
-         *     - Text files (.txt, .md)
-         *     - Logs (.log)
-         *     - Configuration files (.yaml, .json, .xml, .conf)
-         *     - Code files (.py, .js, .java, etc.)
-         *
-         *     **Processing**:
-         *     1. File uploaded and validated
-         *     2. Content preprocessed (classification, extraction, sanitization)
-         *     3. Document stored in user-scoped ChromaDB collection
-         *     4. Available immediately for agent queries via answer_from_user_kb tool
-         *
-         *     **Example**:
-         *     ```bash
-         *     curl -X POST "http://localhost:8090/api/v1/users/alice/kb/documents" \
-         *       -H "Authorization: Bearer dev_token" \
-         *       -F "file=@database_runbook.md" \
-         *       -F "title=Database Timeout Troubleshooting" \
-         *       -F "category=database" \
-         *       -F "tags=postgresql,timeout,performance"
-         *     ```
+         * Share Case
+         * @description Share a case with another user. Requires owner or collaborator permission.
          */
-        post: operations["upload_user_kb_document_api_v1_users__user_id__kb_documents_post"];
+        post: operations["share_case_api_v1_cases__case_id__share_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users/{user_id}/kb/documents/{doc_id}": {
+    "/api/v1/cases/{case_id}/share/{target_user_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1479,26 +1036,16 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Delete User Kb Document
-         * @description Delete a specific document from user's knowledge base.
-         *
-         *     Permanently removes the document from the user's KB. This action cannot be undone.
-         *
-         *     **Access Control**: Users can only delete their own documents.
-         *
-         *     **Example**:
-         *     ```bash
-         *     curl -X DELETE "http://localhost:8090/api/v1/users/alice/kb/documents/abc-123" \
-         *       -H "Authorization: Bearer dev_token"
-         *     ```
+         * Unshare Case
+         * @description Unshare a case from a user. Requires owner permission.
          */
-        delete: operations["delete_user_kb_document_api_v1_users__user_id__kb_documents__doc_id__delete"];
+        delete: operations["unshare_case_api_v1_cases__case_id__share__target_user_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users/{user_id}/kb/stats": {
+    "/api/v1/cases/{case_id}/participants": {
         parameters: {
             query?: never;
             header?: never;
@@ -1506,21 +1053,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get User Kb Stats
-         * @description Get statistics about user's knowledge base.
-         *
-         *     Returns summary information about the user's KB including document count
-         *     and category breakdown.
-         *
-         *     **Access Control**: Users can only view their own KB stats.
-         *
-         *     **Example**:
-         *     ```bash
-         *     curl "http://localhost:8090/api/v1/users/alice/kb/stats" \
-         *       -H "Authorization: Bearer dev_token"
-         *     ```
+         * Get Case Participants
+         * @description Get all participants who have access to this case.
          */
-        get: operations["get_user_kb_stats_api_v1_users__user_id__kb_stats_get"];
+        get: operations["get_case_participants_api_v1_cases__case_id__participants_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1529,7 +1065,644 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/jobs/{job_id}": {
+    "/api/v1/cases/{case_id}/access-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Case Access
+         * @description Check if current user has access to this case.
+         */
+        get: operations["check_case_access_api_v1_cases__case_id__access_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/extract-knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Knowledge from Case
+         * @description Extract reusable knowledge from a case into a suggestion for the knowledge base.
+         */
+        post: operations["extract_knowledge_from_case_api_v1_cases__case_id__extract_knowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sessions
+         * @description List sessions for case.
+         *
+         *     Retrieves all investigation sessions for a case with optional filtering.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Query Parameters:
+         *         status: Filter by session status (active, paused, completed, abandoned)
+         *         limit: Maximum number of results (1-100, default 50)
+         *         offset: Pagination offset (default 0)
+         *
+         *     Args:
+         *         case_id: Case to list sessions for
+         *         current_user: Authenticated user from JWT
+         *         status_filter: Optional status filter
+         *         limit: Page size
+         *         offset: Pagination offset
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         List of sessions for the case
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Case not found
+         */
+        get: operations["list_sessions_api_v1_cases__case_id__sessions_get"];
+        put?: never;
+        /**
+         * Create Session
+         * @description Create investigation session for case.
+         *
+         *     Creates a new investigation session for the specified case.
+         *     Only one active session is allowed per case at a time.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Args:
+         *         case_id: Case to create session for
+         *         request: Session creation request
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Created session details
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Case not found
+         *         409: Active session already exists
+         *         422: Validation error
+         */
+        post: operations["create_session_api_v1_cases__case_id__sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Session
+         * @description Get currently active session for case.
+         *
+         *     Returns the currently active investigation session for a case,
+         *     if one exists. Each case can have at most one active session.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Args:
+         *         case_id: Case to get active session for
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Active session if exists, null otherwise
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Case not found
+         */
+        get: operations["get_active_session_api_v1_cases__case_id__sessions_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session
+         * @description Get session by ID.
+         *
+         *     Retrieves a specific investigation session by its ID.
+         *     The session must belong to a case owned by the organization.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Args:
+         *         case_id: Case the session belongs to
+         *         session_id: Unique session identifier
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Session details if found and authorized
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Session not found or case not found
+         */
+        get: operations["get_session_api_v1_cases__case_id__sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Session
+         * @description Update session.
+         *
+         *     Updates specified fields of an investigation session.
+         *     Only session_goal, token_budget_limit, and metadata can be updated.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Args:
+         *         case_id: Case the session belongs to
+         *         session_id: Unique session identifier
+         *         request: Fields to update
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Updated session details
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Session not found
+         *         422: Validation error
+         */
+        patch: operations["update_session_api_v1_cases__case_id__sessions__session_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions/{session_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Session
+         * @description Pause active session.
+         *
+         *     Pauses an active investigation session. Only active sessions
+         *     can be paused. Paused sessions can be resumed later.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Args:
+         *         case_id: Case the session belongs to
+         *         session_id: Unique session identifier
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Updated session with paused status
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Session not found
+         *         400: Session not active (cannot pause)
+         */
+        post: operations["pause_session_api_v1_cases__case_id__sessions__session_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions/{session_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Session
+         * @description Resume paused session.
+         *
+         *     Resumes a paused investigation session. Only paused sessions
+         *     can be resumed.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Args:
+         *         case_id: Case the session belongs to
+         *         session_id: Unique session identifier
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Updated session with active status
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Session not found
+         *         400: Session not paused (cannot resume)
+         */
+        post: operations["resume_session_api_v1_cases__case_id__sessions__session_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/sessions/{session_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Session
+         * @description Complete session with findings.
+         *
+         *     Completes an investigation session with a findings summary.
+         *     This is a terminal action - completed sessions cannot be modified.
+         *
+         *     Authentication:
+         *         - JWT Bearer token: Authorization: Bearer <token>
+         *
+         *     Body:
+         *         findings_summary: Summary of investigation findings
+         *
+         *     Args:
+         *         case_id: Case the session belongs to
+         *         session_id: Unique session identifier
+         *         findings_summary: Summary of investigation findings
+         *         current_user: Authenticated user from JWT
+         *         session_service: Injected session service
+         *
+         *     Returns:
+         *         Updated session with completed status
+         *
+         *     Raises:
+         *         401: Authentication required
+         *         404: Session not found
+         *         400: Session already in terminal state
+         *         422: Missing findings summary
+         */
+        post: operations["complete_session_api_v1_cases__case_id__sessions__session_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Evidence
+         * @description List evidence with optional filters.
+         *
+         *     Args:
+         *         case_id: Filter by case UUID
+         *         uploaded_by: Filter by uploader user ID
+         *         tags: Filter by tags (comma-separated)
+         *         filename_contains: Filter by filename substring
+         *         limit: Max results (default 50, max 200)
+         *         offset: Pagination offset
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Returns:
+         *         List of evidence records
+         */
+        get: operations["list_evidence_api_v1_evidence_get"];
+        put?: never;
+        /**
+         * Upload Evidence
+         * @description Upload evidence file.
+         *
+         *     Args:
+         *         file: Evidence file to upload
+         *         description: Optional description of the evidence
+         *         tags: Optional comma-separated tags
+         *         case_id: Optional case UUID to auto-link
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Returns:
+         *         Created evidence record
+         */
+        post: operations["upload_evidence_api_v1_evidence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evidence/case/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Evidence For Case
+         * @description Get all evidence linked to a specific case.
+         *
+         *     Args:
+         *         case_id: Case UUID
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Returns:
+         *         List of evidence records for the case
+         */
+        get: operations["get_evidence_for_case_api_v1_evidence_case__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evidence/{evidence_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Evidence
+         * @description Get evidence details by ID.
+         *
+         *     Args:
+         *         evidence_id: Evidence UUID
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Returns:
+         *         Evidence record
+         *
+         *     Raises:
+         *         HTTPException: 404 if evidence not found, 503 if service unavailable
+         */
+        get: operations["get_evidence_api_v1_evidence__evidence_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Evidence
+         * @description Delete evidence file and record.
+         *
+         *     Args:
+         *         evidence_id: Evidence UUID
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Raises:
+         *         HTTPException: 404 if evidence not found, 503 if service unavailable
+         */
+        delete: operations["delete_evidence_api_v1_evidence__evidence_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evidence/{evidence_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Evidence
+         * @description Download evidence file.
+         *
+         *     Args:
+         *         evidence_id: Evidence UUID
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Returns:
+         *         Redirect to download URL
+         *
+         *     Raises:
+         *         HTTPException: 404 if evidence not found, 503 if service unavailable
+         */
+        get: operations["download_evidence_api_v1_evidence__evidence_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evidence/{evidence_id}/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link Evidence To Case
+         * @description Link evidence to a case.
+         *
+         *     Args:
+         *         evidence_id: Evidence UUID
+         *         link_request: Case ID to link to
+         *         current_user: Authenticated user
+         *         service: Evidence service
+         *
+         *     Returns:
+         *         Updated evidence record
+         *
+         *     Raises:
+         *         HTTPException: 404 if evidence not found
+         */
+        post: operations["link_evidence_to_case_api_v1_evidence__evidence_id__link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Documents
+         * @description List knowledge base documents with optional filtering
+         *
+         *     Args:
+         *         document_type: Filter by document type
+         *         tags: Filter by tags (comma-separated)
+         *         limit: Maximum number of documents to return
+         *         offset: Number of documents to skip
+         *
+         *     Returns:
+         *         List of documents
+         */
+        get: operations["list_documents_api_v1_knowledge_documents_get"];
+        put?: never;
+        /**
+         * Upload Document
+         * @description Upload a document to the knowledge base
+         *
+         *     Args:
+         *         file: Document file to upload
+         *         title: Document title
+         *         document_type: Type of document
+         *         tags: Comma-separated tags
+         *         source_url: Source URL if applicable
+         *
+         *     Returns:
+         *         Upload job information
+         */
+        post: operations["upload_document_api_v1_knowledge_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document
+         * @description Get a specific knowledge base document
+         *
+         *     Args:
+         *         document_id: Document identifier
+         *
+         *     Returns:
+         *         Document details
+         */
+        get: operations["get_document_api_v1_knowledge_documents__document_id__get"];
+        /**
+         * Update Document
+         * @description Update document metadata and content.
+         */
+        put: operations["update_document_api_v1_knowledge_documents__document_id__put"];
+        post?: never;
+        /**
+         * Delete Document
+         * @description Delete a knowledge base document
+         *
+         *     Args:
+         *         document_id: Document identifier
+         *
+         *     Returns:
+         *         Deletion confirmation
+         */
+        delete: operations["delete_document_api_v1_knowledge_documents__document_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/documents/{document_id}/snippet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Snippet
+         * @description Get a snippet/preview of a knowledge base document for hover cards.
+         *
+         *     Supports two modes:
+         *     1. **Line-based extraction**: Extract lines from line_start to line_end (or max_lines)
+         *     2. **Semantic extraction**: If query_string is provided, returns the most relevant
+         *        snippet based on vector similarity (more robust than line numbers after edits)
+         *
+         *     Args:
+         *         document_id: Document identifier
+         *         line_start: Starting line number (1-indexed, default: 1)
+         *         line_end: Ending line number (optional, computed from max_lines if not provided)
+         *         max_lines: Maximum lines to return (default: 5, max: 50)
+         *         query_string: Query for semantic snippet extraction (optional)
+         *
+         *     Returns:
+         *         Document snippet with verification status for badge display
+         */
+        get: operations["get_document_snippet_api_v1_knowledge_documents__document_id__snippet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/jobs/{job_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1538,44 +1711,15 @@ export interface paths {
         };
         /**
          * Get Job Status
-         * @description Get job status with proper polling semantics
+         * @description Get the status of a knowledge base ingestion job
          *
-         *     Implements consistent job polling with appropriate headers:
-         *     - 200 OK for running/pending jobs with Retry-After header
-         *     - 303 See Other redirect for completed jobs with results
-         *     - 200 OK for failed/cancelled jobs (terminal states)
-         */
-        get: operations["get_job_status_api_v1_jobs__job_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Cancel Job
-         * @description Cancel a running job
+         *     Args:
+         *         job_id: Job identifier
          *
-         *     Attempts to cancel a job if it's still in a cancellable state.
-         *     Returns 204 No Content on success.
+         *     Returns:
+         *         Job status information
          */
-        delete: operations["cancel_job_api_v1_jobs__job_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Jobs
-         * @description List jobs with optional filtering and pagination
-         *
-         *     Returns a paginated list of jobs with proper pagination headers.
-         *     Supports filtering by job status.
-         */
-        get: operations["list_jobs_api_v1_jobs_get"];
+        get: operations["get_job_status_api_v1_knowledge_jobs__job_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1584,7 +1728,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/jobs/health": {
+    "/api/v1/knowledge/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Documents
+         * @description Search knowledge base documents
+         *
+         *     Args:
+         *         request: Search request with query and filters
+         *
+         *     Returns:
+         *         Search results
+         */
+        post: operations["search_documents_api_v1_knowledge_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/documents/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fulltext Search Documents
+         * @description Full-text search for knowledge base documents (Microservices Parity)
+         *
+         *     Implements full-text search complementing the semantic search at /knowledge/search.
+         *     This endpoint provides simple keyword-based text matching across document titles
+         *     and content, useful when semantic understanding is not required.
+         *
+         *     **Differences from /knowledge/search:**
+         *     - `/knowledge/search` - Semantic vector search using embeddings (similarity-based)
+         *     - `/documents/search` - Full-text keyword search (exact/partial word matching)
+         *
+         *     **Use Cases:**
+         *     - Searching for specific error codes or identifiers
+         *     - Finding documents with exact phrases
+         *     - Faster search when semantic understanding not needed
+         *     - Filtering by document_type, category, tags
+         *
+         *     **Request Body:**
+         *     ```json
+         *     {
+         *         "query": "PostgreSQL connection timeout",
+         *         "document_type": "kb_article",
+         *         "category": "database",
+         *         "tags": "postgresql,timeout",
+         *         "limit": 20,
+         *         "similarity_threshold": 0.5
+         *     }
+         *     ```
+         *
+         *     **Returns:**
+         *     ```json
+         *     {
+         *         "query": "...",
+         *         "total_results": 5,
+         *         "results": [
+         *             {
+         *                 "document_id": "...",
+         *                 "content": "...",
+         *                 "metadata": {
+         *                     "title": "...",
+         *                     "document_type": "...",
+         *                     "category": "...",
+         *                     "tags": [...],
+         *                     "priority": "..."
+         *                 },
+         *                 "similarity_score": 0.85
+         *             }
+         *         ]
+         *     }
+         *     ```
+         */
+        post: operations["fulltext_search_documents_api_v1_knowledge_documents_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/documents/bulk-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Update Documents
+         * @description Bulk update document metadata.
+         */
+        post: operations["bulk_update_documents_api_v1_knowledge_documents_bulk_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/documents/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Delete Documents
+         * @description Bulk delete documents.
+         */
+        post: operations["bulk_delete_documents_api_v1_knowledge_documents_bulk_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/stats": {
         parameters: {
             query?: never;
             header?: never;
@@ -1592,13 +1870,1007 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Job Service Health
-         * @description Get job service health status
-         *
-         *     Returns health information about the job management system,
-         *     including connectivity and performance metrics.
+         * Get Knowledge Stats
+         * @description Get knowledge base statistics.
          */
-        get: operations["get_job_service_health_api_v1_jobs_health_get"];
+        get: operations["get_knowledge_stats_api_v1_knowledge_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/analytics/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Search Analytics
+         * @description Get search analytics and insights.
+         */
+        get: operations["get_search_analytics_api_v1_knowledge_analytics_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Suggestions
+         * @description List knowledge suggestions with optional filtering.
+         *
+         *     Returns suggestions extracted from cases that are pending review.
+         *     Includes lineage information for each suggestion (source case, extractor, timestamp).
+         *
+         *     Args:
+         *         status: Filter by status (pending_review, approved, rejected)
+         *         limit: Maximum suggestions to return (default: 20)
+         *         offset: Pagination offset (default: 0)
+         *
+         *     Returns:
+         *         SuggestionListResponse with paginated suggestions
+         */
+        get: operations["list_suggestions_api_v1_knowledge_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/suggestions/{suggestion_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Suggestion
+         * @description Get a specific knowledge suggestion by ID.
+         *
+         *     Returns full suggestion details including content, PII scan status,
+         *     and lineage information.
+         *
+         *     Args:
+         *         suggestion_id: Suggestion identifier
+         *
+         *     Returns:
+         *         KnowledgeSuggestionDetail
+         */
+        get: operations["get_suggestion_api_v1_knowledge_suggestions__suggestion_id__get"];
+        /**
+         * Update Suggestion
+         * @description Update a suggestion's content.
+         *
+         *     Allows editing the suggested title, content, or type before approval.
+         *     Content changes trigger a new PII scan.
+         *
+         *     Args:
+         *         suggestion_id: Suggestion to update
+         *         update_data: Fields to update (title, content, suggested_type)
+         *
+         *     Returns:
+         *         Updated suggestion details
+         */
+        put: operations["update_suggestion_api_v1_knowledge_suggestions__suggestion_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/suggestions/{suggestion_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Suggestion
+         * @description Approve a suggestion and create a knowledge item.
+         *
+         *     Validates that PII scan is complete and clean/remediated before approval.
+         *     Creates a new KnowledgeItem with verification_level=2 (admin verified).
+         *     Establishes bidirectional link between suggestion and knowledge item.
+         *
+         *     Args:
+         *         suggestion_id: Suggestion to approve
+         *         request_body: Optional review notes
+         *
+         *     Returns:
+         *         Approval result with new knowledge_item_id
+         */
+        post: operations["approve_suggestion_api_v1_knowledge_suggestions__suggestion_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/suggestions/{suggestion_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Suggestion
+         * @description Reject a suggestion.
+         *
+         *     Marks the suggestion as rejected with the provided reason.
+         *
+         *     Args:
+         *         suggestion_id: Suggestion to reject
+         *         request_body: Must include rejection_reason, optional review_notes
+         *
+         *     Returns:
+         *         Rejection confirmation
+         */
+        post: operations["reject_suggestion_api_v1_knowledge_suggestions__suggestion_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/suggestions/{suggestion_id}/remediate-pii": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remediate Pii
+         * @description Mark PII as remediated after manual review.
+         *
+         *     Called when an admin has manually reviewed and cleaned up
+         *     PII-flagged content. Allows the suggestion to proceed to approval.
+         *
+         *     Args:
+         *         suggestion_id: Suggestion with PII to remediate
+         *
+         *     Returns:
+         *         Updated suggestion with remediated status
+         */
+        post: operations["remediate_pii_api_v1_knowledge_suggestions__suggestion_id__remediate_pii_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Organizations
+         * @description List all organizations the authenticated user belongs to.
+         */
+        get: operations["list_user_organizations_api_v1_organizations_get"];
+        put?: never;
+        /**
+         * Create Organization
+         * @description Create a new organization. The creator becomes the organization owner.
+         */
+        post: operations["create_organization_api_v1_organizations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Organization
+         * @description Get organization details by ID. Requires organization membership.
+         */
+        get: operations["get_organization_api_v1_organizations__org_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Organization
+         * @description Soft delete an organization. Requires owner permission.
+         */
+        delete: operations["delete_organization_api_v1_organizations__org_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Organization
+         * @description Update organization details. Requires owner permission.
+         */
+        patch: operations["update_organization_api_v1_organizations__org_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/organizations/by-slug/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Organization by Slug
+         * @description Get organization details by slug. Requires organization membership.
+         */
+        get: operations["get_organization_by_slug_api_v1_organizations_by_slug__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Organization Members
+         * @description List all members of an organization. Requires organization membership.
+         */
+        get: operations["list_organization_members_api_v1_organizations__org_id__members_get"];
+        put?: never;
+        /**
+         * Add Member
+         * @description Add user to organization by email. Requires owner or admin permission.
+         */
+        post: operations["add_member_api_v1_organizations__org_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Member
+         * @description Remove user from organization. Owner can remove anyone except self, admin can remove members only.
+         */
+        delete: operations["remove_member_api_v1_organizations__org_id__members__user_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Member Role
+         * @description Update user's role in organization. Requires owner permission.
+         */
+        patch: operations["update_member_role_api_v1_organizations__org_id__members__user_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Organization Settings
+         * @description Get organization settings and plan limits. Requires organization membership.
+         */
+        get: operations["get_organization_settings_api_v1_organizations__org_id__settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Organization Settings
+         * @description Update organization settings. Requires owner permission.
+         */
+        patch: operations["update_organization_settings_api_v1_organizations__org_id__settings_patch"];
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/permissions/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Permission
+         * @description Check if user has specific permission in organization.
+         */
+        post: operations["check_permission_api_v1_organizations__org_id__permissions_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate reports for a case
+         * @description Generate post-mortem, executive summary, or technical analysis reports using LLM
+         */
+        post: operations["generate_report_api_v1_reports_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/recommendations/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get report recommendations for a case
+         * @description Get intelligent recommendations for which reports to generate
+         */
+        get: operations["get_report_recommendations_api_v1_reports_recommendations__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get report by ID
+         * @description Retrieve a specific report by its UUID
+         */
+        get: operations["get_report_api_v1_reports__report_id__get"];
+        /**
+         * Update report
+         * @description Update report title or content
+         */
+        put: operations["update_report_api_v1_reports__report_id__put"];
+        post?: never;
+        /**
+         * Delete report
+         * @description Permanently delete a report (runbooks cannot be deleted)
+         */
+        delete: operations["delete_report_api_v1_reports__report_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/case/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List reports for case
+         * @description Get all reports associated with a specific case
+         */
+        get: operations["list_reports_for_case_api_v1_reports_case__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get report version history
+         * @description Retrieve all versions of a report
+         */
+        get: operations["get_report_versions_api_v1_reports__report_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/link-case": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link report to case closure
+         * @description Mark case as closed and link final report
+         */
+        post: operations["link_report_to_case_closure_api_v1_reports__report_id__link_case_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sessions
+         * @description List all sessions with optional filtering.
+         *
+         *     Args:
+         *         user_id: Optional user ID filter
+         *         session_type: Optional session type filter
+         *         limit: Maximum number of sessions to return
+         *         offset: Number of sessions to skip
+         *
+         *     Returns:
+         *         List of sessions
+         */
+        get: operations["list_sessions_api_v1_sessions_get"];
+        put?: never;
+        /**
+         * Create Session
+         * @description Create or resume a troubleshooting session.
+         *
+         *     **Session Creation & Resumption:**
+         *     - If `client_id` is provided and matches an active session, that session is resumed
+         *     - If `client_id` matches an expired session, returns 404/410 error (frontend creates new session)
+         *     - If `client_id` is new or not provided, creates fresh session
+         *
+         *     **Session Timeout:**
+         *     - Sessions automatically expire after `timeout_minutes` of inactivity
+         *     - Default timeout: 180 minutes (3 hours)
+         *     - Min timeout: 60 minutes, Max timeout: 480 minutes
+         *     - Expired sessions cannot be resumed and return 404/410 errors
+         *
+         *     **Frontend Crash Recovery:**
+         *     - Browser crashes: Session resumes if within timeout window
+         *     - Extended downtime: Session expires, new session created automatically
+         *
+         *     Args:
+         *         request: Session creation parameters including optional client_id and timeout
+         *         user_id: Optional user identifier (query param)
+         *
+         *     Returns:
+         *         Session creation/resumption response with expiration information
+         */
+        post: operations["create_session_api_v1_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session
+         * @description Retrieve a specific session by ID.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         Session details
+         */
+        get: operations["get_session_api_v1_sessions__session_id__get"];
+        /**
+         * Update Session
+         * @description Update session metadata.
+         *
+         *     Implements microservices parity with fm-session-service.
+         *     Updates authentication-related metadata only (not case data).
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *         updates: Dict of fields to update (metadata, timeout_minutes, etc.)
+         *
+         *     Returns:
+         *         Updated session information
+         *
+         *     Raises:
+         *         404: Session not found
+         *         403: User not authorized to update this session
+         *         400: Invalid update fields (trying to update case data)
+         */
+        put: operations["update_session_api_v1_sessions__session_id__put"];
+        post?: never;
+        /**
+         * Delete Session
+         * @description Delete a specific session.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         Deletion confirmation
+         */
+        delete: operations["delete_session_api_v1_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Session Cases
+         * @description List all cases associated with a session.
+         *
+         *     CRITICAL: Must return 200 [] for empty results, NOT 404
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *         limit: Maximum number of cases to return (1-100)
+         *         offset: Number of cases to skip for pagination
+         *
+         *     Returns:
+         *         List of cases (empty list if no cases found)
+         */
+        get: operations["list_session_cases_api_v1_sessions__session_id__cases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Expired Sessions
+         * @description Clean up expired sessions (admin/testing endpoint).
+         *
+         *     This endpoint triggers immediate cleanup of expired sessions.
+         *     In production, this runs automatically every 30 minutes.
+         *
+         *     Returns:
+         *         Number of sessions cleaned up
+         */
+        post: operations["cleanup_expired_sessions_v2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Session Heartbeat
+         * @description Update session activity timestamp (heartbeat).
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         Heartbeat confirmation
+         */
+        post: operations["session_heartbeat_api_v1_sessions__session_id__heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Stats
+         * @description Get session statistics and activity summary.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         Session statistics
+         */
+        get: operations["get_session_stats_api_v1_sessions__session_id__stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Session
+         * @description Clean up session data and temporary files.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         Cleanup confirmation
+         */
+        post: operations["cleanup_session_api_v1_sessions__session_id__cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/recovery-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Recovery Info
+         * @description Get session recovery information for restoring lost sessions.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         Recovery information
+         */
+        get: operations["get_session_recovery_info_api_v1_sessions__session_id__recovery_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Session
+         * @description Restore a session from backup or recovery state.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *         restore_request: Restoration parameters
+         *
+         *     Returns:
+         *         Restoration confirmation
+         */
+        post: operations["restore_session_api_v1_sessions__session_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Sessions
+         * @description Search user's sessions with filters.
+         *
+         *     Implements microservices parity with fm-session-service.
+         *     Searches only the authenticated user's sessions.
+         *
+         *     Request body:
+         *         {
+         *             "query": "optional text search",
+         *             "status": "optional status filter (active, archived)",
+         *             "limit": 50
+         *         }
+         *
+         *     Returns:
+         *         {
+         *             "sessions": [...],
+         *             "total": int
+         *         }
+         */
+        post: operations["search_sessions_api_v1_sessions_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Session
+         * @description Archive a session.
+         *
+         *     Implements microservices parity with fm-session-service.
+         *     Sets session status to 'archived' while preserving all data.
+         *
+         *     Args:
+         *         session_id: Session identifier
+         *
+         *     Returns:
+         *         {
+         *             "session_id": str,
+         *             "status": "archived",
+         *             "message": "Session archived successfully"
+         *         }
+         *
+         *     Raises:
+         *         404: Session not found
+         *         403: User not authorized to archive this session
+         */
+        post: operations["archive_session_api_v1_sessions__session_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Team
+         * @description Create a new team within an organization. The creator becomes the team lead.
+         */
+        post: operations["create_team_api_v1_teams_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Team
+         * @description Get team details by ID.
+         */
+        get: operations["get_team_api_v1_teams__team_id__get"];
+        /**
+         * Update Team
+         * @description Update team details. Requires 'teams.write' permission.
+         */
+        put: operations["update_team_api_v1_teams__team_id__put"];
+        post?: never;
+        /**
+         * Delete Team
+         * @description Soft delete a team. Requires 'teams.manage' permission.
+         */
+        delete: operations["delete_team_api_v1_teams__team_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/organization/{org_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Organization Teams
+         * @description List all teams in an organization.
+         */
+        get: operations["list_organization_teams_api_v1_teams_organization__org_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/user/{target_user_id}/organization/{org_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Teams
+         * @description List all teams a user belongs to in an organization.
+         */
+        get: operations["list_user_teams_api_v1_teams_user__target_user_id__organization__org_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Team Members
+         * @description List all members of a team.
+         */
+        get: operations["list_team_members_api_v1_teams__team_id__members_get"];
+        put?: never;
+        /**
+         * Add Team Member
+         * @description Add user to team. Requires 'teams.write' permission.
+         */
+        post: operations["add_team_member_api_v1_teams__team_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members/{target_user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Team Member
+         * @description Remove user from team. Requires 'teams.write' permission.
+         */
+        delete: operations["remove_team_member_api_v1_teams__team_id__members__target_user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members/{target_user_id}/is-member": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Team Membership
+         * @description Check if user is member of team.
+         */
+        get: operations["is_team_member_api_v1_teams__team_id__members__target_user_id__is_member_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1647,6 +2919,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/debug/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Debug Config
+         * @description Get current configuration summary including active preset.
+         *
+         *     Returns information about:
+         *     - Active configuration preset (if any)
+         *     - Environment settings
+         *     - Storage backend types
+         *     - LLM provider configuration
+         *     - Protection settings
+         *
+         *     Useful for debugging configuration issues and verifying preset application.
+         */
+        get: operations["debug_config_debug_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/debug/llm-providers": {
         parameters: {
             query?: never;
@@ -1667,95 +2968,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/protection/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Protection Health
-         * @description Get protection system health status
-         *
-         *     Returns comprehensive health information for both basic and intelligent
-         *     protection components including middleware status and configuration validation.
-         *
-         *     Returns:
-         *         Dict with protection system health status, active components, and validation results
-         *
-         *     Raises:
-         *         HTTPException: On service layer errors (503, 500)
-         */
-        get: operations["get_protection_health_api_v1_protection_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/protection/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Protection Metrics
-         * @description Get protection system metrics for monitoring
-         *
-         *     Returns detailed metrics for rate limiting, request deduplication,
-         *     behavioral analysis, ML anomaly detection, and reputation system.
-         *
-         *     Returns:
-         *         Dict with protection system metrics including request counts,
-         *         protection rates, and component-specific statistics
-         *
-         *     Raises:
-         *         HTTPException: On service layer errors (503, 500)
-         */
-        get: operations["get_protection_metrics_api_v1_protection_metrics_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/protection/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Protection Config
-         * @description Get current protection system configuration
-         *
-         *     Returns sanitized configuration information (no sensitive data)
-         *     for both basic and intelligent protection components.
-         *
-         *     Returns:
-         *         Dict with protection configuration including enabled features,
-         *         rate limits, timeouts, and security settings (sanitized)
-         *
-         *     Raises:
-         *         HTTPException: On service layer errors (503, 500)
-         */
-        get: operations["get_protection_config_api_v1_protection_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/": {
         parameters: {
             query?: never;
@@ -1768,6 +2980,32 @@ export interface paths {
          * @description Root endpoint with API information.
          */
         get: operations["root__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meta/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Capabilities
+         * @description Return backend capabilities for browser extension configuration.
+         *
+         *     This endpoint is called by the FaultMaven Copilot browser extension
+         *     to detect the deployment mode and configure itself accordingly.
+         *
+         *     Returns:
+         *         Backend capabilities including deployment mode, dashboard URL, and feature flags
+         */
+        get: operations["get_capabilities_v1_meta_capabilities_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2021,40 +3259,63 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * AcquisitionGuidance
-         * @description Instructions for obtaining diagnostic evidence
+         * AgentExecutionRequest
+         * @description Request model for executing an AI agent.
+         *
+         *     This model defines the input for agent execution requests,
+         *     supporting both streaming and non-streaming modes.
+         * @example {
+         *       "agent_type": "investigator",
+         *       "stream": true,
+         *       "user_message": "What is causing the 500 errors in the API?"
+         *     }
          */
-        AcquisitionGuidance: {
+        AgentExecutionRequest: {
             /**
-             * Commands
-             * @description Shell commands to run (max 3)
+             * User Message
+             * @description User's question or request for the agent
              */
-            commands?: string[];
+            user_message: string;
             /**
-             * File Locations
-             * @description File paths to check (max 3)
+             * Agent Type
+             * @description Type of agent to execute (investigator, debugger, researcher, validator, reporter)
+             * @default investigator
              */
-            file_locations?: string[];
+            agent_type: string;
             /**
-             * Ui Locations
-             * @description UI navigation paths (max 3)
+             * Stream
+             * @description Whether to stream response events (SSE)
+             * @default true
              */
-            ui_locations?: string[];
+            stream: boolean;
+        };
+        /**
+         * AgentExecutionResponse
+         * @description Response model for completed agent execution (non-streaming).
+         *
+         *     Used when stream=false in the request.
+         */
+        AgentExecutionResponse: {
+            /** Execution Id */
+            execution_id: string;
+            /** Status */
+            status: string;
+            /** Agent Response */
+            agent_response: string;
+            /** Tokens Used */
+            tokens_used: number;
             /**
-             * Alternatives
-             * @description Alternative methods (max 3)
+             * Started At
+             * Format: date-time
              */
-            alternatives?: string[];
+            started_at: string;
+            /** Completed At */
+            completed_at?: string | null;
             /**
-             * Prerequisites
-             * @description Requirements to obtain evidence (max 2)
+             * Tool Calls
+             * @default []
              */
-            prerequisites?: string[];
-            /**
-             * Expected Output
-             * @description What user should expect to see
-             */
-            expected_output?: string | null;
+            tool_calls: components["schemas"]["ToolCallResponse"][];
         };
         /**
          * AgentResponse
@@ -2086,26 +3347,78 @@ export interface components {
              * Evidence Requests
              * @description Active evidence requests for this turn
              */
-            evidence_requests?: components["schemas"]["EvidenceRequest"][];
+            evidence_requests?: components["schemas"]["EvidenceRequestToAdd"][];
             /**
              * @description Current investigation approach (speed vs depth)
              * @default active_incident
              */
-            investigation_mode: components["schemas"]["InvestigationMode"];
+            investigation_mode: components["schemas"]["InvestigationStrategy"];
             /**
              * @description Current case investigation state
-             * @default consulting
+             * @default inquiry
              */
-            case_status: components["schemas"]["faultmaven__models__evidence__CaseStatus"];
-            /**
-             * Suggested Actions
-             * @deprecated
-             * @description DEPRECATED in v3.1.0 - Use evidence_requests instead. Always null in new responses.
-             */
-            suggested_actions?: Record<string, never>[] | null;
+            case_status: components["schemas"]["CaseStatus"];
         } & {
             [key: string]: unknown;
         };
+        /**
+         * AuthConfigResponse
+         * @description Auth configuration discovery response.
+         *
+         *     Allows frontend to determine which authentication flow to use
+         *     based on deployment configuration.
+         */
+        AuthConfigResponse: {
+            /** Auth Mode */
+            auth_mode: string;
+            /** Login Endpoint */
+            login_endpoint?: string | null;
+            /** Register Endpoint */
+            register_endpoint?: string | null;
+            /** Supports Registration */
+            supports_registration: boolean;
+            oauth?: components["schemas"]["OAuthConfigResponse"] | null;
+        };
+        /**
+         * AuthSessionCreateRequest
+         * @description Request model for authentication session creation.
+         *
+         *     This schema is for auth sessions (user authentication), not investigation sessions.
+         *     Investigation sessions use a different schema in the case module.
+         *     See: docs/architecture/case-and-session-concepts.md for the three-tier architecture.
+         */
+        AuthSessionCreateRequest: {
+            /**
+             * Timeout Minutes
+             * @description Session timeout in minutes. Min: 60 (1 hour), Max: 480 (8 hours), Default: 180 (3 hours)
+             * @default 180
+             * @example 180
+             * @example 240
+             * @example 360
+             */
+            timeout_minutes: number | null;
+            /**
+             * Session Type
+             * @default troubleshooting
+             */
+            session_type: string | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+            /**
+             * Client Id
+             * @description Client/device identifier for session resumption. If provided, existing session for this client will be resumed.
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            client_id?: string | null;
+        };
+        /**
+         * AuthSessionStatus
+         * @description Defines the status of authentication sessions (not investigation sessions).
+         *
+         *     For investigation session status, see faultmaven.models.investigation_session.SessionStatus
+         * @enum {string}
+         */
+        AuthSessionStatus: "active" | "expired" | "terminated";
         /**
          * AuthTokenResponse
          * @description Authentication token response
@@ -2134,8 +3447,7 @@ export interface components {
         AuthTokenResponse: {
             /**
              * Access Token
-             * @description Bearer access token (JWT, 1 hour expiry)
-             * @example eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+             * @description Bearer access token
              */
             access_token: string;
             /**
@@ -2146,32 +3458,35 @@ export interface components {
             token_type: string;
             /**
              * Expires In
-             * @description Access token expiration time in seconds (3600 = 1 hour)
-             * @example 3600
+             * @description Token expiration time in seconds
              */
             expires_in: number;
             /**
-             * Refresh Token
-             * @description Refresh token for obtaining new access tokens (JWT, 7 day expiry)
-             * @example eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
-             * @note MANUAL ADDITION - Update backend OpenAPI spec to include this field
-             */
-            refresh_token: string;
-            /**
-             * Refresh Expires In
-             * @description Refresh token expiration time in seconds (604800 = 7 days)
-             * @example 604800
-             * @note MANUAL ADDITION - Update backend OpenAPI spec to include this field
-             */
-            refresh_expires_in: number;
-            /**
              * Session Id
              * @description Session identifier for multi-turn conversations
-             * @example session-550e8400-e29b-41d4-a716-446655440000
              */
             session_id: string;
             /** @description Authenticated user profile */
             user: components["schemas"]["UserProfile"];
+        };
+        /** Body_complete_session_api_v1_cases__case_id__sessions__session_id__complete_post */
+        Body_complete_session_api_v1_cases__case_id__sessions__session_id__complete_post: {
+            /** Findings Summary */
+            findings_summary: string;
+        };
+        /** Body_share_case_api_v1_cases__case_id__share_post */
+        Body_share_case_api_v1_cases__case_id__share_post: {
+            /**
+             * Target User Id
+             * @description User ID to share with
+             */
+            target_user_id: string;
+            /**
+             * Role
+             * @description Participant role: owner, collaborator, viewer
+             * @default viewer
+             */
+            role: string;
         };
         /** Body_upload_case_data_api_v1_cases__case_id__data_post */
         Body_upload_case_data_api_v1_cases__case_id__data_post: {
@@ -2205,34 +3520,19 @@ export interface components {
             /** Description */
             description?: string | null;
         };
-        /** Body_upload_user_kb_document_api_v1_users__user_id__kb_documents_post */
-        Body_upload_user_kb_document_api_v1_users__user_id__kb_documents_post: {
+        /** Body_upload_evidence_api_v1_evidence_post */
+        Body_upload_evidence_api_v1_evidence_post: {
             /**
              * File
              * Format: binary
-             * @description Runbook or procedure document
              */
             file: string;
-            /**
-             * Title
-             * @description Document title (defaults to filename)
-             */
-            title?: string | null;
-            /**
-             * Category
-             * @description Document category (e.g., 'database', 'networking')
-             */
-            category?: string | null;
-            /**
-             * Tags
-             * @description Comma-separated tags
-             */
-            tags?: string | null;
-            /**
-             * Description
-             * @description Document description
-             */
+            /** Description */
             description?: string | null;
+            /** Tags */
+            tags?: string | null;
+            /** Case Id */
+            case_id?: string | null;
         };
         /**
          * Case
@@ -2247,10 +3547,10 @@ export interface components {
             description?: string | null;
             /**
              * Status
-             * @default consulting
+             * @default inquiry
              * @enum {string}
              */
-            status: "consulting" | "investigating" | "resolved" | "closed";
+            status: "inquiry" | "investigating" | "resolved" | "closed";
             /**
              * Priority
              * @default medium
@@ -2290,7 +3590,7 @@ export interface components {
             description: string | null;
             /**
              * Initial Message
-             * @description First user message (for CONSULTING phase)
+             * @description First user message (for INQUIRY phase)
              */
             initial_message?: string | null;
             /**
@@ -2310,7 +3610,7 @@ export interface components {
             title: string;
             /** Description */
             description: string;
-            status: components["schemas"]["faultmaven__models__case__CaseStatus"];
+            status: components["schemas"]["CaseStatus"];
             /**
              * Created At
              * Format: date-time
@@ -2334,6 +3634,8 @@ export interface components {
             user_id: string;
             /** Organization Id */
             organization_id: string;
+            /** Closure Reason */
+            closure_reason: string | null;
             /** Current Turn */
             current_turn: number;
             /** Turns Without Progress */
@@ -2440,11 +3742,86 @@ export interface components {
             turn_number: number;
             /** Milestones Completed */
             milestones_completed: string[];
-            case_status: components["schemas"]["faultmaven__models__case__CaseStatus"];
+            case_status: components["schemas"]["CaseStatus"];
             /** Progress Made */
             progress_made: boolean;
             /** Is Stuck */
             is_stuck: boolean;
+        };
+        /**
+         * CaseReport
+         * @description Generated case documentation report (DR-005).
+         *     Supports DUAL runbook sources:
+         *     - Incident-driven: Generated from case resolution
+         *     - Document-driven: Generated from uploaded documentation
+         */
+        CaseReport: {
+            /**
+             * Report Id
+             * @description Unique report identifier (UUID v4)
+             */
+            report_id?: string;
+            /**
+             * Case Id
+             * @description Foreign key to parent case (or 'doc-derived' for document-driven)
+             */
+            case_id: string;
+            /** @description Type of report */
+            report_type: components["schemas"]["ReportType"];
+            /**
+             * Title
+             * @description Human-readable title
+             */
+            title: string;
+            /**
+             * Content
+             * @description Full report content in Markdown format
+             */
+            content: string;
+            /**
+             * Format
+             * @description Report format
+             * @default markdown
+             * @constant
+             */
+            format: "markdown";
+            /** @description Generation status */
+            generation_status: components["schemas"]["ReportStatus"];
+            /**
+             * Generated At
+             * @description ISO 8601 timestamp when report was first generated
+             */
+            generated_at?: string;
+            /**
+             * Updated At
+             * @description ISO 8601 timestamp when report was last updated (None for new reports, set on update)
+             */
+            updated_at?: string | null;
+            /**
+             * Generation Time Ms
+             * @description Generation time (ms)
+             */
+            generation_time_ms: number;
+            /**
+             * Is Current
+             * @description Latest version for this report_type
+             * @default true
+             */
+            is_current: boolean;
+            /**
+             * Version
+             * @description Version number
+             * @default 1
+             */
+            version: number;
+            /**
+             * Linked To Closure
+             * @description Linked to case closure
+             * @default false
+             */
+            linked_to_closure: boolean;
+            /** @description Runbook-specific metadata */
+            metadata?: components["schemas"]["RunbookMetadata"] | null;
         };
         /**
          * CaseSearchRequest
@@ -2467,7 +3844,7 @@ export interface components {
              */
             organization_id?: string | null;
             /** @description Filter by status */
-            status?: components["schemas"]["CaseStatus-Input"] | null;
+            status?: components["schemas"]["CaseStatus"] | null;
             /**
              * Limit
              * @description Maximum results
@@ -2480,14 +3857,14 @@ export interface components {
          * @description Case lifecycle status.
          *
          *     Lifecycle Flow:
-         *       CONSULTING → INVESTIGATING → RESOLVED (terminal)
-         *                                  → CLOSED (terminal)
-         *                ↘ CLOSED (terminal)
+         *       INQUIRY -> INVESTIGATING -> RESOLVED (terminal)
+         *                                  -> CLOSED (terminal)
+         *                -> CLOSED (terminal)
          *
          *     Terminal States: RESOLVED, CLOSED (no further transitions)
          * @enum {string}
          */
-        "CaseStatus-Input": "consulting" | "investigating" | "resolved" | "closed";
+        CaseStatus: "inquiry" | "investigating" | "resolved" | "closed";
         /**
          * CaseSummary
          * @description Minimal case information for list views.
@@ -2497,7 +3874,9 @@ export interface components {
             case_id: string;
             /** Title */
             title: string;
-            status: components["schemas"]["faultmaven__models__case__CaseStatus"];
+            /** Description */
+            description: string;
+            status: components["schemas"]["CaseStatus"];
             /**
              * Created At
              * Format: date-time
@@ -2513,10 +3892,16 @@ export interface components {
              * Format: date-time
              */
             last_activity_at: string;
+            /** Resolved At */
+            resolved_at: string | null;
+            /** Closed At */
+            closed_at: string | null;
             /** User Id */
             user_id: string;
             /** Organization Id */
             organization_id: string;
+            /** Closure Reason */
+            closure_reason: string | null;
             /** Current Turn */
             current_turn: number;
             /** Milestones Completed */
@@ -2532,23 +3917,23 @@ export interface components {
             is_terminal: boolean;
         };
         /**
-         * CaseUIResponse_Consulting
-         * @description UI response for CONSULTING phase.
+         * CaseUIResponse_Inquiry
+         * @description UI response for INQUIRY phase.
          *
          *     Focus: Understanding the problem, asking clarifying questions.
          *     User hasn't committed to full investigation yet.
          */
-        CaseUIResponse_Consulting: {
+        CaseUIResponse_Inquiry: {
             /**
              * Case Id
              * @description Case identifier
              */
             case_id: string;
             /**
-             * @description Always 'consulting' for this response type (enum property replaced by openapi-typescript)
+             * @description Always 'inquiry' for this response type (enum property replaced by openapi-typescript)
              * @enum {string}
              */
-            status: "consulting";
+            status: "inquiry";
             /**
              * Title
              * @description Case title
@@ -2576,8 +3961,8 @@ export interface components {
              * @description Total files uploaded
              */
             uploaded_files_count: number;
-            /** @description Nested consulting phase data */
-            consulting: components["schemas"]["ConsultingResponseData"];
+            /** @description Nested inquiry phase data */
+            inquiry: components["schemas"]["InquiryResponseData"];
         };
         /**
          * CaseUIResponse_Investigating
@@ -2726,48 +4111,14 @@ export interface components {
              */
             description?: string | null;
             /** @description Updated status (admin only) */
-            status?: components["schemas"]["CaseStatus-Input"] | null;
-        };
-        /**
-         * ConsultingResponseData
-         * @description Nested consulting data for CONSULTING phase response.
-         */
-        ConsultingResponseData: {
-            /**
-             * Proposed Problem Statement
-             * @description Agent's formalized problem statement (if ready)
-             */
-            proposed_problem_statement?: string | null;
-            /**
-             * Problem Statement Confirmed
-             * @description Whether user confirmed the problem statement
-             * @default false
-             */
-            problem_statement_confirmed: boolean;
-            /**
-             * Decided To Investigate
-             * @description Whether agent has enough info to start investigation
-             * @default false
-             */
-            decided_to_investigate: boolean;
-            /**
-             * Consultation Turns
-             * @description Number of conversation turns during consulting phase
-             * @default 0
-             */
-            consultation_turns: number;
-            /**
-             * Problem Confirmation
-             * @description Problem type and severity guess
-             */
-            problem_confirmation?: Record<string, never> | null;
+            status?: components["schemas"]["CaseStatus"] | null;
         };
         /**
          * DataType
-         * @description 7 purpose-driven data classifications for preprocessing pipeline.
+         * @description 12 purpose-driven data classifications for preprocessing pipeline.
          * @enum {string}
          */
-        DataType: "logs_and_errors" | "unstructured_text" | "structured_config" | "metrics_and_performance" | "source_code" | "visual_evidence" | "unanalyzable";
+        DataType: "logs_and_errors" | "unstructured_text" | "structured_config" | "metrics_and_performance" | "source_code" | "visual_evidence" | "trace_data" | "profiling_data" | "error_report" | "documentation" | "command_output" | "unanalyzable";
         /**
          * DataUploadResponse
          * @description Response payload for data upload with AI analysis.
@@ -2777,7 +4128,6 @@ export interface components {
              * Schema Version
              * @default 3.1.0
              * @constant
-             * @enum {string}
              */
             schema_version: "3.1.0";
             /** Data Id */
@@ -2818,6 +4168,18 @@ export interface components {
             view_state?: components["schemas"]["ViewState"] | null;
         };
         /**
+         * DeleteResponse
+         * @description Generic delete response
+         */
+        DeleteResponse: {
+            /** Message */
+            message: string;
+            /** Organization Id */
+            organization_id?: string | null;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /**
          * DerivedEvidenceSummary
          * @description Summary of evidence derived from an uploaded file.
          */
@@ -2852,56 +4214,110 @@ export interface components {
             /**
              * Username
              * @description Username or email address (3-50 chars)
-             * @example developer@example.com
              */
             username: string;
             /**
              * Email
              * @description Optional email address (will auto-generate if not provided)
-             * @example john.doe@faultmaven.local
              */
             email?: string | null;
             /**
              * Display Name
              * @description Optional display name (will auto-generate if not provided)
-             * @example John Doe
              */
             display_name?: string | null;
         };
         /**
-         * ErrorDetail
-         * @description A detailed error message with optional session-specific error codes.
+         * DocumentSnippetResponse
+         * @description Response model for document snippet (hover card preview).
+         *
+         *     Supports both line-based and semantic snippet extraction.
          */
-        ErrorDetail: {
-            /** Code */
-            code: string;
-            /** Message */
-            message: string;
-            /** Session Id */
-            session_id?: string | null;
-            /** Timeout Info */
-            timeout_info?: Record<string, never> | null;
-        };
-        /**
-         * ErrorResponse
-         * @description The standard JSON payload returned from the backend on failure.
-         */
-        ErrorResponse: {
+        DocumentSnippetResponse: {
+            /** Document Id */
+            document_id: string;
+            /** Title */
+            title: string;
+            /** Snippet */
+            snippet: string;
+            /** Line Range */
+            line_range?: [
+                number,
+                number
+            ] | null;
+            /** Total Lines */
+            total_lines: number;
+            /** Document Type */
+            document_type: string;
             /**
-             * Schema Version
-             * @default 3.1.0
-             * @constant
+             * Verification Status
+             * @default experimental
              * @enum {string}
              */
-            schema_version: "3.1.0";
-            error: components["schemas"]["ErrorDetail"];
+            verification_status: "verified" | "community" | "experimental";
+            /**
+             * Verification Level
+             * @default 0
+             */
+            verification_level: number;
+            /** Relevance Score */
+            relevance_score?: number | null;
+        };
+        /** EvidenceArtifact */
+        EvidenceArtifact: {
+            /** Evidence Id */
+            evidence_id: string;
+            /** Case Id */
+            case_id: string;
+            /** User Id */
+            user_id: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Original Filename */
+            original_filename: string;
+            /** Stored Filename */
+            stored_filename: string;
+            /** File Path */
+            file_path: string;
+            evidence_type: components["schemas"]["EvidenceArtifactType"];
+            /** Mime Type */
+            mime_type: string;
+            /** File Size */
+            file_size: number;
+            /** @default local_filesystem */
+            storage_backend: components["schemas"]["StorageBackend"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+            /** Tags */
+            tags?: string[];
+            /** Linked Case Ids */
+            linked_case_ids?: string[];
         };
         /**
-         * EvidenceCategory
-         * @description Categories of diagnostic evidence
+         * EvidenceArtifactType
+         * @description Types of evidence artifacts.
+         *
+         *     Categorizes the kind of evidence artifact stored.
          * @enum {string}
          */
-        EvidenceCategory: "symptoms" | "timeline" | "changes" | "configuration" | "scope" | "metrics" | "environment";
+        EvidenceArtifactType: "screenshot" | "log_file" | "network_trace" | "code_snippet" | "configuration" | "video_recording" | "har_file" | "crash_dump" | "heap_dump" | "thread_dump" | "metrics_export" | "other";
         /**
          * EvidenceDetailsResponse
          * @description Detailed evidence information with source and hypothesis linkage.
@@ -2938,105 +4354,41 @@ export interface components {
             analysis?: string | null;
         };
         /**
-         * EvidenceRequest
-         * @description Structured request for diagnostic evidence with acquisition guidance
-         *
-         *     OODA Integration: Generated during OODA Observe step, linked to hypothesis testing
-         * @example {
-         *       "category": "metrics",
-         *       "completeness": 0,
-         *       "created_at_turn": 1,
-         *       "description": "Current error rate vs baseline to quantify severity",
-         *       "guidance": {
-         *         "alternatives": [
-         *           "Check New Relic error rate graph"
-         *         ],
-         *         "commands": [
-         *           "kubectl logs -l app=api --since=2h | grep '500' | wc -l"
-         *         ],
-         *         "expected_output": "Error count (baseline: 2-3/hour)",
-         *         "file_locations": [],
-         *         "prerequisites": [
-         *           "kubectl access"
-         *         ],
-         *         "ui_locations": [
-         *           "Datadog > API Errors Dashboard"
-         *         ]
-         *       },
-         *       "label": "Error rate metrics",
-         *       "request_id": "er-001",
-         *       "status": "pending"
-         *     }
+         * EvidenceLinkRequest
+         * @description Request to link evidence to a case.
          */
-        EvidenceRequest: {
+        EvidenceLinkRequest: {
             /**
-             * Request Id
-             * @description Unique identifier for this evidence request
+             * Case Id
+             * Format: uuid
              */
-            request_id?: string;
-            /**
-             * Label
-             * @description Brief title for the request
-             */
-            label: string;
-            /**
-             * Description
-             * @description What evidence is needed and why
-             */
-            description: string;
-            /** @description Category of diagnostic evidence */
-            category: components["schemas"]["EvidenceCategory"];
-            /** @description Instructions for obtaining evidence */
-            guidance: components["schemas"]["AcquisitionGuidance"];
-            /**
-             * @description Fulfillment status
-             * @default pending
-             */
-            status: components["schemas"]["EvidenceStatus"];
-            /**
-             * Created At Turn
-             * @description Turn number when request was created
-             */
-            created_at_turn: number;
-            /**
-             * Updated At Turn
-             * @description Turn number when last updated
-             */
-            updated_at_turn?: number | null;
-            /**
-             * Completeness
-             * @description Fulfillment completeness score
-             * @default 0
-             */
-            completeness: number;
-            /**
-             * Requested By Ooda Step
-             * @description Which OODA step generated this (observe, orient, decide, act)
-             */
-            requested_by_ooda_step?: string | null;
-            /**
-             * For Hypothesis Id
-             * @description Hypothesis ID this evidence tests (Phase 4 validation)
-             */
-            for_hypothesis_id?: string | null;
-            /**
-             * Priority
-             * @description 1=critical, 2=important, 3=nice-to-have
-             * @default 2
-             */
-            priority: number;
-            /**
-             * Metadata
-             * @description Additional context
-             */
-            metadata?: Record<string, never>;
+            case_id: string;
         };
         /**
-         * EvidenceStatus
-         * @description Status of evidence request fulfillment
-         * @enum {string}
+         * EvidenceRequestToAdd
+         * @description Evidence request the LLM wants to make to the user.
+         *
+         *     Example: "Please upload logs from the API gateway between 10:00-10:30 UTC"
          */
-        EvidenceStatus: "pending" | "partial" | "complete" | "blocked" | "obsolete";
+        EvidenceRequestToAdd: {
+            /**
+             * Request Text
+             * @description What evidence is requested
+             */
+            request_text: string;
+            /**
+             * Priority
+             * @description How critical this evidence is
+             * @default medium
+             * @enum {string}
+             */
+            priority: "high" | "medium" | "low";
+            /**
+             * Purpose
+             * @description Why this evidence is needed
+             */
+            purpose: string;
+        };
         /**
          * EvidenceSummary
          * @description Summary of evidence for INVESTIGATING phase UI.
@@ -3159,14 +4511,39 @@ export interface components {
             affected_regions?: string[] | null;
         };
         /**
-         * InvestigationMode
-         * @description Investigation approach - speed vs depth
-         *
-         *     DEPRECATED: Use InvestigationStrategy from investigation.py instead
-         *     Kept for backwards compatibility
-         * @enum {string}
+         * InquiryResponseData
+         * @description Nested inquiry data for INQUIRY phase response.
          */
-        InvestigationMode: "active_incident" | "post_mortem";
+        InquiryResponseData: {
+            /**
+             * Proposed Problem Statement
+             * @description Agent's formalized problem statement (if ready)
+             */
+            proposed_problem_statement?: string | null;
+            /**
+             * Problem Statement Confirmed
+             * @description Whether user confirmed the problem statement
+             * @default false
+             */
+            problem_statement_confirmed: boolean;
+            /**
+             * Decided To Investigate
+             * @description Whether agent has enough info to start investigation
+             * @default false
+             */
+            decided_to_investigate: boolean;
+            /**
+             * Inquiry Turns
+             * @description Number of conversation turns during inquiry phase
+             * @default 0
+             */
+            inquiry_turns: number;
+            /**
+             * Problem Confirmation
+             * @description Problem type and severity guess
+             */
+            problem_confirmation?: Record<string, never> | null;
+        };
         /**
          * InvestigationProgressSummary
          * @description Progress metrics for INVESTIGATING phase.
@@ -3199,8 +4576,8 @@ export interface components {
          *     Only relevant when case status = INVESTIGATING.
          *
          *     Stage Progression (Path-Dependent):
-         *     - MITIGATION_FIRST: 1 → 4 → 2 → 3 → 4 (quick mitigation, then return for RCA)
-         *     - ROOT_CAUSE: 1 → 2 → 3 → 4 (traditional RCA)
+         *     - MITIGATION_FIRST: 1 -> 4 -> 2 -> 3 -> 4 (quick mitigation, then return for RCA)
+         *     - ROOT_CAUSE: 1 -> 2 -> 3 -> 4 (traditional RCA)
          *
          *     Stage determines the investigation focus based on what has been completed:
          *     - Stage 1: Where and when (symptom verification)
@@ -3210,6 +4587,16 @@ export interface components {
          * @enum {string}
          */
         InvestigationStage: "symptom_verification" | "hypothesis_formulation" | "hypothesis_validation" | "solution";
+        /**
+         * InvestigationStrategy
+         * @description Investigation approach - speed vs depth
+         *
+         *     Selected when Lead Investigator Mode activated:
+         *     - Active Incident: Speed priority, mitigation first
+         *     - Post-Mortem: Thoroughness priority, complete RCA
+         * @enum {string}
+         */
+        InvestigationStrategy: "active_incident" | "post_mortem";
         /**
          * InvestigationStrategyData
          * @description Investigation strategy details for INVESTIGATING phase.
@@ -3225,29 +4612,6 @@ export interface components {
              * @description Recommended next steps in investigation
              */
             next_steps?: string[] | null;
-        };
-        /**
-         * JobStatus
-         * @description Async job status tracking model.
-         */
-        JobStatus: {
-            /** Job Id */
-            job_id: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "pending" | "running" | "completed" | "failed";
-            /** Progress */
-            progress?: number | null;
-            /** Result */
-            result?: Record<string, never> | null;
-            /** Error */
-            error?: string | null;
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at: string;
         };
         /**
          * KnowledgeBaseDocument
@@ -3279,6 +4643,44 @@ export interface components {
             updated_at: string;
             /** Metadata */
             metadata?: Record<string, never> | null;
+            /**
+             * Verification Level
+             * @default 0
+             */
+            verification_level: number;
+            /**
+             * Verification Status
+             * @default experimental
+             */
+            verification_status: ("verified" | "community" | "experimental") | null;
+            /** Verification Reason */
+            verification_reason?: string | null;
+            /** Source Suggestion Id */
+            source_suggestion_id?: string | null;
+        };
+        /**
+         * LinkCaseRequest
+         * @description Request to link report to case closure.
+         */
+        LinkCaseRequest: {
+            /** Closure Note */
+            closure_note?: string | null;
+        };
+        /**
+         * LinkCaseResponse
+         * @description Response after linking report to case closure.
+         */
+        LinkCaseResponse: {
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Report Id */
+            report_id: string;
+            /** Case Id */
+            case_id: string;
+            /** Linked At */
+            linked_at: string;
         };
         /**
          * LogoutResponse
@@ -3298,9 +4700,114 @@ export interface components {
             /**
              * Revoked Tokens
              * @description Number of tokens that were revoked
-             * @example 1
              */
             revoked_tokens: number;
+        };
+        /**
+         * MemberAddRequest
+         * @description Request to add member to organization
+         */
+        MemberAddRequest: {
+            /**
+             * Email
+             * @description Email of user to invite
+             */
+            email: string;
+            /**
+             * Role
+             * @description Role to assign (member, admin)
+             * @default member
+             */
+            role: string | null;
+        };
+        /**
+         * MemberAddResponse
+         * @description Response for adding a member
+         */
+        MemberAddResponse: {
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /** Role */
+            role: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /** Invitation Sent */
+            invitation_sent: boolean;
+        };
+        /**
+         * MemberListResponse
+         * @description Response for listing organization members
+         */
+        MemberListResponse: {
+            /** Members */
+            members: components["schemas"]["MemberResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * MemberResponse
+         * @description Organization member response
+         */
+        MemberResponse: {
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /** Role */
+            role: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+        };
+        /**
+         * MemberRoleUpdateRequest
+         * @description Request to update member role
+         */
+        MemberRoleUpdateRequest: {
+            /**
+             * Role
+             * @description New role to assign (member, admin)
+             */
+            role: string;
+        };
+        /**
+         * MemberRoleUpdateResponse
+         * @description Response for updating member role
+         */
+        MemberRoleUpdateResponse: {
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /** Role */
+            role: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * Message
@@ -3370,6 +4877,160 @@ export interface components {
              * @default 0
              */
             message_parsing_errors: number;
+        };
+        /**
+         * OAuthConfigResponse
+         * @description OAuth configuration for cloud mode.
+         */
+        OAuthConfigResponse: {
+            /** Authorize Url */
+            authorize_url: string;
+            /** Token Url */
+            token_url: string;
+            /** Client Id */
+            client_id: string;
+            /** Scopes */
+            scopes: string[];
+        };
+        /**
+         * OrganizationCreateRequest
+         * @description Request to create a new organization
+         */
+        OrganizationCreateRequest: {
+            /**
+             * Name
+             * @description Organization name
+             */
+            name: string;
+            /**
+             * Slug
+             * @description URL-friendly identifier
+             */
+            slug: string;
+            /**
+             * Description
+             * @description Organization description
+             */
+            description?: string | null;
+            /**
+             * Plan Tier
+             * @description Subscription plan tier
+             * @default free
+             */
+            plan_tier: string | null;
+        };
+        /**
+         * OrganizationListItem
+         * @description Organization list item with user role
+         */
+        OrganizationListItem: {
+            /** Organization Id */
+            organization_id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Plan Tier */
+            plan_tier: string;
+            /** Role */
+            role: string;
+            /**
+             * Member Since
+             * Format: date-time
+             */
+            member_since: string;
+        };
+        /**
+         * OrganizationListResponse
+         * @description Response for listing user's organizations
+         */
+        OrganizationListResponse: {
+            /** Organizations */
+            organizations: components["schemas"]["OrganizationListItem"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * OrganizationResponse
+         * @description Organization details response
+         */
+        OrganizationResponse: {
+            /** Organization Id */
+            organization_id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Description */
+            description: string | null;
+            /** Plan Tier */
+            plan_tier: string;
+            /** Max Members */
+            max_members: number;
+            /**
+             * Current Member Count
+             * @default 0
+             */
+            current_member_count: number;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Settings */
+            settings?: Record<string, never>;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * OrganizationUpdateRequest
+         * @description Request to update organization details
+         */
+        OrganizationUpdateRequest: {
+            /**
+             * Name
+             * @description Updated organization name
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description Updated description
+             */
+            description?: string | null;
+        };
+        /**
+         * PermissionCheckRequest
+         * @description Request to check user permission
+         */
+        PermissionCheckRequest: {
+            /**
+             * Permission
+             * @description Permission to check (e.g., 'cases.write')
+             */
+            permission: string;
+        };
+        /**
+         * PermissionCheckResponse
+         * @description Permission check result
+         */
+        PermissionCheckResponse: {
+            /** Has Permission */
+            has_permission: boolean;
+            /** Permission */
+            permission: string;
+            /** User Id */
+            user_id: string;
+            /** Org Id */
+            org_id: string;
         };
         /**
          * PlanStep
@@ -3447,6 +5108,147 @@ export interface components {
             reason?: string | null;
         };
         /**
+         * ReportGenerationRequest
+         * @description Request to generate case documentation reports
+         */
+        ReportGenerationRequest: {
+            /**
+             * Report Types
+             * @description Types of reports to generate
+             */
+            report_types: components["schemas"]["ReportType"][];
+        };
+        /**
+         * ReportGenerationResponse
+         * @description Response after generating reports
+         */
+        ReportGenerationResponse: {
+            /**
+             * Case Id
+             * @description Case identifier
+             */
+            case_id: string;
+            /**
+             * Reports
+             * @description Generated reports
+             */
+            reports: components["schemas"]["CaseReport"][];
+            /**
+             * Remaining Regenerations
+             * @description Number of regenerations remaining (max 5 per report type)
+             */
+            remaining_regenerations: number;
+        };
+        /**
+         * ReportListResponse
+         * @description API response for list of reports.
+         */
+        ReportListResponse: {
+            /** Reports */
+            reports: components["schemas"]["ReportResponse"][];
+            /** Total */
+            total: number;
+            /** Case Id */
+            case_id: string;
+        };
+        /**
+         * ReportRecommendationResponse
+         * @description API response for report recommendations.
+         */
+        ReportRecommendationResponse: {
+            /** Case Id */
+            case_id: string;
+            /** Available For Generation */
+            available_for_generation: string[];
+            /** Runbook Recommendation */
+            runbook_recommendation: Record<string, never>;
+        };
+        /**
+         * ReportResponse
+         * @description API response model for a report.
+         */
+        ReportResponse: {
+            /** Report Id */
+            report_id: string;
+            /** Case Id */
+            case_id: string;
+            /** Report Type */
+            report_type: string;
+            /** Title */
+            title: string;
+            /** Content */
+            content: string;
+            /** Format */
+            format: string;
+            /** Generation Status */
+            generation_status: string;
+            /** Generated At */
+            generated_at: string;
+            /** Generation Time Ms */
+            generation_time_ms: number;
+            /** Is Current */
+            is_current: boolean;
+            /** Version */
+            version: number;
+            /** Linked To Closure */
+            linked_to_closure: boolean;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+        };
+        /**
+         * ReportStatus
+         * @description Report generation status
+         * @enum {string}
+         */
+        ReportStatus: "generating" | "completed" | "failed";
+        /**
+         * ReportType
+         * @description Type of case documentation report
+         * @enum {string}
+         */
+        ReportType: "incident_report" | "runbook" | "post_mortem";
+        /**
+         * ReportUpdateRequest
+         * @description Request model for updating a report.
+         */
+        ReportUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /**
+             * Content
+             * @description Updated report content in markdown
+             */
+            content?: string | null;
+        };
+        /**
+         * ReportVersionListResponse
+         * @description List of report versions.
+         */
+        ReportVersionListResponse: {
+            /** Versions */
+            versions: components["schemas"]["ReportVersionResponse"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * ReportVersionResponse
+         * @description Version history entry for a report.
+         */
+        ReportVersionResponse: {
+            /** Report Id */
+            report_id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Generated At */
+            generated_at: string;
+            /** Is Current */
+            is_current: boolean;
+            /** Linked To Closure */
+            linked_to_closure: boolean;
+        };
+        /**
          * ResolutionSummary
          * @description Overall resolution metrics for RESOLVED phase.
          */
@@ -3513,6 +5315,56 @@ export interface components {
             severity: string;
         };
         /**
+         * RunbookMetadata
+         * @description Metadata for runbook reports supporting dual sources.
+         *     Tracks origin (incident vs document) for transparency.
+         */
+        RunbookMetadata: {
+            /** @description Origin of runbook */
+            source: components["schemas"]["RunbookSource"];
+            /**
+             * Case Context
+             * @description Case investigation context (incident-driven only)
+             */
+            case_context?: Record<string, never> | null;
+            /**
+             * Document Title
+             * @description Source document title (document-driven only)
+             */
+            document_title?: string | null;
+            /**
+             * Original Document Id
+             * @description Reference to uploaded document (document-driven only)
+             */
+            original_document_id?: string | null;
+            /**
+             * Domain
+             * @description Technology domain for filtering
+             */
+            domain: string;
+            /**
+             * Tags
+             * @description Classification tags
+             */
+            tags?: string[];
+            /**
+             * Llm Model
+             * @description LLM model used for generation
+             */
+            llm_model?: string | null;
+            /**
+             * Embedding Model
+             * @description Embedding model for vector search
+             */
+            embedding_model?: string | null;
+        };
+        /**
+         * RunbookSource
+         * @description Origin of runbook content
+         * @enum {string}
+         */
+        RunbookSource: "incident_driven" | "document_driven";
+        /**
          * SearchRequest
          * @description Request model for knowledge base search
          */
@@ -3561,60 +5413,15 @@ export interface components {
         };
         /**
          * SessionCreateRequest
-         * @description Request model for session creation.
+         * @description Request model for creating investigation session.
          */
         SessionCreateRequest: {
-            /**
-             * Timeout Minutes
-             * @description Session timeout in minutes. Min: 60 (1 hour), Max: 480 (8 hours), Default: 180 (3 hours)
-             * @default 180
-             * @example 180
-             * @example 240
-             * @example 360
-             */
-            timeout_minutes: number | null;
-            /**
-             * Session Type
-             * @default troubleshooting
-             */
-            session_type: string | null;
+            /** Session Goal */
+            session_goal?: string | null;
+            /** Token Budget Limit */
+            token_budget_limit?: number | null;
             /** Metadata */
             metadata?: Record<string, never> | null;
-            /**
-             * Client Id
-             * @description Client/device identifier for session resumption. If provided, existing session for this client will be resumed.
-             * @example 550e8400-e29b-41d4-a716-446655440000
-             */
-            client_id?: string | null;
-        };
-        /**
-         * SessionResponse
-         * @description Response payload for session operations - API spec compliance.
-         */
-        SessionResponse: {
-            /**
-             * Schema Version
-             * @default 3.1.0
-             * @constant
-             * @enum {string}
-             */
-            schema_version: "3.1.0";
-            /** Session Id */
-            session_id: string;
-            /** User Id */
-            user_id?: string | null;
-            /** Client Id */
-            client_id?: string | null;
-            /** @default active */
-            status: components["schemas"]["SessionStatus"];
-            /** Created At */
-            created_at: string;
-            /** Expires At */
-            expires_at?: string | null;
-            /** Metadata */
-            metadata?: Record<string, never> | null;
-            /** Session Resumed */
-            session_resumed?: boolean | null;
         };
         /**
          * SessionRestoreRequest
@@ -3636,10 +5443,80 @@ export interface components {
         };
         /**
          * SessionStatus
-         * @description Defines the status of user sessions.
+         * @description Investigation session status.
+         *
+         *     Tracks the lifecycle of an investigation session from active to completion.
          * @enum {string}
          */
-        SessionStatus: "active" | "expired" | "terminated";
+        SessionStatus: "active" | "paused" | "completed" | "abandoned";
+        /**
+         * SessionUpdateRequest
+         * @description Request model for updating session.
+         */
+        SessionUpdateRequest: {
+            /** Session Goal */
+            session_goal?: string | null;
+            /** Token Budget Limit */
+            token_budget_limit?: number | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+        };
+        /**
+         * SettingsResponse
+         * @description Organization settings response
+         */
+        SettingsResponse: {
+            /** Organization Id */
+            organization_id: string;
+            /** Plan Tier */
+            plan_tier: string;
+            /** Max Members */
+            max_members: number;
+            /**
+             * Current Member Count
+             * @default 0
+             */
+            current_member_count: number;
+            /** Max Cases Per Month */
+            max_cases_per_month?: number | null;
+            /** Max Storage Gb */
+            max_storage_gb: number;
+            /** Features */
+            features: {
+                [key: string]: boolean;
+            };
+            /** Settings */
+            settings: Record<string, never>;
+        };
+        /**
+         * SettingsUpdateRequest
+         * @description Request to update organization settings
+         */
+        SettingsUpdateRequest: {
+            /** Allow Public Cases */
+            allow_public_cases?: boolean | null;
+            /** Require 2Fa */
+            require_2fa?: boolean | null;
+            /** Session Timeout Minutes */
+            session_timeout_minutes?: number | null;
+            /** Default Case Priority */
+            default_case_priority?: string | null;
+        };
+        /**
+         * SettingsUpdateResponse
+         * @description Response for updating organization settings
+         */
+        SettingsUpdateResponse: {
+            /** Organization Id */
+            organization_id: string;
+            /** Settings */
+            settings: Record<string, never>;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * SolutionSummary
          * @description Solution information for RESOLVED phase.
@@ -3674,6 +5551,10 @@ export interface components {
             confidence?: number | null;
             /** Metadata */
             metadata?: Record<string, never> | null;
+            /** Verification Status */
+            verification_status?: ("verified" | "community" | "experimental") | null;
+            /** Verification Reason */
+            verification_reason?: string | null;
         };
         /**
          * SourceFileReference
@@ -3693,6 +5574,116 @@ export interface components {
          * @enum {string}
          */
         SourceType: "knowledge_base" | "log_file" | "web_search" | "documentation" | "previous_analysis" | "user_provided";
+        /**
+         * StorageBackend
+         * @description Storage backend types.
+         *
+         *     Defines where evidence files are stored.
+         * @enum {string}
+         */
+        StorageBackend: "local_filesystem" | "s3" | "azure_blob" | "gcs";
+        /**
+         * TeamCreateRequest
+         * @description Request to create a new team
+         */
+        TeamCreateRequest: {
+            /**
+             * Org Id
+             * @description Organization ID
+             */
+            org_id: string;
+            /**
+             * Name
+             * @description Team name
+             */
+            name: string;
+            /**
+             * Description
+             * @description Team description
+             */
+            description?: string | null;
+        };
+        /**
+         * TeamMemberAddRequest
+         * @description Request to add member to team
+         */
+        TeamMemberAddRequest: {
+            /**
+             * User Id
+             * @description User ID to add
+             */
+            user_id: string;
+            /**
+             * Team Role
+             * @description Team role ('lead' or 'member')
+             * @default member
+             */
+            team_role: string | null;
+        };
+        /**
+         * TeamMemberResponse
+         * @description Team member response
+         */
+        TeamMemberResponse: {
+            /** User Id */
+            user_id: string;
+            /** Team Id */
+            team_id: string;
+            /** Team Role */
+            team_role: string | null;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+        };
+        /**
+         * TeamResponse
+         * @description Team details response
+         */
+        TeamResponse: {
+            /** Team Id */
+            team_id: string;
+            /** Org Id */
+            org_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Settings */
+            settings: Record<string, never>;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TeamUpdateRequest
+         * @description Request to update team details
+         */
+        TeamUpdateRequest: {
+            /**
+             * Name
+             * @description Updated team name
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description Updated description
+             */
+            description?: string | null;
+            /**
+             * Settings
+             * @description Team settings
+             */
+            settings?: Record<string, never> | null;
+        };
         /**
          * TemporalStateData
          * @description Temporal information about problem occurrence.
@@ -3739,6 +5730,22 @@ export interface components {
             schema_version: string;
             /** Title */
             title: string;
+        };
+        /**
+         * ToolCallResponse
+         * @description Response model for a tool call within an execution.
+         */
+        ToolCallResponse: {
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Arguments */
+            arguments: Record<string, never>;
+            /** Result */
+            result?: string | null;
+            /** Status */
+            status: string;
         };
         /**
          * UploadedData
@@ -3981,31 +5988,26 @@ export interface components {
             /**
              * User Id
              * @description Unique user identifier
-             * @example 550e8400-e29b-41d4-a716-446655440000
              */
             user_id: string;
             /**
              * Username
              * @description Username
-             * @example john.doe
              */
             username: string;
             /**
              * Email
              * @description Email address
-             * @example john.doe@faultmaven.local
              */
             email: string;
             /**
              * Display Name
              * @description Display name
-             * @example John Doe
              */
             display_name: string;
             /**
              * Created At
              * @description Account creation timestamp (ISO format)
-             * @example 2025-01-15T10:00:00Z
              */
             created_at: string;
             /**
@@ -4020,23 +6022,17 @@ export interface components {
              * @default [
              *       "user"
              *     ]
-             * @example [
-             *       "user",
-             *       "admin"
-             *     ]
              */
             roles: string[];
             /**
              * Last Login
              * @description Last login timestamp (ISO format)
-             * @example 2025-01-15T14:30:00Z
              */
             last_login?: string | null;
             /**
              * Token Count
              * @description Number of active tokens for this user
              * @default 0
-             * @example 2
              */
             token_count: number;
         };
@@ -4063,31 +6059,26 @@ export interface components {
             /**
              * User Id
              * @description Unique user identifier
-             * @example 550e8400-e29b-41d4-a716-446655440000
              */
             user_id: string;
             /**
              * Username
              * @description Username
-             * @example john.doe
              */
             username: string;
             /**
              * Email
              * @description Email address
-             * @example john.doe@faultmaven.local
              */
             email: string;
             /**
              * Display Name
              * @description Display name
-             * @example John Doe
              */
             display_name: string;
             /**
              * Created At
              * @description Account creation timestamp (ISO format)
-             * @example 2025-01-15T10:00:00Z
              */
             created_at: string;
             /**
@@ -4101,10 +6092,6 @@ export interface components {
              * @description User roles for access control (e.g., ['user'], ['user', 'admin'])
              * @default [
              *       "user"
-             *     ]
-             * @example [
-             *       "user",
-             *       "admin"
              *     ]
              */
             roles: string[];
@@ -4200,28 +6187,82 @@ export interface components {
             last_updated: string;
         };
         /**
-         * CaseStatus
-         * @description Case lifecycle status.
-         *
-         *     Lifecycle Flow:
-         *       CONSULTING → INVESTIGATING → RESOLVED (terminal)
-         *                                  → CLOSED (terminal)
-         *                ↘ CLOSED (terminal)
-         *
-         *     Terminal States: RESOLVED, CLOSED (no further transitions)
-         * @enum {string}
+         * SessionResponse
+         * @description Response model for investigation session.
          */
-        faultmaven__models__case__CaseStatus: "consulting" | "investigating" | "resolved" | "closed";
+        faultmaven__api__models__SessionResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Case Id */
+            case_id: string;
+            /** User Id */
+            user_id: string;
+            /** Organization Id */
+            organization_id: string;
+            status: components["schemas"]["SessionStatus"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Total Duration Ms */
+            total_duration_ms?: number | null;
+            /** Session Goal */
+            session_goal?: string | null;
+            /** Findings Summary */
+            findings_summary?: string | null;
+            /** Total Token Usage */
+            total_token_usage: number;
+            /** Total Agent Executions */
+            total_agent_executions: number;
+            /** Token Budget Limit */
+            token_budget_limit?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
-         * CaseStatus
-         * @description Case lifecycle status - matches faultmaven.models.case.CaseStatus
-         *
-         *     NOTE: This is kept for backwards compatibility with diagnostic state tracking.
-         *     The canonical definition is in faultmaven.models.case.CaseStatus.
-         *     These MUST match exactly to avoid validation errors.
-         * @enum {string}
+         * SessionResponse
+         * @description Response payload for auth session operations - API spec compliance.
          */
-        faultmaven__models__evidence__CaseStatus: "consulting" | "investigating" | "resolved" | "closed";
+        faultmaven__models__api__SessionResponse: {
+            /**
+             * Schema Version
+             * @default 3.1.0
+             * @constant
+             */
+            schema_version: "3.1.0";
+            /** Session Id */
+            session_id: string;
+            /** User Id */
+            user_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** @default active */
+            status: components["schemas"]["AuthSessionStatus"];
+            /** Created At */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+            /** Session Resumed */
+            session_resumed?: boolean | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -4231,702 +6272,90 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    analyze_data_api_v1_data__data_id__analyze_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                data_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_data_api_v1_data_sessions__session_id__get: {
-        parameters: {
-            query?: {
-                limit?: number | null;
-                offset?: number | null;
-            };
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    batch_process_session_data_api_v1_data_sessions__session_id__batch_process_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    health_check_api_v1_data_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_data_api_v1_data__data_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                data_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UploadedData"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_data_api_v1_data__data_id__delete: {
-        parameters: {
-            query: {
-                session_id: string;
-            };
-            header?: never;
-            path: {
-                data_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_documents_api_v1_knowledge_documents_get: {
-        parameters: {
-            query?: {
-                document_type?: string | null;
-                tags?: string | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    upload_document_api_v1_knowledge_documents_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_upload_document_api_v1_knowledge_documents_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_document_api_v1_knowledge_documents__document_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                document_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KnowledgeBaseDocument"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_document_api_v1_knowledge_documents__document_id__put: {
+    execute_agent_api_v1_cases__case_id__sessions__session_id__execute_post: {
         parameters: {
             query?: never;
             header?: {
                 Authorization?: string | null;
             };
             path: {
-                document_id: string;
+                /** @description Case ID */
+                case_id: string;
+                /** @description Investigation session ID */
+                session_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AgentExecutionRequest"];
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description Agent execution completed (non-streaming) or SSE stream (streaming) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentExecutionResponse"];
+                    /**
+                     * @example event: started
+                     *     data: {"content":"Execution started","metadata":{"execution_id":"exec-123"}}
+                     */
+                    "text/event-stream": string;
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_document_api_v1_knowledge_documents__document_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                document_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
+            /** @description Forbidden - wrong organization */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_job_status_api_v1_knowledge_jobs__job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    search_documents_api_v1_knowledge_search_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SearchRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    bulk_update_documents_api_v1_knowledge_documents_bulk_update_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    bulk_delete_documents_api_v1_knowledge_documents_bulk_delete_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_knowledge_stats_api_v1_knowledge_stats_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
-    get_search_analytics_api_v1_knowledge_analytics_search_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
-    list_sessions_api_v1_sessions_get: {
-        parameters: {
-            query?: {
-                user_id?: string | null;
-                session_type?: string | null;
-                usage_type?: string | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_session_api_v1_sessions_post: {
-        parameters: {
-            query?: {
-                user_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["SessionCreateRequest"] | null;
-            };
-        };
-        responses: {
-            /** @description Session created or resumed successfully */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Session expired or not found (when resuming with client_id) */
+            /** @description Session not found */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
-            /** @description Session gone (alternative to 404 for expired sessions) */
-            410: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation error (invalid timeout_minutes) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_session_api_v1_sessions__session_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_session_api_v1_sessions__session_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
+            /** @description Conflict - session not active or budget exceeded */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Validation error */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description LLM or tool execution error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
             };
         };
     };
-    list_session_cases_api_v1_sessions__session_id__cases_get: {
+    list_executions_api_v1_cases__case_id__sessions__session_id__executions_get: {
         parameters: {
             query?: {
                 limit?: number;
                 offset?: number;
-                /** @description Include cases with message_count == 0 */
-                include_empty?: boolean;
-                /** @description Include terminal state cases (resolved/closed) */
-                include_terminal?: boolean;
-                /** @description Include deleted cases (admin only) */
-                include_deleted?: boolean;
             };
             header?: {
                 Authorization?: string | null;
             };
             path: {
+                /** @description Case ID */
+                case_id: string;
+                /** @description Session ID (for URL consistency, not used for filtering) */
                 session_id: string;
             };
             cookie?: never;
@@ -4939,7 +6368,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": unknown[];
                 };
             };
             /** @description Validation Error */
@@ -4953,7 +6382,83 @@ export interface operations {
             };
         };
     };
-    cleanup_expired_sessions_api_v1_sessions_cleanup_post: {
+    get_execution_api_v1_cases__case_id__sessions__session_id__executions__execution_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case ID */
+                case_id: string;
+                /** @description Session ID (for URL consistency) */
+                session_id: string;
+                /** @description Execution ID */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentExecutionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_execution_api_v1_cases__case_id__sessions__session_id__executions__execution_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case ID */
+                case_id: string;
+                /** @description Session ID (for URL consistency) */
+                session_id: string;
+                /** @description Execution ID */
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_auth_config_api_v1_auth_config_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4968,171 +6473,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AuthConfigResponse"];
                 };
             };
         };
     };
-    session_heartbeat_api_v1_sessions__session_id__heartbeat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_stats_api_v1_sessions__session_id__stats_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cleanup_session_api_v1_sessions__session_id__cleanup_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_recovery_info_api_v1_sessions__session_id__recovery_info_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    restore_session_api_v1_sessions__session_id__restore_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SessionRestoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dev_login_api_v1_auth_dev_login_post: {
+    local_login_api_v1_auth_dev_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5165,7 +6511,40 @@ export interface operations {
             };
         };
     };
-    dev_register_api_v1_auth_dev_register_post: {
+    local_login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    local_register_api_v1_auth_dev_register_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5185,6 +6564,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    local_register_api_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dev_list_users_api_v1_auth_dev_list_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    dev_delete_user_api_v1_auth_dev_delete_user__username__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */
@@ -5418,7 +6881,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Filter by status */
-                status?: components["schemas"]["CaseStatus-Input"] | null;
+                status?: components["schemas"]["CaseStatus"] | null;
                 /** @description Items per page */
                 limit?: number;
                 /** @description Number of items to skip */
@@ -5510,7 +6973,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CaseUIResponse_Consulting"] | components["schemas"]["CaseUIResponse_Investigating"] | components["schemas"]["CaseUIResponse_Resolved"];
+                    "application/json": components["schemas"]["CaseUIResponse_Inquiry"] | components["schemas"]["CaseUIResponse_Investigating"] | components["schemas"]["CaseUIResponse_Resolved"];
                 };
             };
             /** @description Validation Error */
@@ -6017,6 +7480,7 @@ export interface operations {
         parameters: {
             query?: {
                 include_history?: boolean;
+                report_type?: string | null;
             };
             header?: {
                 Authorization?: string | null;
@@ -6158,7 +7622,7 @@ export interface operations {
             };
         };
     };
-    list_uploaded_files_api_v1_cases__case_id__uploaded_files_get: {
+    list_uploaded_files_v2: {
         parameters: {
             query?: never;
             header?: {
@@ -6192,7 +7656,7 @@ export interface operations {
             };
         };
     };
-    get_uploaded_file_details_api_v1_cases__case_id__uploaded_files__file_id__get: {
+    get_uploaded_file_details_v2: {
         parameters: {
             query?: never;
             header?: {
@@ -6264,91 +7728,25 @@ export interface operations {
             };
         };
     };
-    list_user_kb_documents_api_v1_users__user_id__kb_documents_get: {
-        parameters: {
-            query?: {
-                /** @description Maximum documents to return */
-                limit?: number | null;
-                /** @description Number of documents to skip */
-                offset?: number;
-                /** @description Filter by category */
-                category?: string | null;
-            };
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of user's KB documents */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    upload_user_kb_document_api_v1_users__user_id__kb_documents_post: {
+    share_case_api_v1_cases__case_id__share_post: {
         parameters: {
             query?: never;
             header?: {
                 Authorization?: string | null;
             };
             path: {
-                user_id: string;
+                /** @description Case ID */
+                case_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_upload_user_kb_document_api_v1_users__user_id__kb_documents_post"];
+                "application/json": components["schemas"]["Body_share_case_api_v1_cases__case_id__share_post"];
             };
         };
         responses: {
-            /** @description Document uploaded successfully */
+            /** @description Successful Response */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -6357,33 +7755,6 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -6393,182 +7764,19 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
         };
     };
-    delete_user_kb_document_api_v1_users__user_id__kb_documents__doc_id__delete: {
+    unshare_case_api_v1_cases__case_id__share__target_user_id__delete: {
         parameters: {
             query?: never;
             header?: {
                 Authorization?: string | null;
             };
             path: {
-                user_id: string;
-                doc_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Document deleted successfully */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_user_kb_stats_api_v1_users__user_id__kb_stats_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description User KB statistics */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_job_status_api_v1_jobs__job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cancel_job_api_v1_jobs__job_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
+                /** @description Case ID */
+                case_id: string;
+                /** @description User ID to unshare from */
+                target_user_id: string;
             };
             cookie?: never;
         };
@@ -6592,14 +7800,407 @@ export interface operations {
             };
         };
     };
-    list_jobs_api_v1_jobs_get: {
+    get_case_participants_api_v1_cases__case_id__participants_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case ID */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_case_access_api_v1_cases__case_id__access_check_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case ID */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_knowledge_from_case_api_v1_cases__case_id__extract_knowledge_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case ID to extract knowledge from */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never> | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_api_v1_cases__case_id__sessions_get: {
         parameters: {
             query?: {
-                /** @description Filter by job status */
-                status_filter?: string | null;
-                /** @description Maximum number of results */
+                status?: components["schemas"]["SessionStatus"] | null;
                 limit?: number;
-                /** @description Result offset for pagination */
+                offset?: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_session_api_v1_cases__case_id__sessions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_session_api_v1_cases__case_id__sessions_active_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_api_v1_cases__case_id__sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_session_api_v1_cases__case_id__sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_session_api_v1_cases__case_id__sessions__session_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_session_api_v1_cases__case_id__sessions__session_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_session_api_v1_cases__case_id__sessions__session_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Body_complete_session_api_v1_cases__case_id__sessions__session_id__complete_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_evidence_api_v1_evidence_get: {
+        parameters: {
+            query?: {
+                case_id?: string | null;
+                uploaded_by?: string | null;
+                tags?: string | null;
+                filename_contains?: string | null;
+                limit?: number;
                 offset?: number;
             };
             header?: never;
@@ -6614,7 +8215,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobStatus"][];
+                    "application/json": components["schemas"]["EvidenceArtifact"][];
                 };
             };
             /** @description Validation Error */
@@ -6628,7 +8229,574 @@ export interface operations {
             };
         };
     };
-    get_job_service_health_api_v1_jobs_health_get: {
+    upload_evidence_api_v1_evidence_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_evidence_api_v1_evidence_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceArtifact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_evidence_for_case_api_v1_evidence_case__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceArtifact"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_evidence_api_v1_evidence__evidence_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceArtifact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_evidence_api_v1_evidence__evidence_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_evidence_api_v1_evidence__evidence_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_evidence_to_case_api_v1_evidence__evidence_id__link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceArtifact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_documents_api_v1_knowledge_documents_get: {
+        parameters: {
+            query?: {
+                document_type?: string | null;
+                tags?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_document_api_v1_knowledge_documents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_document_api_v1_knowledge_documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_api_v1_knowledge_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_document_api_v1_knowledge_documents__document_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_document_api_v1_knowledge_documents__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_snippet_api_v1_knowledge_documents__document_id__snippet_get: {
+        parameters: {
+            query?: {
+                /** @description Starting line number */
+                line_start?: number;
+                /** @description Ending line number */
+                line_end?: number | null;
+                /** @description Maximum lines to return */
+                max_lines?: number;
+                /** @description Query for semantic snippet extraction */
+                query_string?: string | null;
+            };
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSnippetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_status_api_v1_knowledge_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_documents_api_v1_knowledge_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fulltext_search_documents_api_v1_knowledge_documents_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_update_documents_api_v1_knowledge_documents_bulk_update_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_delete_documents_api_v1_knowledge_documents_bulk_delete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_knowledge_stats_api_v1_knowledge_stats_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -6644,6 +8812,1830 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    get_search_analytics_api_v1_knowledge_analytics_search_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    list_suggestions_api_v1_knowledge_suggestions_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by status: pending_review, approved, rejected */
+                status?: string | null;
+                /** @description Maximum items to return */
+                limit?: number;
+                /** @description Pagination offset */
+                offset?: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_suggestion_api_v1_knowledge_suggestions__suggestion_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_suggestion_api_v1_knowledge_suggestions__suggestion_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_suggestion_api_v1_knowledge_suggestions__suggestion_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never> | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_suggestion_api_v1_knowledge_suggestions__suggestion_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remediate_pii_api_v1_knowledge_suggestions__suggestion_id__remediate_pii_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_organizations_api_v1_organizations_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum results */
+                limit?: number;
+                /** @description Pagination offset */
+                offset?: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_organization_api_v1_organizations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_organization_api_v1_organizations__org_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_organization_api_v1_organizations__org_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_organization_api_v1_organizations__org_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_organization_by_slug_api_v1_organizations_by_slug__slug__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_organization_members_api_v1_organizations__org_id__members_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by role: owner, admin, member */
+                role?: string | null;
+                /** @description Maximum results */
+                limit?: number;
+                /** @description Pagination offset */
+                offset?: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_member_api_v1_organizations__org_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberAddResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_member_api_v1_organizations__org_id__members__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+                /** @description User ID to remove */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_member_role_api_v1_organizations__org_id__members__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+                /** @description User ID */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberRoleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRoleUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_organization_settings_api_v1_organizations__org_id__settings_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_organization_settings_api_v1_organizations__org_id__settings_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_permission_api_v1_organizations__org_id__permissions_check_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionCheckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_report_api_v1_reports_generate_post: {
+        parameters: {
+            query: {
+                /** @description Case ID to generate reports for */
+                case_id: string;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportGenerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportGenerationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_recommendations_api_v1_reports_recommendations__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case ID */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportRecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_api_v1_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Report UUID */
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_report_api_v1_reports__report_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Report UUID */
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_report_api_v1_reports__report_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Report UUID */
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_for_case_api_v1_reports_case__case_id__get: {
+        parameters: {
+            query?: {
+                /** @description Include all versions or only current */
+                include_history?: boolean;
+                /** @description Filter by report type */
+                report_type?: string | null;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Case UUID */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_versions_api_v1_reports__report_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Report UUID */
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportVersionListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_report_to_case_closure_api_v1_reports__report_id__link_case_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Report UUID */
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LinkCaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkCaseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_api_v1_sessions_get: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+                session_type?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_session_api_v1_sessions_post: {
+        parameters: {
+            query?: {
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AuthSessionCreateRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Session created or resumed successfully */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Session expired or not found (when resuming with client_id) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Session gone (alternative to 404 for expired sessions) */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation error (invalid timeout_minutes) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_session_api_v1_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["faultmaven__models__api__SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_session_api_v1_sessions__session_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_session_api_v1_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_session_cases_api_v1_sessions__session_id__cases_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                /** @description Include cases with message_count == 0 */
+                include_empty?: boolean;
+                /** @description Include terminal state cases (resolved/closed) */
+                include_terminal?: boolean;
+                /** @description Include deleted cases (admin only) */
+                include_deleted?: boolean;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_expired_sessions_v2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    session_heartbeat_api_v1_sessions__session_id__heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_stats_api_v1_sessions__session_id__stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_session_api_v1_sessions__session_id__cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_recovery_info_api_v1_sessions__session_id__recovery_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_session_api_v1_sessions__session_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_sessions_api_v1_sessions_search_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_session_api_v1_sessions__session_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_team_api_v1_teams_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_team_api_v1_teams__team_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_team_api_v1_teams__team_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_team_api_v1_teams__team_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_organization_teams_api_v1_teams_organization__org_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_teams_api_v1_teams_user__target_user_id__organization__org_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description User ID */
+                target_user_id: string;
+                /** @description Organization ID */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_team_members_api_v1_teams__team_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_team_member_api_v1_teams__team_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamMemberAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_team_member_api_v1_teams__team_id__members__target_user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+                /** @description User ID to remove */
+                target_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    is_team_member_api_v1_teams__team_id__members__target_user_id__is_member_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                /** @description Team ID */
+                team_id: string;
+                /** @description User ID */
+                target_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6688,6 +10680,26 @@ export interface operations {
             };
         };
     };
+    debug_config_debug_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     debug_llm_providers_debug_llm_providers_get: {
         parameters: {
             query?: never;
@@ -6708,67 +10720,27 @@ export interface operations {
             };
         };
     };
-    get_protection_health_api_v1_protection_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never> | null;
-                };
-            };
-        };
-    };
-    get_protection_metrics_api_v1_protection_metrics_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never> | null;
-                };
-            };
-        };
-    };
-    get_protection_config_api_v1_protection_config_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never> | null;
-                };
-            };
-        };
-    };
     root__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_capabilities_v1_meta_capabilities_get: {
         parameters: {
             query?: never;
             header?: never;

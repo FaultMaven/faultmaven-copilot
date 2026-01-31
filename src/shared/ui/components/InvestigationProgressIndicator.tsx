@@ -37,7 +37,7 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
   const getStatusColor = (): string => {
     switch (progress.case_status) {
       case 'investigating': return 'text-blue-600';
-      case 'consulting': return 'text-purple-600';
+      case 'inquiry': return 'text-purple-600';
       case 'resolved': return 'text-green-600';
       case 'closed': return 'text-gray-600';
       default: return 'text-gray-600';
@@ -104,6 +104,31 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
                     style={{ transform: 'translateY(-50%)' }}
                   />
                 )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Milestones Checklist */}
+      <div className="milestones-checklist mb-4 bg-gray-50 rounded-md p-3 border border-gray-200">
+        <h4 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Key Milestones</h4>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          {[
+            { id: 'symptom_verified', label: 'Symptom Verified' },
+            { id: 'root_cause_identified', label: 'Root Cause Found' },
+            { id: 'mitigation_applied', label: 'Mitigation Applied' },
+            { id: 'resolution_applied', label: 'Resolution Applied' },
+          ].map((milestone) => {
+            const isCompleted = progress.completed_milestone_ids?.includes(milestone.id) ?? false;
+            return (
+              <div key={milestone.id} className="flex items-center space-x-2">
+                <span className={isCompleted ? 'text-green-500' : 'text-gray-300'}>
+                  {isCompleted ? '✅' : '○'}
+                </span>
+                <span className={isCompleted ? 'text-gray-700 font-medium' : 'text-gray-500'}>
+                  {milestone.label}
+                </span>
               </div>
             );
           })}

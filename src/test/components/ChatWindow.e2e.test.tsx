@@ -51,7 +51,7 @@ describe('ChatInterface e2e', () => {
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
-          status: 'consulting',
+          status: 'inquiry',
           created_at: new Date().toISOString(),
           owner_id: 'user-1',
           organization_id: 'org-1',
@@ -97,7 +97,7 @@ describe('ChatInterface e2e', () => {
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
-          status: 'consulting',
+          status: 'inquiry',
           created_at: new Date().toISOString(),
           owner_id: 'user-1',
           organization_id: 'org-1',
