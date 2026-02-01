@@ -205,7 +205,7 @@ export interface InvestigationPhase {
 export interface HypothesesSummary {
   total: number;
   validated: string | null;
-  validated_confidence: number | null;
+  validated_likelihood: number | null;
 }
 
 export interface AnomalyFrame {
@@ -362,7 +362,7 @@ export interface AgentResponse {
   response_type: ResponseType;
   session_id: string;
   case_id?: string | null;
-  confidence_score?: number | null;
+  likelihood?: number | null;
   sources?: Source[];
   plan?: PlanStep | null;
   estimated_time_to_resolution?: string;
@@ -406,6 +406,7 @@ export interface UploadedData {
   file_size?: number;
   uploaded_at: string;
   processing_status: string;
+  likelihood?: number | null;
   insights?: Record<string, any>;
   agent_response?: AgentResponse;
   classification?: ClassificationMetadata;

@@ -468,7 +468,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
       response_type: ResponseType.ANSWER,
       session_id: request.session_id,
       case_id: caseId,
-      confidence_score: turnResponse.progress_made ? 0.8 : 0.5,
+      likelihood: turnResponse.progress_made ? 0.8 : 0.5,
       sources: [],
       evidence_requests: [],
       investigation_mode: InvestigationMode.ACTIVE_INCIDENT,

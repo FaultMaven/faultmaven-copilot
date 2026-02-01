@@ -208,7 +208,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                    ...item,
                    response: response.content,
                    responseType: response.response_type,
-                   confidenceScore: response.confidence_score,
+                   likelihood: response.likelihood,
                    sources: response.sources,
                    evidenceRequests: response.evidence_requests,
                    investigationMode: response.investigation_mode,

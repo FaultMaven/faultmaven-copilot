@@ -230,7 +230,7 @@ export function useDataUpload({
         response: uploadResponse.agent_response?.content || "Data uploaded and processed successfully.",
         timestamp: new Date().toISOString(),
         responseType: uploadResponse.agent_response?.response_type,
-        confidenceScore: uploadResponse.agent_response?.confidence_score,
+        likelihood: uploadResponse.agent_response?.likelihood,
         sources: uploadResponse.agent_response?.sources,
         evidenceRequests: uploadResponse.agent_response?.evidence_requests,
         investigationMode: uploadResponse.agent_response?.investigation_mode,

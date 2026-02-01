@@ -31,7 +31,7 @@ export interface ConversationItem {
   error?: boolean;
   timestamp: string;
   responseType?: string;
-  confidenceScore?: number | null;
+  likelihood?: number | null;
   sources?: Source[];
 
   // v3.1.0 Evidence-centric fields

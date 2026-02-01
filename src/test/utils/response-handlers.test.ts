@@ -228,7 +228,7 @@ describe('Response Handlers', () => {
       const response = createTestResponse({
         response_type: ResponseType.ANSWER,
         content: 'Your service is failing because...',
-        confidence_score: 0.9
+        likelihood: 0.9
       });
 
       const result = formatResponseForDisplay(response);
@@ -245,7 +245,7 @@ describe('Response Handlers', () => {
           description: 'Review error logs',
           estimated_time: '5 minutes'
         },
-        confidence_score: 0.9
+        likelihood: 0.9
       });
 
       const result = formatResponseForDisplay(response);

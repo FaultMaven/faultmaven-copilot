@@ -43,7 +43,7 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
       </div>
 
       {/* Validated Hypothesis (if exists) */}
-      {hypotheses.validated && hypotheses.validated_confidence !== null && (
+      {hypotheses.validated && hypotheses.validated_likelihood !== null && (
         <div className="validated-hypothesis bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-3">
           <div className="flex items-start gap-3">
             {/* Check Icon */}
@@ -69,17 +69,17 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
 
               <div className="confidence">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-600">Confidence:</span>
+                  <span className="text-xs text-gray-600">Likelihood:</span>
                   <span
                     className={`
                       inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                      ${getConfidenceColor(hypotheses.validated_confidence)}
+                      ${getConfidenceColor(hypotheses.validated_likelihood)}
                     `}
                   >
-                    {(hypotheses.validated_confidence * 100).toFixed(0)}%
+                    {(hypotheses.validated_likelihood * 100).toFixed(0)}%
                   </span>
                   <span className="text-xs text-gray-500">
-                    ({getConfidenceLabel(hypotheses.validated_confidence)})
+                    ({getConfidenceLabel(hypotheses.validated_likelihood)})
                   </span>
                 </div>
 
@@ -87,7 +87,7 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
                 <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(hypotheses.validated_confidence * 100).toFixed(0)}%` }}
+                    style={{ width: `${(hypotheses.validated_likelihood * 100).toFixed(0)}%` }}
                   />
                 </div>
               </div>

@@ -3334,8 +3334,8 @@ export interface components {
             session_id: string;
             /** Case Id */
             case_id?: string | null;
-            /** Confidence Score */
-            confidence_score?: number | null;
+            /** Likelihood */
+            likelihood?: number | null;
             /** Sources */
             sources?: components["schemas"]["Source"][];
             /** Next Action Hint */
@@ -5764,8 +5764,8 @@ export interface components {
             processing_status: components["schemas"]["ProcessingStatus"];
             /** Processing Summary */
             processing_summary?: string | null;
-            /** Confidence Score */
-            confidence_score?: number | null;
+            /** Likelihood */
+            likelihood?: number | null;
         };
         /**
          * UploadedFileDetails

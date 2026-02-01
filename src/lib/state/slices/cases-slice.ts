@@ -10,10 +10,10 @@ import {
   TitleSource,
   IdMappingState
 } from '../../optimistic';
-import { 
-  createCase, 
-  getCaseConversation, 
-  submitQueryToCase, 
+import {
+  createCase,
+  getCaseConversation,
+  submitQueryToCase,
   updateCaseTitle,
   getUserCases,
   QueryRequest,
@@ -52,7 +52,7 @@ export interface CasesSlice {
   investigationProgress: Record<string, InvestigationProgress>;
   caseEvidence: Record<string, UploadedData[]>;
   loadedConversationIds: Set<string>; // Track which cases have been fetched (even if empty)
-  
+
   // Actions
   setActiveCaseId: (caseId: string | undefined) => void;
   loadUserCases: () => Promise<void>;
@@ -63,11 +63,11 @@ export interface CasesSlice {
   handleDataUpload: (caseId: string, uploadResponse: UploadedData, file: File) => void;
   togglePinCase: (caseId: string) => void;
   deleteCaseLocally: (caseId: string) => void;
-  
+
   // Persistence Helpers
   loadPersistedData: () => Promise<void>;
   savePersistedData: () => Promise<void>;
-  
+
   // Internal Helpers (exposed for testing/components)
   retryFailedOperation: (operationId: string) => Promise<void>;
   dismissFailedOperation: (operationId: string) => void;
@@ -225,13 +225,13 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
   submitQuery: async (query: string) => {
     const { activeCaseId, conversations } = get();
     if (!query.trim()) return;
-    
+
     set({ submitting: true });
 
     try {
       // 1. Ensure Case ID (create if needed)
       let targetCaseId = activeCaseId;
-      
+
       if (!targetCaseId) {
         // Create new case - let backend auto-generate title per API contract
         // NOTE: Must use `null` not `undefined` - JSON.stringify strips undefined
@@ -240,17 +240,17 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
           priority: 'medium',
           metadata: { created_via: 'browser_extension', auto_generated: true }
         });
-        
+
         targetCaseId = caseData.case_id;
-        
-        set({ 
+
+        set({
           activeCaseId: targetCaseId,
           activeCase: caseData,
           conversations: { ...conversations, [targetCaseId]: [] },
           conversationTitles: { ...get().conversationTitles, [targetCaseId]: caseData.title },
           titleSources: { ...get().titleSources, [targetCaseId]: 'backend' }
         });
-        
+
         // Persist current case ID using batched storage
         batchedStorage.set('faultmaven_current_case', targetCaseId);
       }
@@ -300,7 +300,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         status: 'pending',
         optimisticData: { userMessage, aiThinkingMessage: aiMessage, query, caseId: targetCaseId },
         retryFn: async () => {
-           // Retry logic implementation
+          // Retry logic implementation
         },
         rollbackFn: () => {
           set(state => ({
@@ -314,7 +314,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         },
         createdAt: Date.now()
       };
-      
+
       pendingOpsManager.add(operation);
       set(state => ({
         pendingOperations: { ...state.pendingOperations, [operationId]: operation }
@@ -325,14 +325,14 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       // but here we might need to access the store or pass it in. 
       // For now, we'll fetch it from storage or assume it's set.)
       // Real implementation should access SessionSlice state.
-      
+
       // ... Submission logic ...
       // We will implement the full background submission helper in the store integration
       // or as a thunk-like action.
-      
+
       // Placeholder for actual API call and state update on success/failure
       // This logic mirrors submitOptimisticQueryInBackground in SidePanelApp
-      
+
     } catch (error) {
       log.error('Query submission failed:', error);
       // Handle error state updates
@@ -398,11 +398,11 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
 
   handleDataUpload: (caseId: string, uploadResponse: UploadedData, file: File) => {
     const timestamp = uploadResponse.uploaded_at || new Date().toISOString();
-    
+
     // Generate messages
     const dataTypeBadge = uploadResponse.data_type ? ` [${uploadResponse.data_type}]` : '';
-    const compressionInfo = uploadResponse.classification?.compression_ratio 
-      ? ` (${uploadResponse.classification.compression_ratio.toFixed(1)}x compressed)` 
+    const compressionInfo = uploadResponse.classification?.compression_ratio
+      ? ` (${uploadResponse.classification.compression_ratio.toFixed(1)}x compressed)`
       : '';
 
     const userMessage: OptimisticConversationItem = {
@@ -417,7 +417,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       response: uploadResponse.agent_response?.content || "Data uploaded and processed successfully.",
       timestamp: new Date().toISOString(),
       responseType: uploadResponse.agent_response?.response_type,
-      confidenceScore: uploadResponse.agent_response?.confidence_score,
+      likelihood: uploadResponse.agent_response?.likelihood,
       sources: uploadResponse.agent_response?.sources,
       evidenceRequests: uploadResponse.agent_response?.evidence_requests,
       investigationMode: uploadResponse.agent_response?.investigation_mode,
@@ -457,7 +457,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       const { [caseId]: _, ...remainingConversations } = state.conversations;
       const { [caseId]: __, ...remainingTitles } = state.conversationTitles;
       const { [caseId]: ___, ...remainingSources } = state.titleSources;
-      
+
       const newPinned = new Set(state.pinnedCases);
       newPinned.delete(caseId);
 
