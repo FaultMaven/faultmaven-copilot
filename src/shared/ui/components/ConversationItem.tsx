@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Session } from '../../../lib/api';
-import { TITLE_GENERATION_THRESHOLD } from '../hooks/useMessageSubmission';
 
 interface ConversationItemProps {
   session: Session;
@@ -252,12 +251,7 @@ export function ConversationItem({
               {onGenerateTitle && !isUnsavedNew && (
                 <button
                   onClick={handleMenuAction(() => onGenerateTitle(session.session_id))}
-                  disabled={messageCount < TITLE_GENERATION_THRESHOLD}
-                  className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
-                    messageCount < TITLE_GENERATION_THRESHOLD
-                      ? 'text-gray-400 cursor-not-allowed'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
+                  className="w-full px-4 py-2 text-left text-sm flex items-center gap-2 text-gray-700 hover:bg-gray-100"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l2.2 4.46L19 8l-3.6 3.2L16.4 16 12 14l-4.4 2 1-4.8L5 8l4.8-.54L12 3z" />
