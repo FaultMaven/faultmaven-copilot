@@ -346,6 +346,8 @@ describe('PersistenceManager', () => {
         'titleSources',
         'conversations',
         'pendingOperations',
+        'optimisticCases',
+        'pinnedCases',
         'idMappings',
         'faultmaven_last_sync',
         'faultmaven_extension_version',

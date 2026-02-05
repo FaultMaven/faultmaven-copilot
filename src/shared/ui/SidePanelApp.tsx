@@ -12,6 +12,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { capabilitiesManager, type BackendCapabilities } from "../../lib/capabilities";
 import { createLogger } from "../../lib/utils/logger";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
+import { PersistenceManager } from "../../lib/utils/persistence-manager";
 
 const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
@@ -339,8 +340,25 @@ function SidePanelAppContent() {
   };
 
   const handleLogout = async () => {
+    // 1. Clear backend auth state
     await logout();
     await clearSession();
+
+    // 2. Clear persistent storage immediately
+    await PersistenceManager.clearAllPersistenceData();
+
+    // 3. Reset local UI state
+    setConversationTitles({});
+    setTitleSources({});
+    setConversations({});
+    setPendingOperations({});
+    setOptimisticCases([]);
+    setPinnedCases(new Set());
+    setLoadedConversationIds(new Set());
+    setInvestigationProgress({});
+    setCaseEvidence({});
+
+    // 4. Reset Active State
     setHasUnsavedNewChat(true);
     setActiveCaseId(null);
     setActiveCase(null);

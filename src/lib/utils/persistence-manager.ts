@@ -121,7 +121,7 @@ export class PersistenceManager {
       // Method 3: Session ID mismatch (runtime context changed)
       const currentSessionId = browser.runtime.id;
       const sessionMismatch = stored[PersistenceManager.SESSION_ID_KEY] &&
-                             stored[PersistenceManager.SESSION_ID_KEY] !== currentSessionId;
+        stored[PersistenceManager.SESSION_ID_KEY] !== currentSessionId;
 
       // REMOVED: Method 4 "Structural inconsistency" - UNRELIABLE & DANGEROUS
       // Why removed: Cannot distinguish "currently loading" from "lost data"
@@ -148,8 +148,8 @@ export class PersistenceManager {
         },
         reason: shouldRecover ? (
           hasReloadFlag ? 'explicit_reload_flag' :
-          versionMismatch ? 'version_mismatch' :
-          'session_id_mismatch'
+            versionMismatch ? 'version_mismatch' :
+              'session_id_mismatch'
         ) : 'no_recovery_needed'
       });
 
@@ -436,6 +436,8 @@ export class PersistenceManager {
         'titleSources',
         'conversations',
         'pendingOperations',
+        'optimisticCases',
+        'pinnedCases',
         'idMappings',
         PersistenceManager.SYNC_TIMESTAMP_KEY,
         PersistenceManager.VERSION_KEY,
