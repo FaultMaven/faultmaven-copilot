@@ -22,25 +22,32 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
       // Try to get OAuth token from TokenManager first (with auto-refresh)
       try {
         const accessToken = await tokenManager.getValidAccessToken();
-        log.debug('TokenManager returned:', { hasToken: !!accessToken });
+        log.info('TokenManager returned:', { hasToken: !!accessToken });
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
+          log.info('✅ Authorization header set from TokenManager');
         } else {
           // TokenManager returned null - try fallback
-          log.debug('TokenManager returned null, trying AuthManager fallback');
+          log.info('TokenManager returned null, trying AuthManager fallback');
           const authState = await authManager.getAuthState();
-          log.debug('AuthManager fallback:', { hasAuthState: !!authState, hasToken: !!authState?.access_token });
+          log.info('AuthManager fallback:', { hasAuthState: !!authState, hasToken: !!authState?.access_token });
           if (authState?.access_token) {
             headers['Authorization'] = `Bearer ${authState.access_token}`;
+            log.info('✅ Authorization header set from AuthManager');
+          } else {
+            log.warn('⚠️ NO JWT TOKEN AVAILABLE - Session will be created as anonymous');
           }
         }
       } catch (tokenError) {
-        log.debug('TokenManager failed, falling back to AuthManager:', tokenError);
+        log.warn('TokenManager failed, falling back to AuthManager:', tokenError);
 
         // Fall back to legacy auth for backward compatibility
         const authState = await authManager.getAuthState();
         if (authState?.access_token) {
           headers['Authorization'] = `Bearer ${authState.access_token}`;
+          log.info('✅ Authorization header set from AuthManager (fallback)');
+        } else {
+          log.warn('⚠️ AuthManager fallback failed - NO JWT TOKEN AVAILABLE');
         }
       }
 

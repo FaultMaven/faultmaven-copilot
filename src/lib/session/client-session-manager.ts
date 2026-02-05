@@ -125,7 +125,14 @@ export class ClientSessionManager {
 
     // Debug: Log if Authorization header is present
     const hasAuth = 'Authorization' in authHeaders;
-    log.info('Session creation auth headers:', { hasAuthorization: hasAuth });
+    const authHeaderValue = hasAuth ? (authHeaders as any)['Authorization'] : 'none';
+    const authPreview = authHeaderValue !== 'none'
+      ? authHeaderValue.substring(0, 20) + '...'
+      : 'none';
+    log.info('Session creation auth headers:', {
+      hasAuthorization: hasAuth,
+      authorizationPreview: authPreview
+    });
 
     const response = await fetch(`${apiUrl}/api/v1/sessions`, {
       method: 'POST',
