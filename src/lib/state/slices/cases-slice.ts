@@ -72,6 +72,7 @@ export interface CasesSlice {
   retryFailedOperation: (operationId: string) => Promise<void>;
   dismissFailedOperation: (operationId: string) => void;
   syncTitleToBackend: (caseId: string, title: string, operationId: string) => Promise<void>;
+  resetCasesState: () => void;
 }
 
 // Debounce helper for title sync (outside store to persist across renders)
@@ -101,10 +102,38 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
   loadUserCases: async () => {
     set({ loading: true });
     try {
+      // API call now checks cache internally for default lists
       const cases = await getUserCases();
-      // Handle loaded cases, merge with optimistic ones
-      // This logic will be refined in the integration phase
-      set({ loading: false });
+
+      // Update state with fetched (or cached) cases
+      // Preservation of optimistic cases should happen here if needed, 
+      // but for now we trust the service layer's cache management.
+      set({
+        optimisticCases: [], // Clear optimistic cases as we have fresh list? 
+        // Or merge them? For now, we assume getUserCases returns the source of truth.
+        loading: false
+      });
+
+      // We don't store the full list in the slice state (except maybe for UI display?)
+      // The slice seems to lack a `cases` array, relying on `optimisticCases`?
+      // Looking at the interface, there is `optimisticCases` but no `cases`. 
+      // Let's check `optimisticCases` definition. 
+
+      // Actually, looking at `SidePanelApp`, it uses `optimisticCases` for display.
+      // So we should map the result to `optimisticCases` (marking them as not optimistic).
+
+      const mappedCases: OptimisticUserCase[] = cases.map(c => ({
+        ...c,
+        optimistic: false,
+        loading: false,
+        failed: false
+      }));
+
+      set({
+        optimisticCases: mappedCases,
+        loading: false
+      });
+
     } catch (error) {
       log.error('Failed to load cases:', error);
       set({ loading: false });
@@ -513,5 +542,23 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
 
   savePersistedData: async () => {
     // Implementation for saving state to storage
+  },
+
+  resetCasesState: () => {
+    set({
+      conversations: {},
+      conversationTitles: {},
+      titleSources: {},
+      activeCaseId: undefined,
+      activeCase: null,
+      optimisticCases: [],
+      pinnedCases: new Set(),
+      pendingOperations: {},
+      loading: false,
+      submitting: false,
+      investigationProgress: {},
+      caseEvidence: {},
+      loadedConversationIds: new Set()
+    });
   }
 });

@@ -2,6 +2,7 @@ import { getApiUrl } from "../../../config";
 import { UserCase, UserCaseStatus } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
+import { caseCacheManager } from "../../cache/case-cache";
 import {
   AgentResponse,
   APIError,
@@ -139,6 +140,21 @@ export async function getUserCases(filters?: {
       if (v !== undefined) url.searchParams.append(k, String(v));
     });
   }
+
+  // OPTIMIZATION: Check cache first for default listing (no special filters)
+  // Only cache the main case list (no offset/limit or default ones)
+  const isDefaultList = !filters ||
+    (Object.keys(filters).length === 0) ||
+    (Object.keys(filters).every(k => k === 'limit' || k === 'offset'));
+
+  if (isDefaultList) {
+    const cached = await caseCacheManager.getCachedCases();
+    if (cached) {
+      log.info('Returning cached case list');
+      return cached;
+    }
+  }
+
   const response = await authenticatedFetchWithRetry(url.toString(), { method: 'GET', credentials: 'include' });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
@@ -156,7 +172,7 @@ export async function getUserCases(filters?: {
   // Map API CaseSummary fields to UserCase interface
   // API returns user_id, UserCase expects owner_id
   // Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
-  return data.cases.map((c: any) => ({
+  const userCases = data.cases.map((c: any) => ({
     case_id: c.case_id,
     title: c.title,
     status: normalizeStatus(c.status),
@@ -171,6 +187,13 @@ export async function getUserCases(filters?: {
     closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
     closed_at: c.closed_at ?? null  // Terminal state timestamp per commit b434152a
   }));
+
+  // Update cache if this was a default list
+  if (isDefaultList) {
+    await caseCacheManager.setCachedCases(userCases);
+  }
+
+  return userCases;
 }
 
 export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
@@ -221,6 +244,9 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
     );
   }
 
+  // Optimistically add to cache
+  await caseCacheManager.addOptimisticCase(userCase);
+
   return userCase;
 }
 
@@ -256,8 +282,13 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
+    // Invalidate cache on failure to ensure consistency 
+    await caseCacheManager.invalidateCache();
     throw new Error(errorData.detail || `Failed to update case: ${response.status}`);
   }
+
+  // Optimistically update cache on success
+  await caseCacheManager.updateOptimisticCase(caseId, { title });
 }
 
 /**
@@ -553,5 +584,12 @@ export async function generateCaseTitle(
   const result: TitleResponse = await response.json();
   const t = (result?.title || '').trim();
   const source = response.headers.get('x-title-source') || undefined;
+
+  // Invalidate cache to show new title immediately (Scenario 1 in requirements)
+  // or update optimistically if we trust the response
+  if (t) {
+    await caseCacheManager.updateOptimisticCase(caseId, { title: t });
+  }
+
   return { title: t, source };
 }

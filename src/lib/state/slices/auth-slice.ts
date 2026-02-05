@@ -18,7 +18,7 @@ export interface AuthSlice {
   logout: () => Promise<void>;
   clearAuthError: () => void;
   setAuthError: (error: string | null) => void;
-  
+
   // Internal helper to update state from AuthManager
   syncWithAuthManager: () => Promise<void>;
 }
@@ -48,7 +48,7 @@ export const createAuthSlice: StateCreator<AuthSlice> = (set, get) => ({
       await devLogin(username, email, displayName);
       await get().syncWithAuthManager();
     } catch (error: any) {
-      set({ 
+      set({
         authError: error?.message || "Login failed. Please try again.",
         isAuthenticated: false,
         user: null,
@@ -68,11 +68,18 @@ export const createAuthSlice: StateCreator<AuthSlice> = (set, get) => ({
       // Ensure we clear local state even if server logout fails
       await authManager.clearAuthState();
     }
+
+    // Reset other slices to prevent data leaks between sessions
+    const state = get() as any;
+    if (state.resetCasesState) {
+      state.resetCasesState();
+    }
+
     set({ isAuthenticated: false, user: null, authState: null });
   },
 
   clearAuthError: () => set({ authError: null }),
-  
+
   setAuthError: (error: string | null) => set({ authError: error }),
 
   syncWithAuthManager: async () => {
@@ -89,9 +96,9 @@ export const createAuthSlice: StateCreator<AuthSlice> = (set, get) => ({
         is_active: authState.user.is_active,
         roles: authState.user.roles
       };
-      
-      set({ 
-        isAuthenticated: true, 
+
+      set({
+        isAuthenticated: true,
         authState,
         user
       });

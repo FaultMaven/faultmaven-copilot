@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 (global as any).browser = {
   storage: {
     local: {
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({}),
       set: vi.fn(),
       remove: vi.fn(),
     },

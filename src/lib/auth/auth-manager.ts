@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { AuthState, User } from '../api/types';
 import { createLogger } from '../utils/logger';
+import { caseCacheManager } from '../cache/case-cache';
 
 const log = createLogger('AuthManager');
 
@@ -39,6 +40,8 @@ class AuthManager {
   async clearAuthState(): Promise<void> {
     if (typeof browser !== 'undefined' && browser.storage) {
       await browser.storage.local.remove(['authState']);
+      // Also clear case cache on logout to prevent data leaks or stale data
+      await caseCacheManager.invalidateCache();
     }
   }
 
