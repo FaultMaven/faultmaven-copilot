@@ -248,16 +248,22 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    let timeoutId: NodeJS.Timeout | null = null;
-
     try {
-      // Add to recently deleted set BEFORE API call (defensive filtering)
+      // Optimistically remove from UI immediately for better UX
+      setCases(prev => prev.filter(c => c.case_id !== caseId));
+
+      log.info('Deleting case', { caseId });
+
+      await deleteCaseApi(caseId);
+
+      // Success - case deleted
+      log.info('Case deleted successfully', { caseId });
+
+      // Add to recently deleted set to prevent it from reappearing if backend is slow to update
       setRecentlyDeleted(prev => new Set(prev).add(caseId));
-      log.info('Case marked for deletion', { caseId, autoCleanupIn: '5s' });
 
       // Auto-clear from recentlyDeleted after 5 seconds
-      // Store timeout ID so we can cancel it if delete fails
-      timeoutId = setTimeout(() => {
+      setTimeout(() => {
         setRecentlyDeleted(prev => {
           const newSet = new Set(prev);
           newSet.delete(caseId);
@@ -266,48 +272,68 @@ export function ConversationsList({
         });
       }, 5000);
 
-      await deleteCaseApi(caseId);
+      // Notify parent and handle navigation
+      const remaining = cases.filter(c => c.case_id !== caseId);
+      try { onAfterDelete && onAfterDelete(caseId, remaining); } catch {}
 
-      setCases(prev => {
-        const remaining = prev.filter(c => c.case_id !== caseId);
-        // Notify parent first
-        try { onAfterDelete && onAfterDelete(caseId, remaining); } catch {}
-        // If we deleted the active case, auto-switch to most recent remaining; else start new
-        try {
-          if (activeCaseId && activeCaseId === caseId) {
-            const sorted = [...remaining].sort((a,b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
-            const next = sorted[0];
-            if (next && next.case_id) {
-              log.info('Auto-switching to next case after delete', { nextCaseId: next.case_id });
-              onCaseSelect && onCaseSelect(next.case_id);
-            } else {
-              log.info('No remaining cases, starting new session');
-              onNewSession && onNewSession('');
-            }
+      // If we deleted the active case, auto-switch to most recent remaining; else start new
+      try {
+        if (activeCaseId && activeCaseId === caseId) {
+          const sorted = [...remaining].sort((a,b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
+          const next = sorted[0];
+          if (next && next.case_id) {
+            log.info('Auto-switching to next case after delete', { nextCaseId: next.case_id });
+            onCaseSelect && onCaseSelect(next.case_id);
+          } else {
+            log.info('No remaining cases, starting new session');
+            onNewSession && onNewSession('');
           }
-        } catch {}
-        return remaining;
-      });
+        }
+      } catch {}
 
       // Refresh from server to ensure list reflects backend state
       try { await loadCases(); } catch {}
     } catch (e: any) {
-      log.error('Case deletion failed', { caseId, error: e.message || e });
+      const errorMessage = e.message || String(e);
 
-      // Cancel the auto-clear timeout since delete failed
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      // Check if this is a 409 Conflict (duplicate request)
+      if (errorMessage.includes('409') || errorMessage.includes('HTTP 409')) {
+        log.warn('Delete request was a duplicate, case may already be deleted', { caseId });
+
+        // Don't restore the case to UI - it's likely already deleted or being deleted
+        // Add to recently deleted to prevent reappearance
+        setRecentlyDeleted(prev => new Set(prev).add(caseId));
+
+        // Auto-clear after a longer delay for duplicate errors
+        setTimeout(() => {
+          setRecentlyDeleted(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(caseId);
+            return newSet;
+          });
+          // Refresh to get accurate state
+          loadCases().catch(() => {});
+        }, 3000);
+
+        // Show user-friendly message
+        setError('This case was recently deleted or is already being processed. Refreshing...');
+        setTimeout(() => setError(null), 3000);
+
+        return; // Don't restore UI or show error
       }
 
-      // Remove from recentlyDeleted immediately if deletion failed
-      setRecentlyDeleted(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(caseId);
-        return newSet;
-      });
+      // For other errors, restore the case to the UI and show error
+      log.error('Case deletion failed', { caseId, error: errorMessage });
 
       // Re-fetch to ensure UI reflects actual backend state
-      try { await loadCases(); } catch {}
+      try {
+        await loadCases();
+        setError(`Failed to delete case: ${errorMessage}`);
+        setTimeout(() => setError(null), 5000);
+      } catch {
+        setError(`Failed to delete case: ${errorMessage}`);
+        setTimeout(() => setError(null), 5000);
+      }
     }
   };
 

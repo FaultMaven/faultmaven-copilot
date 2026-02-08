@@ -269,8 +269,18 @@ export async function deleteCase(caseId: string): Promise<void> {
 
   if (!response.ok && response.status !== 204) {
     const errorData: APIError = await response.json().catch(() => ({}));
+
+    // For 409 Conflict, include more context about duplicate request
+    if (response.status === 409) {
+      const message = errorData.detail || 'Duplicate delete request detected';
+      throw new Error(`HTTP 409: ${message}`);
+    }
+
     throw new Error(errorData.detail || `Failed to delete case: ${response.status}`);
   }
+
+  // Invalidate cache after successful delete
+  await caseCacheManager.invalidateCache();
 }
 
 export async function updateCaseTitle(caseId: string, title: string): Promise<void> {

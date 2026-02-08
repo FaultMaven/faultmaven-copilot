@@ -61,9 +61,10 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     return 0;
   };
 
-  // Get turn number (only available in inquiry phase)
+  // Get turn/message count information
+  // All phases now have current_turn from API (backend fixed)
   const getTurnInfo = () => {
-    if (caseData.status === 'inquiry') {
+    if ('current_turn' in caseData && caseData.current_turn > 0) {
       return ` · Turn ${caseData.current_turn}`;
     }
     return '';
