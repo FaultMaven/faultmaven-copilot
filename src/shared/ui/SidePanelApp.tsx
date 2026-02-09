@@ -606,6 +606,7 @@ function SidePanelAppContent() {
           onRetryFailedOperation={handleUserRetry}
           onDismissFailedOperation={handleDismissFailedOperation}
           getErrorMessageForOperation={getErrorMessageForOperation} // Updated to use the correct type signature
+          setActiveCase={setActiveCase}
         />
       </div>
 

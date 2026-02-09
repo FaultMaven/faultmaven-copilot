@@ -48,6 +48,7 @@ export interface ContentAreaProps {
   onRetryFailedOperation: (operationId: string) => void;
   onDismissFailedOperation: (operationId: string) => void;
   getErrorMessageForOperation: (operation: any) => { title: string; message: string; recoveryHint: string };
+  setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
 }
 
 /**
@@ -76,6 +77,7 @@ const ContentAreaComponent = ({
   onRetryFailedOperation,
   onDismissFailedOperation,
   getErrorMessageForOperation,
+  setActiveCase,
 }: ContentAreaProps) => {
   // Render chat content (copilot tab)
   const renderChatContent = () => {
@@ -139,6 +141,7 @@ const ContentAreaComponent = ({
             onGenerateReports={onGenerateReports}
             onNewChat={onNewChat}
             hasUnsavedNewChat={hasUnsavedNewChat}
+            setActiveCase={setActiveCase}
           />
         </div>
       </ErrorBoundary>

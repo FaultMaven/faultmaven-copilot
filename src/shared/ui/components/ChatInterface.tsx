@@ -27,6 +27,7 @@ interface ChatInterfaceProps {
   onGenerateReports?: () => void;
   onNewChat?: () => void;
   hasUnsavedNewChat?: boolean; // NEW: Track if this is a new unsaved chat
+  setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -47,7 +48,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onDocumentView,
   onGenerateReports,
   onNewChat,
-  hasUnsavedNewChat
+  hasUnsavedNewChat,
+  setActiveCase
 }) => {
   const { handlePageInject } = usePageContent();
 
@@ -139,6 +141,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           onQuerySubmit={onQuerySubmit}
           onDocumentView={onDocumentView}
           onGenerateReports={onGenerateReports}
+          setActiveCase={setActiveCase}
         />
       </div>
 

@@ -32,7 +32,7 @@ import { EvidenceAnalysisModal } from "./EvidenceAnalysisModal";
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { caseApi } from "../../../lib/api/case-service";
 import { createLogger } from "../../../lib/utils/logger";
-import type { CaseUIResponse } from "../../../types/case";
+import type { CaseUIResponse, UserCase } from "../../../types/case";
 
 const log = createLogger('ChatWindow');
 
@@ -89,15 +89,6 @@ interface ConversationItem {
   onRetry?: (itemId: string) => void | Promise<void>;
 }
 
-interface UserCase {
-  case_id: string;
-  title: string;
-  status: string;
-  created_at?: string;
-  updated_at?: string;
-  message_count?: number;
-}
-
 interface ChatWindowProps {
   // State passed down as props (Single Source of Truth)
   conversation: ConversationItem[];
@@ -121,6 +112,7 @@ interface ChatWindowProps {
   // onDataUpload removed - handled by parent/UnifiedInputBar
   onDocumentView?: (documentId: string) => void;
   onGenerateReports?: () => void;  // FR-CM-006: Trigger report generation for resolved cases
+  setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
 }
 
 // PERFORMANCE OPTIMIZATION: Memoized component to prevent unnecessary re-renders
@@ -135,7 +127,8 @@ const ChatWindowComponent = function ChatWindow({
   evidence = [],
   onQuerySubmit,
   onDocumentView,
-  onGenerateReports
+  onGenerateReports,
+  setActiveCase
 }: ChatWindowProps) {
   // Phase 3 Week 7: Evidence panel state
   const [evidencePanelExpanded, setEvidencePanelExpanded] = useState(true);
@@ -263,6 +256,16 @@ const ChatWindowComponent = function ChatWindow({
         try {
           const data = await caseApi.getCaseUI(activeCase.case_id, sessionId);
           setFullCaseData(data);
+
+          // Update activeCase status if it differs from backend
+          // This fixes the bug where activeCase defaults to 'inquiry' in SidePanelApp
+          if (data.status !== activeCase.status && setActiveCase) {
+            log.info('Syncing activeCase status with backend', {
+              oldStatus: activeCase.status,
+              newStatus: data.status
+            });
+            setActiveCase(prev => prev ? { ...prev, status: data.status } : null);
+          }
         } catch (err) {
           log.error('Failed to load case data:', err);
           setCaseError(err instanceof Error ? err.message : 'Failed to load case data');
