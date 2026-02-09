@@ -187,14 +187,31 @@ const ChatWindowComponent = function ChatWindow({
    * Handle status change request from CaseHeader dropdown
    */
   const handleStatusChangeRequest = useCallback((newStatus: UserCaseStatus) => {
-    if (!activeCase) return;
+    console.log('[ChatWindow] handleStatusChangeRequest called', {
+      newStatus,
+      hasActiveCase: !!activeCase,
+      activeCaseStatus: activeCase?.status
+    });
+
+    if (!activeCase) {
+      console.log('[ChatWindow] No active case, returning');
+      return;
+    }
 
     // Use activeCase.status (updated from backend via view_state.active_case)
     const currentStatus = activeCase.status;
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
+    console.log('[ChatWindow] getStatusChangeMessage result', {
+      currentStatus,
+      newStatus,
+      message,
+      transitionKey: `${currentStatus}_to_${newStatus}`
+    });
+
     if (!message) {
       log.error('Invalid status transition:', { currentStatus, newStatus });
+      console.error('[ChatWindow] No message found for transition');
       return;
     }
 
@@ -208,6 +225,7 @@ const ChatWindowComponent = function ChatWindow({
       user_confirmed: true
     };
 
+    console.log('[ChatWindow] Calling onQuerySubmit', { message, intent });
     onQuerySubmit(message, intent);
   }, [activeCase, onQuerySubmit]);
 

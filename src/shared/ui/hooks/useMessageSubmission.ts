@@ -117,41 +117,19 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
           const response = await submitQueryToCase(caseId, queryRequest);
           log.info('Query submitted successfully', { responseType: response.response_type });
 
-          // Update investigation progress
-          if (response.view_state && response.view_state.investigation_progress) {
-            props.setInvestigationProgress(prev => ({
-              ...prev,
-              [caseId]: response.view_state!.investigation_progress
-            }));
-          }
-
-          // Update active case when backend sends updated status in view_state
-          if (response.view_state?.active_case) {
-            const updatedCase = response.view_state.active_case;
-
+          // Update active case status from response.case_status (always present)
+          if (response.case_status) {
             props.setActiveCase((prev: UserCase | null) => {
-              // Only update if this is the current active case
-              if (prev?.case_id === updatedCase.case_id) {
-                log.info('Updating active case from backend', {
+              if (prev && prev.status !== response.case_status) {
+                log.info('Updating active case status from backend', {
                   oldStatus: prev.status,
-                  newStatus: updatedCase.status
+                  newStatus: response.case_status
                 });
 
-                // Return new object to ensure React detects the change
+                // Return new object with updated status
                 return {
-                  case_id: updatedCase.case_id,
-                  title: updatedCase.title || prev.title,
-                  status: updatedCase.status,
-                  created_at: updatedCase.created_at || prev.created_at,
-                  updated_at: updatedCase.updated_at,
-                  message_count: updatedCase.message_count || prev.message_count,
-                  description: updatedCase.description || prev.description,
-                  priority: updatedCase.priority || prev.priority,
-                  resolved_at: updatedCase.resolved_at || prev.resolved_at,
-                  owner_id: updatedCase.owner_id || prev.owner_id,
-                  organization_id: updatedCase.organization_id || prev.organization_id,
-                  closure_reason: updatedCase.closure_reason ?? prev.closure_reason,
-                  closed_at: updatedCase.closed_at ?? prev.closed_at
+                  ...prev,
+                  status: response.case_status
                 };
               }
               return prev;

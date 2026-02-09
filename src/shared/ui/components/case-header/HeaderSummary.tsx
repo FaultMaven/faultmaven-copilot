@@ -97,12 +97,25 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   const canChangeStatus = statusOptions.length > 0 && onStatusChangeRequest;
 
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    console.log('[HeaderSummary] handleStatusChange fired', {
+      currentStatus: caseData.status,
+      newStatus: e.target.value,
+      hasCallback: !!onStatusChangeRequest
+    });
+
     e.stopPropagation(); // Prevent header toggle
     const newStatus = e.target.value as UserCaseStatus;
+
     if (newStatus !== caseData.status && onStatusChangeRequest) {
+      console.log('[HeaderSummary] Calling onStatusChangeRequest', { newStatus });
       onStatusChangeRequest(newStatus);
       // Reset select to current status (will update after confirmation)
       e.target.value = caseData.status;
+    } else {
+      console.log('[HeaderSummary] NOT calling callback', {
+        sameStatus: newStatus === caseData.status,
+        noCallback: !onStatusChangeRequest
+      });
     }
   };
 
