@@ -172,7 +172,7 @@ describe('Intent-Based Query System', () => {
         intent: {
           type: IntentType.HypothesisAction,
           hypothesis_id: 'hyp-456',
-          action: 'validate'
+          action: 'validate' as const
         }
       };
 
@@ -383,7 +383,7 @@ describe('Intent-Based Query System', () => {
       const hypothesisIntent = {
         type: IntentType.HypothesisAction,
         hypothesis_id: 'hyp-789',
-        action: 'reject'
+        action: 'refute' as const
       };
       const queryRequest = {
         query: 'This hypothesis is incorrect',
@@ -402,7 +402,7 @@ describe('Intent-Based Query System', () => {
 
       expect(body.intent).toEqual(hypothesisIntent);
       expect(body.intent.hypothesis_id).toBe('hyp-789');
-      expect(body.intent.action).toBe('reject');
+      expect(body.intent.action).toBe('refute');
     });
 
     it('should preserve default CONVERSATION intent on retry when no explicit intent provided', async () => {
