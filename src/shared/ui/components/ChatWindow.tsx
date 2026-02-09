@@ -189,7 +189,8 @@ const ChatWindowComponent = function ChatWindow({
   const handleStatusChangeRequest = useCallback((newStatus: UserCaseStatus) => {
     if (!activeCase) return;
 
-    const currentStatus = fullCaseData?.status || activeCase.status;
+    // Use activeCase.status (updated from backend via view_state.active_case)
+    const currentStatus = activeCase.status;
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
     if (!message) {
@@ -197,7 +198,7 @@ const ChatWindowComponent = function ChatWindow({
       return;
     }
 
-    log.info('Status change request:', { from: currentStatus, to: newStatus, message });
+    log.info('Status change request:', { from: currentStatus, to: newStatus });
 
     // Send with structured intent for reliable backend routing
     const intent: QueryIntent = {
@@ -208,7 +209,7 @@ const ChatWindowComponent = function ChatWindow({
     };
 
     onQuerySubmit(message, intent);
-  }, [activeCase, fullCaseData, onQuerySubmit]);
+  }, [activeCase, onQuerySubmit]);
 
   const handleConfirmationYes = useCallback(() => {
     log.info('User confirmed with Yes');
@@ -234,7 +235,7 @@ const ChatWindowComponent = function ChatWindow({
 
   const canInteract = Boolean(activeCase) || Boolean(isNewUnsavedChat);
 
-  // Fetch full case data
+  // Fetch full case data - triggered only when case or session changes, not on every message
   useEffect(() => {
     if (activeCase?.case_id && sessionId) {
       setCaseLoading(true);
@@ -257,7 +258,22 @@ const ChatWindowComponent = function ChatWindow({
       setFullCaseData(null);
       setCaseError(null);
     }
-  }, [activeCase?.case_id, sessionId, conversation.length]);
+  }, [activeCase?.case_id, sessionId]);
+
+  // Refresh full case data when status changes (triggered by backend view_state.active_case update)
+  useEffect(() => {
+    if (!activeCase || !fullCaseData || !sessionId) return;
+    if (fullCaseData.status === activeCase.status) return;
+
+    log.info('Status changed - refreshing case data', {
+      from: fullCaseData.status,
+      to: activeCase.status
+    });
+
+    caseApi.getCaseUI(activeCase.case_id, sessionId)
+      .then(data => setFullCaseData(data))
+      .catch(err => log.error('Failed to refresh case data:', err));
+  }, [activeCase?.status, fullCaseData?.status, activeCase?.case_id, sessionId]);
 
   // Auto-scroll to bottom
   useEffect(() => {

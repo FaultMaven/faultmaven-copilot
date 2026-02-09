@@ -39,6 +39,7 @@ export interface UserCase {
   organization_id: string; // Required per multi-tenant storage fixes (commit b434152a)
   closure_reason: string | null; // Required for terminal states (RESOLVED, CLOSED) per commit b434152a
   closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
+  valid_next_states?: string[]; // Server-provided list of allowed status transitions (empty for terminal states)
 }
 
 // Inquiry Phase Types

@@ -36,6 +36,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [requestedStatus, setRequestedStatus] = useState<UserCaseStatus | null>(null);
   const [showFiles, setShowFiles] = useState(false);
+  const [isSubmittingStatusChange, setIsSubmittingStatusChange] = useState(false);
 
   if (loading) {
     return (
@@ -70,15 +71,23 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   };
 
   const handleStatusChangeRequest = (newStatus: UserCaseStatus) => {
+    // Prevent multiple status change requests while one is in progress
+    if (isSubmittingStatusChange) {
+      return;
+    }
     setRequestedStatus(newStatus);
     setShowStatusModal(true);
   };
 
   const handleConfirmStatusChange = () => {
-    if (requestedStatus && onStatusChangeRequest) {
+    if (requestedStatus && onStatusChangeRequest && !isSubmittingStatusChange) {
+      setIsSubmittingStatusChange(true);
       onStatusChangeRequest(requestedStatus);
       setShowStatusModal(false);
       setRequestedStatus(null);
+
+      // Reset after a short delay to allow the request to complete
+      setTimeout(() => setIsSubmittingStatusChange(false), 3000);
     }
   };
 

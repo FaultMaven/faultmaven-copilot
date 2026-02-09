@@ -73,7 +73,14 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   const filesCount = getFilesCount();
 
   // Get available status transitions (forward only)
+  // Use server-provided valid_next_states if available, otherwise fall back to client-side logic
   const getAvailableStatusTransitions = (currentStatus: string): UserCaseStatus[] => {
+    // Use server-provided transitions if available
+    if ('valid_next_states' in caseData && caseData.valid_next_states) {
+      return caseData.valid_next_states as UserCaseStatus[];
+    }
+
+    // Fallback to client-side logic (for backward compatibility during rollout)
     if (currentStatus === 'resolved' || currentStatus === 'closed') {
       return []; // Terminal states - no transitions
     }
