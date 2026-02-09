@@ -68,6 +68,62 @@ export interface APIError {
 export type { UserCase, UserCaseStatus, CaseStatus } from "../../../types/case";
 import { CaseStatus } from "../../../types/case"; // Import for usage in types
 
+// ============================================================
+// Intent-Based Query System (Clean, No Keyword Matching)
+// ============================================================
+
+/**
+ * Structured intent for programmatic query routing.
+ * Enables reliable backend handling without keyword matching.
+ */
+export interface QueryIntent {
+  /** Intent type - determines how backend processes the query */
+  type: 'conversation' | 'status_transition' | 'confirmation' | 'hypothesis_action' | 'evidence_request';
+
+  /** For status_transition: source status */
+  from_status?: string;
+
+  /** For status_transition: target status */
+  to_status?: string;
+
+  /** For status_transition: user explicitly confirmed */
+  user_confirmed?: boolean;
+
+  /** For hypothesis_action: target hypothesis ID */
+  hypothesis_id?: string;
+
+  /** For hypothesis_action: action to perform */
+  action?: 'validate' | 'refute' | 'retire';
+
+  /** For confirmation: yes/no value */
+  confirmation_value?: boolean;
+
+  /** For evidence_request: target evidence ID */
+  evidence_id?: string;
+}
+
+/**
+ * Query request with structured intent.
+ * All queries must include intent for proper backend routing.
+ */
+export interface CaseQueryRequest {
+  /** Human-readable message for conversation history */
+  message: string;
+
+  /** Machine-readable intent for programmatic routing */
+  intent: QueryIntent;
+
+  /** Optional file attachments */
+  attachments?: Array<{
+    file_id: string;
+    filename: string;
+    data_type?: string;
+    size?: number;
+    summary?: string;
+    s3_uri?: string;
+  }>;
+}
+
 export interface Case {
   case_id: string;
   title: string;
@@ -417,6 +473,10 @@ export interface QueryRequest {
   session_id: string;
   query: string;
   priority?: "low" | "normal" | "high" | "critical";
+
+  /** Structured intent for programmatic routing (optional - defaults to 'conversation') */
+  intent?: QueryIntent;
+
   context?: {
     uploaded_data_ids?: string[];
     page_url?: string;

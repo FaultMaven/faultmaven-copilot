@@ -14,6 +14,7 @@ import { browser } from 'wxt/browser';
 import {
   submitQueryToCase,
   QueryRequest,
+  QueryIntent,
   createSession,
   authManager,
   generateCaseTitle
@@ -81,7 +82,8 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     query: string,
     caseId: string,
     userMessageId: string,
-    aiMessageId: string
+    aiMessageId: string,
+    intent?: QueryIntent
   ) => {
     try {
       const response = await resilientOperation({
@@ -107,6 +109,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
             session_id: currentSessionId,
             query: query.trim(),
             priority: 'low',
+            intent: intent,
             context: {}
           };
 
@@ -163,7 +166,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
           // Show global error UI if needed
           const plan = getRecoveryPlan(error, {
             onRetry: async () => {
-              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId);
+              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, intent);
             },
             onLogout: () => {
                // Auth handling is typically global, but we can signal it
@@ -176,7 +179,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
              props.showErrorWithRetry(
               error,
               async () => {
-                await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId);
+                await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, intent);
               },
               { operation: 'message_submission' }
              );
@@ -287,7 +290,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     }
   };
 
-  const handleQuerySubmit = async (query: string) => {
+  const handleQuerySubmit = async (query: string, intent?: QueryIntent) => {
     if (!query.trim()) return;
 
     // Prevent multiple submissions
@@ -427,7 +430,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       },
       retryFn: async () => {
         log.debug('Retrying message submission');
-        await submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId);
+        await submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, intent);
       },
       createdAt: Date.now()
     };
@@ -435,7 +438,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
     pendingOpsManager.add(pendingOperation);
 
     // Background API submission (non-blocking)
-    submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId);
+    submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, intent);
   };
 
   return {

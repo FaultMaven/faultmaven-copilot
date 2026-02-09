@@ -108,6 +108,7 @@ describe('Case Service', () => {
           method: 'POST',
           body: JSON.stringify({
             message: queryRequest.query,
+            intent: { type: 'conversation' },  // Default intent added
             attachments: null  // undefined converted to null by prepareBody
           })
         })

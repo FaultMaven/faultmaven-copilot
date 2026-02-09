@@ -6,6 +6,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import {
   AgentResponse,
   APIError,
+  CaseQueryRequest,
   CaseUpdateRequest,
   CreateCaseRequest,
   InvestigationMode,
@@ -50,7 +51,8 @@ export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
 };
 
 /**
- * Predefined messages for status change requests
+ * Predefined messages for status change requests (used for display only)
+ * Actual backend routing uses structured QueryIntent
  */
 export const STATUS_CHANGE_MESSAGES: Record<string, string> = {
   'inquiry_to_investigating': 'I want to start a formal investigation to find the root cause.',
@@ -375,8 +377,12 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
     throw new Error('Missing required field: query');
   }
 
-  const body = {
+  // Build intent-based query request
+  const body: CaseQueryRequest = {
     message: request.query,
+    intent: request.intent || {
+      type: 'conversation'  // Default to normal conversation
+    },
     attachments: request.context?.uploaded_data_ids?.map(id => ({ file_id: id })) || undefined
   };
 

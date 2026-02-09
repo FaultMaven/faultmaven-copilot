@@ -13,7 +13,8 @@ import {
   UserCaseStatus,
   getStatusChangeMessage,
   Hypothesis,
-  TestResult
+  TestResult,
+  QueryIntent
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
 import { InvestigationProgressIndicator } from "./InvestigationProgressIndicator";
@@ -115,7 +116,7 @@ interface ChatWindowProps {
   evidence?: UploadedData[];
 
   // Action callbacks
-  onQuerySubmit: (query: string) => void;
+  onQuerySubmit: (query: string, intent?: QueryIntent) => void;
   // onDataUpload removed - handled by parent/UnifiedInputBar
   onDocumentView?: (documentId: string) => void;
   onGenerateReports?: () => void;  // FR-CM-006: Trigger report generation for resolved cases
@@ -196,17 +197,34 @@ const ChatWindowComponent = function ChatWindow({
     }
 
     log.info('Status change request:', { from: currentStatus, to: newStatus, message });
-    onQuerySubmit(message);
+
+    // Send with structured intent for reliable backend routing
+    const intent: QueryIntent = {
+      type: 'status_transition',
+      from_status: currentStatus,
+      to_status: newStatus,
+      user_confirmed: true
+    };
+
+    onQuerySubmit(message, intent);
   }, [activeCase, fullCaseData, onQuerySubmit]);
 
   const handleConfirmationYes = useCallback(() => {
     log.info('User confirmed with Yes');
-    onQuerySubmit('Yes');
+    const intent: QueryIntent = {
+      type: 'confirmation',
+      confirmation_value: true
+    };
+    onQuerySubmit('Yes', intent);
   }, [onQuerySubmit]);
 
   const handleConfirmationNo = useCallback(() => {
     log.info('User declined with No');
-    onQuerySubmit('No');
+    const intent: QueryIntent = {
+      type: 'confirmation',
+      confirmation_value: false
+    };
+    onQuerySubmit('No', intent);
   }, [onQuerySubmit]);
 
   const handleViewAnalysis = (item: UploadedData) => {
