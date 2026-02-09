@@ -3,6 +3,7 @@ import config, { getApiUrl } from "../../../config";
 import { authManager } from "../../auth/auth-manager";
 import { authenticatedFetch, prepareBody } from "../client";
 import { APIError, AuthState, AuthTokenResponse, UserProfile } from "../types";
+import { createHttpErrorFromResponse } from "../../errors/http-error";
 
 export async function devLogin(
   username: string,
@@ -22,10 +23,7 @@ export async function devLogin(
     });
 
     if (!response.ok) {
-      const errorData: APIError = await response.json().catch(() => ({}));
-      const error: any = new Error(errorData.detail || `Login failed: ${response.status}`);
-      error.status = response.status;
-      throw error;
+      throw await createHttpErrorFromResponse(response);
     }
 
     const authResponse = await response.json();
@@ -60,8 +58,7 @@ export async function getCurrentUser(): Promise<UserProfile> {
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get current user: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();
@@ -75,8 +72,7 @@ export async function logoutAuth(): Promise<void> {
     });
 
     if (!response.ok) {
-      const errorData: APIError = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Logout failed: ${response.status}`);
+      throw await createHttpErrorFromResponse(response);
     }
   } finally {
     // Clear auth state regardless of response status

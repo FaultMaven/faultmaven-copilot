@@ -1,14 +1,15 @@
 import config, { getApiUrl } from "../../../config";
 import { authenticatedFetch, prepareBody } from "../client";
-import { 
-  APIError, 
-  CaseClosureRequest, 
-  CaseClosureResponse, 
-  CaseReport, 
-  ReportGenerationRequest, 
-  ReportGenerationResponse, 
-  ReportRecommendation 
+import {
+  APIError,
+  CaseClosureRequest,
+  CaseClosureResponse,
+  CaseReport,
+  ReportGenerationRequest,
+  ReportGenerationResponse,
+  ReportRecommendation
 } from "../types";
+import { createHttpErrorFromResponse } from "../../errors/http-error";
 
 export async function getReportRecommendations(caseId: string): Promise<ReportRecommendation> {
   const response = await authenticatedFetch(
@@ -20,8 +21,7 @@ export async function getReportRecommendations(caseId: string): Promise<ReportRe
   );
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get report recommendations: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();
@@ -42,8 +42,7 @@ export async function generateReports(
   );
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to generate reports: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();
@@ -64,8 +63,7 @@ export async function getCaseReports(
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get case reports: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();
@@ -84,8 +82,7 @@ export async function downloadReport(
   );
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to download report: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.blob();
@@ -106,8 +103,7 @@ export async function closeCase(
   );
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to close case: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();

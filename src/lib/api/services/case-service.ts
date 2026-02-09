@@ -408,13 +408,13 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
  * ```
  */
 export async function submitQueryToCase(caseId: string, request: QueryRequest): Promise<AgentResponse> {
-  if (!request?.query) {
+  if (!request?.query || !request.query.trim()) {
     throw new Error('Missing required field: query');
   }
 
   // Build intent-based query request
   const body: CaseQueryRequest = {
-    message: request.query,
+    message: request.query.trim(),
     intent: request.intent || {
       type: IntentType.Conversation  // Default to normal conversation
     },

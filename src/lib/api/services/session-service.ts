@@ -3,6 +3,7 @@ import { authenticatedFetch } from "../client";
 import { createFreshSession } from "../fetch-utils";
 import { createSession } from "../session-core";
 import { APIError, Session, UploadedData } from "../types";
+import { createHttpErrorFromResponse } from "../../errors/http-error";
 
 // Re-export creation functions
 export { createSession, createFreshSession };
@@ -17,8 +18,7 @@ export async function getSessionData(sessionId: string, limit: number = 10, offs
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get session data: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   const data = await response.json();
@@ -32,8 +32,7 @@ export async function getSession(sessionId: string): Promise<Session> {
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get session: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();
@@ -45,8 +44,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to delete session: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 }
 
@@ -56,8 +54,7 @@ export async function heartbeatSession(sessionId: string): Promise<void> {
     credentials: 'include'
   });
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to heartbeat session: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 }
 
@@ -76,8 +73,7 @@ export async function listSessions(filters?: {
   }
   const response = await authenticatedFetch(url.toString(), { method: 'GET' });
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to list sessions: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
   const data = await response.json().catch(() => []);
   if (Array.isArray(data)) return data as Session[];

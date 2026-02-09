@@ -1,6 +1,7 @@
 import config, { getApiUrl } from "../../../config";
 import { authenticatedFetch } from "../client";
 import { APIError, KnowledgeDocument } from "../types";
+import { createHttpErrorFromResponse } from "../../errors/http-error";
 
 export async function getKnowledgeDocument(documentId: string): Promise<KnowledgeDocument> {
   const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/knowledge/documents/${documentId}`, {
@@ -8,8 +9,7 @@ export async function getKnowledgeDocument(documentId: string): Promise<Knowledg
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get document: ${response.status}`);
+    throw await createHttpErrorFromResponse(response);
   }
 
   return response.json();
