@@ -3,6 +3,7 @@ import { UserCase, UserCaseStatus } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
+import { HttpError, createHttpErrorFromResponse } from "../../errors/http-error";
 import {
   AgentResponse,
   APIError,
@@ -14,7 +15,8 @@ import {
   ResponseType,
   SourceMetadata,
   TitleResponse,
-  UploadedData
+  UploadedData,
+  IntentType
 } from "../types";
 
 const log = createLogger('CaseService');
@@ -263,6 +265,13 @@ export async function archiveCase(caseId: string): Promise<void> {
   }
 }
 
+/**
+ * Delete a case by ID.
+ *
+ * @param caseId - The ID of the case to delete
+ * @throws {HttpError} With status 409 if duplicate delete request
+ * @throws {HttpError} For other HTTP errors
+ */
 export async function deleteCase(caseId: string): Promise<void> {
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
     method: 'DELETE',
@@ -270,15 +279,8 @@ export async function deleteCase(caseId: string): Promise<void> {
   });
 
   if (!response.ok && response.status !== 204) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-
-    // For 409 Conflict, include more context about duplicate request
-    if (response.status === 409) {
-      const message = errorData.detail || 'Duplicate delete request detected';
-      throw new Error(`HTTP 409: ${message}`);
-    }
-
-    throw new Error(errorData.detail || `Failed to delete case: ${response.status}`);
+    // Throw structured HttpError with status code
+    throw await createHttpErrorFromResponse(response);
   }
 
   // Invalidate cache after successful delete
@@ -372,6 +374,39 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
   return data;
 }
 
+/**
+ * Submit a query to a case investigation.
+ *
+ * Uses intent-based routing for reliable backend handling.
+ * If no intent is provided, defaults to 'conversation' type.
+ *
+ * @param caseId - Target case ID
+ * @param request - Query request with message, optional intent, and context
+ * @returns Agent response with content, turn number, and metadata
+ * @throws {Error} If query field is missing
+ * @throws {HttpError} For HTTP errors (validation, auth, etc.)
+ *
+ * @example
+ * ```typescript
+ * // Regular conversation
+ * const response = await submitQueryToCase('case-123', {
+ *   session_id: 'sess-456',
+ *   query: 'What could cause this error?'
+ * });
+ *
+ * // Status transition with intent
+ * const response = await submitQueryToCase('case-123', {
+ *   session_id: 'sess-456',
+ *   query: 'Resolve this case',
+ *   intent: {
+ *     type: IntentType.StatusTransition,
+ *     from_status: 'investigating',
+ *     to_status: 'resolved',
+ *     user_confirmed: true
+ *   }
+ * });
+ * ```
+ */
 export async function submitQueryToCase(caseId: string, request: QueryRequest): Promise<AgentResponse> {
   if (!request?.query) {
     throw new Error('Missing required field: query');
@@ -381,7 +416,7 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
   const body: CaseQueryRequest = {
     message: request.query,
     intent: request.intent || {
-      type: 'conversation'  // Default to normal conversation
+      type: IntentType.Conversation  // Default to normal conversation
     },
     attachments: request.context?.uploaded_data_ids?.map(id => ({ file_id: id })) || undefined
   };

@@ -73,12 +73,40 @@ import { CaseStatus } from "../../../types/case"; // Import for usage in types
 // ============================================================
 
 /**
+ * Intent types for query routing.
+ *
+ * Enables reliable intent detection without keyword matching.
+ * Each type routes to specialized handling logic in the backend.
+ *
+ * @example
+ * ```typescript
+ * const intent: QueryIntent = {
+ *   type: IntentType.StatusTransition,
+ *   from_status: 'investigating',
+ *   to_status: 'resolved'
+ * };
+ * ```
+ */
+export enum IntentType {
+  /** Natural language query - use LLM */
+  Conversation = 'conversation',
+  /** Explicit state transition (resolve/close) */
+  StatusTransition = 'status_transition',
+  /** Yes/No confirmation response */
+  Confirmation = 'confirmation',
+  /** Validate/refute/retire hypothesis */
+  HypothesisAction = 'hypothesis_action',
+  /** Request specific evidence */
+  EvidenceRequest = 'evidence_request'
+}
+
+/**
  * Structured intent for programmatic query routing.
  * Enables reliable backend handling without keyword matching.
  */
 export interface QueryIntent {
   /** Intent type - determines how backend processes the query */
-  type: 'conversation' | 'status_transition' | 'confirmation' | 'hypothesis_action' | 'evidence_request';
+  type: IntentType;
 
   /** For status_transition: source status */
   from_status?: string;
@@ -116,7 +144,7 @@ export interface CaseQueryRequest {
   /** Optional file attachments */
   attachments?: Array<{
     file_id: string;
-    filename: string;
+    filename?: string;
     data_type?: string;
     size?: number;
     summary?: string;

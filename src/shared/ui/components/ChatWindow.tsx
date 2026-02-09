@@ -14,7 +14,8 @@ import {
   getStatusChangeMessage,
   Hypothesis,
   TestResult,
-  QueryIntent
+  QueryIntent,
+  IntentType
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
 import { InvestigationProgressIndicator } from "./InvestigationProgressIndicator";
@@ -200,7 +201,7 @@ const ChatWindowComponent = function ChatWindow({
 
     // Send with structured intent for reliable backend routing
     const intent: QueryIntent = {
-      type: 'status_transition',
+      type: IntentType.StatusTransition,
       from_status: currentStatus,
       to_status: newStatus,
       user_confirmed: true
@@ -212,7 +213,7 @@ const ChatWindowComponent = function ChatWindow({
   const handleConfirmationYes = useCallback(() => {
     log.info('User confirmed with Yes');
     const intent: QueryIntent = {
-      type: 'confirmation',
+      type: IntentType.Confirmation,
       confirmation_value: true
     };
     onQuerySubmit('Yes', intent);
@@ -221,7 +222,7 @@ const ChatWindowComponent = function ChatWindow({
   const handleConfirmationNo = useCallback(() => {
     log.info('User declined with No');
     const intent: QueryIntent = {
-      type: 'confirmation',
+      type: IntentType.Confirmation,
       confirmation_value: false
     };
     onQuerySubmit('No', intent);

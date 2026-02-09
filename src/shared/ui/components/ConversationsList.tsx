@@ -3,6 +3,7 @@ import { UserCase, getUserCases, deleteCase as deleteCaseApi, generateCaseTitle,
 import { OptimisticUserCase } from '../../../lib/optimistic/types';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
+import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
 import {
   mergeOptimisticAndReal,
   sanitizeBackendCases,
@@ -274,7 +275,11 @@ export function ConversationsList({
 
       // Notify parent and handle navigation
       const remaining = cases.filter(c => c.case_id !== caseId);
-      try { onAfterDelete && onAfterDelete(caseId, remaining); } catch {}
+      try {
+        onAfterDelete && onAfterDelete(caseId, remaining);
+      } catch (err) {
+        log.warn('onAfterDelete callback failed', { error: err, caseId });
+      }
 
       // If we deleted the active case, auto-switch to most recent remaining; else start new
       try {
@@ -289,15 +294,19 @@ export function ConversationsList({
             onNewSession && onNewSession('');
           }
         }
-      } catch {}
+      } catch (err) {
+        log.warn('Navigation after delete failed', { error: err, caseId });
+      }
 
       // Refresh from server to ensure list reflects backend state
-      try { await loadCases(); } catch {}
-    } catch (e: any) {
-      const errorMessage = e.message || String(e);
-
-      // Check if this is a 409 Conflict (duplicate request)
-      if (errorMessage.includes('409') || errorMessage.includes('HTTP 409')) {
+      try {
+        await loadCases();
+      } catch (err) {
+        log.warn('Failed to refresh cases after delete', { error: err });
+      }
+    } catch (e: unknown) {
+      // Check if this is a 409 Conflict (duplicate request) using structured error
+      if (e instanceof HttpError && e.is(409)) {
         log.warn('Delete request was a duplicate, case may already be deleted', { caseId });
 
         // Don't restore the case to UI - it's likely already deleted or being deleted
@@ -312,7 +321,9 @@ export function ConversationsList({
             return newSet;
           });
           // Refresh to get accurate state
-          loadCases().catch(() => {});
+          loadCases().catch((err) => {
+            log.warn('Failed to refresh cases after duplicate delete', { error: err });
+          });
         }, 3000);
 
         // Show user-friendly message
@@ -323,6 +334,7 @@ export function ConversationsList({
       }
 
       // For other errors, restore the case to the UI and show error
+      const errorMessage = extractErrorMessage(e);
       log.error('Case deletion failed', { caseId, error: errorMessage });
 
       // Re-fetch to ensure UI reflects actual backend state
@@ -330,7 +342,8 @@ export function ConversationsList({
         await loadCases();
         setError(`Failed to delete case: ${errorMessage}`);
         setTimeout(() => setError(null), 5000);
-      } catch {
+      } catch (err) {
+        log.warn('Failed to refresh cases after error', { error: err });
         setError(`Failed to delete case: ${errorMessage}`);
         setTimeout(() => setError(null), 5000);
       }
