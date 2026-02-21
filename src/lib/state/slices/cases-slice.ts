@@ -436,22 +436,16 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
 
     const userMessage: OptimisticConversationItem = {
       id: `upload-${Date.now()}`,
-      question: `📎 Uploaded: ${uploadResponse.file_name || file.name} (${formatFileSize(uploadResponse.file_size || 0)})${dataTypeBadge}${compressionInfo}`,
+      question: `📎 Uploaded: ${uploadResponse.filename || file.name} (${formatFileSize(uploadResponse.file_size || 0)})${dataTypeBadge}${compressionInfo}`,
       timestamp,
       optimistic: false
     };
 
     const aiMessage: OptimisticConversationItem = {
       id: `response-${Date.now()}`,
-      response: uploadResponse.agent_response?.content || "Data uploaded and processed successfully.",
+      response: uploadResponse.agent_response || "Data uploaded and processed successfully.",
       timestamp: new Date().toISOString(),
-      responseType: uploadResponse.agent_response?.response_type,
-      likelihood: uploadResponse.agent_response?.likelihood,
-      sources: uploadResponse.agent_response?.sources,
-      evidenceRequests: uploadResponse.agent_response?.evidence_requests,
-      investigationMode: uploadResponse.agent_response?.investigation_mode,
-      caseStatus: uploadResponse.agent_response?.case_status,
-      suggestedActions: uploadResponse.agent_response?.suggested_actions,
+      caseStatus: uploadResponse.case_status,
       optimistic: false
     };
 

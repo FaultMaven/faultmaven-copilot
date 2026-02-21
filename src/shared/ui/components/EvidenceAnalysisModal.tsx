@@ -30,10 +30,8 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
   }
 
   // Extract analysis data
-  const agentResponse = evidence.agent_response;
   const classification = evidence.classification;
-  const keyFindings = agentResponse?.response_metadata?.key_findings || [];
-  const summary = agentResponse?.content || 'No analysis available';
+  const summary = evidence.agent_response || 'No analysis available';
 
   // Format timestamp
   const uploadedDate = new Date(evidence.uploaded_at);
@@ -73,7 +71,7 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 id="evidence-modal-title" className="text-lg font-semibold text-gray-900">
-            Analysis: {evidence.file_name || 'Pasted Content'}
+            Analysis: {evidence.filename || 'Pasted Content'}
           </h2>
           <button
             onClick={onClose}
@@ -130,42 +128,6 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
               <p className="whitespace-pre-wrap">{summary}</p>
             </div>
           </div>
-
-          {/* Key Findings Section */}
-          {keyFindings.length > 0 && (
-            <div>
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-2">
-                <span className="text-base" aria-hidden="true">🔍</span>
-                Key Findings
-              </h3>
-              <ul className="space-y-2">
-                {keyFindings.map((finding: string, index: number) => (
-                  <li
-                    key={index}
-                    className="flex items-start gap-2 text-sm text-gray-700 bg-blue-50 border border-blue-200 rounded-lg p-3"
-                  >
-                    <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-blue-500 text-white rounded-full text-xs font-bold">
-                      {index + 1}
-                    </span>
-                    <span className="flex-1">{finding}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Relevance Section */}
-          {agentResponse?.metadata?.relevance && (
-            <div>
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-2">
-                <span className="text-base" aria-hidden="true">💡</span>
-                Relevance
-              </h3>
-              <div className="text-sm text-gray-700 bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <p>{agentResponse.metadata.relevance}</p>
-              </div>
-            </div>
-          )}
 
           {/* Processing Info (if available) */}
           {classification?.processing_time_ms && (

@@ -77,23 +77,20 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
     hour12: true
   });
 
-  // Extract key findings count (if available)
-  const findingsCount = item.agent_response?.response_metadata?.key_findings?.length || 0;
-
   return (
     <div
       className="evidence-item bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       role="article"
-      aria-label={`Evidence: ${item.file_name || 'content'}`}
+      aria-label={`Evidence: ${item.filename || 'content'}`}
     >
       {/* Header Row */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-base flex-shrink-0" aria-hidden="true">{sourceInfo.icon}</span>
           <h3 className="text-sm font-semibold text-gray-900 truncate">
-            {item.file_name || `Content (${item.data_id.substring(0, 7)})`}
+            {item.filename || `Content (${item.data_id.substring(0, 7)})`}
           </h3>
           {item.file_size && (
             <span className="text-xs text-gray-500 flex-shrink-0">
@@ -134,14 +131,6 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
           </div>
         )}
 
-        {/* Summary / Key Findings */}
-        {findingsCount > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="font-medium">Findings:</span>
-            <span>{findingsCount} key {findingsCount === 1 ? 'finding' : 'findings'}</span>
-          </div>
-        )}
-
         {/* Status */}
         <div className="flex items-center gap-2">
           <span className="font-medium">Status:</span>
@@ -174,43 +163,15 @@ EvidenceItem.displayName = 'EvidenceItem';
  * Helper function to determine source information
  */
 function getSourceInfo(item: UploadedData): { icon: string; label: string; url?: string } {
-  // Check agent_response metadata for source information
-  const sourceMetadata = item.agent_response?.metadata?.source_metadata;
-
-  if (sourceMetadata) {
-    if (sourceMetadata.source_type === 'page_capture') {
-      return {
-        icon: '📊',
-        label: 'Page captured',
-        url: sourceMetadata.source_url
-      };
-    }
-
-    if (sourceMetadata.source_type === 'text_paste') {
-      return {
-        icon: '📝',
-        label: 'Text submitted'
-      };
-    }
-
-    if (sourceMetadata.source_type === 'file_upload') {
-      return {
-        icon: '📄',
-        label: 'File uploaded'
-      };
-    }
-  }
-
-  // Fallback: Determine from file_name and content
-  if (item.file_name) {
-    // Check file extension to provide more specific label
-    if (item.file_name.startsWith('page-content-')) {
+  // Determine from filename
+  if (item.filename) {
+    if (item.filename.startsWith('page-content-')) {
       return {
         icon: '📊',
         label: 'Page captured'
       };
     }
-    if (item.file_name.startsWith('text-data-')) {
+    if (item.filename.startsWith('text-data-')) {
       return {
         icon: '📝',
         label: 'Text submitted'

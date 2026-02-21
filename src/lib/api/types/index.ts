@@ -483,16 +483,21 @@ export interface SourceMetadata {
 export interface UploadedData {
   data_id: string;
   case_id: string;
-  session_id: string;
+  filename: string;
+  file_size: number;
   data_type: 'log_file' | 'error_message' | 'stack_trace' | 'metrics_data' | 'config_file' | 'documentation' | 'unknown';
-  content: string;
-  file_name?: string;
-  file_size?: number;
-  uploaded_at: string;
   processing_status: string;
-  likelihood?: number | null;
-  insights?: Record<string, any>;
-  agent_response?: AgentResponse;
+  uploaded_at: string;
+
+  // Turn response fields (same shape as CaseQueryResponse for endpoint parity)
+  agent_response: string;
+  turn_number: number;
+  milestones_completed: string[];
+  case_status: CaseStatus;
+  progress_made: boolean;
+  is_stuck: boolean;
+
+  // File metadata
   classification?: ClassificationMetadata;
   schema_version?: string;
 }
