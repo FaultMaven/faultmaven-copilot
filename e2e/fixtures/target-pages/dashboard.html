@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FaultMaven Dashboard</title>
+</head>
+
+<body>
+    <div id="root">
+        <h1>Dashboard Mock</h1>
+        <button id="login-success-btn">Trigger Login Success Message</button>
+    </div>
+    <script>
+        // Simulate dashboard login behavior
+        document.getElementById('login-success-btn').addEventListener('click', () => {
+            window.postMessage({
+                type: 'FM_AUTH_SUCCESS',
+                payload: {
+                    access_token: 'post-message-token',
+                    expires_at: Date.now() + 3600000
+                }
+            }, '*');
+        });
+    </script>
+</body>
+
+</html>

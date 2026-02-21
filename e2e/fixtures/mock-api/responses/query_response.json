@@ -1,0 +1,9 @@
+{
+  "message_id": "query-new-response",
+  "case_id": "case-1",
+  "role": "assistant",
+  "content": "This is a mock response from the API. I can see your query.",
+  "response_type": "message",
+  "session_id": "mock-session-id",
+  "created_at": "2026-02-20T21:42:36.236Z"
+}

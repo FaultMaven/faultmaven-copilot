@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "id": "query-1",
+      "case_id": "case-2",
+      "role": "user",
+      "content": "What is the status of the Datadog alert?",
+      "created_at": "2026-02-20T20:42:36.236Z"
+    },
+    {
+      "id": "query-2",
+      "case_id": "case-2",
+      "role": "assistant",
+      "content": "The alert indicates high CPU usage on the primary database cluster. I have isolated the nodes experiencing this issue.",
+      "created_at": "2026-02-20T20:44:16.236Z"
+    }
+  ]
+}

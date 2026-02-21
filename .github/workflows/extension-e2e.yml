@@ -1,0 +1,41 @@
+name: Extension E2E Tests
+on:
+  workflow_dispatch:                    # Manual trigger
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'manifest.json'
+      - 'e2e/**'
+  schedule:
+    - cron: '0 6 * * 1'                # Weekly Monday 6am UTC
+
+jobs:
+  extension-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install
+      
+      - run: pnpm build                        # Build the extension
+      
+      - run: pnpm exec playwright install chromium --with-deps
+      
+      - run: xvfb-run pnpm test:e2e
+      
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-traces
+          path: e2e/test-results/

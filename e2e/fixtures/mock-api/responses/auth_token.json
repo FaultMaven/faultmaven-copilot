@@ -1,0 +1,18 @@
+{
+  "access_token": "e2e-mock-access-token",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "e2e-mock-refresh-token",
+  "refresh_expires_in": 86400,
+  "user": {
+    "user_id": "e2e-user-1",
+    "username": "e2e_tester",
+    "email": "tester@faultmaven.ai",
+    "display_name": "E2E Tester",
+    "is_dev_user": true,
+    "roles": [
+      "user",
+      "admin"
+    ]
+  }
+}

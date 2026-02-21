@@ -1,0 +1,6 @@
+{
+  "session_id": "e2e-session-12345",
+  "session_resumed": false,
+  "client_id": "e2e-client-12345",
+  "message": "Session created successfully"
+}
