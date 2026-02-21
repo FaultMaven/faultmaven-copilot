@@ -222,6 +222,7 @@ export function useDataUpload({
         id: `upload-${Date.now()}`,
         question: `📎 Uploaded: ${uploadResponse.filename || fileToUpload.name} (${formatFileSize(uploadResponse.file_size || 0)})${dataTypeBadge}${compressionInfo}`,
         timestamp: uploadResponse.uploaded_at || new Date().toISOString(),
+        turn_number: uploadResponse.turn_number,
         optimistic: false
       };
 
@@ -229,6 +230,7 @@ export function useDataUpload({
         id: `response-${Date.now()}`,
         response: uploadResponse.agent_response || "Data uploaded and processed successfully.",
         timestamp: new Date().toISOString(),
+        turn_number: uploadResponse.turn_number,
         caseStatus: uploadResponse.case_status,
         optimistic: false
       };

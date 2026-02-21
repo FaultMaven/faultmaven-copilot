@@ -438,6 +438,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       id: `upload-${Date.now()}`,
       question: `📎 Uploaded: ${uploadResponse.filename || file.name} (${formatFileSize(uploadResponse.file_size || 0)})${dataTypeBadge}${compressionInfo}`,
       timestamp,
+      turn_number: uploadResponse.turn_number,
       optimistic: false
     };
 
@@ -445,6 +446,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       id: `response-${Date.now()}`,
       response: uploadResponse.agent_response || "Data uploaded and processed successfully.",
       timestamp: new Date().toISOString(),
+      turn_number: uploadResponse.turn_number,
       caseStatus: uploadResponse.case_status,
       optimistic: false
     };
