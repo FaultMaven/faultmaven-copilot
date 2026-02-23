@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChatWindow } from './ChatWindow';
-import { UnifiedInputBar } from './UnifiedInputBar';
+import { UnifiedInputBar, TurnPayload } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase, UploadedData } from '../../../lib/api';
 import { usePageContent } from '../hooks/usePageContent';
@@ -16,7 +16,7 @@ interface ChatInterfaceProps {
   submitting: boolean;
   sessionId: string | null;
   onQuerySubmit: (query: string) => Promise<void>;
-  onDataUpload: (data: string | File, type: 'text' | 'file' | 'page') => Promise<{ success: boolean; message: string }>;
+  onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
   failedOperations: PendingOperation[];
   onRetryFailedOperation: (opId: string) => void;
   onDismissFailedOperation: (opId: string) => void;
@@ -38,7 +38,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   submitting,
   sessionId,
   onQuerySubmit,
-  onDataUpload,
+  onTurnSubmit,
   failedOperations,
   onRetryFailedOperation,
   onDismissFailedOperation,
@@ -149,7 +149,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="border-t border-gray-200 bg-white p-4">
         <UnifiedInputBar
           onQuerySubmit={onQuerySubmit}
-          onDataUpload={onDataUpload}
+          onTurnSubmit={onTurnSubmit}
           onPageInject={handlePageInject}
           loading={loading}
           submitting={submitting}

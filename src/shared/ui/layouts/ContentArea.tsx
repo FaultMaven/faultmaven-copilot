@@ -18,6 +18,7 @@ import { createLogger } from '~/lib/utils/logger';
 const log = createLogger('ContentArea');
 import type { UserCase, InvestigationProgress, UploadedData } from '../../../lib/api';
 import type { OptimisticConversationItem } from '../../../lib/optimistic';
+import type { TurnPayload } from '../components/UnifiedInputBar';
 
 export interface ContentAreaProps {
   // Active view (chat-only, no KB tabs)
@@ -41,7 +42,7 @@ export interface ContentAreaProps {
 
   // Chat callbacks
   onQuerySubmit: (query: string) => Promise<void>;
-  onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
+  onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
   onDocumentView?: (documentId: string) => void;
   onGenerateReports?: () => void;
   onNewChat: () => void;
@@ -70,7 +71,7 @@ const ContentAreaComponent = ({
   caseEvidence,
   failedOperations,
   onQuerySubmit,
-  onDataUpload,
+  onTurnSubmit,
   onDocumentView,
   onGenerateReports,
   onNewChat,
@@ -130,7 +131,7 @@ const ContentAreaComponent = ({
             submitting={submitting}
             sessionId={sessionId}
             onQuerySubmit={onQuerySubmit}
-            onDataUpload={onDataUpload}
+            onTurnSubmit={onTurnSubmit}
             failedOperations={failedOperations}
             onRetryFailedOperation={onRetryFailedOperation}
             onDismissFailedOperation={onDismissFailedOperation}

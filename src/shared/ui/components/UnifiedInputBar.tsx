@@ -1,22 +1,34 @@
 /**
  * Unified Input Bar Component
  *
- * Smart input component that automatically detects input type:
- * - Short text (< 100 lines): Question/message mode
- * - Long text (≥ 100 lines): Data upload mode
- * - File upload: Data upload mode
- * - Page injection: Data upload mode
+ * Smart input component with a single Send button for all turn content:
+ * - Query text (typed in textarea)
+ * - Pasted data (staged via scratchpad)
+ * - File uploads
+ * - Captured page content
  *
- * Per enhanced-ui-design.md section 2.2: "Unified Input Bar (Automatic Processing)"
- * Phase 1, Week 2 implementation
+ * Any combination can be submitted together in a single turn.
+ * Query-only submissions use the optimistic UI path (onQuerySubmit).
+ * Submissions with attachments use the unified turn path (onTurnSubmit).
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { browser } from 'wxt/browser';
 import { createLogger } from '~/lib/utils/logger';
+import { PasteDataScratchpad } from './PasteDataScratchpad';
 
 const log = createLogger('UnifiedInputBar');
 import { INPUT_LIMITS } from '../layouts/constants';
+
+/**
+ * Payload for submissions with attachments (files, pasted data, page content).
+ * Sent via the unified /turns endpoint.
+ */
+export interface TurnPayload {
+  query?: string;
+  pastedContent?: string;
+  files?: File[];
+}
 
 export interface UnifiedInputBarProps {
   // State
@@ -26,7 +38,7 @@ export interface UnifiedInputBarProps {
 
   // Callbacks
   onQuerySubmit: (query: string) => void;
-  onDataUpload: (data: string | File, dataSource: "text" | "file" | "page") => Promise<{ success: boolean; message: string }>;
+  onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
   onPageInject?: () => Promise<string>;
 
   // Configuration
@@ -47,12 +59,48 @@ interface ValidationError {
   type: 'warning' | 'error';
 }
 
+/**
+ * Generate a contextual auto-query when the user submits data without typing a question.
+ */
+function generateAutoQuery(context: {
+  hasFile: boolean;
+  hasPage: boolean;
+  hasPasted: boolean;
+  selectedFile: File | null;
+  capturedPageUrl: string | null;
+}): string {
+  const parts: string[] = [];
+
+  if (context.hasFile && context.selectedFile) {
+    const ext = context.selectedFile.name.split('.').pop()?.toLowerCase() || '';
+    const typeHints: Record<string, string> = {
+      log: 'Analyze these logs for errors, warnings, and anomalies.',
+      json: 'Analyze this JSON data and identify any issues or notable patterns.',
+      csv: 'Analyze this CSV data and summarize key findings.',
+      txt: 'Analyze this text file and identify relevant information.',
+      md: 'Review this document and extract key technical details.',
+    };
+    parts.push(typeHints[ext] || 'Analyze this file and identify relevant information.');
+  }
+
+  if (context.hasPasted) {
+    parts.push('Analyze the pasted data for errors, patterns, and relevant details.');
+  }
+
+  if (context.hasPage && context.capturedPageUrl) {
+    parts.push(`Analyze the captured page content from ${context.capturedPageUrl}.`);
+  }
+
+  if (parts.length === 1) return parts[0];
+  return 'Analyze the attached data:\n' + parts.map((p, i) => `${i + 1}. ${p}`).join('\n');
+}
+
 export function UnifiedInputBar({
   disabled = false,
   loading = false,
   submitting = false,
   onQuerySubmit,
-  onDataUpload,
+  onTurnSubmit,
   onPageInject,
   maxLength = INPUT_LIMITS.MAX_QUERY_LENGTH,
   placeholder = "Ask a question or paste data...",
@@ -63,10 +111,12 @@ export function UnifiedInputBar({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [capturedPageUrl, setCapturedPageUrl] = useState<string | null>(null);
   const [capturedPageContent, setCapturedPageContent] = useState<string>("");
+  const [stagedPastedContent, setStagedPastedContent] = useState<string>("");
   const [validationError, setValidationError] = useState<ValidationError | null>(null);
   const [isCapturingPage, setIsCapturingPage] = useState(false);
   const [isUploadingData, setIsUploadingData] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showPasteScratchpad, setShowPasteScratchpad] = useState(false);
 
   // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -108,7 +158,7 @@ export function UnifiedInputBar({
 
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter (without Shift): Submit question
+    // Enter (without Shift): Submit in question mode
     if (e.key === 'Enter' && !e.shiftKey && inputMode === 'question') {
       e.preventDefault();
       handleSubmit();
@@ -118,71 +168,101 @@ export function UnifiedInputBar({
     // (textarea default behavior)
   };
 
-  // Handle submit button click
+  // Clear all staged state after successful submission
+  const clearAllStagedState = () => {
+    setInput("");
+    setSelectedFile(null);
+    setCapturedPageUrl(null);
+    setCapturedPageContent("");
+    setStagedPastedContent("");
+    setShowPasteScratchpad(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Unified submit handler
   const handleSubmit = async () => {
-    if (!input.trim() && !selectedFile && !capturedPageUrl) return;
+    const query = input.trim();
+    const hasQuery = query.length > 0;
+    const hasFile = selectedFile !== null;
+    const hasPage = capturedPageUrl !== null && capturedPageContent.length > 0;
+    const hasPasted = stagedPastedContent.length > 0;
+    const hasAnyAttachment = hasFile || hasPage || hasPasted;
+
+    // Nothing to submit
+    if (!hasQuery && !hasAnyAttachment) return;
     if (disabled || loading || submitting || isUploadingData) return;
 
-    if (inputMode === 'question' && !selectedFile && !capturedPageUrl) {
-      // Question mode: submit as query
-      const trimmed = input.trim();
-      if (trimmed) {
-        // Validate query length (backend limit: 200KB = 200,000 characters)
-        if (trimmed.length > maxLength) {
-          const sizeKB = (trimmed.length / 1000).toFixed(1);
-          const maxKB = (maxLength / 1000).toFixed(0);
-          setValidationError({
-            message: `Query too long (${sizeKB}KB). Maximum size is ${maxKB}KB.`,
-            type: 'error',
-          });
-          return;
-        }
-
-        setValidationError(null);
-        onQuerySubmit(trimmed);
-        setInput("");
+    // ROUTE 1: Query-only, question mode, no attachments → optimistic path
+    if (hasQuery && !hasAnyAttachment && inputMode === 'question') {
+      if (query.length > maxLength) {
+        const sizeKB = (query.length / 1000).toFixed(1);
+        const maxKB = (maxLength / 1000).toFixed(0);
+        setValidationError({
+          message: `Query too long (${sizeKB}KB). Maximum size is ${maxKB}KB.`,
+          type: 'error',
+        });
+        return;
       }
+
+      setValidationError(null);
+      onQuerySubmit(query);
+      setInput("");
+      return;
+    }
+
+    // ROUTE 2: Has attachments OR data mode → unified turn submission
+    setIsUploadingData(true);
+    setValidationError(null);
+
+    const payload: TurnPayload = {};
+
+    // Data mode (long text in textarea): treat textarea content as pasted data
+    if (inputMode === 'data' && hasQuery && !hasAnyAttachment) {
+      payload.pastedContent = query;
+      payload.query = generateAutoQuery({ hasFile: false, hasPage: false, hasPasted: true, selectedFile: null, capturedPageUrl: null });
     } else {
-      // Data mode: upload data (file, text, or page)
-      let dataSource: "text" | "file" | "page";
-      let data: string | File;
-
-      if (selectedFile) {
-        dataSource = 'file';
-        data = selectedFile;
-      } else if (capturedPageUrl && capturedPageContent) {
-        dataSource = 'page';
-        data = capturedPageContent; // Send actual HTML content, not URL
+      // Normal: textarea text is the query
+      if (hasQuery) {
+        payload.query = query;
       } else {
-        dataSource = 'text';
-        data = input;
+        // No user query — auto-generate one
+        payload.query = generateAutoQuery({ hasFile, hasPage, hasPasted, selectedFile, capturedPageUrl });
       }
 
-      setIsUploadingData(true);
-      try {
-        const result = await onDataUpload(data, dataSource);
+      // Assemble pasted content (staged data + page content)
+      if (hasPasted && hasPage) {
+        const pageSection = `--- Page Content (${capturedPageUrl}) ---\n${capturedPageContent}`;
+        payload.pastedContent = `${stagedPastedContent}\n\n${pageSection}`;
+      } else if (hasPasted) {
+        payload.pastedContent = stagedPastedContent;
+      } else if (hasPage) {
+        payload.pastedContent = `--- Page Content (${capturedPageUrl}) ---\n${capturedPageContent}`;
+      }
 
-        if (result.success) {
-          // Success - clear all inputs
-          setInput("");
-          setSelectedFile(null);
-          setCapturedPageUrl(null);
-          setCapturedPageContent("");
-        } else {
-          // Upload failed - show error to user
-          console.warn('[UnifiedInputBar] Upload failed:', result.message);
-        }
-      } catch (error) {
-        // Catch any unhandled errors from onDataUpload to ensure unlock
-        console.error('[UnifiedInputBar] Unexpected error during upload:', error);
-      } finally {
-        // CRITICAL: Always clear selected data and unlock input, even on error
-        // This ensures the input is never stuck in locked state
-        log.debug('Unlocking input after upload');
-        setIsUploadingData(false);
-        setSelectedFile(null);
-        setCapturedPageUrl(null);
-        setCapturedPageContent("");
+      if (hasFile) {
+        payload.files = [selectedFile!];
+      }
+    }
+
+    try {
+      const result = await onTurnSubmit(payload);
+      if (result.success) {
+        clearAllStagedState();
+      } else {
+        log.warn('Turn submission failed', { message: result.message });
+      }
+    } catch (error) {
+      log.error('Unexpected error during turn submission', error);
+    } finally {
+      setIsUploadingData(false);
+      // Always clear file/page state to prevent stuck UI
+      setSelectedFile(null);
+      setCapturedPageUrl(null);
+      setCapturedPageContent("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
     }
   };
@@ -235,7 +315,6 @@ export function UnifiedInputBar({
     // File is valid
     setValidationError(null);
     setSelectedFile(file);
-    setInputMode('data'); // Switch to data mode when file selected
   };
 
   // Handle file upload button click
@@ -243,7 +322,7 @@ export function UnifiedInputBar({
     fileInputRef.current?.click();
   };
 
-  // Handle page injection button click (Step 1: Analyze/Capture)
+  // Handle page injection button click
   const handlePageInjectClick = async () => {
     if (!onPageInject) return;
 
@@ -251,21 +330,17 @@ export function UnifiedInputBar({
     setValidationError(null);
 
     try {
-      // Call the page injection handler to capture content - it returns the HTML content
       const pageHtmlContent = await onPageInject();
 
       if (!pageHtmlContent || pageHtmlContent.trim().length === 0) {
         throw new Error('No page content captured');
       }
 
-      // Store the actual page content
       setCapturedPageContent(pageHtmlContent);
 
-      // Get current tab URL for display
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       if (tab.url) {
         setCapturedPageUrl(tab.url);
-        setInputMode('data'); // Switch to data mode
         log.debug('Page captured', { url: tab.url, bytes: pageHtmlContent.length });
       } else {
         throw new Error('Could not retrieve current page URL');
@@ -281,7 +356,7 @@ export function UnifiedInputBar({
     }
   };
 
-  // Remove selected file
+  // Remove handlers
   const handleRemoveFile = () => {
     setSelectedFile(null);
     if (fileInputRef.current) {
@@ -289,10 +364,13 @@ export function UnifiedInputBar({
     }
   };
 
-  // Remove captured page
   const handleRemovePage = () => {
     setCapturedPageUrl(null);
     setCapturedPageContent("");
+  };
+
+  const handleRemovePastedContent = () => {
+    setStagedPastedContent("");
   };
 
   // Drag & drop handlers
@@ -307,7 +385,6 @@ export function UnifiedInputBar({
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Only set dragging to false if leaving the drop zone entirely
     if (e.currentTarget === dropZoneRef.current) {
       setIsDragging(false);
     }
@@ -316,7 +393,6 @@ export function UnifiedInputBar({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Show copy cursor
     e.dataTransfer.dropEffect = 'copy';
   };
 
@@ -325,25 +401,20 @@ export function UnifiedInputBar({
     e.stopPropagation();
     setIsDragging(false);
 
-    if (isInputDisabled) return;
+    if (isProcessing) return;
 
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
-    // Only handle first file
     const file = files[0];
-
-    // Validate file
     const error = validateFile(file);
     if (error) {
       setValidationError(error);
       return;
     }
 
-    // File is valid
     setValidationError(null);
     setSelectedFile(file);
-    setInputMode('data');
     log.debug('File dropped', { fileName: file.name });
   };
 
@@ -353,13 +424,11 @@ export function UnifiedInputBar({
     return Math.max(INPUT_LIMITS.TEXTAREA_MIN_ROWS, Math.min(INPUT_LIMITS.TEXTAREA_MAX_ROWS, lineCount));
   };
 
-  // Lock input when file or page is selected (data mode)
-  const isDataSelected = selectedFile !== null || capturedPageUrl !== null;
-  const isInputDisabled = disabled || loading || submitting || isCapturingPage || isUploadingData || isDataSelected;
-
-  // Can submit if: has content/data AND not in loading state (data selection doesn't block submit)
+  // Derived state
+  const hasAnyAttachment = selectedFile !== null || capturedPageUrl !== null || stagedPastedContent.length > 0;
   const isProcessing = disabled || loading || submitting || isCapturingPage || isUploadingData;
-  const canSubmit = (input.trim() || selectedFile || capturedPageUrl) && !isProcessing;
+  const isInputDisabled = disabled || loading || submitting || isCapturingPage || isUploadingData;
+  const canSubmit = (input.trim() || hasAnyAttachment) && !isProcessing;
 
   return (
     <div
@@ -406,8 +475,8 @@ export function UnifiedInputBar({
         </div>
       )}
 
-      {/* Mode indicator (only show in data mode) */}
-      {inputMode === 'data' && !selectedFile && !capturedPageUrl && !validationError && (
+      {/* Mode indicator (only show in data mode when textarea has long text, no other attachments) */}
+      {inputMode === 'data' && !selectedFile && !capturedPageUrl && !stagedPastedContent && !validationError && (
         <div
           className="flex items-center gap-2 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded px-2 py-1"
           role="status"
@@ -416,7 +485,7 @@ export function UnifiedInputBar({
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span>Large text detected - will be processed as data upload</span>
+          <span>Large text detected - will be processed as data</span>
         </div>
       )}
 
@@ -446,6 +515,46 @@ export function UnifiedInputBar({
         </div>
       )}
 
+      {/* Pasted data indicator */}
+      {stagedPastedContent && !showPasteScratchpad && (
+        <div
+          className="flex items-center justify-between gap-2 text-xs text-purple-600 bg-purple-50 border border-purple-200 rounded px-2 py-1"
+          role="status"
+          aria-label={`Pasted data: ${stagedPastedContent.split('\n').length} lines`}
+        >
+          <div className="flex items-center gap-2">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+            <span>
+              Pasted data ({stagedPastedContent.split('\n').length} lines, {stagedPastedContent.length.toLocaleString()} chars)
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowPasteScratchpad(true)}
+              className="text-purple-600 hover:text-purple-800"
+              title="Edit pasted data"
+              aria-label="Edit pasted data"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+            <button
+              onClick={handleRemovePastedContent}
+              className="text-purple-600 hover:text-purple-800"
+              title="Remove pasted data"
+              aria-label="Remove pasted data"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Captured Page indicator */}
       {capturedPageUrl && (
         <div
@@ -472,6 +581,16 @@ export function UnifiedInputBar({
         </div>
       )}
 
+      {/* Paste Data Scratchpad (staging area) */}
+      {showPasteScratchpad && (
+        <PasteDataScratchpad
+          initialContent={stagedPastedContent}
+          onStage={(content) => setStagedPastedContent(content)}
+          onClear={() => setStagedPastedContent("")}
+          onClose={() => setShowPasteScratchpad(false)}
+        />
+      )}
+
       {/* Input area */}
       <div className="flex items-end gap-2 relative">
         {/* Textarea */}
@@ -483,16 +602,16 @@ export function UnifiedInputBar({
             onKeyDown={handleKeyDown}
             placeholder={
               submitting || isCapturingPage || isUploadingData
-                ? (isCapturingPage ? "Capturing page..." : isUploadingData ? "Uploading data..." : "Processing...")
-                : isDataSelected
-                  ? "Click Send to upload selected data, or remove to type a question"
+                ? (isCapturingPage ? "Capturing page..." : isUploadingData ? "Sending..." : "Processing...")
+                : hasAnyAttachment
+                  ? "Type a question about the attached data, or just hit Send..."
                   : placeholder
             }
             rows={calculateRows()}
             maxLength={maxLength}
             disabled={isInputDisabled}
             className="block w-full p-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-            aria-label={inputMode === 'question' ? 'Type your question' : 'Paste data for upload'}
+            aria-label="Type your message"
             aria-describedby="input-help-text"
           />
 
@@ -500,13 +619,11 @@ export function UnifiedInputBar({
           {(submitting || isCapturingPage || isUploadingData) && (
             <div className="absolute inset-0 bg-gradient-to-br from-blue-50/95 to-white/95 backdrop-blur-sm flex items-center justify-center rounded border-2 border-blue-200" aria-live="polite" role="status">
               <div className="flex items-center gap-2 px-3 py-1.5">
-                {/* Compact animated spinner with pulsing effect */}
                 <div className="relative">
                   <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"></circle>
                     <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  {/* Subtle pulsing ring effect */}
                   <div className="absolute inset-0 animate-ping opacity-75">
                     <svg className="h-4 w-4 text-blue-400 opacity-20" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"></circle>
@@ -514,14 +631,14 @@ export function UnifiedInputBar({
                   </div>
                 </div>
                 <span className="text-xs font-medium text-blue-700">
-                  {isCapturingPage ? 'Capturing page...' : isUploadingData ? 'Uploading data...' : 'Processing...'}
+                  {isCapturingPage ? 'Capturing page...' : isUploadingData ? 'Sending...' : 'Processing...'}
                 </span>
               </div>
             </div>
           )}
 
           {/* Character count (show when approaching limit) */}
-          {input.length > maxLength * 0.8 && !submitting && !isCapturingPage && !isDataSelected && (
+          {input.length > maxLength * 0.8 && !submitting && !isCapturingPage && (
             <div className="absolute bottom-1 right-1 text-xs text-gray-400" aria-live="polite">
               {input.length}/{maxLength}
             </div>
@@ -534,7 +651,7 @@ export function UnifiedInputBar({
           <button
             type="button"
             onClick={handleFileButtonClick}
-            disabled={isInputDisabled}
+            disabled={isProcessing}
             className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Upload file"
             title="Upload file (.txt, .log, .json, .csv, .md up to 10 MB)"
@@ -544,12 +661,30 @@ export function UnifiedInputBar({
             </svg>
           </button>
 
+          {/* Paste data button — always visible */}
+          <button
+            type="button"
+            onClick={() => setShowPasteScratchpad(!showPasteScratchpad)}
+            disabled={isProcessing}
+            className={`p-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              showPasteScratchpad || stagedPastedContent
+                ? 'text-purple-600 bg-purple-100 hover:bg-purple-200'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+            }`}
+            aria-label="Toggle paste data scratchpad"
+            title="Paste data (logs, configs, error traces)"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+          </button>
+
           {/* Page injection button */}
           {onPageInject && (
             <button
               type="button"
               onClick={handlePageInjectClick}
-              disabled={isInputDisabled}
+              disabled={isProcessing}
               className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Inject current page content"
               title="Capture and analyze current page"
@@ -560,15 +695,15 @@ export function UnifiedInputBar({
             </button>
           )}
 
-          {/* Submit button */}
+          {/* Submit button — single Send for all content */}
           <button
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-            aria-label={inputMode === 'question' ? 'Send question' : 'Upload data'}
+            aria-label="Send message"
           >
-            {submitting ? 'Sending...' : inputMode === 'question' ? 'Send' : 'Upload'}
+            {submitting || isUploadingData ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>
@@ -585,10 +720,12 @@ export function UnifiedInputBar({
 
       {/* Help text */}
       <div id="input-help-text" className="text-xs text-gray-500">
-        {inputMode === 'question' ? (
-          <span>Press Enter to send • Shift+Enter for new line</span>
+        {hasAnyAttachment ? (
+          <span>Data attached - type a question or hit Send to analyze</span>
+        ) : inputMode === 'question' ? (
+          <span>Press Enter to send &middot; Shift+Enter for new line</span>
         ) : (
-          <span>Large text will be uploaded as data for analysis</span>
+          <span>Large text will be processed as data for analysis</span>
         )}
       </div>
     </div>

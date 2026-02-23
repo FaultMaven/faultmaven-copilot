@@ -2,10 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createSession,
   heartbeatSession,
-  submitQueryToCase,
+  submitTurn,
   ResponseType,
-  AgentResponse,
-  UploadedData
+  TurnResponse,
 } from '../../lib/api';
 
 // Mock the config module
@@ -123,9 +122,8 @@ describe('API Functions', () => {
 
   // Removed legacy processQuery tests; case-centric query flow is tested via UI integration.
 
-  // REMOVED: Legacy uploadData() tests
-  // Function removed in favor of uploadDataToCase() (case-centric v2.0 architecture)
-  // Tests for uploadDataToCase() should be added if needed for integration testing
+  // REMOVED: Legacy uploadData() and uploadDataToCase() tests
+  // Both replaced by unified submitTurn() endpoint (v4.1 unified ingestion pipeline)
 
   describe('heartbeatSession', () => {
     it('sends heartbeat successfully', async () => {
@@ -158,48 +156,37 @@ describe('API Functions', () => {
     });
   });
 
-  describe('submitQueryToCase', () => {
-    it('detects backend contract violation - OpenAI format', async () => {
-      const openAIResponse = {
-        choices: [{ message: { content: 'Hello from OpenAI format' } }],
-        model: 'gpt-3.5-turbo'
+  describe('submitTurn', () => {
+    it('accepts valid TurnResponse format', async () => {
+      const turnResponse = {
+        agent_response: 'Hello from TurnResponse format',
+        turn_number: 1,
+        milestones_completed: [],
+        case_status: 'inquiry',
+        progress_made: false,
+        is_stuck: false,
+        attachments_processed: []
       };
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        status: 201,
+        status: 200,
         headers: new Map(),
-        json: () => Promise.resolve(openAIResponse)
+        json: () => Promise.resolve(turnResponse)
       });
 
-      await expect(submitQueryToCase('case-123', {
-        session_id: 'session-123',
-        query: 'test query',
-        priority: 'normal'
-      })).rejects.toThrow('Backend API contract violation: AgentResponse missing required fields');
+      const result = await submitTurn('case-123', {
+        query: 'test query'
+      });
+
+      expect(result.agent_response).toBe('Hello from TurnResponse format');
+      expect(result.turn_number).toBe(1);
     });
 
-    it('accepts valid AgentResponse format', async () => {
-      const agentResponse = {
-        response_type: 'ANSWER',
-        content: 'Hello from AgentResponse format',
-        session_id: 'session-123'
-      };
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 201,
-        headers: new Map(),
-        json: () => Promise.resolve(agentResponse)
-      });
-
-      const result = await submitQueryToCase('case-123', {
-        session_id: 'session-123',
-        query: 'test query',
-        priority: 'normal'
-      });
-
-      expect(result).toEqual(agentResponse);
+    it('rejects empty turn', async () => {
+      await expect(submitTurn('case-123', {})).rejects.toThrow(
+        'Turn must include at least one of: query, files, or pastedContent'
+      );
     });
   });
 

@@ -13,19 +13,13 @@ import {
 import {
   createCase,
   getCaseConversation,
-  submitQueryToCase,
+  submitTurn,
   updateCaseTitle,
   getUserCases,
-  QueryRequest,
-  AgentResponse,
-  UploadedData,
+  TurnRequest,
+  TurnResponse,
+  AttachmentResult,
   InvestigationProgress,
-  ResponseType,
-  InvestigationMode,
-  EvidenceForm,
-  EvidenceType,
-  UserIntent,
-  CompletenessLevel,
   formatFileSize
 } from '../../api';
 import { isOptimisticId, isRealId } from '../../utils/data-integrity';
@@ -50,7 +44,7 @@ export interface CasesSlice {
   loading: boolean;
   submitting: boolean;
   investigationProgress: Record<string, InvestigationProgress>;
-  caseEvidence: Record<string, UploadedData[]>;
+  caseEvidence: Record<string, AttachmentResult[]>;
   loadedConversationIds: Set<string>; // Track which cases have been fetched (even if empty)
 
   // Actions
@@ -60,7 +54,7 @@ export interface CasesSlice {
   createOptimisticCase: (title: string | null) => Promise<void>;
   submitQuery: (query: string) => Promise<void>;
   handleOptimisticTitleUpdate: (caseId: string, newTitle: string) => Promise<void>;
-  handleDataUpload: (caseId: string, uploadResponse: UploadedData, file: File) => void;
+  handleDataUpload: (caseId: string, turnResponse: TurnResponse) => void;
   togglePinCase: (caseId: string) => void;
   deleteCaseLocally: (caseId: string) => void;
 
@@ -425,29 +419,29 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
     }
   },
 
-  handleDataUpload: (caseId: string, uploadResponse: UploadedData, file: File) => {
-    const timestamp = uploadResponse.uploaded_at || new Date().toISOString();
+  handleDataUpload: (caseId: string, turnResponse: TurnResponse) => {
+    const timestamp = new Date().toISOString();
 
-    // Generate messages
-    const dataTypeBadge = uploadResponse.data_type ? ` [${uploadResponse.data_type}]` : '';
-    const compressionInfo = uploadResponse.classification?.compression_ratio
-      ? ` (${uploadResponse.classification.compression_ratio.toFixed(1)}x compressed)`
-      : '';
+    // Generate upload label from attachments processed
+    const attachmentsSummary = turnResponse.attachments_processed
+      .map(a => `${a.filename} (${formatFileSize(a.file_size)}) [${a.data_type}]`)
+      .join(', ');
+    const uploadLabel = attachmentsSummary || 'data';
 
     const userMessage: OptimisticConversationItem = {
       id: `upload-${Date.now()}`,
-      question: `📎 Uploaded: ${uploadResponse.filename || file.name} (${formatFileSize(uploadResponse.file_size || 0)})${dataTypeBadge}${compressionInfo}`,
+      question: `Uploaded: ${uploadLabel}`,
       timestamp,
-      turn_number: uploadResponse.turn_number,
+      turn_number: turnResponse.turn_number,
       optimistic: false
     };
 
     const aiMessage: OptimisticConversationItem = {
       id: `response-${Date.now()}`,
-      response: uploadResponse.agent_response || "Data uploaded and processed successfully.",
-      timestamp: new Date().toISOString(),
-      turn_number: uploadResponse.turn_number,
-      caseStatus: uploadResponse.case_status,
+      response: turnResponse.agent_response || "Data uploaded and processed successfully.",
+      timestamp,
+      turn_number: turnResponse.turn_number,
+      caseStatus: turnResponse.case_status,
       optimistic: false
     };
 
@@ -458,7 +452,10 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       },
       caseEvidence: {
         ...state.caseEvidence,
-        [caseId]: [...(state.caseEvidence[caseId] || []), uploadResponse]
+        [caseId]: [
+          ...(state.caseEvidence[caseId] || []),
+          ...turnResponse.attachments_processed
+        ]
       }
     }));
   },

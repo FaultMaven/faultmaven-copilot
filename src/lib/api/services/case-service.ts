@@ -5,18 +5,12 @@ import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
 import { HttpError, createHttpErrorFromResponse } from "../../errors/http-error";
 import {
-  AgentResponse,
   APIError,
-  CaseQueryRequest,
   CaseUpdateRequest,
   CreateCaseRequest,
-  InvestigationMode,
-  QueryRequest,
-  ResponseType,
-  SourceMetadata,
   TitleResponse,
-  UploadedData,
-  IntentType
+  TurnRequest,
+  TurnResponse,
 } from "../types";
 
 const log = createLogger('CaseService');
@@ -375,55 +369,56 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
 }
 
 /**
- * Submit a query to a case investigation.
+ * Submit a turn to a case investigation.
  *
- * Uses intent-based routing for reliable backend handling.
- * If no intent is provided, defaults to 'conversation' type.
+ * Unified endpoint that replaces both /queries and /data.
+ * A turn consists of an optional query and/or optional attachments.
+ * Attachments are preprocessed through Tier 0+1 before the LLM sees them.
  *
  * @param caseId - Target case ID
- * @param request - Query request with message, optional intent, and context
- * @returns Agent response with content, turn number, and metadata
- * @throws {Error} If query field is missing
- * @throws {HttpError} For HTTP errors (validation, auth, etc.)
+ * @param request - Turn request with optional query, files, pasted content, and intent
+ * @returns TurnResponse with agent response, turn number, and attachment results
  *
  * @example
  * ```typescript
- * // Regular conversation
- * const response = await submitQueryToCase('case-123', {
- *   session_id: 'sess-456',
+ * // Query-only turn
+ * const response = await submitTurn('case-123', {
  *   query: 'What could cause this error?'
  * });
  *
- * // Status transition with intent
- * const response = await submitQueryToCase('case-123', {
- *   session_id: 'sess-456',
- *   query: 'Resolve this case',
- *   intent: {
- *     type: IntentType.StatusTransition,
- *     from_status: 'investigating',
- *     to_status: 'resolved',
- *     user_confirmed: true
- *   }
+ * // File upload with query
+ * const response = await submitTurn('case-123', {
+ *   query: 'Analyze these logs',
+ *   files: [logFile]
+ * });
+ *
+ * // Pasted data without query (implicit query generated)
+ * const response = await submitTurn('case-123', {
+ *   pastedContent: '2026-02-22 ERROR: Connection refused...'
  * });
  * ```
  */
-export async function submitQueryToCase(caseId: string, request: QueryRequest): Promise<AgentResponse> {
-  if (!request?.query || !request.query.trim()) {
-    throw new Error('Missing required field: query');
+export async function submitTurn(caseId: string, request: TurnRequest): Promise<TurnResponse> {
+  const hasQuery = request.query && request.query.trim();
+  const hasFiles = request.files && request.files.length > 0;
+  const hasPasted = request.pastedContent && request.pastedContent.trim();
+
+  if (!hasQuery && !hasFiles && !hasPasted) {
+    throw new Error('Turn must include at least one of: query, files, or pastedContent');
   }
 
-  // Build intent-based query request
-  const body: CaseQueryRequest = {
-    message: request.query.trim(),
-    intent: request.intent || {
-      type: IntentType.Conversation  // Default to normal conversation
-    },
-    attachments: request.context?.uploaded_data_ids?.map(id => ({ file_id: id })) || undefined
-  };
+  const form = new FormData();
+  if (hasQuery) form.append('query', request.query!.trim());
+  if (hasPasted) form.append('pasted_content', request.pastedContent!);
+  if (request.intentType) form.append('intent_type', request.intentType);
+  if (request.intentData) form.append('intent_data', JSON.stringify(request.intentData));
+  for (const file of request.files || []) {
+    form.append('files', file);
+  }
 
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/queries`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/turns`, {
     method: 'POST',
-    body: prepareBody(body),
+    body: form,
     credentials: 'include'
   });
 
@@ -446,160 +441,24 @@ export async function submitQueryToCase(caseId: string, request: QueryRequest): 
   // Handle async 202 Accepted with polling
   if (response.status === 202) {
     const location = response.headers.get('Location');
-    if (!location) throw new Error('Missing Location header for async query');
+    if (!location) throw new Error('Missing Location header for async turn');
     const jobUrl = new URL(location, await getApiUrl()).toString();
     let delay = POLL_INITIAL_MS;
     let elapsed = 0;
-    for (let i = 0; elapsed <= POLL_MAX_TOTAL_MS; i++) {
+    while (elapsed <= POLL_MAX_TOTAL_MS) {
       const res = await authenticatedFetchWithRetry(jobUrl, { method: 'GET', credentials: 'include' });
       if (res.status >= 500) {
         throw new Error(`Server error while polling job (${res.status})`);
       }
-      if (res.status === 303) {
-        const finalLoc = res.headers.get('Location');
-        if (!finalLoc) throw new Error('Missing final resource Location');
-        const finalUrl = new URL(finalLoc, await getApiUrl()).toString();
-        const finalRes = await authenticatedFetchWithRetry(finalUrl, { method: 'GET', credentials: 'include' });
-        if (finalRes.status >= 500) {
-          throw new Error(`Server error fetching final resource (${finalRes.status})`);
-        }
-        if (!finalRes.ok) throw new Error(`Final resource fetch failed: ${finalRes.status}`);
-        const finalJson = await finalRes.json();
-        if (finalJson && finalJson.content && finalJson.response_type) return finalJson as AgentResponse;
-        if (finalJson?.response?.content && finalJson?.response?.response_type) return finalJson.response as AgentResponse;
-        throw new Error('Unexpected final resource payload');
-      }
       const json = await res.json().catch(() => ({}));
-      if (json && json.content && json.response_type) return json as AgentResponse;
-      if (json?.status === 'completed') {
-        if (json?.response?.content && json?.response?.response_type) return json.response as AgentResponse;
-        throw new Error('Completed without AgentResponse');
-      }
-      if (json?.status === 'failed') throw new Error(json?.error?.message || 'Query failed');
+      if (isTurnResponse(json)) return json;
+      if (json?.status === 'completed' && json?.result && isTurnResponse(json.result)) return json.result;
+      if (json?.status === 'failed') throw new Error(json?.error?.message || 'Turn processing failed');
       await new Promise(r => setTimeout(r, delay));
       elapsed += delay;
       delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
     }
-    throw new Error(`Async query polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
-  }
-
-  // Handle 201 Created
-  if (response.status === 201) {
-    try {
-      const immediate = await response.clone().json().catch(() => null);
-      if (immediate) {
-        if (immediate && immediate.content && immediate.response_type) return immediate as AgentResponse;
-        if (immediate?.response?.content && immediate?.response?.response_type) return immediate.response as AgentResponse;
-      }
-    } catch { }
-
-    const createdLoc = response.headers.get('Location');
-    if (createdLoc) {
-      const createdUrl = new URL(createdLoc, await getApiUrl()).toString();
-      let delay = POLL_INITIAL_MS;
-      let elapsed = 0;
-      for (let i = 0; elapsed <= POLL_MAX_TOTAL_MS; i++) {
-        const createdRes = await authenticatedFetchWithRetry(createdUrl, { method: 'GET', credentials: 'include' });
-        if (createdRes.status >= 500) {
-          throw new Error(`Server error on created resource (${createdRes.status})`);
-        }
-        if (createdRes.status === 303) {
-          const finalLoc = createdRes.headers.get('Location');
-          if (!finalLoc) throw new Error('Missing final resource Location');
-          const finalUrl = new URL(finalLoc, await getApiUrl()).toString();
-          const finalRes = await authenticatedFetchWithRetry(finalUrl, { method: 'GET', credentials: 'include' });
-          if (finalRes.status >= 500) {
-            throw new Error(`Server error fetching final resource (${finalRes.status})`);
-          }
-          if (!finalRes.ok) throw new Error(`Final resource fetch failed: ${finalRes.status}`);
-          const finalJson = await finalRes.json().catch(() => ({}));
-          if (finalJson && finalJson.content && finalJson.response_type) return finalJson as AgentResponse;
-          if (finalJson?.response?.content && finalJson?.response?.response_type) return finalJson.response as AgentResponse;
-          throw new Error('Unexpected final resource payload');
-        }
-        if (createdRes.status === 200) {
-          const createdJson = await createdRes.json().catch(() => ({}));
-          if (createdJson && createdJson.content && createdJson.response_type) return createdJson as AgentResponse;
-          if (createdJson?.response?.content && createdJson?.response?.response_type) return createdJson.response as AgentResponse;
-          if (createdJson?.status && createdJson?.status !== 'failed') {
-            await new Promise(r => setTimeout(r, delay));
-            elapsed += delay;
-            delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
-            continue;
-          }
-          if (createdJson?.status === 'failed') throw new Error(createdJson?.error?.message || 'Query failed');
-        }
-        await new Promise(r => setTimeout(r, delay));
-        elapsed += delay;
-        delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
-      }
-      throw new Error(`Created query polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
-    }
-  }
-
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to submit query to case: ${response.status}`);
-  }
-  const json = await response.json();
-
-  if (json.agent_response && json.turn_number !== undefined) {
-    const turnResponse = json;
-    return {
-      content: turnResponse.agent_response,
-      response_type: ResponseType.ANSWER,
-      session_id: request.session_id,
-      case_id: caseId,
-      likelihood: turnResponse.progress_made ? 0.8 : 0.5,
-      sources: [],
-      evidence_requests: [],
-      investigation_mode: InvestigationMode.ACTIVE_INCIDENT,
-      case_status: turnResponse.case_status as any,
-      metadata: {
-        turn_number: turnResponse.turn_number,
-        milestones_completed: turnResponse.milestones_completed,
-        is_stuck: turnResponse.is_stuck
-      }
-    } as AgentResponse;
-  }
-
-  if (!json.content || !json.response_type || !json.session_id) {
-    throw new Error('Backend API contract violation: AgentResponse missing required fields (content, response_type, session_id)');
-  }
-
-  return json as AgentResponse;
-}
-
-export async function uploadDataToCase(
-  caseId: string,
-  sessionId: string,
-  file: File,
-  sourceMetadata?: SourceMetadata,
-  description?: string
-): Promise<UploadedData> {
-  const form = new FormData();
-  form.append('session_id', sessionId);
-  form.append('file', file);
-  if (description) form.append('description', description);
-  if (sourceMetadata) form.append('source_metadata', JSON.stringify(sourceMetadata));
-
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/data`, {
-    method: 'POST',
-    body: form,
-    credentials: 'include'
-  });
-
-  if (response.status === 202) {
-    const jobLocation = response.headers.get('Location');
-    if (!jobLocation) throw new Error('Missing job Location header');
-    for (let i = 0; i < 20; i++) {
-      const jobRes = await authenticatedFetchWithRetry(jobLocation, { method: 'GET', credentials: 'include' });
-      const jobJson = await jobRes.json();
-      if (jobJson.status === 'completed' && jobJson.result) return jobJson.result;
-      if (jobJson.status === 'failed') throw new Error(jobJson.error?.message || 'Upload job failed');
-      await new Promise(r => setTimeout(r, 1500));
-    }
-    throw new Error('Upload job polling timed out');
+    throw new Error(`Async turn polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
   }
 
   if (!response.ok) {
@@ -607,9 +466,14 @@ export async function uploadDataToCase(
     if (response.status === 404) {
       throw new Error('Case not found: Please refresh and try again');
     }
-    throw new Error(errorData.detail || `Failed to upload data to case: ${response.status}`);
+    throw new Error(errorData.detail || `Failed to submit turn: ${response.status}`);
   }
+
   return response.json();
+}
+
+function isTurnResponse(obj: any): obj is TurnResponse {
+  return obj && typeof obj.agent_response === 'string' && typeof obj.turn_number === 'number';
 }
 
 export async function generateCaseTitle(

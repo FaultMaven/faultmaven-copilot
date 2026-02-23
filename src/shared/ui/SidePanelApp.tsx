@@ -262,8 +262,8 @@ function SidePanelAppContent() {
     showConflictResolution
   });
 
-  // --- Data Upload ---
-  const { handleDataUpload, uploading: isUploading } = useDataUpload({
+  // --- Data Upload (unified turn submission with query + attachments) ---
+  const { handleTurnSubmit, uploading: isUploading } = useDataUpload({
     sessionId,
     activeCaseId: activeCaseId || undefined,
     setActiveCaseId,
@@ -599,7 +599,7 @@ function SidePanelAppContent() {
           caseEvidence={caseEvidence}
           failedOperations={getFailedOperationsForUser()}
           onQuerySubmit={handleQuerySubmit}
-          onDataUpload={handleDataUpload}
+          onTurnSubmit={handleTurnSubmit}
           onDocumentView={handleDocumentView}
           onGenerateReports={() => setShowReportDialog(true)}
           onNewChat={handleNewChatFromNav}

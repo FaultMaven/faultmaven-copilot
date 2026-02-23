@@ -52,7 +52,7 @@ const config: Config = {
   // Input Limits Configuration (build-time only, rarely changed)
   inputLimits: {
     dataModeLinesThreshold: parseInt(import.meta.env.VITE_DATA_MODE_LINES || '100', 10),
-    // Match backend QueryRequest.query max_length=200000 (200KB)
+    // Match backend query max_length=200000 (200KB)
     maxQueryLength: parseInt(import.meta.env.VITE_MAX_QUERY_LENGTH || '200000', 10),
     textareaMinRows: 2,
     textareaMaxRows: 8,

@@ -130,26 +130,45 @@ export interface QueryIntent {
   evidence_id?: string;
 }
 
+// ============================================================
+// Unified Turn System (POST /cases/{id}/turns)
+// Replaces /queries and /data endpoints
+// ============================================================
+
 /**
- * Query request with structured intent.
- * All queries must include intent for proper backend routing.
+ * Request payload for unified turn submission.
+ * At least one of query, files, or pastedContent must be provided.
  */
-export interface CaseQueryRequest {
-  /** Human-readable message for conversation history */
-  message: string;
+export interface TurnRequest {
+  query?: string;
+  files?: File[];
+  pastedContent?: string;
+  intentType?: string;
+  intentData?: Record<string, unknown>;
+}
 
-  /** Machine-readable intent for programmatic routing */
-  intent: QueryIntent;
+/**
+ * Result of preprocessing a single attachment.
+ */
+export interface AttachmentResult {
+  evidence_id: string;
+  filename: string;
+  data_type: string;
+  file_size: number;
+  processing_status: string;
+}
 
-  /** Optional file attachments */
-  attachments?: Array<{
-    file_id: string;
-    filename?: string;
-    data_type?: string;
-    size?: number;
-    summary?: string;
-    s3_uri?: string;
-  }>;
+/**
+ * Response from POST /cases/{id}/turns.
+ */
+export interface TurnResponse {
+  agent_response: string;
+  turn_number: number;
+  milestones_completed: string[];
+  case_status: CaseStatus;
+  progress_made: boolean;
+  is_stuck: boolean;
+  attachments_processed: AttachmentResult[];
 }
 
 export interface Case {
@@ -473,13 +492,6 @@ export interface AgentResponse {
   response_metadata?: Record<string, any>;
 }
 
-export interface SourceMetadata {
-  source_type: "file_upload" | "text_paste" | "page_capture";
-  source_url?: string;
-  captured_at?: string;
-  user_description?: string;
-}
-
 export interface UploadedData {
   data_id: string;
   case_id: string;
@@ -502,23 +514,6 @@ export interface UploadedData {
   schema_version?: string;
 }
 
-export interface QueryRequest {
-  session_id: string;
-  query: string;
-  priority?: "low" | "normal" | "high" | "critical";
-
-  /** Structured intent for programmatic routing (optional - defaults to 'conversation') */
-  intent?: QueryIntent;
-
-  context?: {
-    uploaded_data_ids?: string[];
-    page_url?: string;
-    browser_info?: string;
-    page_content?: string;
-    text_data?: string;
-    [key: string]: any;
-  };
-}
 
 // Reports
 export type ReportType = "incident_report" | "runbook" | "post_mortem";

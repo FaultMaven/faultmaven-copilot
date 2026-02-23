@@ -475,19 +475,26 @@ describe('Authentication API', () => {
       );
     });
 
-    it('uploadDataToCase includes auth headers', async () => {
+    it('submitTurn includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        status: 201,
-        json: () => Promise.resolve({ data_id: 'data-123' })
+        status: 200,
+        json: () => Promise.resolve({
+          agent_response: 'Processed',
+          turn_number: 1,
+          milestones_completed: [],
+          case_status: 'inquiry',
+          progress_made: false,
+          is_stuck: false,
+          attachments_processed: []
+        })
       });
 
-      const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
-      const { uploadDataToCase } = await import('../../lib/api');
-      await uploadDataToCase('case-123', 'session-123', mockFile);
+      const { submitTurn } = await import('../../lib/api');
+      await submitTurn('case-123', { query: 'test' });
 
       expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/cases/case-123/data',
+        'https://api.faultmaven.ai/api/v1/cases/case-123/turns',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -522,8 +529,8 @@ describe('Authentication API', () => {
       );
     });
 
-    // REMOVED: Legacy uploadData() test
-    // Function removed in favor of uploadDataToCase() (already tested above)
+    // REMOVED: Legacy uploadData() and uploadDataToCase() tests
+    // Both replaced by unified submitTurn() endpoint
 
     it('getSessionData includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({

@@ -24,9 +24,9 @@ describe('Case Service', () => {
   });
 
   // Helper to create a mock Response
-  const mockResponse = (data: any, ok = true) => ({
+  const mockResponse = (data: any, ok = true, status?: number) => ({
     ok,
-    status: ok ? 200 : 500,
+    status: status ?? (ok ? 200 : 500),
     json: vi.fn().mockResolvedValue(data),
     headers: { get: vi.fn() },
     clone: () => ({ json: vi.fn().mockResolvedValue(data) })
@@ -87,33 +87,130 @@ describe('Case Service', () => {
     });
   });
 
-  describe('submitQueryToCase', () => {
-    it('should submit query to case', async () => {
-      const responseData = { 
-        content: 'AI Response',
-        response_type: 'ANSWER',
-        session_id: 'sess-1'
+  describe('submitTurn', () => {
+    it('should submit a query-only turn', async () => {
+      const turnResponseData = {
+        agent_response: 'AI Response',
+        turn_number: 1,
+        milestones_completed: [],
+        case_status: 'inquiry',
+        progress_made: false,
+        is_stuck: false,
+        attachments_processed: []
       };
-      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(turnResponseData));
 
       const caseId = 'case-123';
-      const queryRequest = { query: 'test', session_id: 'sess-1' };
+      const result = await caseService.submitTurn(caseId, { query: 'test query' });
 
-      const result = await caseService.submitQueryToCase(caseId, queryRequest);
-
-      // prepareBody converts undefined → null for backend compatibility
       expect(client.authenticatedFetchWithRetry).toHaveBeenCalledWith(
-        `https://api.test/api/v1/cases/${caseId}/queries`,
+        `https://api.test/api/v1/cases/${caseId}/turns`,
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({
-            message: queryRequest.query,
-            intent: { type: 'conversation' },  // Default intent added
-            attachments: null  // undefined converted to null by prepareBody
-          })
+          credentials: 'include'
         })
       );
-      expect(result).toEqual(responseData);
+
+      // Verify FormData was sent (body is FormData instance)
+      const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
+      const body = callArgs[1].body;
+      expect(body).toBeInstanceOf(FormData);
+      expect(body.get('query')).toBe('test query');
+
+      // Verify response
+      expect(result.agent_response).toBe('AI Response');
+      expect(result.turn_number).toBe(1);
+      expect(result.attachments_processed).toEqual([]);
+    });
+
+    it('should submit a turn with pasted content', async () => {
+      const turnResponseData = {
+        agent_response: 'Analyzed your logs',
+        turn_number: 2,
+        milestones_completed: ['initial_evidence'],
+        case_status: 'investigating',
+        progress_made: true,
+        is_stuck: false,
+        attachments_processed: [{
+          evidence_id: 'ev_abc123',
+          filename: 'pasted-content-20260222T120000.txt',
+          data_type: 'logs_and_errors',
+          file_size: 1024,
+          processing_status: 'completed'
+        }]
+      };
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(turnResponseData));
+
+      const result = await caseService.submitTurn('case-123', {
+        pastedContent: 'ERROR: Connection refused at port 5432'
+      });
+
+      const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
+      const body = callArgs[1].body;
+      expect(body.get('pasted_content')).toBe('ERROR: Connection refused at port 5432');
+      expect(result.attachments_processed).toHaveLength(1);
+      expect(result.attachments_processed[0].evidence_id).toBe('ev_abc123');
+    });
+
+    it('should submit a turn with query and intent', async () => {
+      const turnResponseData = {
+        agent_response: 'Case resolved',
+        turn_number: 5,
+        milestones_completed: [],
+        case_status: 'resolved',
+        progress_made: true,
+        is_stuck: false,
+        attachments_processed: []
+      };
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(turnResponseData));
+
+      await caseService.submitTurn('case-123', {
+        query: 'Resolve this case',
+        intentType: 'status_transition',
+        intentData: { from_status: 'investigating', to_status: 'resolved', user_confirmed: true }
+      });
+
+      const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
+      const body = callArgs[1].body;
+      expect(body.get('query')).toBe('Resolve this case');
+      expect(body.get('intent_type')).toBe('status_transition');
+      expect(JSON.parse(body.get('intent_data'))).toEqual({
+        from_status: 'investigating',
+        to_status: 'resolved',
+        user_confirmed: true
+      });
+    });
+
+    it('should throw error when no query, files, or pasted content provided', async () => {
+      await expect(
+        caseService.submitTurn('case-123', {})
+      ).rejects.toThrow('Turn must include at least one of: query, files, or pastedContent');
+    });
+
+    it('should throw error on 422 validation error', async () => {
+      const errorResponse = mockResponse(
+        { detail: 'Missing required field' },
+        false,
+        422
+      );
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(errorResponse);
+
+      await expect(
+        caseService.submitTurn('case-123', { query: 'test' })
+      ).rejects.toThrow('422 Unprocessable Entity');
+    });
+
+    it('should throw error on 404 case not found', async () => {
+      const errorResponse = mockResponse(
+        { detail: 'Case not found' },
+        false,
+        404
+      );
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(errorResponse);
+
+      await expect(
+        caseService.submitTurn('case-123', { query: 'test' })
+      ).rejects.toThrow('Case not found: Please refresh and try again');
     });
   });
 

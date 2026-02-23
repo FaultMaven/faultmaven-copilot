@@ -21,7 +21,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
     ...actual,
     createSession: vi.fn(),
     createCase: vi.fn(),
-    submitQueryToCase: vi.fn(),
+    submitTurn: vi.fn(),
     getCaseConversation: vi.fn(),
     updateCaseTitle: vi.fn(),
     getUserCases: vi.fn().mockResolvedValue([])
@@ -43,7 +43,7 @@ describe('ChatInterface e2e', () => {
 
     // Create mock handlers to simulate state updates
     const mockQuerySubmit = vi.fn();
-    const mockDataUpload = vi.fn();
+    const mockTurnSubmit = vi.fn();
     const { rerender } = render(
       <ChatInterface
         activeCaseId={caseId}
@@ -62,7 +62,7 @@ describe('ChatInterface e2e', () => {
         submitting={false}
         sessionId={sessionId}
         onQuerySubmit={mockQuerySubmit}
-        onDataUpload={mockDataUpload}
+        onTurnSubmit={mockTurnSubmit}
         failedOperations={[]}
         onRetryFailedOperation={vi.fn()}
         onDismissFailedOperation={vi.fn()}
@@ -108,7 +108,7 @@ describe('ChatInterface e2e', () => {
         submitting={false}
         sessionId={sessionId}
         onQuerySubmit={mockQuerySubmit}
-        onDataUpload={mockDataUpload}
+        onTurnSubmit={mockTurnSubmit}
         failedOperations={[]}
         onRetryFailedOperation={vi.fn()}
         onDismissFailedOperation={vi.fn()}

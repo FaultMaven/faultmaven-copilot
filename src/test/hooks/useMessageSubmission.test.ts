@@ -16,11 +16,11 @@ vi.mock('wxt/browser', () => ({
 }));
 
 vi.mock('../../lib/api', () => ({
-  submitQueryToCase: vi.fn(),
+  submitTurn: vi.fn(),
   authManager: {
     isAuthenticated: vi.fn().mockResolvedValue(true)
   },
-  createSession: vi.fn()
+  generateCaseTitle: vi.fn()
 }));
 
 vi.mock('../../lib/optimistic', async (importOriginal) => {
@@ -89,14 +89,18 @@ describe('useMessageSubmission', () => {
     expect(result.current.submitting).toBe(false);
   });
 
-  it('should handle successful query submission', async () => {
+  it('should handle successful query submission via submitTurn', async () => {
     const { result } = renderHook(() => useMessageSubmission(mockProps));
-    
-    // Mock successful API response
-    (api.submitQueryToCase as any).mockResolvedValue({
-      content: 'AI Response',
-      response_type: 'ANSWER',
-      confidence_score: 0.95
+
+    // Mock successful TurnResponse
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'AI Response',
+      turn_number: 1,
+      milestones_completed: [],
+      case_status: 'inquiry',
+      progress_made: false,
+      is_stuck: false,
+      attachments_processed: []
     });
 
     await act(async () => {
@@ -108,10 +112,9 @@ describe('useMessageSubmission', () => {
     expect(mockProps.setConversations).toHaveBeenCalled(); // Updated optimistically
     expect(pendingOpsManager.add).toHaveBeenCalled();
 
-    // 2. API Call
-    expect(api.submitQueryToCase).toHaveBeenCalledWith('case-123', expect.objectContaining({
+    // 2. API Call - now uses submitTurn with TurnRequest
+    expect(api.submitTurn).toHaveBeenCalledWith('case-123', expect.objectContaining({
       query: 'test query',
-      session_id: 'session-123'
     }));
 
     // 3. Success handling
@@ -123,7 +126,15 @@ describe('useMessageSubmission', () => {
     const { result } = renderHook(() => useMessageSubmission(propsNoCase));
 
     (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt-case-id');
-    (api.submitQueryToCase as any).mockResolvedValue({ content: 'Response' });
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Response',
+      turn_number: 1,
+      milestones_completed: [],
+      case_status: 'inquiry',
+      progress_made: false,
+      is_stuck: false,
+      attachments_processed: []
+    });
 
     await act(async () => {
       await result.current.handleQuerySubmit('test query');
@@ -138,7 +149,7 @@ describe('useMessageSubmission', () => {
     const { result } = renderHook(() => useMessageSubmission(mockProps));
 
     // Mock API failure
-    (api.submitQueryToCase as any).mockRejectedValue(new Error('Network Error'));
+    (api.submitTurn as any).mockRejectedValue(new Error('Network Error'));
 
     await act(async () => {
       await result.current.handleQuerySubmit('test query');
@@ -148,8 +159,8 @@ describe('useMessageSubmission', () => {
     await waitFor(() => {
       expect(pendingOpsManager.fail).toHaveBeenCalledWith('ai-msg-id', expect.stringContaining('Network Error'));
     });
-    
-    // Should show error to user (likely via showErrorWithRetry since it's network error)
+
+    // Should show error to user
     expect(mockProps.showErrorWithRetry).toHaveBeenCalled();
     expect(result.current.submitting).toBe(false);
   });
@@ -158,7 +169,7 @@ describe('useMessageSubmission', () => {
     const { result } = renderHook(() => useMessageSubmission(mockProps));
 
     // Start a submission that doesn't resolve immediately
-    (api.submitQueryToCase as any).mockImplementation(() => new Promise(() => {}));
+    (api.submitTurn as any).mockImplementation(() => new Promise(() => {}));
 
     await act(async () => {
       result.current.handleQuerySubmit('first query');
@@ -172,7 +183,7 @@ describe('useMessageSubmission', () => {
     });
 
     // Should not call API again
-    expect(api.submitQueryToCase).toHaveBeenCalledTimes(1);
+    expect(api.submitTurn).toHaveBeenCalledTimes(1);
   });
 
   it('should block submission if not authenticated', async () => {
@@ -183,6 +194,6 @@ describe('useMessageSubmission', () => {
       await result.current.handleQuerySubmit('test query');
     });
 
-    expect(api.submitQueryToCase).not.toHaveBeenCalled();
+    expect(api.submitTurn).not.toHaveBeenCalled();
   });
 });

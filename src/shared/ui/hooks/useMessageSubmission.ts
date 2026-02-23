@@ -12,10 +12,9 @@
 import { useState } from 'react';
 import { browser } from 'wxt/browser';
 import {
-  submitQueryToCase,
-  QueryRequest,
+  submitTurn,
+  TurnRequest,
   QueryIntent,
-  createSession,
   authManager,
   generateCaseTitle
 } from '../../../lib/api';
@@ -91,33 +90,19 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
         operation: async () => {
           log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
 
-          // Ensure we have a session
-          let currentSessionId = props.sessionId;
-          if (!currentSessionId) {
-            log.info('No session found, creating new session...');
-            currentSessionId = await props.refreshSession();
-            log.info('New session created', { sessionId: currentSessionId });
-          }
+          // Submit turn to case (caseId is already the real UUID)
+          log.info('Submitting turn to case via API', { caseId });
 
-          // Step 2: Submit query to case (caseId is already the real UUID)
-          log.info('Submitting query to case via API', { caseId, sessionId: currentSessionId });
-
-          if (!currentSessionId) {
-            throw new Error('Session ID is required for query submission');
-          }
-
-          const queryRequest: QueryRequest = {
-            session_id: currentSessionId,
+          const turnRequest: TurnRequest = {
             query: query.trim(),
-            priority: 'low',
-            intent: intent,
-            context: {}
+            intentType: intent?.type,
+            intentData: intent ? { ...intent } : undefined,
           };
 
-          const response = await submitQueryToCase(caseId, queryRequest);
-          log.info('Query submitted successfully', { responseType: response.response_type });
+          const response = await submitTurn(caseId, turnRequest);
+          log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 
-          // Update active case status from response.case_status (always present)
+          // Update active case status from TurnResponse
           if (response.case_status) {
             props.setActiveCase((prev: UserCase | null) => {
               if (prev && prev.status !== response.case_status) {
@@ -125,12 +110,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                   oldStatus: prev.status,
                   newStatus: response.case_status
                 });
-
-                // Return new object with updated status
-                return {
-                  ...prev,
-                  status: response.case_status
-                };
+                return { ...prev, status: response.case_status };
               }
               return prev;
             });
@@ -221,30 +201,18 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                } else if (item.id === aiMessageId) {
                  return {
                    ...item,
-                   response: response.content,
-                   responseType: response.response_type,
-                   likelihood: response.likelihood,
-                   sources: response.sources,
-                   evidenceRequests: response.evidence_requests,
-                   investigationMode: response.investigation_mode,
+                   response: response.agent_response,
+                   turn_number: response.turn_number,
                    caseStatus: response.case_status,
-                   suggestedActions: response.suggested_actions,
-                   clarifyingQuestions: response.clarifying_questions,
-                   suggestedCommands: response.suggested_commands,
-                   commandValidation: response.command_validation,
-                   problemDetected: response.problem_detected,
-                   problemSummary: response.problem_summary,
-                   severity: response.severity,
-                   scopeAssessment: response.scope_assessment,
-                   plan: response.plan,
-                   nextActionHint: response.next_action_hint,
-                   newHypotheses: response.new_hypotheses,
-                   hypothesisTested: response.hypothesis_tested,
-                   testResult: response.test_result,
-                   requiresAction: response.response_type === 'CONFIRMATION_REQUEST' || response.response_type === 'CLARIFICATION_REQUEST',
                    optimistic: false,
                    loading: false,
-                   originalId: aiMessageId
+                   originalId: aiMessageId,
+                   metadata: {
+                     milestones_completed: response.milestones_completed,
+                     progress_made: response.progress_made,
+                     is_stuck: response.is_stuck,
+                     attachments_processed: response.attachments_processed,
+                   }
                  } as OptimisticConversationItem;
                }
                return item;
