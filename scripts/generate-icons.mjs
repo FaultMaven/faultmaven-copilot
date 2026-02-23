@@ -3,8 +3,8 @@ import fs from 'fs/promises';
 import sharp from 'sharp';
 import path from 'path';
 
-// Your exact specified ratio 510:170 = 3:1 (width:height)
-const DESIGN_RATIO = 510/170; // = 3
+// Logo ratio 590:180 ≈ 3.28:1 (width:height)
+const DESIGN_RATIO = 590/180;
 const SQUARE_RATIO = 1;
 
 const ICON_SIZES = [16, 32, 48, 96, 128, 256, 512];
