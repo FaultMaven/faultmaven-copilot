@@ -456,7 +456,7 @@ export function ConversationsList({
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {error && !error.includes('Failed to fetch') && (
-        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-red-light border border-fm-border rounded-lg">
+        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-red-light border border-fm-red-border rounded-lg">
           <p className="text-xs text-fm-red">{error}</p>
           <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-red hover:text-fm-text underline">Dismiss</button>
         </div>
@@ -465,7 +465,7 @@ export function ConversationsList({
       {titleGenStatus.message && (
         <div className={`flex-shrink-0 p-2 mx-3 mt-2 border rounded-lg ${
           titleGenStatus.type === "error"
-            ? "bg-fm-red-light border-fm-border text-fm-red"
+            ? "bg-fm-red-light border-fm-red-border text-fm-red"
             : titleGenStatus.type === "success"
             ? "bg-fm-green-light border-fm-green-border text-fm-green"
             : "bg-fm-blue-light border-fm-blue-border text-fm-blue"

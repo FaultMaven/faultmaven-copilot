@@ -169,7 +169,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           )}
 
           {error && (
-            <div className="mt-4 p-3 bg-fm-red-light border border-fm-border rounded-lg">
+            <div className="mt-4 p-3 bg-fm-red-light border border-fm-red-border rounded-lg">
               <p className="text-sm text-fm-red">{error}</p>
             </div>
           )}

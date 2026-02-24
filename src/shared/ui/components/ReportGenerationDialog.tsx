@@ -208,7 +208,7 @@ export function ReportGenerationDialog({
           )}
 
           {error && (
-            <div className="bg-fm-red-light border border-fm-border text-fm-red px-4 py-3 rounded mb-4">
+            <div className="bg-fm-red-light border border-fm-red-border text-fm-red px-4 py-3 rounded mb-4">
               {error}
             </div>
           )}

@@ -111,7 +111,7 @@ const ContentAreaComponent = ({
     return (
       <ErrorBoundary
         fallback={
-          <div className="p-4 bg-fm-red-light border border-fm-border rounded-lg">
+          <div className="p-4 bg-fm-red-light border border-fm-red-border rounded-lg">
             <p className="text-sm text-fm-red">Error loading chat</p>
             <button
               onClick={() => window.location.reload()}

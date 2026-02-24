@@ -253,7 +253,7 @@ function getCategoryInfo(category: EvidenceCategory): { label: string; icon: str
       return {
         label: 'Symptoms',
         icon: '🩺',
-        className: 'bg-fm-red-light text-fm-red border border-fm-border'
+        className: 'bg-fm-red-light text-fm-red border border-fm-red-border'
       };
     case EvidenceCategory.TIMELINE:
       return {
@@ -323,7 +323,7 @@ function getStatusInfo(status: EvidenceStatus): { label: string; className: stri
     case EvidenceStatus.BLOCKED:
       return {
         label: 'Blocked',
-        className: 'bg-fm-red-light text-fm-red border border-fm-border',
+        className: 'bg-fm-red-light text-fm-red border border-fm-red-border',
         dotColor: '#ef4444'
       };
     case EvidenceStatus.OBSOLETE:

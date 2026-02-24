@@ -51,7 +51,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 
   if (error) {
     return (
-      <div className="bg-fm-red-light border-b border-fm-border p-4">
+      <div className="bg-fm-red-light border-b border-fm-red-border p-4">
         <p className="text-sm text-fm-red">Error loading case: {error}</p>
       </div>
     );

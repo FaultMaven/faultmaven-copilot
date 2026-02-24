@@ -53,7 +53,7 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
       case 'error':
         return {
           bg: 'bg-fm-red-light',
-          border: 'border-fm-border',
+          border: 'border-fm-red-border',
           icon: 'text-fm-red',
           title: 'text-fm-red',
           message: 'text-fm-red',

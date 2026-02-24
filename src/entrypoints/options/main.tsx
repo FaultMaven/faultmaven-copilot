@@ -317,6 +317,7 @@ function OptionsApp() {
             <h1 className="text-3xl font-bold text-white">FaultMaven Settings</h1>
           </div>
           <p className="text-fm-dim">Configure your FaultMaven Copilot extension</p>
+          <p className="text-xs text-fm-muted mt-1">Close this tab to return to the sidepanel</p>
         </div>
 
         {/* Settings Form */}
@@ -405,7 +406,7 @@ function OptionsApp() {
           )}
 
           {/* Action Buttons */}
-          <div className="flex gap-3">
+          <div className="flex flex-col xs:flex-row gap-3">
             <button
               onClick={handleSave}
               disabled={saving}
@@ -428,7 +429,7 @@ function OptionsApp() {
               statusMessage.type === 'success'
                 ? 'bg-fm-green-light text-fm-green border border-fm-green-border'
                 : statusMessage.type === 'error'
-                ? 'bg-fm-red-light text-fm-red border border-fm-border'
+                ? 'bg-fm-red-light text-fm-red border border-fm-red-border'
                 : 'bg-fm-blue-light text-fm-blue border border-fm-blue-border'
             }`}>
               {statusMessage.text}

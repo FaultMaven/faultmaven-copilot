@@ -194,7 +194,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
         </div>
 
         {error && (
-          <div className="mt-6 p-4 bg-fm-red-light border border-fm-border rounded-lg">
+          <div className="mt-6 p-4 bg-fm-red-light border border-fm-red-border rounded-lg">
             <p className="text-sm text-fm-red">{error}</p>
           </div>
         )}

@@ -243,7 +243,7 @@ export function CollapsibleNavigation({
       <div className="flex-1 overflow-y-auto min-h-0">
         <ErrorBoundary
           fallback={
-            <div className="p-3 bg-fm-red-light border border-fm-border rounded-lg m-3">
+            <div className="p-3 bg-fm-red-light border border-fm-red-border rounded-lg m-3">
               <p className="text-sm text-fm-red">Error loading conversations</p>
               <button
                 onClick={() => window.location.reload()}

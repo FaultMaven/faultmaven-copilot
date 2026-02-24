@@ -43,7 +43,7 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
       case 'dangerous':
         return {
           bg: 'bg-fm-red-light',
-          border: 'border-fm-border',
+          border: 'border-fm-red-border',
           text: 'text-fm-red',
           badge: 'bg-red-600',
           icon: '🛑',
