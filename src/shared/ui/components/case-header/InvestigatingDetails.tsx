@@ -50,54 +50,54 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
     <div className="px-4 pb-4 space-y-3 text-sm">
       {/* Problem Statement */}
       <div>
-        <h4 className="font-medium text-gray-700 mb-1">Problem:</h4>
-        <p className="text-gray-900">{data.title}</p>
+        <h4 className="font-medium text-fm-text mb-1">Problem:</h4>
+        <p className="text-white">{data.title}</p>
       </div>
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Progress Section */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <span className="font-medium text-gray-700">
+          <span className="font-medium text-fm-text">
             🎯 Investigation Progress: {data.progress.current_stage.replace(/_/g, ' ')} ({data.progress.milestones_completed}/{data.progress.total_milestones})
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex-1 bg-gray-200 rounded-full h-2">
+          <div className="flex-1 bg-fm-elevated rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all"
+              className="bg-fm-blue h-2 rounded-full transition-all"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <span className="text-gray-600 text-xs">{progressPercent}%</span>
+          <span className="text-fm-dim text-xs">{progressPercent}%</span>
         </div>
       </div>
 
       {/* Strategy */}
       {data.investigation_strategy?.approach && (
         <div>
-          <span className="font-medium text-gray-700">⚡ Strategy: </span>
-          <span className="text-gray-900">{data.investigation_strategy.approach}</span>
+          <span className="font-medium text-fm-text">⚡ Strategy: </span>
+          <span className="text-white">{data.investigation_strategy.approach}</span>
         </div>
       )}
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Timeline Section */}
       {data.problem_verification?.temporal_state && (
         <div>
-          <h4 className="font-medium text-gray-700 mb-1">⏱️ Timeline:</h4>
+          <h4 className="font-medium text-fm-text mb-1">⏱️ Timeline:</h4>
           <ul className="space-y-1 pl-4">
             {data.problem_verification.temporal_state.started_at && (
-              <li className="text-gray-900">
+              <li className="text-white">
                 • Started: {formatDate(data.problem_verification.temporal_state.started_at)} ({formatTimeAgo(data.problem_verification.temporal_state.started_at)})
               </li>
             )}
             {data.problem_verification.temporal_state.state && (
-              <li className="text-gray-900">
+              <li className="text-white">
                 • Status: {data.problem_verification.temporal_state.state}
                 {data.problem_verification.temporal_state.last_occurrence_at && ' since discovery'}
               </li>
@@ -109,21 +109,21 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
       {/* Impact Section */}
       {data.problem_verification && (
         <div>
-          <h4 className="font-medium text-gray-700 mb-1">📊 Impact:</h4>
+          <h4 className="font-medium text-fm-text mb-1">📊 Impact:</h4>
           <ul className="space-y-1 pl-4">
             {data.problem_verification.severity && (
-              <li className="text-gray-900">
+              <li className="text-white">
                 • Severity: {data.problem_verification.severity.toUpperCase()}
                 {data.problem_verification.user_impact && ` - ${data.problem_verification.user_impact}`}
               </li>
             )}
             {data.problem_verification.impact?.affected_services && data.problem_verification.impact.affected_services.length > 0 && (
-              <li className="text-gray-900">
+              <li className="text-white">
                 • Affected: {data.problem_verification.impact.affected_services.join(', ')}
               </li>
             )}
             {data.problem_verification.impact?.affected_users && (
-              <li className="text-gray-900">
+              <li className="text-white">
                 • Users: {data.problem_verification.impact.affected_users}
               </li>
             )}
@@ -132,18 +132,18 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
       )}
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Current Understanding / Working Conclusion */}
       {data.working_conclusion && (
         <div>
-          <h4 className="font-medium text-gray-700 mb-1">
+          <h4 className="font-medium text-fm-text mb-1">
             💡 Current Understanding ({Math.round(data.working_conclusion.confidence * 100)}% confidence):
           </h4>
 
           {/* Root Cause */}
           <div className="mb-2">
-            <p className="font-medium text-gray-900 mb-1">
+            <p className="font-medium text-white mb-1">
               Root Cause: {data.working_conclusion.summary}
             </p>
           </div>
@@ -151,10 +151,10 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
           {/* Evidence List */}
           {data.latest_evidence && data.latest_evidence.length > 0 && (
             <div>
-              <p className="text-gray-700 mb-1">Evidence:</p>
+              <p className="text-fm-text mb-1">Evidence:</p>
               <ul className="space-y-1 pl-4">
                 {data.latest_evidence.slice(0, 3).map((ev) => (
-                  <li key={ev.evidence_id} className="text-gray-900">
+                  <li key={ev.evidence_id} className="text-white">
                     • {ev.summary}
                   </li>
                 ))}
@@ -164,7 +164,7 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
 
           {/* Last Updated */}
           {data.working_conclusion.last_updated && (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-fm-dim">
               Last updated: {formatTimeAgo(data.working_conclusion.last_updated)}
             </div>
           )}
@@ -172,10 +172,10 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
       )}
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Footer Summary: files · hypotheses · solutions */}
-      <div className="text-center text-gray-700">
+      <div className="text-center text-fm-text">
         📎 {data.latest_evidence?.length || 0} files
         {data.active_hypotheses && data.active_hypotheses.length > 0 && (
           <> · 🔬 {data.active_hypotheses.length} hypotheses</>

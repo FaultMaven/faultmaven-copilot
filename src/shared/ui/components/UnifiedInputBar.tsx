@@ -433,10 +433,8 @@ export function UnifiedInputBar({
   return (
     <div
       ref={dropZoneRef}
-      className={`flex-shrink-0 bg-white border-t p-3 space-y-2 relative transition-colors ${
-        isDragging
-          ? 'border-blue-500 border-4 bg-blue-50'
-          : 'border-gray-200'
+      className={`flex-shrink-0 bg-fm-surface border-t border-fm-border px-5 py-3 pb-4 relative transition-colors ${
+        isDragging ? 'border-fm-active border-2' : ''
       }`}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -445,143 +443,99 @@ export function UnifiedInputBar({
     >
       {/* Drag overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-blue-100/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg pointer-events-none">
-          <div className="flex flex-col items-center gap-3 text-blue-700">
-            <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="absolute inset-0 bg-fm-blue-light/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-fm-blue">
+            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <div className="text-center">
-              <div className="text-lg font-semibold">Drop file here</div>
-              <div className="text-sm">Supported: .txt, .log, .json, .csv, .md (max 10 MB)</div>
+              <div className="text-sm font-semibold text-fm-text">Drop file here</div>
+              <div className="text-xs text-fm-dim">Supported: .txt, .log, .json, .csv, .md (max 10 MB)</div>
             </div>
           </div>
         </div>
       )}
-      {/* Validation error display */}
-      {validationError && (
-        <div
-          className={`flex items-center gap-2 text-xs rounded px-2 py-1 ${
-            validationError.type === 'error'
-              ? 'text-red-600 bg-red-50 border border-red-200'
-              : 'text-yellow-600 bg-yellow-50 border border-yellow-200'
-          }`}
-          role="alert"
-          aria-live="polite"
-        >
-          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>{validationError.message}</span>
-        </div>
-      )}
 
-      {/* Mode indicator (only show in data mode when textarea has long text, no other attachments) */}
-      {inputMode === 'data' && !selectedFile && !capturedPageUrl && !stagedPastedContent && !validationError && (
-        <div
-          className="flex items-center gap-2 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded px-2 py-1"
-          role="status"
-          aria-label="Input mode: Data upload"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>Large text detected - will be processed as data</span>
-        </div>
-      )}
-
-      {/* File indicator */}
-      {selectedFile && (
-        <div
-          className="flex items-center justify-between gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1"
-          role="status"
-          aria-label={`Selected file: ${selectedFile.name}`}
-        >
-          <div className="flex items-center gap-2">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
-          </div>
-          <button
-            onClick={handleRemoveFile}
-            className="text-blue-600 hover:text-blue-800"
-            title="Remove file"
-            aria-label={`Remove file ${selectedFile.name}`}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Pasted data indicator */}
-      {stagedPastedContent && !showPasteScratchpad && (
-        <div
-          className="flex items-center justify-between gap-2 text-xs text-purple-600 bg-purple-50 border border-purple-200 rounded px-2 py-1"
-          role="status"
-          aria-label={`Pasted data: ${stagedPastedContent.split('\n').length} lines`}
-        >
-          <div className="flex items-center gap-2">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-            </svg>
-            <span>
-              Pasted data ({stagedPastedContent.split('\n').length} lines, {stagedPastedContent.length.toLocaleString()} chars)
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowPasteScratchpad(true)}
-              className="text-purple-600 hover:text-purple-800"
-              title="Edit pasted data"
-              aria-label="Edit pasted data"
+      {/* Staging area — appears above input when items are staged */}
+      {(hasAnyAttachment || validationError || (inputMode === 'data' && !selectedFile && !capturedPageUrl && !stagedPastedContent)) && (
+        <div className="flex flex-col gap-1.5 mb-2.5">
+          {/* Validation error */}
+          {validationError && (
+            <div
+              className={`flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 ${
+                validationError.type === 'error'
+                  ? 'text-fm-red bg-fm-red-light border border-fm-red/30'
+                  : 'text-fm-yellow bg-fm-yellow-light border border-fm-yellow-border'
+              }`}
+              role="alert"
+              aria-live="polite"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-            <button
-              onClick={handleRemovePastedContent}
-              className="text-purple-600 hover:text-purple-800"
-              title="Remove pasted data"
-              aria-label="Remove pasted data"
+              <span>{validationError.message}</span>
+            </div>
+          )}
+
+          {/* Mode indicator */}
+          {inputMode === 'data' && !selectedFile && !capturedPageUrl && !stagedPastedContent && !validationError && (
+            <div
+              className="flex items-center gap-2 text-xs text-fm-yellow bg-fm-yellow-light border border-fm-yellow-border rounded-md px-2.5 py-1.5"
+              role="status"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+              <span>Large text detected — will be processed as data</span>
+            </div>
+          )}
+
+          {/* Staged file */}
+          {selectedFile && (
+            <div className="flex items-center justify-between bg-fm-surface border border-dashed border-fm-border rounded-md px-3 py-2">
+              <div className="flex items-center gap-2 text-xs min-w-0">
+                <span>📄</span>
+                <span className="font-semibold text-fm-text font-mono truncate">{selectedFile.name}</span>
+                <span className="text-fm-dim font-mono">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+              </div>
+              <button onClick={handleRemoveFile} className="text-fm-dim hover:text-fm-text text-xs ml-2" title="Remove file">✕</button>
+            </div>
+          )}
+
+          {/* Staged pasted content */}
+          {stagedPastedContent && !showPasteScratchpad && (
+            <div className="bg-fm-surface border border-dashed border-fm-border rounded-md px-3 py-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11.5px] font-semibold text-fm-text">📋 Pasted context</span>
+                  <span className="text-[10px] text-fm-dim font-mono">
+                    {stagedPastedContent.split('\n').length} lines · {(stagedPastedContent.length / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowPasteScratchpad(true)} className="text-fm-dim hover:text-fm-text text-[10px]" title="Edit">Edit</button>
+                  <button onClick={handleRemovePastedContent} className="text-fm-dim hover:text-fm-text text-xs" title="Remove">✕</button>
+                </div>
+              </div>
+              <div className="bg-fm-bg rounded px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed overflow-hidden">
+                {stagedPastedContent.split('\n').slice(0, 5).map((l, i) => (
+                  <div key={i} className="flex gap-2 opacity-80">
+                    <span className="text-fm-dim min-w-[16px] text-right select-none text-[10px]">{i + 1}</span>
+                    <span className="text-fm-text truncate">{l}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Staged captured page */}
+          {capturedPageUrl && (
+            <div className="flex items-center gap-2.5 px-3 py-2 bg-fm-surface border border-dashed border-fm-border rounded-md">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-fm-text truncate">📸 Captured: {capturedPageUrl}</div>
+                <div className="text-[10.5px] text-fm-dim">🔒 Secrets redacted · {(capturedPageContent.length / 1024).toFixed(0)} KB</div>
+              </div>
+              <button onClick={handleRemovePage} className="text-fm-dim hover:text-fm-text text-xs flex-shrink-0" title="Remove">✕</button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Captured Page indicator */}
-      {capturedPageUrl && (
-        <div
-          className="flex items-center justify-between gap-2 text-xs text-green-600 bg-green-50 border border-green-200 rounded px-2 py-1"
-          role="status"
-          aria-label={`Captured page: ${capturedPageUrl}`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-            </svg>
-            <span className="truncate" title={capturedPageUrl}>{capturedPageUrl}</span>
-          </div>
-          <button
-            onClick={handleRemovePage}
-            className="text-green-600 hover:text-green-800 flex-shrink-0"
-            title="Remove captured page"
-            aria-label={`Remove captured page ${capturedPageUrl}`}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Paste Data Scratchpad (staging area) */}
+      {/* Paste Data Scratchpad */}
       {showPasteScratchpad && (
         <PasteDataScratchpad
           initialContent={stagedPastedContent}
@@ -591,119 +545,123 @@ export function UnifiedInputBar({
         />
       )}
 
-      {/* Input area */}
-      <div className="flex items-end gap-2 relative">
-        {/* Textarea */}
-        <div className="flex-1 relative">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              submitting || isCapturingPage || isUploadingData
-                ? (isCapturingPage ? "Capturing page..." : isUploadingData ? "Sending..." : "Processing...")
-                : hasAnyAttachment
-                  ? "Type a question about the attached data, or just hit Send..."
-                  : placeholder
-            }
-            rows={calculateRows()}
-            maxLength={maxLength}
-            disabled={isInputDisabled}
-            className="block w-full p-2 text-sm border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-            aria-label="Type your message"
-            aria-describedby="input-help-text"
-          />
-
-          {/* Loading overlay with compact spinner */}
-          {(submitting || isCapturingPage || isUploadingData) && (
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/95 to-white/95 backdrop-blur-sm flex items-center justify-center rounded border-2 border-blue-200" aria-live="polite" role="status">
-              <div className="flex items-center gap-2 px-3 py-1.5">
-                <div className="relative">
-                  <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"></circle>
-                    <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <div className="absolute inset-0 animate-ping opacity-75">
-                    <svg className="h-4 w-4 text-blue-400 opacity-20" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"></circle>
-                    </svg>
-                  </div>
-                </div>
-                <span className="text-xs font-medium text-blue-700">
-                  {isCapturingPage ? 'Capturing page...' : isUploadingData ? 'Sending...' : 'Processing...'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Character count (show when approaching limit) */}
-          {input.length > maxLength * 0.8 && !submitting && !isCapturingPage && (
-            <div className="absolute bottom-1 right-1 text-xs text-gray-400" aria-live="polite">
-              {input.length}/{maxLength}
-            </div>
-          )}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-1">
-          {/* File upload button */}
-          <button
-            type="button"
-            onClick={handleFileButtonClick}
-            disabled={isProcessing}
-            className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Upload file"
-            title="Upload file (.txt, .log, .json, .csv, .md up to 10 MB)"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-            </svg>
-          </button>
-
-          {/* Paste data button — always visible */}
-          <button
-            type="button"
-            onClick={() => setShowPasteScratchpad(!showPasteScratchpad)}
-            disabled={isProcessing}
-            className={`p-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-              showPasteScratchpad || stagedPastedContent
-                ? 'text-purple-600 bg-purple-100 hover:bg-purple-200'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-            }`}
-            aria-label="Toggle paste data scratchpad"
-            title="Paste data (logs, configs, error traces)"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-            </svg>
-          </button>
-
-          {/* Page injection button */}
-          {onPageInject && (
+      {/* Input field row: [Page|Upload|Paste] [textarea] [Send] */}
+      <div
+        className={`flex items-end gap-1 bg-fm-bg rounded-lg border px-1 py-1 transition-colors ${
+          hasAnyAttachment ? 'border-fm-active' : 'border-fm-border'
+        }`}
+      >
+        {/* Left action buttons */}
+        <div className="flex items-center gap-0.5 py-0.5 pl-0.5">
+          {/* Analyze current page */}
+          {isCapturingPage ? (
+            <button
+              type="button"
+              onClick={() => setIsCapturingPage(false)}
+              className="p-1.5 text-fm-blue rounded transition-colors"
+              aria-label="Cancel page capture"
+              title="Cancel capture"
+            >
+              <div className="w-4 h-4 border-2 border-fm-border border-t-fm-blue rounded-full animate-spin" />
+            </button>
+          ) : (
             <button
               type="button"
               onClick={handlePageInjectClick}
-              disabled={isProcessing}
-              className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Inject current page content"
-              title="Capture and analyze current page"
+              disabled={isProcessing || !onPageInject}
+              className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
+                capturedPageUrl
+                  ? 'text-fm-blue bg-fm-blue-light'
+                  : 'text-fm-dim hover:text-fm-text'
+              }`}
+              aria-label="Analyze current page"
+              title="Analyze current page"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </button>
           )}
 
-          {/* Submit button — single Send for all content */}
+          {/* File upload */}
+          <button
+            type="button"
+            onClick={handleFileButtonClick}
+            disabled={isProcessing}
+            className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
+              selectedFile
+                ? 'text-fm-green bg-fm-green-light'
+                : 'text-fm-dim hover:text-fm-text'
+            }`}
+            aria-label="Upload file"
+            title="Upload file"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+
+          {/* Paste data toggle */}
+          <button
+            type="button"
+            onClick={() => setShowPasteScratchpad(!showPasteScratchpad)}
+            disabled={isProcessing}
+            className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
+              showPasteScratchpad || stagedPastedContent
+                ? 'text-fm-purple bg-fm-purple-light'
+                : 'text-fm-dim hover:text-fm-text'
+            }`}
+            aria-label="Paste data"
+            title="Paste data"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            submitting || isUploadingData
+              ? 'Processing...'
+              : hasAnyAttachment
+                ? 'Ask about the context...'
+                : placeholder || 'Ask FaultMaven...'
+          }
+          rows={calculateRows()}
+          maxLength={maxLength}
+          disabled={isInputDisabled}
+          className="flex-1 bg-transparent border-none text-fm-text text-[13px] leading-relaxed resize-none outline-none px-1.5 py-1 font-sans disabled:opacity-50"
+          style={{ minHeight: 22, maxHeight: 180 }}
+          aria-label="Type your message"
+        />
+
+        {/* Send button — right side */}
+        <div className="flex items-center py-0.5 pr-0.5">
           <button
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className={`p-1.5 rounded-md transition-colors ${
+              canSubmit
+                ? 'text-fm-bg bg-fm-blue hover:opacity-90'
+                : 'text-fm-dim bg-fm-elevated'
+            }`}
             aria-label="Send message"
+            title="Send"
           >
-            {submitting || isUploadingData ? 'Sending...' : 'Send'}
+            {submitting || isUploadingData ? (
+              <div className="w-4 h-4 border-2 border-fm-bg/30 border-t-fm-bg rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19V5m0 0l-7 7m7-7l7 7" />
+              </svg>
+            )}
           </button>
         </div>
       </div>
@@ -718,16 +676,12 @@ export function UnifiedInputBar({
         aria-label="File input"
       />
 
-      {/* Help text */}
-      <div id="input-help-text" className="text-xs text-gray-500">
-        {hasAnyAttachment ? (
-          <span>Data attached - type a question or hit Send to analyze</span>
-        ) : inputMode === 'question' ? (
-          <span>Press Enter to send &middot; Shift+Enter for new line</span>
-        ) : (
-          <span>Large text will be processed as data for analysis</span>
-        )}
-      </div>
+      {/* Character count */}
+      {input.length > maxLength * 0.8 && !submitting && !isCapturingPage && (
+        <div className="text-[10px] text-fm-dim text-right mt-1" aria-live="polite">
+          {input.length}/{maxLength}
+        </div>
+      )}
     </div>
   );
 }

@@ -120,22 +120,22 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   };
 
   return (
-    <div className="p-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={onToggle}>
+    <div className="p-4 cursor-pointer hover:bg-fm-surface transition-colors" onClick={onToggle}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           {/* Title and Turn */}
-          <h2 className="font-semibold text-gray-900 text-base mb-1">
+          <h2 className="font-semibold text-white text-base mb-1">
             <span className="text-lg">📋</span> {caseData.title}{getTurnInfo()}
           </h2>
 
           {/* Status Line */}
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-fm-dim">
             {canChangeStatus ? (
               <select
                 value={caseData.status}
                 onChange={handleStatusChange}
                 onClick={(e) => e.stopPropagation()}
-                className="border-none bg-transparent cursor-pointer text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1"
+                className="border-none bg-transparent cursor-pointer text-fm-dim hover:text-white focus:outline-none focus:ring-1 focus:ring-fm-blue rounded px-1"
               >
                 <option value={caseData.status}>
                   {getStatusIcon(caseData.status)} {getStatusLabel(caseData.status)}
@@ -156,15 +156,24 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
           </div>
         </div>
 
-        {/* Expand/Collapse Button */}
+        {/* Expand/Collapse Toggle */}
         <button
-          className="ml-4 px-3 py-1 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+          className="ml-3 p-1.5 text-fm-dim hover:text-fm-text hover:bg-fm-elevated rounded-lg transition-colors flex-shrink-0"
           onClick={(e) => {
             e.stopPropagation();
             onToggle();
           }}
+          title={expanded ? 'Collapse details' : 'Expand details'}
+          aria-label={expanded ? 'Collapse details' : 'Expand details'}
         >
-          {expanded ? '[▲ Collapse]' : '[▼ Expand]'}
+          <svg
+            className={`w-4 h-4 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
       </div>
     </div>

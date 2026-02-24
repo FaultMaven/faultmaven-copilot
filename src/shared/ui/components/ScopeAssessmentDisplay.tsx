@@ -16,46 +16,46 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
       case 'critical':
         return {
           color: 'red',
-          bg: 'bg-red-50',
-          border: 'border-red-300',
-          text: 'text-red-800',
+          bg: 'bg-fm-red-light',
+          border: 'border-fm-border',
+          text: 'text-fm-red',
           badge: 'bg-red-600',
           icon: '🔴'
         };
       case 'high':
         return {
           color: 'orange',
-          bg: 'bg-orange-50',
-          border: 'border-orange-300',
-          text: 'text-orange-800',
+          bg: 'bg-fm-yellow-light',
+          border: 'border-fm-yellow-border',
+          text: 'text-fm-yellow',
           badge: 'bg-orange-600',
           icon: '🟠'
         };
       case 'medium':
         return {
           color: 'yellow',
-          bg: 'bg-yellow-50',
-          border: 'border-yellow-300',
-          text: 'text-yellow-800',
+          bg: 'bg-fm-yellow-light',
+          border: 'border-fm-yellow-border',
+          text: 'text-fm-yellow',
           badge: 'bg-yellow-600',
           icon: '🟡'
         };
       case 'low':
         return {
           color: 'green',
-          bg: 'bg-green-50',
-          border: 'border-green-300',
-          text: 'text-green-800',
+          bg: 'bg-fm-green-light',
+          border: 'border-fm-green-border',
+          text: 'text-fm-green',
           badge: 'bg-green-600',
           icon: '🟢'
         };
       default:
         return {
           color: 'gray',
-          bg: 'bg-gray-50',
-          border: 'border-gray-300',
-          text: 'text-gray-800',
-          badge: 'bg-gray-600',
+          bg: 'bg-fm-bg',
+          border: 'border-fm-border',
+          text: 'text-fm-text',
+          badge: 'bg-fm-elevated',
           icon: '⚪'
         };
     }
@@ -110,7 +110,7 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
           <h3 className={`text-sm font-bold ${config.text}`}>
             Blast Radius Assessment
           </h3>
-          <p className="text-xs text-gray-600 mt-0.5">
+          <p className="text-xs text-fm-dim mt-0.5">
             Phase 1: Understanding the scope of impact
           </p>
         </div>
@@ -119,7 +119,7 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
       {/* Severity */}
       <div className="mb-4">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-700">Severity:</span>
+          <span className="text-xs font-semibold text-fm-text">Severity:</span>
           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${config.badge} text-white`}>
             <span>{config.icon}</span>
             <span>{assessment.severity}</span>
@@ -129,19 +129,19 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
 
       {/* Affected Scope */}
       <div className="mb-4">
-        <h4 className="text-xs font-semibold text-gray-700 mb-2">Who is affected:</h4>
-        <div className="bg-white rounded-md p-3 border border-gray-200 flex items-center gap-3">
+        <h4 className="text-xs font-semibold text-fm-text mb-2">Who is affected:</h4>
+        <div className="bg-fm-surface rounded-md p-3 border border-fm-border flex items-center gap-3">
           <span className="text-2xl">{scopeInfo.icon}</span>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-gray-900">{scopeInfo.label}</p>
-            <p className="text-xs text-gray-600">{scopeInfo.description}</p>
+            <p className="text-sm font-semibold text-white">{scopeInfo.label}</p>
+            <p className="text-xs text-fm-dim">{scopeInfo.description}</p>
           </div>
           {assessment.impact_percentage !== null && assessment.impact_percentage !== undefined && (
             <div className="flex-shrink-0">
               <div className={`text-lg font-bold ${config.text}`}>
                 {assessment.impact_percentage}%
               </div>
-              <div className="text-xs text-gray-500">impact</div>
+              <div className="text-xs text-fm-dim">impact</div>
             </div>
           )}
         </div>
@@ -150,12 +150,12 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
       {/* Affected Components */}
       {assessment.affected_components && assessment.affected_components.length > 0 && (
         <div className="mb-4">
-          <h4 className="text-xs font-semibold text-gray-700 mb-2">Affected Components:</h4>
+          <h4 className="text-xs font-semibold text-fm-text mb-2">Affected Components:</h4>
           <div className="flex flex-wrap gap-2">
             {assessment.affected_components.map((component, index) => (
               <span
                 key={index}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-white border-2 ${config.border} ${config.text}`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-fm-surface border-2 ${config.border} ${config.text}`}
               >
                 <span>🔧</span>
                 <span>{component}</span>
@@ -168,9 +168,9 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
       {/* Impact Description */}
       {assessment.impact_description && (
         <div className="mb-4">
-          <h4 className="text-xs font-semibold text-gray-700 mb-2">Impact Summary:</h4>
-          <div className="bg-white rounded-md p-3 border border-gray-200">
-            <p className="text-sm text-gray-800">
+          <h4 className="text-xs font-semibold text-fm-text mb-2">Impact Summary:</h4>
+          <div className="bg-fm-surface rounded-md p-3 border border-fm-border">
+            <p className="text-sm text-fm-text">
               {assessment.impact_description}
             </p>
           </div>
@@ -178,14 +178,14 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
       )}
 
       {/* Progress Indicator */}
-      <div className="mt-4 p-3 bg-white bg-opacity-60 rounded-md border border-gray-300">
+      <div className="mt-4 p-3 bg-fm-surface bg-opacity-60 rounded-md border border-fm-border">
         <div className="flex items-start gap-2">
-          <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-5 h-5 text-fm-blue flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
           <div>
-            <p className="text-xs font-semibold text-gray-800">Blast Radius Assessed</p>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs font-semibold text-white">Blast Radius Assessed</p>
+            <p className="text-xs text-fm-dim mt-1">
               Next: Establishing timeline and gathering evidence to understand when this started
             </p>
           </div>

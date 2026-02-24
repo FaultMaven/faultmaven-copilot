@@ -20,8 +20,8 @@ export default function LoadingSpinner({
   };
 
   const colorClasses = {
-    primary: 'text-blue-600',
-    secondary: 'text-gray-600',
+    primary: 'text-fm-blue',
+    secondary: 'text-fm-dim',
     white: 'text-white'
   };
 
@@ -49,7 +49,7 @@ export default function LoadingSpinner({
         />
       </svg>
       {text && (
-        <span className="ml-2 text-sm text-gray-600" aria-label={text}>
+        <span className="ml-2 text-sm text-fm-dim" aria-label={text}>
           {text}
         </span>
       )}
@@ -61,7 +61,7 @@ export default function LoadingSpinner({
 export function LoadingOverlay({ text = "Loading..." }: { text?: string }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 shadow-lg">
+      <div className="bg-fm-surface rounded-lg p-6 shadow-lg">
         <LoadingSpinner size="lg" text={text} />
       </div>
     </div>

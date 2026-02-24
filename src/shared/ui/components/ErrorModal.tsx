@@ -106,11 +106,11 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
     const icon = displayOptions.icon || 'error';
     switch (icon) {
       case 'error':
-        return 'text-red-600';
+        return 'text-fm-red';
       case 'warning':
         return 'text-yellow-600';
       case 'info':
-        return 'text-blue-600';
+        return 'text-fm-blue';
     }
   };
 
@@ -133,10 +133,10 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6 transform transition-all"
+        className="relative bg-fm-surface rounded-lg shadow-xl max-w-md w-full mx-4 p-6 transform transition-all"
       >
         {/* Icon */}
-        <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full">
+        <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-fm-surface rounded-full">
           <svg className={`w-6 h-6 ${getIconColor()}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={getIconPath()} />
           </svg>
@@ -144,13 +144,13 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
 
         {/* Content */}
         <div className="text-center">
-          <h3 id="error-modal-title" className="text-lg font-semibold text-gray-900 mb-2">
+          <h3 id="error-modal-title" className="text-lg font-semibold text-white mb-2">
             {error.userTitle}
           </h3>
-          <p id="error-modal-description" className="text-sm text-gray-600 mb-2">
+          <p id="error-modal-description" className="text-sm text-fm-dim mb-2">
             {error.userMessage}
           </p>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-fm-dim">
             {error.userAction}
           </p>
         </div>
@@ -174,8 +174,8 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
                 className={`
                   w-full px-4 py-2 text-sm font-medium rounded-lg transition-colors
                   ${action.primary
-                    ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-gray-400 focus:ring-offset-2'
+                    ? 'bg-fm-blue text-white hover:bg-fm-active focus:ring-2 focus:ring-fm-blue focus:ring-offset-2'
+                    : 'bg-fm-surface text-fm-text hover:bg-fm-elevated focus:ring-2 focus:ring-fm-blue focus:ring-offset-2'
                   }
                 `}
                 autoFocus={idx === 0}
@@ -196,7 +196,7 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
           {displayOptions.dismissible && !displayOptions.blocking && (
             <button
               onClick={handleDismiss}
-              className="w-full px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+              className="w-full px-4 py-2 text-sm font-medium text-fm-dim hover:text-fm-text transition-colors"
             >
               Cancel
             </button>
@@ -207,7 +207,7 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
         {displayOptions.dismissible && !displayOptions.blocking && (
           <button
             onClick={handleDismiss}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute top-4 right-4 text-fm-muted hover:text-fm-text transition-colors"
             aria-label="Close"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

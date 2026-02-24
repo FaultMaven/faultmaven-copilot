@@ -15,9 +15,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
     switch (sev) {
       case 'critical':
         return {
-          bg: 'bg-red-50',
-          border: 'border-red-400',
-          text: 'text-red-900',
+          bg: 'bg-fm-red-light',
+          border: 'border-fm-red',
+          text: 'text-fm-red',
           badge: 'bg-red-600',
           badgeText: 'text-white',
           icon: '🚨',
@@ -26,9 +26,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       case 'high':
         return {
-          bg: 'bg-orange-50',
-          border: 'border-orange-400',
-          text: 'text-orange-900',
+          bg: 'bg-fm-yellow-light',
+          border: 'border-fm-yellow',
+          text: 'text-fm-yellow',
           badge: 'bg-orange-600',
           badgeText: 'text-white',
           icon: '⚠️',
@@ -37,9 +37,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       case 'medium':
         return {
-          bg: 'bg-yellow-50',
-          border: 'border-yellow-400',
-          text: 'text-yellow-900',
+          bg: 'bg-fm-yellow-light',
+          border: 'border-fm-yellow',
+          text: 'text-fm-yellow',
           badge: 'bg-yellow-600',
           badgeText: 'text-white',
           icon: '⚡',
@@ -48,9 +48,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       case 'low':
         return {
-          bg: 'bg-blue-50',
-          border: 'border-blue-400',
-          text: 'text-blue-900',
+          bg: 'bg-fm-blue-light',
+          border: 'border-fm-blue',
+          text: 'text-fm-blue',
           badge: 'bg-blue-600',
           badgeText: 'text-white',
           icon: 'ℹ️',
@@ -59,10 +59,10 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       default:
         return {
-          bg: 'bg-gray-50',
-          border: 'border-gray-400',
-          text: 'text-gray-900',
-          badge: 'bg-gray-600',
+          bg: 'bg-fm-bg',
+          border: 'border-fm-border',
+          text: 'text-white',
+          badge: 'bg-fm-elevated',
           badgeText: 'text-white',
           icon: '?',
           title: 'Issue Detected',
@@ -102,8 +102,8 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
           </div>
 
           {/* Problem Summary */}
-          <div className="bg-white rounded-md p-3 border-2 border-gray-200">
-            <p className="text-sm text-gray-900 font-medium">
+          <div className="bg-fm-surface rounded-md p-3 border-2 border-fm-border">
+            <p className="text-sm text-white font-medium">
               {problemSummary}
             </p>
           </div>
@@ -111,7 +111,7 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
       </div>
 
       {/* Next Steps Hint */}
-      <div className="flex items-start gap-2 mt-3 p-3 bg-white bg-opacity-60 rounded-md border border-gray-300">
+      <div className="flex items-start gap-2 mt-3 p-3 bg-fm-surface bg-opacity-60 rounded-md border border-fm-border">
         <svg className={`w-5 h-5 ${config.text} flex-shrink-0 mt-0.5`} fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
         </svg>
@@ -119,7 +119,7 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
           <p className={`text-xs font-semibold ${config.text}`}>
             Investigation Started
           </p>
-          <p className="text-xs text-gray-700 mt-1">
+          <p className="text-xs text-fm-text mt-1">
             I'll help you investigate this issue systematically. Let's gather information to understand the scope and find the root cause.
           </p>
         </div>

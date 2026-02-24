@@ -14,7 +14,7 @@ export const ConfirmationButtons: React.FC<ConfirmationButtonsProps> = ({
   onCancel
 }) => {
   return (
-    <div className="mt-3 border-t border-gray-200 pt-3">
+    <div className="mt-3 border-t border-fm-border pt-3">
       <div className="flex gap-2 mb-2">
         <button
           onClick={onConfirm}
@@ -31,7 +31,7 @@ export const ConfirmationButtons: React.FC<ConfirmationButtonsProps> = ({
           <span>No</span>
         </button>
       </div>
-      <p className="text-xs text-gray-500 italic">
+      <p className="text-xs text-fm-dim italic">
         💡 Tip: Click a button or type to clarify
       </p>
     </div>

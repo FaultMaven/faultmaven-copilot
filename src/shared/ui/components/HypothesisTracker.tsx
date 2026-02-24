@@ -17,10 +17,10 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
   }
 
   const getConfidenceColor = (confidence: number): string => {
-    if (confidence >= 0.8) return 'text-green-600 bg-green-50';
-    if (confidence >= 0.6) return 'text-blue-600 bg-blue-50';
-    if (confidence >= 0.4) return 'text-yellow-600 bg-yellow-50';
-    return 'text-orange-600 bg-orange-50';
+    if (confidence >= 0.8) return 'text-fm-green bg-fm-green-light';
+    if (confidence >= 0.6) return 'text-fm-blue bg-fm-blue-light';
+    if (confidence >= 0.4) return 'text-fm-yellow bg-fm-yellow-light';
+    return 'text-fm-yellow bg-fm-yellow-light';
   };
 
   const getConfidenceLabel = (confidence: number): string => {
@@ -31,12 +31,12 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
   };
 
   return (
-    <div className="hypothesis-tracker bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
+    <div className="hypothesis-tracker bg-fm-surface border border-fm-border rounded-lg p-4 mb-4 shadow-sm">
       {/* Header */}
       <div className="mb-3">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">Investigation Hypotheses</h3>
+        <h3 className="text-sm font-semibold text-fm-text mb-1">Investigation Hypotheses</h3>
         <div className="hypothesis-count">
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-fm-blue-light text-fm-blue">
             {hypotheses.total} Active {hypotheses.total === 1 ? 'Theory' : 'Theories'}
           </span>
         </div>
@@ -44,11 +44,11 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
 
       {/* Validated Hypothesis (if exists) */}
       {hypotheses.validated && hypotheses.validated_likelihood !== null && (
-        <div className="validated-hypothesis bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-3">
+        <div className="validated-hypothesis bg-gradient-to-r from-green-50 to-emerald-50 border border-fm-green-border rounded-lg p-4 mb-3">
           <div className="flex items-start gap-3">
             {/* Check Icon */}
             <div className="flex-shrink-0">
-              <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white">
+              <div className="w-8 h-8 rounded-full bg-fm-green-light0 flex items-center justify-center text-white">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
@@ -63,13 +63,13 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
                 </span>
               </div>
 
-              <div className="statement text-sm font-medium text-gray-900 mb-2">
+              <div className="statement text-sm font-medium text-white mb-2">
                 {hypotheses.validated}
               </div>
 
               <div className="confidence">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-600">Likelihood:</span>
+                  <span className="text-xs text-fm-dim">Likelihood:</span>
                   <span
                     className={`
                       inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
@@ -78,13 +78,13 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
                   >
                     {(hypotheses.validated_likelihood * 100).toFixed(0)}%
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-fm-dim">
                     ({getConfidenceLabel(hypotheses.validated_likelihood)})
                   </span>
                 </div>
 
                 {/* Progress Bar */}
-                <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                <div className="mt-2 w-full bg-fm-elevated rounded-full h-2">
                   <div
                     className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
                     style={{ width: `${(hypotheses.validated_likelihood * 100).toFixed(0)}%` }}
@@ -98,8 +98,8 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
 
       {/* Active Hypotheses (not yet validated) */}
       {!hypotheses.validated && (
-        <div className="active-hypotheses bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm text-blue-700">
+        <div className="active-hypotheses bg-fm-blue-light border border-fm-blue-border rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm text-fm-blue">
             <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
@@ -109,14 +109,14 @@ export const HypothesisTracker: React.FC<HypothesisTrackerProps> = ({ hypotheses
                 : `Investigating ${hypotheses.total} potential root causes`}
             </span>
           </div>
-          <p className="text-xs text-blue-600 mt-2 ml-7">
+          <p className="text-xs text-fm-blue mt-2 ml-7">
             Evidence collection in progress...
           </p>
         </div>
       )}
 
       {/* Helper Text */}
-      <div className="mt-3 text-xs text-gray-500 italic">
+      <div className="mt-3 text-xs text-fm-dim italic">
         Hypotheses are validated through systematic evidence collection and analysis.
       </div>
     </div>

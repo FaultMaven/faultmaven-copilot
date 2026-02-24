@@ -93,13 +93,13 @@ const ContentAreaComponent = ({
     if (!activeCaseId && !hasUnsavedNewChat) {
       log.debug('Showing empty state');
       return (
-        <div className="flex items-center justify-center h-full">
+        <div className="flex items-center justify-center h-full bg-fm-bg">
           <div className="text-center max-w-md p-6">
-            <h2 className="text-base font-semibold text-gray-800 mb-2">Start a conversation</h2>
-            <p className="text-sm text-gray-600 mb-4">Select a chat from the list or create a new one.</p>
+            <h2 className="text-base font-semibold text-fm-text mb-2">Start a conversation</h2>
+            <p className="text-sm text-fm-dim mb-4">Select a chat from the list or create a new one.</p>
             <button
               onClick={onNewChat}
-              className="inline-flex items-center gap-2 py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+              className="inline-flex items-center gap-2 py-2 px-4 bg-fm-blue text-white rounded hover:bg-fm-active text-sm"
             >
               New chat
             </button>
@@ -111,18 +111,18 @@ const ContentAreaComponent = ({
     return (
       <ErrorBoundary
         fallback={
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-700">Error loading chat</p>
+          <div className="p-4 bg-fm-red-light border border-fm-border rounded-lg">
+            <p className="text-sm text-fm-red">Error loading chat</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+              className="mt-2 px-3 py-1 text-xs bg-fm-surface text-fm-red rounded hover:bg-fm-elevated"
             >
               Retry
             </button>
           </div>
         }
       >
-        <div className="h-full flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0">
           <ChatInterface
             activeCaseId={activeCaseId}
             activeCase={activeCase}
@@ -152,10 +152,8 @@ const ContentAreaComponent = ({
   // Main content area - chat-only (no tabs)
   // KB management now handled via external dashboard
   return (
-    <div className="flex-1 flex flex-col min-w-0 max-w-none">
-      <div className="flex-1 overflow-y-auto">
-        {renderChatContent()}
-      </div>
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      {renderChatContent()}
     </div>
   );
 };

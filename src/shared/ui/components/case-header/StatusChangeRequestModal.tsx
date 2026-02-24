@@ -69,19 +69,19 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="bg-fm-surface rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
           <span className="text-2xl">⚠️</span>
           {getTitle()}
         </h3>
 
-        <div className="mb-6 text-sm text-gray-700 space-y-3">
+        <div className="mb-6 text-sm text-fm-text space-y-3">
           <p>
             Your request will be sent to the agent:
           </p>
 
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
-            <p className="text-sm text-gray-800 italic">
+          <div className="bg-fm-blue-light border-l-4 border-blue-400 p-3 rounded">
+            <p className="text-sm text-fm-text italic">
               "{getMessage()}"
             </p>
           </div>
@@ -102,13 +102,13 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+            className="px-4 py-2 bg-fm-elevated text-fm-text rounded hover:bg-fm-elevated transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-fm-blue text-white rounded hover:bg-fm-active transition-colors"
           >
             Continue
           </button>

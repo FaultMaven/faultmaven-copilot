@@ -40,10 +40,10 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 
   if (loading) {
     return (
-      <div className="bg-white border-b border-gray-200 p-4">
+      <div className="bg-fm-surface border-b border-fm-border p-4">
         <div className="animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-          <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+          <div className="h-4 bg-fm-elevated rounded w-3/4 mb-2"></div>
+          <div className="h-3 bg-fm-elevated rounded w-1/2"></div>
         </div>
       </div>
     );
@@ -51,8 +51,8 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 
   if (error) {
     return (
-      <div className="bg-red-50 border-b border-red-200 p-4">
-        <p className="text-sm text-red-600">Error loading case: {error}</p>
+      <div className="bg-fm-red-light border-b border-fm-border p-4">
+        <p className="text-sm text-fm-red">Error loading case: {error}</p>
       </div>
     );
   }
@@ -60,8 +60,8 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   // If no data yet (shouldn't happen if loading/error handled above, but be safe)
   if (!caseData) {
     return (
-      <div className="bg-white border-b border-gray-200 p-4">
-        <p className="text-sm text-gray-500">No case data available</p>
+      <div className="bg-fm-surface border-b border-fm-border p-4">
+        <p className="text-sm text-fm-dim">No case data available</p>
       </div>
     );
   }
@@ -119,7 +119,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 
   return (
     <>
-      <div className="bg-white border-b border-gray-300">
+      <div className="bg-fm-surface border-b border-fm-border">
         {/* Collapsed Summary */}
         <HeaderSummary
           caseData={caseData}

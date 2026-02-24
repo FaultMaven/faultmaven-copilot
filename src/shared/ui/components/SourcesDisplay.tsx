@@ -30,12 +30,12 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
 
   // Confidence score styling
   const getConfidenceStyle = (confidence?: number) => {
-    if (!confidence) return { color: 'text-gray-500', bg: 'bg-gray-100' };
+    if (!confidence) return { color: 'text-fm-dim', bg: 'bg-fm-surface' };
     
-    if (confidence >= 0.9) return { color: 'text-emerald-700', bg: 'bg-emerald-50' };
-    if (confidence >= 0.7) return { color: 'text-blue-700', bg: 'bg-blue-50' };
+    if (confidence >= 0.9) return { color: 'text-fm-green', bg: 'bg-fm-green-light' };
+    if (confidence >= 0.7) return { color: 'text-fm-blue', bg: 'bg-fm-blue-light' };
     if (confidence >= 0.5) return { color: 'text-amber-700', bg: 'bg-amber-50' };
-    return { color: 'text-red-700', bg: 'bg-red-50' };
+    return { color: 'text-fm-red', bg: 'bg-fm-red-light' };
   };
 
   const confidenceStyle = getConfidenceStyle(source.confidence);
@@ -47,7 +47,7 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
     : safeContent;
 
   return (
-    <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200 hover:shadow-sm">
+    <div className="bg-fm-surface rounded-lg border border-fm-border hover:border-fm-border transition-all duration-200 hover:shadow-sm">
       {/* Header - Always visible */}
       <div 
         className="flex items-center justify-between p-3 cursor-pointer"
@@ -58,11 +58,11 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
           <div className="flex items-center space-x-2">
             <span className="text-lg flex-shrink-0">{formatted.emoji}</span>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-900 truncate">
+              <div className="text-sm font-medium text-white truncate">
                 {documentTitle || formatted.label}
               </div>
               {documentTitle && (
-                <div className="text-xs text-gray-500 truncate">{formatted.label}</div>
+                <div className="text-xs text-fm-dim truncate">{formatted.label}</div>
               )}
             </div>
           </div>
@@ -78,7 +78,7 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
         {/* Expand/collapse indicator */}
         <div className="ml-2 flex-shrink-0">
           <svg 
-            className={`w-4 h-4 text-gray-400 transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-fm-muted transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
@@ -90,18 +90,18 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-gray-150 bg-white/60">
+        <div className="border-t border-fm-border bg-fm-surface/60">
           <div className="p-3 space-y-3">
             {/* Content preview */}
-            <div className="text-sm text-gray-700 leading-relaxed">
-              <div className="bg-gray-50 rounded-md p-2 border-l-4 border-blue-200">
+            <div className="text-sm text-fm-text leading-relaxed">
+              <div className="bg-fm-bg rounded-md p-2 border-l-4 border-fm-blue-border">
                 {isExpanded ? safeContent : contentPreview}
               </div>
             </div>
 
             {/* Metadata and actions */}
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-              <div className="flex items-center space-x-4 text-xs text-gray-500">
+            <div className="flex items-center justify-between pt-2 border-t border-fm-border">
+              <div className="flex items-center space-x-4 text-xs text-fm-dim">
                 <span className="flex items-center space-x-1">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -127,7 +127,7 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
                       e.stopPropagation();
                       onDocumentView(documentId);
                     }}
-                    className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
+                    className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium text-fm-blue bg-fm-blue-light border border-fm-blue-border rounded-md hover:bg-fm-blue-light hover:border-fm-blue-border transition-colors"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -143,7 +143,7 @@ function SourceCard({ source, onDocumentView, isExpanded, onToggleExpand }: Sour
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 hover:border-gray-300 transition-colors"
+                    className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium text-fm-text bg-fm-bg border border-fm-border rounded-md hover:bg-fm-surface hover:border-fm-border transition-colors"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -206,13 +206,13 @@ export default function SourcesDisplay({ sources, onDocumentView, className = ""
       {/* Header - Always visible */}
       <button
         onClick={toggleAllSources}
-        className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 hover:shadow-sm group"
+        className="w-full flex items-center justify-between p-3 bg-fm-blue-light rounded-lg border border-fm-blue-border hover:bg-fm-surface transition-all duration-200 hover:shadow-sm group"
       >
         <div className="flex items-center space-x-3">
           {/* Sources indicator */}
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium text-blue-900">
+            <span className="text-sm font-medium text-fm-blue">
               {sources.length} source{sources.length !== 1 ? 's' : ''}
             </span>
           </div>
@@ -228,7 +228,7 @@ export default function SourcesDisplay({ sources, onDocumentView, className = ""
               );
             })}
             {Object.keys(sourceGroups).length > 3 && (
-              <span className="text-xs text-blue-700 font-medium">
+              <span className="text-xs text-fm-blue font-medium">
                 +{Object.keys(sourceGroups).length - 3}
               </span>
             )}
@@ -236,13 +236,13 @@ export default function SourcesDisplay({ sources, onDocumentView, className = ""
 
           {/* Confidence indicator */}
           {avgConfidence > 0 && (
-            <div className="flex items-center space-x-1 px-2 py-1 bg-white/60 rounded-full border border-blue-200">
+            <div className="flex items-center space-x-1 px-2 py-1 bg-fm-surface/60 rounded-full border border-fm-blue-border">
               <div className={`w-2 h-2 rounded-full ${
-                maxConfidence >= 0.9 ? 'bg-emerald-500' : 
-                maxConfidence >= 0.7 ? 'bg-blue-500' : 
+                maxConfidence >= 0.9 ? 'bg-emerald-500' :
+                maxConfidence >= 0.7 ? 'bg-blue-500' :
                 maxConfidence >= 0.5 ? 'bg-amber-500' : 'bg-red-500'
               }`}></div>
-              <span className="text-xs font-medium text-blue-800">
+              <span className="text-xs font-medium text-fm-blue">
                 {Math.round(avgConfidence * 100)}% avg
               </span>
             </div>
@@ -251,11 +251,11 @@ export default function SourcesDisplay({ sources, onDocumentView, className = ""
 
         {/* Expand/collapse indicator */}
         <div className="flex items-center space-x-2">
-          <span className="text-xs text-blue-700 font-medium group-hover:text-blue-800">
+          <span className="text-xs text-fm-blue font-medium group-hover:text-blue-800">
             {isCollapsed ? 'Show details' : 'Hide details'}
           </span>
           <svg 
-            className={`w-4 h-4 text-blue-600 transform transition-transform duration-200 ${!isCollapsed ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-fm-blue transform transition-transform duration-200 ${!isCollapsed ? 'rotate-180' : ''}`}
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
@@ -279,8 +279,8 @@ export default function SourcesDisplay({ sources, onDocumentView, className = ""
           ))}
           
           {/* Summary footer */}
-          <div className="mt-4 pt-3 border-t border-gray-200">
-            <div className="flex items-center justify-between text-xs text-gray-500">
+          <div className="mt-4 pt-3 border-t border-fm-border">
+            <div className="flex items-center justify-between text-xs text-fm-dim">
               <span>
                 {sources.length} reference{sources.length !== 1 ? 's' : ''} used in this response
               </span>

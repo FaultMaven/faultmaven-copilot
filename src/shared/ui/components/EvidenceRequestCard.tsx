@@ -41,14 +41,14 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
 
   return (
     <div
-      className={`border border-gray-200 rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow ${className}`}
+      className={`border border-fm-border rounded-lg bg-fm-surface shadow-sm hover:shadow-md transition-shadow ${className}`}
       role="article"
       aria-label={`Evidence request: ${request.label}`}
     >
       {/* Header */}
       <div className="p-4">
         <div className="flex items-start justify-between gap-3 mb-2">
-          <h3 className="text-sm font-semibold text-gray-900 flex-1">
+          <h3 className="text-sm font-semibold text-white flex-1">
             {request.label}
           </h3>
 
@@ -63,7 +63,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
         </div>
 
         {/* Description */}
-        <p className="text-sm text-gray-700 mb-3">
+        <p className="text-sm text-fm-text mb-3">
           {request.description}
         </p>
 
@@ -79,14 +79,14 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
           </span>
 
           {/* Completeness Percentage */}
-          <span className="text-xs text-gray-600" aria-label={`${completenessPercent}% complete`}>
+          <span className="text-xs text-fm-dim" aria-label={`${completenessPercent}% complete`}>
             {completenessPercent}% complete
           </span>
         </div>
 
         {/* Completeness Bar */}
         <div
-          className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"
+          className="w-full bg-fm-elevated rounded-full h-2 overflow-hidden"
           role="progressbar"
           aria-valuenow={completenessPercent}
           aria-valuemin={0}
@@ -101,8 +101,8 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
 
         {/* Expected Output (if available) */}
         {request.guidance.expected_output && (
-          <div className="mt-3 p-2 bg-blue-50 border-l-2 border-blue-400 rounded">
-            <p className="text-xs text-blue-800">
+          <div className="mt-3 p-2 bg-fm-blue-light border-l-2 border-blue-400 rounded">
+            <p className="text-xs text-fm-blue">
               <span className="font-medium">Expected: </span>
               {request.guidance.expected_output}
             </p>
@@ -112,10 +112,10 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
 
       {/* Collapsible Guidance Section */}
       {hasGuidance && (
-        <div className="border-t border-gray-200">
+        <div className="border-t border-fm-border">
           <button
             onClick={() => setIsGuidanceExpanded(!isGuidanceExpanded)}
-            className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-fm-text hover:bg-fm-surface transition-colors"
             aria-expanded={isGuidanceExpanded}
             aria-controls={`guidance-${request.request_id}`}
           >
@@ -131,7 +131,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
               </svg>
               How to obtain this evidence
             </span>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-fm-dim">
               {isGuidanceExpanded ? 'Hide' : 'Show'} guidance
             </span>
           </button>
@@ -189,7 +189,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
                   title="Alternative Methods"
                   icon="🔄"
                   items={request.guidance.alternatives}
-                  iconColor="text-gray-600"
+                  iconColor="text-fm-dim"
                 />
               )}
             </div>
@@ -219,11 +219,11 @@ const GuidanceSection: React.FC<GuidanceSectionProps> = memo(({
   icon,
   items,
   monospace = false,
-  iconColor = 'text-gray-600'
+  iconColor = 'text-fm-dim'
 }) => {
   return (
     <div>
-      <h4 className="text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+      <h4 className="text-xs font-semibold text-fm-text mb-1 flex items-center gap-1">
         <span className={iconColor} aria-hidden="true">{icon}</span>
         {title}
       </h4>
@@ -231,7 +231,7 @@ const GuidanceSection: React.FC<GuidanceSectionProps> = memo(({
         {items.map((item, index) => (
           <li
             key={index}
-            className={`text-xs text-gray-800 pl-5 ${monospace ? 'font-mono bg-gray-100 rounded px-2 py-1' : ''}`}
+            className={`text-xs text-fm-text pl-5 ${monospace ? 'font-mono bg-fm-surface rounded px-2 py-1' : ''}`}
           >
             {item}
           </li>
@@ -253,31 +253,31 @@ function getCategoryInfo(category: EvidenceCategory): { label: string; icon: str
       return {
         label: 'Symptoms',
         icon: '🩺',
-        className: 'bg-red-100 text-red-800 border border-red-200'
+        className: 'bg-fm-red-light text-fm-red border border-fm-border'
       };
     case EvidenceCategory.TIMELINE:
       return {
         label: 'Timeline',
         icon: '📅',
-        className: 'bg-blue-100 text-blue-800 border border-blue-200'
+        className: 'bg-fm-blue-light text-fm-blue border border-fm-blue-border'
       };
     case EvidenceCategory.CHANGES:
       return {
         label: 'Changes',
         icon: '🔄',
-        className: 'bg-purple-100 text-purple-800 border border-purple-200'
+        className: 'bg-fm-purple-light text-fm-purple border border-fm-purple-border'
       };
     case EvidenceCategory.CONFIGURATION:
       return {
         label: 'Config',
         icon: '⚙️',
-        className: 'bg-orange-100 text-orange-800 border border-orange-200'
+        className: 'bg-fm-yellow-light text-fm-yellow border border-fm-yellow-border'
       };
     case EvidenceCategory.SCOPE:
       return {
         label: 'Scope',
         icon: '🎯',
-        className: 'bg-green-100 text-green-800 border border-green-200'
+        className: 'bg-fm-green-light text-fm-green border border-fm-green-border'
       };
     case EvidenceCategory.METRICS:
       return {
@@ -295,7 +295,7 @@ function getCategoryInfo(category: EvidenceCategory): { label: string; icon: str
       return {
         label: category,
         icon: '📋',
-        className: 'bg-gray-100 text-gray-800 border border-gray-200'
+        className: 'bg-fm-surface text-fm-text border border-fm-border'
       };
   }
 }
@@ -305,37 +305,37 @@ function getStatusInfo(status: EvidenceStatus): { label: string; className: stri
     case EvidenceStatus.PENDING:
       return {
         label: 'Pending',
-        className: 'bg-gray-100 text-gray-700 border border-gray-200',
+        className: 'bg-fm-surface text-fm-text border border-fm-border',
         dotColor: '#6b7280'
       };
     case EvidenceStatus.PARTIAL:
       return {
         label: 'Partial',
-        className: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+        className: 'bg-fm-yellow-light text-fm-yellow border border-fm-yellow-border',
         dotColor: '#f59e0b'
       };
     case EvidenceStatus.COMPLETE:
       return {
         label: 'Complete',
-        className: 'bg-green-100 text-green-800 border border-green-200',
+        className: 'bg-fm-green-light text-fm-green border border-fm-green-border',
         dotColor: '#10b981'
       };
     case EvidenceStatus.BLOCKED:
       return {
         label: 'Blocked',
-        className: 'bg-red-100 text-red-800 border border-red-200',
+        className: 'bg-fm-red-light text-fm-red border border-fm-border',
         dotColor: '#ef4444'
       };
     case EvidenceStatus.OBSOLETE:
       return {
         label: 'Obsolete',
-        className: 'bg-gray-100 text-gray-500 border border-gray-200',
+        className: 'bg-fm-surface text-fm-dim border border-fm-border',
         dotColor: '#9ca3af'
       };
     default:
       return {
         label: status,
-        className: 'bg-gray-100 text-gray-700 border border-gray-200',
+        className: 'bg-fm-surface text-fm-text border border-fm-border',
         dotColor: '#6b7280'
       };
   }
@@ -343,7 +343,7 @@ function getStatusInfo(status: EvidenceStatus): { label: string; className: stri
 
 function getCompletenessBarColor(completeness: number): string {
   if (completeness >= 1.0) return 'bg-green-500';
-  if (completeness >= 0.7) return 'bg-blue-500';
+  if (completeness >= 0.7) return 'bg-fm-blue-light0';
   if (completeness >= 0.4) return 'bg-yellow-500';
   return 'bg-orange-500';
 }

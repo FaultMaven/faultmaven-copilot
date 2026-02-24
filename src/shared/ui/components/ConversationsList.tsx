@@ -350,32 +350,36 @@ export function ConversationsList({
     }
   };
 
-  const groupCasesByTime = (items: UserCase[]) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const groupCasesByState = (items: UserCase[]) => {
     const groups = {
       pinned: [] as UserCase[],
-      today: [] as UserCase[],
-      sevenDays: [] as UserCase[],
-      thirtyDays: [] as UserCase[],
-      older: [] as UserCase[]
+      active: [] as UserCase[],
+      resolved: [] as UserCase[],
+      closed: [] as UserCase[],
     };
 
+    const sortByRecent = (a: UserCase, b: UserCase) =>
+      new Date(b.updated_at || b.created_at || 0).getTime() -
+      new Date(a.updated_at || a.created_at || 0).getTime();
+
     items.filter(c => c && c.case_id).forEach(c => {
-      // Pinned cases go to their own group
       if (pinnedCases.has(c.case_id)) {
         groups.pinned.push(c);
         return;
       }
 
-      const d = new Date(c.updated_at || c.created_at || 0);
-      if (d >= today) groups.today.push(c);
-      else if (d >= sevenDaysAgo) groups.sevenDays.push(c);
-      else if (d >= thirtyDaysAgo) groups.thirtyDays.push(c);
-      else groups.older.push(c);
+      const status = c.status || 'inquiry';
+      if (status === 'resolved') groups.resolved.push(c);
+      else if (status === 'closed') groups.closed.push(c);
+      else groups.active.push(c); // inquiry + investigating
     });
+
+    // Sort each group by most recent first
+    groups.pinned.sort(sortByRecent);
+    groups.active.sort(sortByRecent);
+    groups.resolved.sort(sortByRecent);
+    groups.closed.sort(sortByRecent);
+
     return groups;
   };
 
@@ -403,7 +407,7 @@ export function ConversationsList({
     if (items.length === 0) return null;
     return (
       <div key={title} className="space-y-1">
-        <h3 className="text-xs font-medium text-gray-500 px-3 py-2 uppercase tracking-wider">{title}</h3>
+        <h3 className="text-xs font-medium text-fm-dim px-3 py-2 uppercase tracking-wider">{title}</h3>
         <div className="space-y-1">
           {items.map((c) => (
             <ConversationItem
@@ -447,24 +451,24 @@ export function ConversationsList({
     );
   }
 
-  const caseGroups = groupCasesByTime(mergedCases);
+  const caseGroups = groupCasesByState(mergedCases);
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {error && !error.includes('Failed to fetch') && (
-        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-xs text-red-700">{error}</p>
-          <button onClick={() => setError(null)} className="mt-1 text-xs text-red-600 hover:text-red-800 underline">Dismiss</button>
+        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-red-light border border-fm-border rounded-lg">
+          <p className="text-xs text-fm-red">{error}</p>
+          <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-red hover:text-fm-text underline">Dismiss</button>
         </div>
       )}
 
       {titleGenStatus.message && (
         <div className={`flex-shrink-0 p-2 mx-3 mt-2 border rounded-lg ${
           titleGenStatus.type === "error"
-            ? "bg-red-50 border-red-200 text-red-700"
+            ? "bg-fm-red-light border-fm-border text-fm-red"
             : titleGenStatus.type === "success"
-            ? "bg-green-50 border-green-200 text-green-700"
-            : "bg-blue-50 border-blue-200 text-blue-700"
+            ? "bg-fm-green-light border-fm-green-border text-fm-green"
+            : "bg-fm-blue-light border-fm-blue-border text-fm-blue"
         }`}>
           <p className="text-xs">{titleGenStatus.message}</p>
         </div>
@@ -488,16 +492,15 @@ export function ConversationsList({
 
         {mergedCases.length === 0 && !error?.includes('Failed to fetch') ? (
           <div className="text-center py-8 px-4">
-            <p className="text-sm text-gray-500 mb-3">No conversations yet</p>
-            <p className="text-xs text-gray-400">Click "New chat" to start your first conversation</p>
+            <p className="text-sm text-fm-dim mb-3">No conversations yet</p>
+            <p className="text-xs text-fm-muted">Click "New Case" to start your first conversation</p>
           </div>
         ) : (
           <div className="space-y-4 pb-4">
             {renderCaseGroup('Pinned', caseGroups.pinned)}
-            {renderCaseGroup('Today', caseGroups.today)}
-            {renderCaseGroup('7 Days', caseGroups.sevenDays)}
-            {renderCaseGroup('30 Days', caseGroups.thirtyDays)}
-            {renderCaseGroup('Older', caseGroups.older)}
+            {renderCaseGroup('Active', caseGroups.active)}
+            {renderCaseGroup('Resolved', caseGroups.resolved)}
+            {renderCaseGroup('Closed', caseGroups.closed)}
           </div>
         )}
       </div>

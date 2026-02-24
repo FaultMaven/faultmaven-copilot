@@ -316,17 +316,21 @@ function SidePanelAppContent() {
     initializeApp();
   }, []); // Run once on mount
 
-  // Handle responsive sidebar
+  // ADR 003: Sidebar state persists via chrome.storage.local
+  // Side panels are 400-600px — sidebar should remain expanded by default
+  // (no auto-collapse on narrow width). User toggles manually.
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 600) {
-        setSidebarCollapsed(true);
+    browser.storage.local.get('sidebarCollapsed').then((result) => {
+      if (result.sidebarCollapsed !== undefined) {
+        setSidebarCollapsed(result.sidebarCollapsed);
       }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    });
   }, []);
+
+  // Persist sidebar state
+  useEffect(() => {
+    browser.storage.local.set({ sidebarCollapsed });
+  }, [sidebarCollapsed]);
 
   const handleAuthSuccess = async () => {
     // Auth successful - wait a moment for storage to sync, then check auth state
@@ -534,7 +538,9 @@ function SidePanelAppContent() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-screen bg-gray-50 text-gray-800 text-sm font-sans">
+      {/* ADR 003: SRE-Native Dark Theme root layout */}
+      <div className="flex h-screen bg-fm-bg text-fm-text text-sm font-sans relative overflow-hidden">
+        {/* Inline Sidebar (Mode A) — CollapsibleNavigation */}
         <CollapsibleNavigation
           isCollapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -554,11 +560,8 @@ function SidePanelAppContent() {
           onNewChat={handleNewChatFromNav}
           onLogout={handleLogout}
           onCaseTitleChange={async (caseId: string, newTitle: string) => {
-            // Update local state optimistically
             setConversationTitles(prev => ({ ...prev, [caseId]: newTitle }));
             setTitleSources(prev => ({ ...prev, [caseId]: 'user' }));
-
-            // Persist to backend
             try {
               await updateCaseTitle(caseId, newTitle);
               log.info('[SidePanelApp] Case title updated successfully', { caseId, newTitle });
@@ -569,7 +572,6 @@ function SidePanelAppContent() {
                 message: error instanceof Error ? error.message : 'Unknown error',
                 type: 'error'
               });
-              // Revert optimistic update on failure
               setConversationTitles(prev => {
                 const { [caseId]: _, ...rest } = prev;
                 return rest;
@@ -582,32 +584,36 @@ function SidePanelAppContent() {
             else newSet.add(id);
             setPinnedCases(newSet);
           }}
-          onAfterDelete={() => { }} // TODO: Implement deletion handler
+          onAfterDelete={() => { }}
           onCasesLoaded={() => { }}
         />
 
-        <ContentArea
-          activeTab={activeTab}
-          activeCaseId={activeCaseId || undefined}
-          activeCase={activeCase}
-          conversations={conversations}
-          loading={submitting || isUploading} // using submitting as general loading state for now
-          submitting={submitting}
-          sessionId={sessionId}
-          hasUnsavedNewChat={hasUnsavedNewChat}
-          investigationProgress={investigationProgress}
-          caseEvidence={caseEvidence}
-          failedOperations={getFailedOperationsForUser()}
-          onQuerySubmit={handleQuerySubmit}
-          onTurnSubmit={handleTurnSubmit}
-          onDocumentView={handleDocumentView}
-          onGenerateReports={() => setShowReportDialog(true)}
-          onNewChat={handleNewChatFromNav}
-          onRetryFailedOperation={handleUserRetry}
-          onDismissFailedOperation={handleDismissFailedOperation}
-          getErrorMessageForOperation={getErrorMessageForOperation} // Updated to use the correct type signature
-          setActiveCase={setActiveCase}
-        />
+        {/* Main panel */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {/* Content Area */}
+          <ContentArea
+            activeTab={activeTab}
+            activeCaseId={activeCaseId || undefined}
+            activeCase={activeCase}
+            conversations={conversations}
+            loading={submitting || isUploading}
+            submitting={submitting}
+            sessionId={sessionId}
+            hasUnsavedNewChat={hasUnsavedNewChat}
+            investigationProgress={investigationProgress}
+            caseEvidence={caseEvidence}
+            failedOperations={getFailedOperationsForUser()}
+            onQuerySubmit={handleQuerySubmit}
+            onTurnSubmit={handleTurnSubmit}
+            onDocumentView={handleDocumentView}
+            onGenerateReports={() => setShowReportDialog(true)}
+            onNewChat={handleNewChatFromNav}
+            onRetryFailedOperation={handleUserRetry}
+            onDismissFailedOperation={handleDismissFailedOperation}
+            getErrorMessageForOperation={getErrorMessageForOperation}
+            setActiveCase={setActiveCase}
+          />
+        </div>
       </div>
 
       <ToastContainer

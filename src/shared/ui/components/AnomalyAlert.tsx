@@ -14,9 +14,9 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
   const severityConfig = {
     critical: {
       color: 'red',
-      bg: 'bg-red-50',
-      border: 'border-red-300',
-      text: 'text-red-800',
+      bg: 'bg-fm-red-light',
+      border: 'border-fm-border',
+      text: 'text-fm-red',
       icon: '🚨',
       badgeBg: 'bg-red-600',
       badgeText: 'text-white',
@@ -24,9 +24,9 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
     },
     high: {
       color: 'orange',
-      bg: 'bg-orange-50',
-      border: 'border-orange-300',
-      text: 'text-orange-800',
+      bg: 'bg-fm-yellow-light',
+      border: 'border-fm-yellow-border',
+      text: 'text-fm-yellow',
       icon: '⚠️',
       badgeBg: 'bg-orange-600',
       badgeText: 'text-white',
@@ -34,9 +34,9 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
     },
     medium: {
       color: 'yellow',
-      bg: 'bg-yellow-50',
-      border: 'border-yellow-300',
-      text: 'text-yellow-800',
+      bg: 'bg-fm-yellow-light',
+      border: 'border-fm-yellow-border',
+      text: 'text-fm-yellow',
       icon: '⚡',
       badgeBg: 'bg-yellow-600',
       badgeText: 'text-white',
@@ -44,9 +44,9 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
     },
     low: {
       color: 'blue',
-      bg: 'bg-blue-50',
-      border: 'border-blue-300',
-      text: 'text-blue-800',
+      bg: 'bg-fm-blue-light',
+      border: 'border-fm-blue-border',
+      text: 'text-fm-blue',
       icon: 'ℹ️',
       badgeBg: 'bg-blue-600',
       badgeText: 'text-white',
@@ -102,8 +102,8 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
       </div>
 
       {/* Anomaly Statement */}
-      <div className={`statement mb-3 p-3 rounded-md bg-white border ${config.border}`}>
-        <p className="text-sm font-medium text-gray-900">
+      <div className={`statement mb-3 p-3 rounded-md bg-fm-surface border ${config.border}`}>
+        <p className="text-sm font-medium text-white">
           {anomaly.statement}
         </p>
       </div>
@@ -135,7 +135,7 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
               key={index}
               className={`
                 inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium
-                bg-white border ${config.border} ${config.text}
+                bg-fm-surface border ${config.border} ${config.text}
               `}
             >
               <span className="mr-1">🔧</span>
@@ -146,7 +146,7 @@ export const AnomalyAlert: React.FC<AnomalyAlertProps> = ({ anomaly }) => {
       </div>
 
       {/* Action Prompt */}
-      <div className={`mt-3 flex items-start gap-2 p-2 rounded-md bg-white border ${config.border}`}>
+      <div className={`mt-3 flex items-start gap-2 p-2 rounded-md bg-fm-surface border ${config.border}`}>
         <svg
           className={`w-4 h-4 ${config.text} flex-shrink-0 mt-0.5`}
           fill="none"

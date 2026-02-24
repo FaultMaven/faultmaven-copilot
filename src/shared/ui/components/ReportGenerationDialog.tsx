@@ -139,9 +139,9 @@ export function ReportGenerationDialog({
     const { action, similarity_score, reason, existing_runbook } = recommendations.runbook_recommendation;
 
     const actionColors = {
-      reuse: 'bg-green-50 border-green-200 text-green-800',
-      review_or_generate: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-      generate: 'bg-blue-50 border-blue-200 text-blue-800'
+      reuse: 'bg-fm-green-light border-fm-green-border text-fm-green',
+      review_or_generate: 'bg-fm-yellow-light border-fm-yellow-border text-fm-yellow',
+      generate: 'bg-fm-blue-light border-fm-blue-border text-fm-blue'
     };
 
     const actionIcons = {
@@ -165,7 +165,7 @@ export function ReportGenerationDialog({
               </p>
             )}
             {existing_runbook && action === 'reuse' && (
-              <div className="mt-2 p-2 bg-white bg-opacity-50 rounded text-xs">
+              <div className="mt-2 p-2 bg-fm-surface bg-opacity-50 rounded text-xs">
                 <strong>Existing Runbook:</strong> {existing_runbook.title}
               </div>
             )}
@@ -179,15 +179,15 @@ export function ReportGenerationDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-fm-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-900">
+        <div className="sticky top-0 bg-fm-surface border-b px-6 py-4 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-white">
             Generate Case Documentation
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            className="text-fm-muted hover:text-fm-text text-2xl leading-none"
             aria-label="Close dialog"
           >
             ×
@@ -196,19 +196,19 @@ export function ReportGenerationDialog({
 
         {/* Body */}
         <div className="p-6">
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-sm text-fm-dim mb-4">
             Case: <strong>{caseTitle}</strong>
           </p>
 
           {isLoading && (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading recommendations...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-fm-blue mx-auto mb-4"></div>
+              <p className="text-fm-dim">Loading recommendations...</p>
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+            <div className="bg-fm-red-light border border-fm-border text-fm-red px-4 py-3 rounded mb-4">
               {error}
             </div>
           )}
@@ -220,22 +220,22 @@ export function ReportGenerationDialog({
 
               {/* Report Selection */}
               <div className="mb-6">
-                <h3 className="font-semibold text-gray-900 mb-3">
+                <h3 className="font-semibold text-white mb-3">
                   Select Reports to Generate
                 </h3>
                 <div className="space-y-2">
                   {recommendations.available_for_generation.map(reportType => (
                     <label
                       key={reportType}
-                      className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                      className="flex items-center gap-3 p-3 border rounded-lg hover:bg-fm-surface cursor-pointer"
                     >
                       <input
                         type="checkbox"
                         checked={selectedReports.includes(reportType)}
                         onChange={() => handleToggleReport(reportType)}
-                        className="w-4 h-4 text-blue-600"
+                        className="w-4 h-4 text-fm-blue"
                       />
-                      <span className="flex-1 font-medium text-gray-900">
+                      <span className="flex-1 font-medium text-white">
                         {getReportLabel(reportType)}
                       </span>
                     </label>
@@ -247,14 +247,14 @@ export function ReportGenerationDialog({
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                  className="px-4 py-2 text-fm-text hover:bg-fm-surface rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleGenerate}
                   disabled={isGenerating || selectedReports.length === 0}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-fm-blue text-white rounded-lg hover:bg-fm-active disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isGenerating ? 'Generating...' : `Generate ${selectedReports.length} Report${selectedReports.length !== 1 ? 's' : ''}`}
                 </button>
@@ -265,7 +265,7 @@ export function ReportGenerationDialog({
           {/* Generated Reports */}
           {generatedReports.length > 0 && (
             <div className="space-y-4">
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+              <div className="bg-fm-green-light border border-fm-green-border text-fm-green px-4 py-3 rounded mb-4">
                 ✅ Successfully generated {generatedReports.length} report{generatedReports.length !== 1 ? 's' : ''}
               </div>
 
@@ -273,14 +273,14 @@ export function ReportGenerationDialog({
                 <div key={report.report_id} className="border rounded-lg p-4">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <h4 className="font-semibold text-gray-900">{report.title}</h4>
-                      <p className="text-sm text-gray-500">
+                      <h4 className="font-semibold text-white">{report.title}</h4>
+                      <p className="text-sm text-fm-dim">
                         {getReportLabel(report.report_type)} • Generated {new Date(report.generated_at).toLocaleString()}
                       </p>
                     </div>
                     <button
                       onClick={() => handleDownload(report)}
-                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                      className="px-3 py-1 bg-fm-blue text-white text-sm rounded hover:bg-fm-active"
                     >
                       Download
                     </button>
@@ -291,7 +291,7 @@ export function ReportGenerationDialog({
               <div className="flex justify-end pt-4">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                  className="px-4 py-2 bg-fm-elevated text-fm-text rounded-lg hover:bg-fm-elevated"
                 >
                   Done
                 </button>

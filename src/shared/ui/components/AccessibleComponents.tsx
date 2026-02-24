@@ -26,10 +26,10 @@ export const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonPr
     const baseClasses = 'relative group inline-flex items-center justify-center font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2';
     
     const variantClasses = {
-      primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 disabled:bg-blue-300',
-      secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500 disabled:bg-gray-100',
-      danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 disabled:bg-red-300',
-      ghost: 'bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500 disabled:text-gray-400'
+      primary: 'bg-fm-blue text-white hover:bg-fm-active focus:ring-fm-blue disabled:bg-fm-elevated',
+      secondary: 'bg-fm-elevated text-white hover:bg-fm-elevated focus:ring-fm-blue disabled:bg-fm-surface',
+      danger: 'bg-fm-red text-white hover:bg-fm-active focus:ring-fm-red disabled:bg-fm-elevated',
+      ghost: 'bg-transparent text-fm-text hover:bg-fm-surface focus:ring-fm-blue disabled:text-fm-muted'
     } as const;
 
     const sizeClasses = {
@@ -56,7 +56,7 @@ export const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonPr
           children
         )}
         {tooltip && (
-          <span className="pointer-events-none absolute right-0 top-[calc(100%+6px)] whitespace-nowrap rounded-md bg-gray-700/95 px-2 py-0.5 text-[10px] text-white opacity-0 shadow-md z-50 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <span className="pointer-events-none absolute right-0 top-[calc(100%+6px)] whitespace-nowrap rounded-md bg-fm-elevated/95 px-2 py-0.5 text-[10px] text-white opacity-0 shadow-md z-50 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             {tooltip}
           </span>
         )}
@@ -92,9 +92,9 @@ export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps
 
     return (
       <div className="space-y-1">
-        <label htmlFor={id} className="block text-sm font-medium text-gray-700">
+        <label htmlFor={id} className="block text-sm font-medium text-fm-text">
           {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
+          {required && <span className="text-fm-red ml-1">*</span>}
         </label>
         <input
           ref={ref}
@@ -103,20 +103,20 @@ export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps
           aria-invalid={error ? 'true' : 'false'}
           className={`
             block w-full px-3 py-2 border rounded-md shadow-sm
-            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-            disabled:bg-gray-50 disabled:text-gray-500
-            ${error ? 'border-red-300' : 'border-gray-300'}
+            focus:outline-none focus:ring-2 focus:ring-fm-blue focus:border-fm-blue
+            disabled:bg-fm-bg disabled:text-fm-dim
+            ${error ? 'border-fm-border' : 'border-fm-border'}
             ${className}
           `}
           {...props}
         />
         {error && (
-          <p id={errorId} className="text-sm text-red-600" role="alert">
+          <p id={errorId} className="text-sm text-fm-red" role="alert">
             {error}
           </p>
         )}
         {helperText && !error && (
-          <p id={helperId} className="text-sm text-gray-500">
+          <p id={helperId} className="text-sm text-fm-dim">
             {helperText}
           </p>
         )}
@@ -141,9 +141,9 @@ export const AccessibleTextarea = forwardRef<HTMLTextAreaElement, AccessibleText
 
     return (
       <div className="space-y-1">
-        <label htmlFor={id} className="block text-sm font-medium text-gray-700">
+        <label htmlFor={id} className="block text-sm font-medium text-fm-text">
           {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
+          {required && <span className="text-fm-red ml-1">*</span>}
         </label>
         <textarea
           ref={ref}
@@ -152,20 +152,20 @@ export const AccessibleTextarea = forwardRef<HTMLTextAreaElement, AccessibleText
           aria-invalid={error ? 'true' : 'false'}
           className={`
             block w-full px-3 py-2 border rounded-md shadow-sm resize-none
-            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-            disabled:bg-gray-50 disabled:text-gray-500
-            ${error ? 'border-red-300' : 'border-gray-300'}
+            focus:outline-none focus:ring-2 focus:ring-fm-blue focus:border-fm-blue
+            disabled:bg-fm-bg disabled:text-fm-dim
+            ${error ? 'border-fm-border' : 'border-fm-border'}
             ${className}
           `}
           {...props}
         />
         {error && (
-          <p id={errorId} className="text-sm text-red-600" role="alert">
+          <p id={errorId} className="text-sm text-fm-red" role="alert">
             {error}
           </p>
         )}
         {helperText && !error && (
-          <p id={helperId} className="text-sm text-gray-500">
+          <p id={helperId} className="text-sm text-fm-dim">
             {helperText}
           </p>
         )}
@@ -208,15 +208,15 @@ export function AccessibleModal({ isOpen, onClose, title, children, size = 'md' 
       
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className={`relative bg-white rounded-lg shadow-xl ${sizeClasses[size]} w-full`}>
+        <div className={`relative bg-fm-surface rounded-lg shadow-xl ${sizeClasses[size]} w-full`}>
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b">
-            <h2 id="modal-title" className="text-lg font-medium text-gray-900">
+            <h2 id="modal-title" className="text-lg font-medium text-white">
               {title}
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600"
+              className="text-fm-muted hover:text-fm-text focus:outline-none focus:text-fm-text"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

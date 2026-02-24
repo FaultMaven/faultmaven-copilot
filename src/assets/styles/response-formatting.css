@@ -1,67 +1,87 @@
-/* Response Formatting Styles */
+/* Response Formatting Styles — ADR 003 Dark Theme */
 
-/* Code blocks */
+/* Code blocks — elevated surface for hierarchy */
 .code-block {
-  @apply bg-gray-100 rounded-lg border border-gray-200 mb-3 overflow-hidden;
+  @apply bg-fm-bg rounded-lg border border-fm-border mb-3 overflow-hidden;
 }
 
 .code-header {
-  @apply bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600 border-b border-gray-300;
+  @apply bg-fm-elevated px-3 py-1.5 border-b border-fm-border;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: #8B949E;
 }
 
 .code-block pre {
-  @apply bg-gray-100 p-3 overflow-x-auto text-sm;
+  @apply bg-fm-bg p-3 overflow-x-auto;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .code-block code {
-  @apply font-mono text-gray-800;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  @apply text-fm-text;
 }
 
-/* Inline code */
+/* Inline code — subtle elevation */
 .inline-code {
-  @apply bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono text-gray-800 border border-gray-200;
+  @apply bg-fm-elevated px-1.5 py-0.5 rounded border border-fm-border-light;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #E6EDF3;
 }
 
-/* Special message blocks */
+/* Special message blocks — left border accent for visual hierarchy */
 .warning-block {
-  @apply bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-3 rounded-r;
+  @apply bg-fm-elevated border-l-4 border-fm-yellow p-3 mb-3 rounded-r-lg;
 }
 
 .error-block {
-  @apply bg-red-50 border-l-4 border-red-400 p-3 mb-3 rounded-r;
+  @apply bg-fm-elevated border-l-4 border-fm-red p-3 mb-3 rounded-r-lg;
 }
 
 .solution-block {
-  @apply bg-green-50 border-l-4 border-green-400 p-3 mb-3 rounded-r;
+  @apply bg-fm-elevated border-l-4 border-fm-green p-3 mb-3 rounded-r-lg;
 }
 
 .info-block {
-  @apply bg-blue-50 border-l-4 border-blue-400 p-3 mb-3 rounded-r;
+  @apply bg-fm-elevated border-l-4 border-fm-blue p-3 mb-3 rounded-r-lg;
 }
 
-/* Response headings */
+/* Response headings — finding-title scale */
 .response-heading {
-  @apply font-semibold text-gray-800 mt-4 mb-2 border-b border-gray-200 pb-1;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  @apply text-white mt-4 mb-2 border-b border-fm-border pb-1;
 }
 
-/* Tables */
+/* Tables — elevated surface */
 .table-container {
   @apply overflow-x-auto mb-3;
 }
 
 .table-container table {
-  @apply min-w-full border border-gray-200 rounded-lg;
+  @apply min-w-full border border-fm-border rounded-lg;
 }
 
 .table-container th {
-  @apply bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200;
+  @apply bg-fm-elevated px-3 py-2 text-left border-b border-fm-border;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #8B949E;
 }
 
 .table-container td {
-  @apply px-3 py-2 text-sm text-gray-900 border-b border-gray-100;
+  @apply px-3 py-2 border-b border-fm-border;
+  font-size: 13px;
+  color: #E6EDF3;
 }
 
-/* Lists enhancement */
+/* Lists — body text scale */
 .prose-sm ul {
   @apply list-disc pl-4 mb-2;
 }
@@ -71,54 +91,65 @@
 }
 
 .prose-sm li {
-  @apply mb-1 text-gray-700;
+  @apply mb-1 text-fm-text;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
-/* Action items and steps */
+/* Action items and steps — elevated cards */
 .action-item {
-  @apply flex items-start gap-2 p-2 bg-blue-50 rounded border-l-4 border-blue-400 mb-2;
+  @apply flex items-start gap-2 p-2.5 bg-fm-elevated rounded-lg border-l-4 border-fm-blue mb-2;
 }
 
 .step-item {
-  @apply flex items-start gap-2 p-2 bg-gray-50 rounded border-l-4 border-gray-400 mb-2;
+  @apply flex items-start gap-2 p-2.5 bg-fm-elevated rounded-lg border-l-4 border-fm-border mb-2;
 }
 
-/* Severity indicators */
+/* Severity indicators — meta scale */
 .severity-high {
-  @apply text-red-600 font-medium;
+  @apply text-fm-red;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .severity-medium {
-  @apply text-yellow-600 font-medium;
+  @apply text-fm-yellow;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .severity-low {
-  @apply text-green-600 font-medium;
+  @apply text-fm-green;
+  font-size: 11px;
+  font-weight: 600;
 }
 
-/* Command/Terminal blocks */
+/* Command/Terminal blocks — monospace, deepest surface */
 .terminal-block {
-  @apply bg-gray-900 text-green-400 p-3 rounded-lg font-mono text-sm mb-3 overflow-x-auto;
+  @apply bg-fm-bg text-fm-green p-3 rounded-lg mb-3 overflow-x-auto;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .terminal-block::before {
   content: "$ ";
-  @apply text-gray-500;
+  @apply text-fm-muted;
 }
 
-/* Response type styling */
+/* Response type styling — elevated with accent border */
 .response-type-diagnostic {
-  @apply border-l-4 border-orange-400 pl-3 bg-orange-50;
+  @apply border-l-4 border-fm-yellow pl-3 bg-fm-elevated;
 }
 
 .response-type-procedure {
-  @apply border-l-4 border-blue-400 pl-3 bg-blue-50;
+  @apply border-l-4 border-fm-blue pl-3 bg-fm-elevated;
 }
 
 .response-type-technical {
-  @apply border-l-4 border-purple-400 pl-3 bg-purple-50;
+  @apply border-l-4 border-fm-purple pl-3 bg-fm-elevated;
 }
 
 .response-type-quick-answer {
-  @apply bg-green-50 p-3 rounded border border-green-200;
+  @apply bg-fm-elevated p-3 rounded-lg border border-fm-green-border;
 }

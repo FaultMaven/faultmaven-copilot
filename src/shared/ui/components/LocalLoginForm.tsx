@@ -1,14 +1,8 @@
 /**
- * Local Login Form
+ * Local Login Form — ADR 003 Dark Theme
  *
  * Username/password login form for AUTH_MODE=local deployments.
  * Displayed directly in the extension (no redirect to Dashboard).
- *
- * Design matches FaultMaven UI patterns:
- * - Clean card layout with gradient background
- * - Username + optional password fields
- * - Conditional registration link
- * - Loading states and error handling
  */
 
 import React, { useState } from 'react';
@@ -116,6 +110,8 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
     }
   }
 
+  const inputClasses = "w-full px-4 py-2 bg-fm-bg border border-fm-border rounded-lg text-fm-text placeholder-fm-muted focus:ring-2 focus:ring-fm-blue focus:border-fm-blue disabled:bg-fm-elevated disabled:cursor-not-allowed";
+
   return (
     <div className="w-full max-w-md">
       {!showRegister ? (
@@ -123,7 +119,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
         <form onSubmit={handleLogin} className="space-y-4">
           {/* Username Field */}
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="username" className="block text-sm font-medium text-fm-text mb-1">
               Username
             </label>
             <input
@@ -132,7 +128,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={isLoading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className={inputClasses}
               placeholder="Enter your username"
               autoComplete="username"
               autoFocus
@@ -141,8 +137,8 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
 
           {/* Password Field (Optional) */}
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Password <span className="text-gray-400 text-xs">(optional)</span>
+            <label htmlFor="password" className="block text-sm font-medium text-fm-text mb-1">
+              Password <span className="text-fm-muted text-xs">(optional)</span>
             </label>
             <input
               id="password"
@@ -150,7 +146,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className={inputClasses}
               placeholder="Enter your password (if set)"
               autoComplete="current-password"
             />
@@ -158,12 +154,12 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
 
           {/* Error Message */}
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="p-3 bg-fm-red-light border border-fm-border rounded-lg">
               <div className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-fm-red flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-sm text-red-800">{error}</p>
+                <p className="text-sm text-fm-red">{error}</p>
               </div>
             </div>
           )}
@@ -172,7 +168,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
           <button
             type="submit"
             disabled={isLoading || !username.trim()}
-            className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full px-6 py-3 bg-fm-blue text-white font-medium rounded-lg hover:bg-fm-active transition-colors disabled:bg-fm-elevated disabled:text-fm-muted disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
@@ -196,7 +192,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
                 type="button"
                 onClick={() => setShowRegister(true)}
                 disabled={isLoading}
-                className="text-sm text-blue-600 hover:text-blue-700 hover:underline disabled:text-gray-400 disabled:cursor-not-allowed"
+                className="text-sm text-fm-blue hover:text-fm-active hover:underline disabled:text-fm-muted disabled:cursor-not-allowed"
               >
                 Don't have an account? Register
               </button>
@@ -207,14 +203,14 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
         /* Registration Form */
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Create Account</h3>
-            <p className="text-sm text-gray-600">Register for a new FaultMaven account</p>
+            <h3 className="text-lg font-semibold text-white">Create Account</h3>
+            <p className="text-sm text-fm-dim">Register for a new FaultMaven account</p>
           </div>
 
           {/* Username Field */}
           <div>
-            <label htmlFor="reg-username" className="block text-sm font-medium text-gray-700 mb-1">
-              Username <span className="text-red-500">*</span>
+            <label htmlFor="reg-username" className="block text-sm font-medium text-fm-text mb-1">
+              Username <span className="text-fm-red">*</span>
             </label>
             <input
               id="reg-username"
@@ -222,7 +218,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={isLoading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className={inputClasses}
               placeholder="Choose a username"
               autoComplete="username"
               autoFocus
@@ -231,8 +227,8 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
 
           {/* Email Field */}
           <div>
-            <label htmlFor="reg-email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email <span className="text-red-500">*</span>
+            <label htmlFor="reg-email" className="block text-sm font-medium text-fm-text mb-1">
+              Email <span className="text-fm-red">*</span>
             </label>
             <input
               id="reg-email"
@@ -240,7 +236,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className={inputClasses}
               placeholder="you@example.com"
               autoComplete="email"
             />
@@ -248,8 +244,8 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
 
           {/* Display Name Field */}
           <div>
-            <label htmlFor="reg-display-name" className="block text-sm font-medium text-gray-700 mb-1">
-              Display Name <span className="text-red-500">*</span>
+            <label htmlFor="reg-display-name" className="block text-sm font-medium text-fm-text mb-1">
+              Display Name <span className="text-fm-red">*</span>
             </label>
             <input
               id="reg-display-name"
@@ -257,7 +253,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               disabled={isLoading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className={inputClasses}
               placeholder="Your full name"
               autoComplete="name"
             />
@@ -265,8 +261,8 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
 
           {/* Password Field (Optional) */}
           <div>
-            <label htmlFor="reg-password" className="block text-sm font-medium text-gray-700 mb-1">
-              Password <span className="text-gray-400 text-xs">(optional)</span>
+            <label htmlFor="reg-password" className="block text-sm font-medium text-fm-text mb-1">
+              Password <span className="text-fm-muted text-xs">(optional)</span>
             </label>
             <input
               id="reg-password"
@@ -274,7 +270,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className={inputClasses}
               placeholder="Set a password (if desired)"
               autoComplete="new-password"
             />
@@ -282,12 +278,12 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
 
           {/* Error Message */}
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="p-3 bg-fm-red-light border border-fm-border rounded-lg">
               <div className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-fm-red flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-sm text-red-800">{error}</p>
+                <p className="text-sm text-fm-red">{error}</p>
               </div>
             </div>
           )}
@@ -296,7 +292,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
           <button
             type="submit"
             disabled={isLoading || !username.trim() || !email.trim() || !displayName.trim()}
-            className="w-full px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full px-6 py-3 bg-fm-blue text-white font-medium rounded-lg hover:bg-fm-active transition-colors disabled:bg-fm-elevated disabled:text-fm-muted disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
@@ -322,7 +318,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
                 setError(null);
               }}
               disabled={isLoading}
-              className="text-sm text-blue-600 hover:text-blue-700 hover:underline disabled:text-gray-400 disabled:cursor-not-allowed"
+              className="text-sm text-fm-blue hover:text-fm-active hover:underline disabled:text-fm-muted disabled:cursor-not-allowed"
             >
               Already have an account? Sign in
             </button>

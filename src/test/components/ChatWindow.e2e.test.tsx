@@ -71,7 +71,7 @@ describe('ChatInterface e2e', () => {
     );
 
     // Focus query input and type hello + Enter
-    const textarea = await screen.findByPlaceholderText('Type a message or / command...');
+    const textarea = await screen.findByPlaceholderText('Ask FaultMaven...');
     await user.click(textarea);
     await user.type(textarea as HTMLElement, 'hello{enter}');
 

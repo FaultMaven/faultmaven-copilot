@@ -47,7 +47,7 @@ export const ClarifyingQuestions: React.FC<ClarifyingQuestionsProps> = ({ questi
             key={index}
             className={`
               question-item flex items-start gap-3 p-3 rounded-md
-              bg-white border border-amber-200
+              bg-fm-surface border border-amber-200
               ${onQuestionClick ? 'cursor-pointer hover:bg-amber-50 hover:border-amber-300 transition-colors' : ''}
             `}
             onClick={() => onQuestionClick && handleQuestionClick(question)}
@@ -60,7 +60,7 @@ export const ClarifyingQuestions: React.FC<ClarifyingQuestionsProps> = ({ questi
             </div>
 
             {/* Question Text */}
-            <p className="flex-1 text-sm text-gray-800">
+            <p className="flex-1 text-sm text-fm-text">
               {question}
             </p>
 

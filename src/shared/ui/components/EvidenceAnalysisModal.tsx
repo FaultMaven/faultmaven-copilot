@@ -67,15 +67,15 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
       aria-modal="true"
       aria-labelledby="evidence-modal-title"
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+      <div className="bg-fm-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 id="evidence-modal-title" className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-fm-border">
+          <h2 id="evidence-modal-title" className="text-lg font-semibold text-white">
             Analysis: {evidence.filename || 'Pasted Content'}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-fm-muted hover:text-fm-text transition-colors"
             aria-label="Close modal"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,30 +87,30 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
         {/* Content - Scrollable */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Metadata Section */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+          <div className="bg-fm-bg border border-fm-border rounded-lg p-4 space-y-2">
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <div>
-                <span className="font-medium text-gray-700">Uploaded:</span>
-                <span className="ml-2 text-gray-600">{formattedDateTime}</span>
+                <span className="font-medium text-fm-text">Uploaded:</span>
+                <span className="ml-2 text-fm-dim">{formattedDateTime}</span>
               </div>
               {evidence.file_size && (
                 <div>
-                  <span className="font-medium text-gray-700">Size:</span>
-                  <span className="ml-2 text-gray-600">{formatFileSize(evidence.file_size)}</span>
+                  <span className="font-medium text-fm-text">Size:</span>
+                  <span className="ml-2 text-fm-dim">{formatFileSize(evidence.file_size)}</span>
                 </div>
               )}
               {classification && (
                 <div>
-                  <span className="font-medium text-gray-700">Type:</span>
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                  <span className="font-medium text-fm-text">Type:</span>
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fm-blue-light text-fm-blue">
                     {formatDataType(classification.data_type)}
                   </span>
                 </div>
               )}
               {classification && classification.confidence && (
                 <div>
-                  <span className="font-medium text-gray-700">Confidence:</span>
-                  <span className="ml-2 text-gray-600">
+                  <span className="font-medium text-fm-text">Confidence:</span>
+                  <span className="ml-2 text-fm-dim">
                     {Math.round(classification.confidence * 100)}%
                   </span>
                 </div>
@@ -120,18 +120,18 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
 
           {/* Summary Section */}
           <div>
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-2">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-2">
               <span className="text-base" aria-hidden="true">📊</span>
               Summary
             </h3>
-            <div className="prose prose-sm max-w-none text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="prose prose-sm max-w-none text-fm-text bg-fm-bg border border-fm-border rounded-lg p-4">
               <p className="whitespace-pre-wrap">{summary}</p>
             </div>
           </div>
 
           {/* Processing Info (if available) */}
           {classification?.processing_time_ms && (
-            <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-2">
+            <div className="text-xs text-fm-dim bg-fm-bg border border-fm-border rounded p-2">
               <span className="font-medium">Processing time:</span> {classification.processing_time_ms}ms
               {classification.compression_ratio && classification.compression_ratio > 1.5 && (
                 <span className="ml-3">
@@ -143,18 +143,18 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
         </div>
 
         {/* Footer - Actions */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-fm-border bg-fm-bg">
           {onQueryThis && (
             <button
               onClick={handleQueryThis}
-              className="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-fm-blue bg-fm-blue-light border border-fm-blue-border rounded hover:bg-fm-blue-light transition-colors"
             >
               Query This
             </button>
           )}
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-fm-text bg-fm-surface border border-fm-border rounded hover:bg-fm-surface transition-colors"
           >
             Close
           </button>

@@ -41,39 +41,39 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
     <div className="px-4 pb-4 space-y-3 text-sm">
       {/* Problem Statement */}
       <div>
-        <h4 className="font-medium text-gray-700 mb-1">Problem:</h4>
-        <p className="text-gray-900">{data.title}</p>
+        <h4 className="font-medium text-fm-text mb-1">Problem:</h4>
+        <p className="text-white">{data.title}</p>
       </div>
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Investigation Completed Summary */}
       <div>
-        <h4 className="font-medium text-gray-700 mb-1">Investigation Completed:</h4>
+        <h4 className="font-medium text-fm-text mb-1">Investigation Completed:</h4>
         <ul className="space-y-1 pl-4">
-          <li className="text-gray-900">
+          <li className="text-white">
             • Duration: {formatDuration(data.resolution_summary.total_duration_minutes)} ({data.resolution_summary.milestones_completed} turns)
           </li>
-          <li className="text-gray-900">
+          <li className="text-white">
             • Started: {formatDate(data.created_at)}
           </li>
-          <li className="text-gray-900">
+          <li className="text-white">
             • Resolved: {formatDate(data.resolved_at)}
           </li>
         </ul>
       </div>
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Root Cause */}
       <div>
-        <h4 className="font-medium text-gray-700 mb-1">
+        <h4 className="font-medium text-fm-text mb-1">
           ✓ Root Cause:
         </h4>
-        <p className="text-gray-900 mb-1">{data.root_cause.description}</p>
-        <div className="text-xs text-gray-600 space-x-3">
+        <p className="text-white mb-1">{data.root_cause.description}</p>
+        <div className="text-xs text-fm-dim space-x-3">
           <span>Category: {data.root_cause.category}</span>
           <span>Severity: {data.root_cause.severity}</span>
         </div>
@@ -81,21 +81,21 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
 
       {/* Solution Applied */}
       <div>
-        <h4 className="font-medium text-gray-700 mb-1">✓ Solution Applied:</h4>
-        <p className="text-gray-900 mb-1">{data.solution_applied.description}</p>
-        <div className="text-xs text-gray-600">
+        <h4 className="font-medium text-fm-text mb-1">✓ Solution Applied:</h4>
+        <p className="text-white mb-1">{data.solution_applied.description}</p>
+        <div className="text-xs text-fm-dim">
           Status: {data.verification_status.verified ? 'Successful' : 'Pending verification'}
           {data.solution_applied.applied_at && ` (${formatDate(data.solution_applied.applied_at)})`}
         </div>
       </div>
 
       {/* Separator */}
-      <div className="border-t border-gray-300"></div>
+      <div className="border-t border-fm-border"></div>
 
       {/* Documentation Available */}
       {data.reports_available && data.reports_available.length > 0 && (
         <div>
-          <h4 className="font-medium text-gray-700 mb-2">
+          <h4 className="font-medium text-fm-text mb-2">
             📄 Documentation Available ({data.reports_available.length} documents):
           </h4>
 
@@ -121,11 +121,11 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
                   <div className="flex items-start gap-2">
                     <span>{getIcon()}</span>
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">{reportName}</p>
-                      <p className="text-xs text-gray-600">
+                      <p className="font-medium text-white">{reportName}</p>
+                      <p className="text-xs text-fm-dim">
                         Generated: {formatDate(data.resolved_at)}
                       </p>
-                      <button className="text-xs text-blue-600 hover:text-blue-700 mt-1">
+                      <button className="text-xs text-fm-blue hover:text-blue-700 mt-1">
                         [View Document]
                       </button>
                     </div>
@@ -136,7 +136,7 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
           </div>
 
           <div className="mt-3">
-            <button className="text-xs text-blue-600 hover:text-blue-700">
+            <button className="text-xs text-fm-blue hover:text-blue-700">
               [Request Additional Documentation]
             </button>
           </div>

@@ -18,18 +18,18 @@ const markdownComponents: Partial<Components> = {
     
     if (isInline) {
       return (
-        <code 
-          className="bg-gray-100 text-red-600 px-1 py-0.5 rounded text-sm font-mono" 
+        <code
+          className="bg-fm-elevated text-fm-yellow px-1 py-0.5 rounded text-sm font-mono border border-fm-border"
           {...props}
         >
           {children}
         </code>
       );
     }
-    
+
     return (
-      <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-x-auto my-2">
-        <code className={`language-${match[1]} text-sm`} {...props}>
+      <pre className="bg-fm-bg text-fm-text p-3 rounded-md overflow-x-auto my-2 border border-fm-border">
+        <code className={`language-${match[1]} text-sm font-mono`} {...props}>
           {children}
         </code>
       </pre>
@@ -38,13 +38,13 @@ const markdownComponents: Partial<Components> = {
   
   // Style headers with proper hierarchy
   h1: ({ children }) => (
-    <h1 className="text-lg font-semibold text-gray-900 mt-4 mb-2">{children}</h1>
+    <h1 className="text-lg font-semibold text-white mt-4 mb-2">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-base font-semibold text-gray-900 mt-3 mb-2">{children}</h2>
+    <h2 className="text-base font-semibold text-white mt-3 mb-2">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-sm font-semibold text-gray-900 mt-2 mb-1">{children}</h3>
+    <h3 className="text-sm font-semibold text-white mt-2 mb-1">{children}</h3>
   ),
   
   // Style lists
@@ -55,27 +55,27 @@ const markdownComponents: Partial<Components> = {
     <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>
   ),
   li: ({ children }) => (
-    <li className="text-sm text-gray-800">{children}</li>
+    <li className="text-sm text-fm-text">{children}</li>
   ),
   
   // Style paragraphs
   p: ({ children }) => (
-    <p className="text-sm text-gray-800 leading-relaxed mb-2">{children}</p>
+    <p className="text-sm text-fm-text leading-relaxed mb-2">{children}</p>
   ),
   
   // Style strong/bold text
   strong: ({ children }) => (
-    <strong className="font-semibold text-gray-900">{children}</strong>
+    <strong className="font-semibold text-white">{children}</strong>
   ),
   
   // Style emphasis/italic
   em: ({ children }) => (
-    <em className="italic text-gray-700">{children}</em>
+    <em className="italic text-fm-text">{children}</em>
   ),
   
   // Style blockquotes
   blockquote: ({ children }) => (
-    <blockquote className="border-l-4 border-blue-200 pl-3 my-2 text-gray-700">
+    <blockquote className="border-l-4 border-fm-blue-border pl-3 my-2 text-fm-text">
       {children}
     </blockquote>
   ),
@@ -83,18 +83,18 @@ const markdownComponents: Partial<Components> = {
   // Style tables (for future use)
   table: ({ children }) => (
     <div className="overflow-x-auto my-2">
-      <table className="min-w-full border-collapse border border-gray-200 text-sm">
+      <table className="min-w-full border-collapse border border-fm-border text-sm">
         {children}
       </table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-left">
+    <th className="border border-fm-border bg-fm-bg px-2 py-1 font-medium text-left">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="border border-gray-200 px-2 py-1">{children}</td>
+    <td className="border border-fm-border px-2 py-1">{children}</td>
   ),
 };
 

@@ -298,57 +298,57 @@ function OptionsApp() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen bg-fm-bg">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-          <p className="text-gray-600">Loading settings...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-fm-blue mb-4"></div>
+          <p className="text-fm-dim">Loading settings...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-fm-bg py-8 px-4">
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <img src="/icon/design-light.svg" alt="FaultMaven" className="h-10 w-auto" />
-            <h1 className="text-3xl font-bold text-gray-900">FaultMaven Settings</h1>
+            <img src="/icon/design-dark.svg" alt="FaultMaven" className="h-10 w-auto" />
+            <h1 className="text-3xl font-bold text-white">FaultMaven Settings</h1>
           </div>
-          <p className="text-gray-600">Configure your FaultMaven Copilot extension</p>
+          <p className="text-fm-dim">Configure your FaultMaven Copilot extension</p>
         </div>
 
         {/* Settings Form */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
+        <div className="bg-fm-surface rounded-lg border border-fm-border p-6 mb-4">
           {/* Preset Selection */}
           <div className="mb-6">
-            <label htmlFor="preset-selector" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="preset-selector" className="block text-sm font-medium text-fm-text mb-2">
               Server Type
             </label>
             <select
               id="preset-selector"
               value={selectedPreset}
               onChange={(e) => handlePresetChange(e.target.value as PresetKey)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-blue focus:border-transparent bg-fm-bg text-fm-text"
             >
-              <option value="production">☁️ FaultMaven Cloud</option>
-              <option value="localhost">🏠 Local Deployment (localhost - includes SSH tunnels)</option>
-              <option value="custom">⚙️ Custom Server URL (enterprise domains)</option>
+              <option value="production">FaultMaven Cloud</option>
+              <option value="localhost">Local Deployment (localhost - includes SSH tunnels)</option>
+              <option value="custom">Custom Server URL (enterprise domains)</option>
             </select>
             {selectedPreset === 'localhost' && (
-              <p className="mt-1 text-xs text-gray-600">
-                <strong>Local machine:</strong> Dashboard runs on localhost:3333<br/>
-                <strong>Remote server:</strong> Use SSH tunnel: <code className="bg-gray-100 px-1 rounded">ssh -L 3333:localhost:3333 -L 8090:localhost:8090 user@server</code>
+              <p className="mt-1 text-xs text-fm-dim">
+                <strong className="text-fm-text">Local machine:</strong> Dashboard runs on localhost:3333<br/>
+                <strong className="text-fm-text">Remote server:</strong> Use SSH tunnel: <code className="bg-fm-elevated px-1 rounded text-fm-yellow font-mono border border-fm-border">ssh -L 3333:localhost:3333 -L 8090:localhost:8090 user@server</code>
               </p>
             )}
             {selectedPreset === 'production' && (
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-fm-muted">
                 Connect to FaultMaven's managed cloud service
               </p>
             )}
             {selectedPreset === 'custom' && (
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-fm-muted">
                 For enterprise deployments with custom domains (e.g., https://faultmaven.acme.com)
               </p>
             )}
@@ -356,9 +356,9 @@ function OptionsApp() {
 
           {/* Dashboard URL Input */}
           <div className="mb-6">
-            <label htmlFor="api-endpoint" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="api-endpoint" className="block text-sm font-medium text-fm-text mb-2">
               Dashboard URL
-              {selectedPreset === 'custom' && <span className="text-red-500 ml-1">*</span>}
+              {selectedPreset === 'custom' && <span className="text-fm-red ml-1">*</span>}
             </label>
             <input
               type="text"
@@ -376,11 +376,11 @@ function OptionsApp() {
               }}
               placeholder="e.g., https://faultmaven.acme.com"
               disabled={selectedPreset !== 'custom'}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
+              className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-blue focus:border-transparent bg-fm-bg text-fm-text disabled:bg-fm-elevated disabled:text-fm-dim"
             />
             {selectedPreset === 'custom' && (
-              <p className="mt-1 text-xs text-gray-600">
-                Enter your enterprise Dashboard URL with SSL (HTTPS required). For remote servers without custom domains, use <strong>🏠 Local Deployment</strong> with SSH tunnel instead.
+              <p className="mt-1 text-xs text-fm-dim">
+                Enter your enterprise Dashboard URL with SSL (HTTPS required). For remote servers without custom domains, use <strong className="text-fm-text">Local Deployment</strong> with SSH tunnel instead.
               </p>
             )}
           </div>
@@ -388,21 +388,18 @@ function OptionsApp() {
           {/* Deployment Mode Display */}
           {capabilities && (
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-fm-text mb-2">
                 Detected Mode
               </label>
               <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
                 capabilities.deploymentMode === 'self-hosted'
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-blue-100 text-blue-800'
+                  ? 'bg-fm-green-light text-fm-green'
+                  : 'bg-fm-blue-light text-fm-blue'
               }`}>
-                {capabilities.deploymentMode === 'self-hosted' ? '🏠' : '☁️'}
-                {capabilities.deploymentMode === 'self-hosted'
-                  ? 'Self-Hosted'
-                  : 'FaultMaven Cloud'}
+                {capabilities.deploymentMode === 'self-hosted' ? 'Self-Hosted' : 'FaultMaven Cloud'}
               </div>
-              <p className="mt-2 text-sm text-gray-600">
-                Dashboard: <a href={apiEndpoint} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{apiEndpoint}</a>
+              <p className="mt-2 text-sm text-fm-dim">
+                Dashboard: <a href={apiEndpoint} target="_blank" rel="noopener noreferrer" className="text-fm-blue hover:underline">{apiEndpoint}</a>
               </p>
             </div>
           )}
@@ -412,14 +409,14 @@ function OptionsApp() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+              className="px-4 py-2 bg-fm-blue text-fm-bg rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
             >
               {saving ? 'Saving...' : 'Save Settings'}
             </button>
             <button
               onClick={handleTest}
               disabled={testing}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 font-medium"
+              className="px-4 py-2 bg-fm-elevated text-fm-text border border-fm-border rounded-lg hover:bg-fm-border disabled:opacity-50 font-medium"
             >
               {testing ? 'Testing...' : 'Test Connection'}
             </button>
@@ -429,10 +426,10 @@ function OptionsApp() {
           {statusMessage && (
             <div className={`mt-4 p-3 rounded-lg text-sm ${
               statusMessage.type === 'success'
-                ? 'bg-green-50 text-green-800 border border-green-200'
+                ? 'bg-fm-green-light text-fm-green border border-fm-green-border'
                 : statusMessage.type === 'error'
-                ? 'bg-red-50 text-red-800 border border-red-200'
-                : 'bg-blue-50 text-blue-800 border border-blue-200'
+                ? 'bg-fm-red-light text-fm-red border border-fm-border'
+                : 'bg-fm-blue-light text-fm-blue border border-fm-blue-border'
             }`}>
               {statusMessage.text}
             </div>
@@ -440,25 +437,25 @@ function OptionsApp() {
         </div>
 
         {/* Help Section */}
-        <div className="bg-blue-50 rounded-lg border border-blue-200 p-6">
-          <h2 className="text-lg font-semibold text-blue-900 mb-3">💡 Configuration Guide</h2>
-          <div className="space-y-3 text-sm text-blue-800">
+        <div className="bg-fm-surface rounded-lg border border-fm-border p-6">
+          <h2 className="text-lg font-semibold text-white mb-3">Configuration Guide</h2>
+          <div className="space-y-3 text-sm text-fm-dim">
             <div>
-              <strong className="font-semibold">☁️ FaultMaven Cloud:</strong>
-              <p className="mt-1">Connects to managed service at <code className="bg-blue-100 px-1 py-0.5 rounded">https://app.faultmaven.ai</code> (default)</p>
+              <strong className="font-semibold text-fm-text">FaultMaven Cloud:</strong>
+              <p className="mt-1">Connects to managed service at <code className="bg-fm-elevated px-1 py-0.5 rounded text-fm-yellow font-mono border border-fm-border">https://app.faultmaven.ai</code> (default)</p>
             </div>
             <div>
-              <strong className="font-semibold">🏠 Local Deployment:</strong>
-              <p className="mt-1">Dashboard runs on port <strong>3333</strong>, API on port <strong>8090</strong></p>
-              <p className="mt-1 text-xs">Use <code className="bg-blue-100 px-1 py-0.5 rounded">docker compose up</code> to start locally</p>
+              <strong className="font-semibold text-fm-text">Local Deployment:</strong>
+              <p className="mt-1">Dashboard runs on port <strong className="text-fm-text">3333</strong>, API on port <strong className="text-fm-text">8090</strong></p>
+              <p className="mt-1 text-xs">Use <code className="bg-fm-elevated px-1 py-0.5 rounded text-fm-yellow font-mono border border-fm-border">docker compose up</code> to start locally</p>
             </div>
             <div>
-              <strong className="font-semibold">⚙️ Custom Server:</strong>
+              <strong className="font-semibold text-fm-text">Custom Server:</strong>
               <p className="mt-1">For self-hosted deployments with custom domains or ports</p>
             </div>
-            <div className="pt-2 border-t border-blue-200">
-              <p>✓ Always click <strong>"Test Connection"</strong> before saving</p>
-              <p>✓ Reload the extension after changing settings</p>
+            <div className="pt-2 border-t border-fm-border">
+              <p>Always click <strong className="text-fm-text">"Test Connection"</strong> before saving</p>
+              <p>Reload the extension after changing settings</p>
             </div>
           </div>
         </div>

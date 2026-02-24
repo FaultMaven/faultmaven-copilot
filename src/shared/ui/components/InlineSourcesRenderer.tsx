@@ -76,30 +76,30 @@ const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onD
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <sup className="text-xs text-blue-600 cursor-help hover:text-blue-800 font-medium bg-blue-50 px-1 rounded">
+      <sup className="text-xs text-fm-blue cursor-help hover:text-fm-blue font-medium bg-fm-blue-light px-1 rounded">
         [{index + 1}]
       </sup>
 
       {isHovered && (
         <div
           ref={tooltipRef}
-          className={`absolute bottom-full z-50 w-80 mb-2 p-3 bg-white border border-gray-200 rounded-lg shadow-lg ${
+          className={`absolute bottom-full z-50 w-80 mb-2 p-3 bg-fm-surface border border-fm-border rounded-lg shadow-lg ${
             tooltipPosition === 'right' ? 'right-0' : 'left-0'
           }`}
         >
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm font-medium text-gray-900 truncate">
+              <span className="text-sm font-medium text-white truncate">
                 {sourceTitle}
               </span>
-              <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full flex-shrink-0">
+              <span className="text-xs text-fm-dim bg-fm-surface px-1.5 py-0.5 rounded-full flex-shrink-0">
                 {source.type === 'knowledge_base' ? '📚' : '📄'} {source.type.replace('_', ' ')}
               </span>
             </div>
           </div>
 
-          <div className="text-xs text-gray-700 leading-relaxed mb-3">
-            <div className="bg-gray-50 rounded p-2 border-l-2 border-blue-200">
+          <div className="text-xs text-fm-text leading-relaxed mb-3">
+            <div className="bg-fm-bg rounded p-2 border-l-2 border-fm-blue-border">
               {preview}
             </div>
           </div>
@@ -111,7 +111,7 @@ const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onD
                 onDocumentView(documentId);
                 setIsHovered(false);
               }}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+              className="text-xs text-fm-blue hover:text-fm-blue font-medium"
             >
               View full document →
             </button>
@@ -238,7 +238,7 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
         {/* Render evidence requests below content */}
         {evidenceRequests && evidenceRequests.length > 0 && (
           <div className="mt-4 space-y-3">
-            <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+            <div className="text-xs font-semibold text-fm-text uppercase tracking-wide mb-2">
               Evidence Requested
             </div>
             {evidenceRequests.map((request) => (
@@ -271,7 +271,7 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
       {/* Render evidence requests below content and sources */}
       {evidenceRequests && evidenceRequests.length > 0 && (
         <div className="mt-4 space-y-3">
-          <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+          <div className="text-xs font-semibold text-fm-text uppercase tracking-wide mb-2">
             Evidence Requested
           </div>
           {evidenceRequests.map((request) => (
@@ -298,7 +298,7 @@ function createMarkdownComponents(): Partial<Components> {
       if (isInline) {
         return (
           <code
-            className="bg-gray-100 text-red-600 px-1 py-0.5 rounded text-sm font-mono"
+            className="bg-fm-elevated text-fm-yellow px-1 py-0.5 rounded text-sm font-mono border border-fm-border"
             {...props}
           >
             {children}
@@ -307,21 +307,21 @@ function createMarkdownComponents(): Partial<Components> {
       }
 
       return (
-        <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-x-auto my-2">
-          <code className={`language-${match[1]} text-sm`} {...props}>
+        <pre className="bg-fm-bg text-fm-text p-3 rounded-md overflow-x-auto my-2 border border-fm-border">
+          <code className={`language-${match[1]} text-sm font-mono`} {...props}>
             {children}
           </code>
         </pre>
       );
     },
     h1: ({ children }) => (
-      <h1 className="text-lg font-semibold text-gray-900 mt-4 mb-2">{children}</h1>
+      <h1 className="text-lg font-semibold text-white mt-4 mb-2">{children}</h1>
     ),
     h2: ({ children }) => (
-      <h2 className="text-base font-semibold text-gray-900 mt-3 mb-2">{children}</h2>
+      <h2 className="text-base font-semibold text-white mt-3 mb-2">{children}</h2>
     ),
     h3: ({ children }) => (
-      <h3 className="text-sm font-semibold text-gray-900 mt-2 mb-1">{children}</h3>
+      <h3 className="text-sm font-semibold text-white mt-2 mb-1">{children}</h3>
     ),
     ul: ({ children }) => (
       <ul className="list-disc list-outside my-2 space-y-1 pl-5">{children}</ul>
@@ -330,7 +330,7 @@ function createMarkdownComponents(): Partial<Components> {
       <ol className="list-decimal list-outside my-2 space-y-1 pl-5">{children}</ol>
     ),
     li: ({ children }) => (
-      <li className="text-sm text-gray-800">{children}</li>
+      <li className="text-sm text-fm-text">{children}</li>
     ),
     p: ({ children }) => {
       // Process PII tokens in paragraph text
@@ -338,40 +338,40 @@ function createMarkdownComponents(): Partial<Components> {
       if (textContent.includes('{{REDACTED:')) {
         const processedChildren = processPIITokens(textContent);
         return (
-          <p className="text-sm text-gray-800 leading-relaxed mb-2">
+          <p className="text-sm text-fm-text leading-relaxed mb-2">
             {processedChildren}
           </p>
         );
       }
       return (
-        <p className="text-sm text-gray-800 leading-relaxed mb-2">{children}</p>
+        <p className="text-sm text-fm-text leading-relaxed mb-2">{children}</p>
       );
     },
     strong: ({ children }) => (
-      <strong className="font-semibold text-gray-900">{children}</strong>
+      <strong className="font-semibold text-white">{children}</strong>
     ),
     em: ({ children }) => (
-      <em className="italic text-gray-700">{children}</em>
+      <em className="italic text-fm-text">{children}</em>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="border-l-4 border-blue-200 pl-3 my-2 text-gray-700">
+      <blockquote className="border-l-4 border-fm-blue-border pl-3 my-2 text-fm-text">
         {children}
       </blockquote>
     ),
     table: ({ children }) => (
       <div className="overflow-x-auto my-2">
-        <table className="min-w-full border-collapse border border-gray-200 text-sm">
+        <table className="min-w-full border-collapse border border-fm-border text-sm">
           {children}
         </table>
       </div>
     ),
     th: ({ children }) => (
-      <th className="border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-left">
+      <th className="border border-fm-border bg-fm-bg px-2 py-1 font-medium text-left">
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="border border-gray-200 px-2 py-1">{children}</td>
+      <td className="border border-fm-border px-2 py-1">{children}</td>
     ),
     // Add text node processor to handle PII tokens in any text content
     text: ({ children }) => {
@@ -437,7 +437,7 @@ function injectSourceCitations(
           }
 
           return (
-            <p className="text-sm text-gray-800 leading-relaxed mb-2">
+            <p className="text-sm text-fm-text leading-relaxed mb-2">
               {processedChildren}
               {citation}
             </p>

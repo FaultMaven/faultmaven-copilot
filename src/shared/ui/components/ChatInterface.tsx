@@ -26,8 +26,8 @@ interface ChatInterfaceProps {
   onDocumentView?: (docId: string) => void;
   onGenerateReports?: () => void;
   onNewChat?: () => void;
-  hasUnsavedNewChat?: boolean; // NEW: Track if this is a new unsaved chat
-  setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
+  hasUnsavedNewChat?: boolean;
+  setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -60,22 +60,25 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // Check if interaction is allowed
   const canInteract = (!!activeCase &&
     activeCase.status !== 'resolved' &&
-    activeCase.status !== 'closed') || hasUnsavedNewChat; // Allow interaction for new unsaved chats
+    activeCase.status !== 'closed') || hasUnsavedNewChat;
 
-  // Show empty state only if NO active case AND NOT a new unsaved chat
+  // Empty state — dark themed
   if (!activeCaseId && !hasUnsavedNewChat) {
     log.debug('Showing empty state', { reason: 'no active case, no new chat' });
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-full bg-fm-surface">
         <div className="text-center max-w-md p-6">
-          <h2 className="text-base font-semibold text-gray-800 mb-2">Start a conversation</h2>
-          <p className="text-sm text-gray-600 mb-4">Select a chat from the list or create a new one.</p>
+          <div className="mb-4">
+            <img src="/icon/square-dark.svg" alt="FaultMaven" className="w-12 h-12 mx-auto rounded-lg opacity-60" />
+          </div>
+          <h2 className="text-base font-semibold text-fm-text mb-2">Start a conversation</h2>
+          <p className="text-sm text-fm-dim mb-4">Select a case from the list or create a new one.</p>
           {onNewChat && (
             <button
               onClick={onNewChat}
-              className="inline-flex items-center gap-2 py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+              className="inline-flex items-center gap-2 py-2 px-4 bg-fm-blue text-fm-bg rounded-md hover:opacity-90 text-sm font-medium"
             >
-              New chat
+              + New Case
             </button>
           )}
         </div>
@@ -86,40 +89,33 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   log.debug('Rendering chat interface', { activeCaseId, hasUnsavedNewChat, canInteract });
 
   return (
-    <div className="flex flex-col h-full bg-white relative">
+    <div className="flex flex-col h-full min-h-0 relative">
       {/* Failed Operations Alert */}
       {failedOperations.length > 0 && (
-        <div className="flex-shrink-0 p-4 space-y-3 bg-white border-b border-gray-100">
+        <div className="flex-shrink-0 p-4 space-y-2 bg-fm-surface border-b border-fm-border">
           {failedOperations.map((operation) => {
             const errorInfo = getErrorMessageForOperation(operation);
             return (
-              <div key={operation.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div key={operation.id} className="bg-fm-yellow-light border border-fm-yellow-border rounded-md p-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                      </svg>
-                      <h4 className="text-sm font-medium text-yellow-800">{errorInfo.title}</h4>
-                    </div>
-                    <p className="text-xs text-yellow-700 mt-1">{errorInfo.message}</p>
-                    <p className="text-xs text-yellow-600 mt-2 italic">{errorInfo.recoveryHint}</p>
+                    <h4 className="text-sm font-medium text-fm-yellow">{errorInfo.title}</h4>
+                    <p className="text-xs text-fm-dim mt-1">{errorInfo.message}</p>
+                    <p className="text-xs text-fm-muted mt-1 italic">{errorInfo.recoveryHint}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
                     <button
                       onClick={() => onRetryFailedOperation(operation.id)}
-                      className="px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200 transition-colors font-medium"
+                      className="px-3 py-1 text-xs bg-fm-elevated text-fm-yellow rounded hover:bg-fm-surface transition-colors font-medium"
                     >
                       Retry
                     </button>
                     <button
                       onClick={() => onDismissFailedOperation(operation.id)}
-                      className="p-1 text-yellow-600 hover:text-yellow-800 transition-colors"
-                      title="Dismiss this error"
+                      className="text-fm-dim hover:text-fm-text transition-colors"
+                      title="Dismiss"
                     >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      ✕
                     </button>
                   </div>
                 </div>
@@ -130,7 +126,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )}
 
       {/* Chat History Area */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 overflow-hidden relative bg-fm-surface min-h-0">
         <ChatWindow
           conversation={currentMessages}
           activeCase={activeCase}
@@ -146,23 +142,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-gray-200 bg-white p-4">
-        <UnifiedInputBar
-          onQuerySubmit={onQuerySubmit}
-          onTurnSubmit={onTurnSubmit}
-          onPageInject={handlePageInject}
-          loading={loading}
-          submitting={submitting}
-          disabled={!canInteract}
-          placeholder={
-            !activeCase 
-              ? "Select a case to start chatting..." 
-              : !canInteract
-                ? "This case is closed. Reopen to continue."
-                : "Type a message or / command..."
-          }
-        />
-      </div>
+      <UnifiedInputBar
+        onQuerySubmit={onQuerySubmit}
+        onTurnSubmit={onTurnSubmit}
+        onPageInject={handlePageInject}
+        loading={loading}
+        submitting={submitting}
+        disabled={!canInteract}
+        placeholder={
+          !activeCase
+            ? "Select a case to start chatting..."
+            : !canInteract
+              ? "This case is closed. Reopen to continue."
+              : "Ask FaultMaven..."
+        }
+      />
     </div>
   );
 };

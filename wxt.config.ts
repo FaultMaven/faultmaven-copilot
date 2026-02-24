@@ -22,7 +22,7 @@ export default defineConfig({
     icons: {
       "16": "icon/px16-square-dark.png",
       "32": "icon/px32-square-dark.png",
-      "48": "icon/px48-square-dark.png", 
+      "48": "icon/px48-square-dark.png",
       "96": "icon/px96-square-dark.png",
       "128": "icon/px128-square-dark.png"
     },
