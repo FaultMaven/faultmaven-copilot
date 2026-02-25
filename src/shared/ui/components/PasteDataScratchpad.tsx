@@ -59,12 +59,12 @@ export function PasteDataScratchpad({
 
   return (
     <div
-      className="border border-fm-purple-border bg-fm-purple-light rounded-lg p-3 space-y-2"
+      className="border border-fm-accent-border bg-fm-accent-soft rounded-lg p-3 space-y-2"
       onKeyDown={handleKeyDown}
     >
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium text-fm-purple">
+        <div className="flex items-center gap-2 text-sm font-medium text-fm-accent">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
@@ -72,7 +72,7 @@ export function PasteDataScratchpad({
         </div>
         <button
           onClick={handleDone}
-          className="text-fm-purple hover:text-fm-purple transition-colors"
+          className="text-fm-accent hover:text-fm-accent transition-colors"
           aria-label="Close paste scratchpad"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,21 +88,21 @@ export function PasteDataScratchpad({
         onChange={(e) => setPastedContent(e.target.value)}
         placeholder="Paste logs, error traces, configs, or any data here..."
         rows={6}
-        className="block w-full p-2 text-xs font-mono border border-fm-purple-border rounded resize-y focus:outline-none focus:ring-2 focus:ring-fm-purple bg-fm-surface"
+        className="block w-full p-2 text-xs font-mono border border-fm-accent-border rounded resize-y focus:outline-none focus:ring-2 focus:ring-fm-accent bg-fm-surface"
         aria-label="Paste data content"
       />
 
       {/* Footer with stats and actions */}
       <div className="flex items-center justify-between">
-        <div className="text-xs text-fm-purple">
+        <div className="text-xs text-fm-accent">
           {lineCount} {lineCount === 1 ? 'line' : 'lines'} &middot; {charCount.toLocaleString()} chars
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-fm-muted">Ctrl+Enter to attach</span>
+          <span className="text-xs text-fm-text-secondary">Ctrl+Enter to attach</span>
           <button
             type="button"
             onClick={handleClear}
-            className="px-3 py-1.5 text-xs font-medium text-fm-purple bg-fm-surface border border-fm-purple-border rounded hover:bg-fm-purple-light transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-fm-accent bg-fm-surface border border-fm-accent-border rounded hover:bg-fm-accent-soft transition-colors"
           >
             Clear
           </button>
@@ -110,7 +110,7 @@ export function PasteDataScratchpad({
             type="button"
             onClick={handleDone}
             disabled={!pastedContent.trim()}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-fm-purple rounded hover:bg-fm-active transition-colors disabled:bg-fm-elevated disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-xs font-medium text-white bg-fm-accent rounded hover:opacity-90 transition-colors disabled:bg-fm-elevated disabled:cursor-not-allowed"
           >
             Done
           </button>

@@ -75,7 +75,7 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
           </h2>
           <button
             onClick={onClose}
-            className="text-fm-muted hover:text-fm-text transition-colors"
+            className="text-fm-text-secondary hover:text-fm-text-primary transition-colors"
             aria-label="Close modal"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,27 +90,27 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
           <div className="bg-fm-bg border border-fm-border rounded-lg p-4 space-y-2">
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <div>
-                <span className="font-medium text-fm-text">Uploaded:</span>
-                <span className="ml-2 text-fm-dim">{formattedDateTime}</span>
+                <span className="font-medium text-fm-text-primary">Uploaded:</span>
+                <span className="ml-2 text-fm-text-tertiary">{formattedDateTime}</span>
               </div>
               {evidence.file_size && (
                 <div>
-                  <span className="font-medium text-fm-text">Size:</span>
-                  <span className="ml-2 text-fm-dim">{formatFileSize(evidence.file_size)}</span>
+                  <span className="font-medium text-fm-text-primary">Size:</span>
+                  <span className="ml-2 text-fm-text-tertiary">{formatFileSize(evidence.file_size)}</span>
                 </div>
               )}
               {classification && (
                 <div>
-                  <span className="font-medium text-fm-text">Type:</span>
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fm-blue-light text-fm-blue">
+                  <span className="font-medium text-fm-text-primary">Type:</span>
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fm-accent-soft text-fm-accent">
                     {formatDataType(classification.data_type)}
                   </span>
                 </div>
               )}
               {classification && classification.confidence && (
                 <div>
-                  <span className="font-medium text-fm-text">Confidence:</span>
-                  <span className="ml-2 text-fm-dim">
+                  <span className="font-medium text-fm-text-primary">Confidence:</span>
+                  <span className="ml-2 text-fm-text-tertiary">
                     {Math.round(classification.confidence * 100)}%
                   </span>
                 </div>
@@ -124,14 +124,14 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
               <span className="text-base" aria-hidden="true">📊</span>
               Summary
             </h3>
-            <div className="prose prose-sm max-w-none text-fm-text bg-fm-bg border border-fm-border rounded-lg p-4">
+            <div className="prose prose-sm max-w-none text-fm-text-primary bg-fm-bg border border-fm-border rounded-lg p-4">
               <p className="whitespace-pre-wrap">{summary}</p>
             </div>
           </div>
 
           {/* Processing Info (if available) */}
           {classification?.processing_time_ms && (
-            <div className="text-xs text-fm-dim bg-fm-bg border border-fm-border rounded p-2">
+            <div className="text-xs text-fm-text-tertiary bg-fm-bg border border-fm-border rounded p-2">
               <span className="font-medium">Processing time:</span> {classification.processing_time_ms}ms
               {classification.compression_ratio && classification.compression_ratio > 1.5 && (
                 <span className="ml-3">
@@ -147,14 +147,14 @@ export const EvidenceAnalysisModal: React.FC<EvidenceAnalysisModalProps> = memo(
           {onQueryThis && (
             <button
               onClick={handleQueryThis}
-              className="px-4 py-2 text-sm font-medium text-fm-blue bg-fm-blue-light border border-fm-blue-border rounded hover:bg-fm-blue-light transition-colors"
+              className="px-4 py-2 text-sm font-medium text-fm-accent bg-fm-accent-soft border border-fm-accent-border rounded hover:bg-fm-accent-soft transition-colors"
             >
               Query This
             </button>
           )}
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-fm-text bg-fm-surface border border-fm-border rounded hover:bg-fm-surface transition-colors"
+            className="px-4 py-2 text-sm font-medium text-fm-text-primary bg-fm-surface border border-fm-border rounded hover:bg-fm-surface transition-colors"
           >
             Close
           </button>

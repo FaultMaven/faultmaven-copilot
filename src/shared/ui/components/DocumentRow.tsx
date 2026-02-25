@@ -22,7 +22,7 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
   };
 
   const getStatusBadge = (status?: string) => {
-    if (!status) return <span className="text-xs text-fm-muted">-</span>;
+    if (!status) return <span className="text-xs text-fm-text-secondary">-</span>;
     const baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
     
     // Handle undefined or null status
@@ -32,29 +32,29 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
       case 'indexed':
       case 'processed':
         return (
-          <span className={`${baseClasses} bg-fm-green-light text-fm-green`}>
+          <span className={`${baseClasses} bg-fm-success-bg text-fm-success`}>
             <div className="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
             {status || 'Processed'}
           </span>
         );
       case 'processing':
         return (
-          <span className={`${baseClasses} bg-fm-yellow-light text-fm-yellow`}>
+          <span className={`${baseClasses} bg-fm-warning-bg text-fm-warning`}>
             <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-1.5 animate-pulse"></div>
             Processing
           </span>
         );
       case 'error':
         return (
-          <span className={`${baseClasses} bg-fm-red-light text-fm-red`}>
+          <span className={`${baseClasses} bg-fm-critical-bg text-fm-critical`}>
             <div className="w-1.5 h-1.5 bg-red-400 rounded-full mr-1.5"></div>
             Error
           </span>
         );
       default:
         return (
-          <span className={`${baseClasses} bg-fm-surface text-fm-text`}>
-            <div className="w-1.5 h-1.5 bg-fm-muted rounded-full mr-1.5"></div>
+          <span className={`${baseClasses} bg-fm-surface text-fm-text-primary`}>
+            <div className="w-1.5 h-1.5 bg-fm-text-secondary rounded-full mr-1.5"></div>
             {status || 'Unknown'}
           </span>
         );
@@ -94,7 +94,7 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
       case 'md':
       case 'markdown':
         return (
-          <svg className="w-4 h-4 text-fm-dim" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-4 h-4 text-fm-text-tertiary" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
           </svg>
         );
@@ -106,7 +106,7 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
         );
       default:
         return (
-          <svg className="w-4 h-4 text-fm-muted" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-4 h-4 text-fm-text-secondary" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
           </svg>
         );
@@ -138,7 +138,7 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
       </td>
 
       {/* Document Type */}
-      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-dim" style={{ width: '120px', minWidth: '120px' }}>
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-text-tertiary" style={{ width: '120px', minWidth: '120px' }}>
         {formatDocumentType(document.document_type)}
       </td>
 
@@ -157,26 +157,26 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
                 {tags.slice(0, 1).map((tag, index) => (
                   <span
                     key={index}
-                    className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-fm-blue-light text-fm-blue"
+                    className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-fm-accent-soft text-fm-accent"
                   >
                     {tag}
                   </span>
                 ))}
                 {tags.length > 1 && (
-                  <span className="text-xs text-fm-dim">
+                  <span className="text-xs text-fm-text-tertiary">
                     +{tags.length - 1}
                   </span>
                 )}
               </>
             ) : (
-              <span className="text-xs text-fm-muted">-</span>
+              <span className="text-xs text-fm-text-secondary">-</span>
             );
           })()}
         </div>
       </td>
 
       {/* Date Added */}
-      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-dim" style={{ width: '140px', minWidth: '140px' }}>
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-text-tertiary" style={{ width: '140px', minWidth: '140px' }}>
         {formatDate(document.created_at)}
       </td>
 
@@ -185,7 +185,7 @@ export default function DocumentRow({ document, onDelete }: DocumentRowProps) {
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="inline-flex items-center px-2 py-1 border border-transparent text-xs leading-4 font-medium rounded text-white bg-fm-red hover:bg-fm-red/80 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center px-2 py-1 border border-transparent text-xs leading-4 font-medium rounded text-white bg-fm-critical hover:bg-fm-critical/80 disabled:opacity-50 disabled:cursor-not-allowed"
           title="Delete document"
         >
           {isDeleting ? (

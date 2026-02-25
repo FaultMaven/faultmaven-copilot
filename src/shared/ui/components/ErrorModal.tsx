@@ -106,11 +106,11 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
     const icon = displayOptions.icon || 'error';
     switch (icon) {
       case 'error':
-        return 'text-fm-red';
+        return 'text-fm-critical';
       case 'warning':
         return 'text-yellow-600';
       case 'info':
-        return 'text-fm-blue';
+        return 'text-fm-accent';
     }
   };
 
@@ -147,10 +147,10 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
           <h3 id="error-modal-title" className="text-lg font-semibold text-white mb-2">
             {error.userTitle}
           </h3>
-          <p id="error-modal-description" className="text-sm text-fm-dim mb-2">
+          <p id="error-modal-description" className="text-sm text-fm-text-tertiary mb-2">
             {error.userMessage}
           </p>
-          <p className="text-sm text-fm-dim">
+          <p className="text-sm text-fm-text-tertiary">
             {error.userAction}
           </p>
         </div>
@@ -174,8 +174,8 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
                 className={`
                   w-full px-4 py-2 text-sm font-medium rounded-lg transition-colors
                   ${action.primary
-                    ? 'bg-fm-blue text-white hover:bg-fm-active focus:ring-2 focus:ring-fm-blue focus:ring-offset-2'
-                    : 'bg-fm-surface text-fm-text hover:bg-fm-elevated focus:ring-2 focus:ring-fm-blue focus:ring-offset-2'
+                    ? 'bg-fm-accent text-white hover:opacity-90 focus:ring-2 focus:ring-fm-accent focus:ring-offset-2'
+                    : 'bg-fm-surface text-fm-text-primary hover:bg-fm-elevated focus:ring-2 focus:ring-fm-accent focus:ring-offset-2'
                   }
                 `}
                 autoFocus={idx === 0}
@@ -196,7 +196,7 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
           {displayOptions.dismissible && !displayOptions.blocking && (
             <button
               onClick={handleDismiss}
-              className="w-full px-4 py-2 text-sm font-medium text-fm-dim hover:text-fm-text transition-colors"
+              className="w-full px-4 py-2 text-sm font-medium text-fm-text-tertiary hover:text-fm-text-primary transition-colors"
             >
               Cancel
             </button>
@@ -207,7 +207,7 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
         {displayOptions.dismissible && !displayOptions.blocking && (
           <button
             onClick={handleDismiss}
-            className="absolute top-4 right-4 text-fm-muted hover:text-fm-text transition-colors"
+            className="absolute top-4 right-4 text-fm-text-secondary hover:text-fm-text-primary transition-colors"
             aria-label="Close"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

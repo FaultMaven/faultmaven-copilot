@@ -407,7 +407,7 @@ export function ConversationsList({
     if (items.length === 0) return null;
     return (
       <div key={title} className="space-y-1">
-        <h3 className="text-xs font-medium text-fm-dim px-3 py-2 uppercase tracking-wider">{title}</h3>
+        <h3 className="text-xs font-semibold text-fm-text-tertiary px-3 py-2 uppercase tracking-wider">{title}</h3>
         <div className="space-y-1">
           {items.map((c) => (
             <ConversationItem
@@ -456,19 +456,19 @@ export function ConversationsList({
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {error && !error.includes('Failed to fetch') && (
-        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-red-light border border-fm-red-border rounded-lg">
-          <p className="text-xs text-fm-red">{error}</p>
-          <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-red hover:text-fm-text underline">Dismiss</button>
+        <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
+          <p className="text-xs text-fm-critical">{error}</p>
+          <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
         </div>
       )}
 
       {titleGenStatus.message && (
         <div className={`flex-shrink-0 p-2 mx-3 mt-2 border rounded-lg ${
           titleGenStatus.type === "error"
-            ? "bg-fm-red-light border-fm-red-border text-fm-red"
+            ? "bg-fm-critical-bg border-fm-critical-border text-fm-critical"
             : titleGenStatus.type === "success"
-            ? "bg-fm-green-light border-fm-green-border text-fm-green"
-            : "bg-fm-blue-light border-fm-blue-border text-fm-blue"
+            ? "bg-fm-success-bg border-fm-success-border text-fm-success"
+            : "bg-fm-accent-soft border-fm-accent-border text-fm-accent"
         }`}>
           <p className="text-xs">{titleGenStatus.message}</p>
         </div>
@@ -480,7 +480,7 @@ export function ConversationsList({
             <ConversationItem
               key="__new_chat__"
               session={{ session_id: 'new', created_at: new Date().toISOString(), status: 'active', last_activity: new Date().toISOString(), metadata: {} } as any}
-              title="New Chat"
+              title="New Case"
               isActive={!activeCaseId}
               isUnsavedNew={true}
               onSelect={() => onNewSession('')}
@@ -492,8 +492,8 @@ export function ConversationsList({
 
         {mergedCases.length === 0 && !error?.includes('Failed to fetch') ? (
           <div className="text-center py-8 px-4">
-            <p className="text-sm text-fm-dim mb-3">No conversations yet</p>
-            <p className="text-xs text-fm-muted">Click "New Case" to start your first conversation</p>
+            <p className="text-sm text-fm-text-tertiary mb-3">No cases yet</p>
+            <p className="text-xs text-fm-text-secondary">Click "New Case" to start your first case</p>
           </div>
         ) : (
           <div className="space-y-4 pb-4">

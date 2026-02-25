@@ -48,7 +48,10 @@ export function cleanResponseText(text: string): string {
   // This removes backend-generated [1], [2] markers that will be replaced by our UI citations
   cleaned = removeStandaloneFootnotes(cleaned);
 
-  // Step 3: Normalize whitespace
+  // Step 3: Break diagnostic reasoning keywords onto their own line
+  cleaned = formatDiagnosticKeywords(cleaned);
+
+  // Step 4: Normalize whitespace
   cleaned = normalizeWhitespace(cleaned);
 
   return cleaned;
@@ -80,6 +83,22 @@ function removeStandaloneFootnotes(text: string): string {
   // Remove footnote markers that appear alone (not part of a longer citation)
   // Match [1], [2], etc. but not [some text with 1] or [citation]
   return text.replace(/\[(\d+)\]/g, '');
+}
+
+/**
+ * Formats diagnostic reasoning keywords (OBSERVATION, ANALYSIS, SUGGESTION, EXPECTED OUTCOME)
+ * so the keyword sits on its own line and the paragraph starts on the next line.
+ * Handles both plain and bold-wrapped variants (e.g. **OBSERVATION:** or OBSERVATION:).
+ */
+function formatDiagnosticKeywords(text: string): string {
+  // Match keyword at start of line, optionally bold-wrapped, followed by text on the same line.
+  // [\*:]+ handles all colon/bold orderings: "KEYWORD:", "**KEYWORD:**", "**KEYWORD**:"
+  return text.replace(
+    /^\*{0,2}(OBSERVATION|ANALYSIS|SUGGESTION|EXPECTED OUTCOME)[\*:]+[ \t]+(.+)$/gm,
+    (_, keyword, rest) => {
+      return `**${keyword}:**\n${rest}`;
+    }
+  );
 }
 
 /**

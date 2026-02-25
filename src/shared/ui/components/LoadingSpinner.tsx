@@ -20,8 +20,8 @@ export default function LoadingSpinner({
   };
 
   const colorClasses = {
-    primary: 'text-fm-blue',
-    secondary: 'text-fm-dim',
+    primary: 'text-fm-accent',
+    secondary: 'text-fm-text-tertiary',
     white: 'text-white'
   };
 
@@ -49,7 +49,7 @@ export default function LoadingSpinner({
         />
       </svg>
       {text && (
-        <span className="ml-2 text-sm text-fm-dim" aria-label={text}>
+        <span className="ml-2 text-sm text-fm-text-tertiary" aria-label={text}>
           {text}
         </span>
       )}

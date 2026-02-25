@@ -52,30 +52,30 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
     switch (icon) {
       case 'error':
         return {
-          bg: 'bg-fm-red-light',
-          border: 'border-fm-red-border',
-          icon: 'text-fm-red',
-          title: 'text-fm-red',
-          message: 'text-fm-red',
-          button: 'bg-fm-red-light text-fm-red hover:bg-fm-surface'
+          bg: 'bg-fm-critical-bg',
+          border: 'border-fm-critical-border',
+          icon: 'text-fm-critical',
+          title: 'text-fm-critical',
+          message: 'text-fm-critical',
+          button: 'bg-fm-critical-bg text-fm-critical hover:bg-fm-surface'
         };
       case 'warning':
         return {
-          bg: 'bg-fm-yellow-light',
-          border: 'border-fm-yellow-border',
-          icon: 'text-fm-yellow',
-          title: 'text-fm-yellow',
-          message: 'text-fm-yellow',
-          button: 'bg-fm-yellow-light text-fm-yellow hover:bg-fm-surface'
+          bg: 'bg-fm-warning-bg',
+          border: 'border-fm-warning-border',
+          icon: 'text-fm-warning',
+          title: 'text-fm-warning',
+          message: 'text-fm-warning',
+          button: 'bg-fm-warning-bg text-fm-warning hover:bg-fm-surface'
         };
       case 'info':
         return {
-          bg: 'bg-fm-blue-light',
-          border: 'border-fm-blue-border',
-          icon: 'text-fm-blue',
-          title: 'text-fm-blue',
-          message: 'text-fm-blue',
-          button: 'bg-fm-blue-light text-fm-blue hover:bg-fm-surface'
+          bg: 'bg-fm-accent-soft',
+          border: 'border-fm-accent-border',
+          icon: 'text-fm-accent',
+          title: 'text-fm-accent',
+          message: 'text-fm-accent',
+          button: 'bg-fm-accent-soft text-fm-accent hover:bg-fm-surface'
         };
     }
   };

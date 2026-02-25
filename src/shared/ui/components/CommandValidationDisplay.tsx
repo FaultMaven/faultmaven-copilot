@@ -15,36 +15,36 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
     switch (safetyLevel) {
       case 'safe':
         return {
-          bg: 'bg-fm-green-light',
-          border: 'border-fm-green-border',
-          text: 'text-fm-green',
+          bg: 'bg-fm-success-bg',
+          border: 'border-fm-success-border',
+          text: 'text-fm-success',
           badge: 'bg-green-600',
           icon: '✅',
           title: 'Safe to Run'
         };
       case 'read_only':
         return {
-          bg: 'bg-fm-blue-light',
-          border: 'border-fm-blue-border',
-          text: 'text-fm-blue',
+          bg: 'bg-fm-accent-soft',
+          border: 'border-fm-accent-border',
+          text: 'text-fm-accent',
           badge: 'bg-blue-600',
           icon: '👁',
           title: 'Read-Only Command'
         };
       case 'caution':
         return {
-          bg: 'bg-fm-yellow-light',
-          border: 'border-fm-yellow-border',
-          text: 'text-fm-yellow',
+          bg: 'bg-fm-warning-bg',
+          border: 'border-fm-warning-border',
+          text: 'text-fm-warning',
           badge: 'bg-yellow-600',
           icon: '⚠️',
           title: 'Use with Caution'
         };
       case 'dangerous':
         return {
-          bg: 'bg-fm-red-light',
-          border: 'border-fm-red-border',
-          text: 'text-fm-red',
+          bg: 'bg-fm-critical-bg',
+          border: 'border-fm-critical-border',
+          text: 'text-fm-critical',
           badge: 'bg-red-600',
           icon: '🛑',
           title: 'Dangerous Command'
@@ -53,7 +53,7 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
         return {
           bg: 'bg-fm-bg',
           border: 'border-fm-border',
-          text: 'text-fm-text',
+          text: 'text-fm-text-primary',
           badge: 'bg-gray-600',
           icon: '?',
           title: 'Unknown Safety Level'
@@ -89,8 +89,8 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
 
       {/* Explanation */}
       <div className="mb-4">
-        <h4 className="text-xs font-semibold text-fm-text mb-2">What this command does:</h4>
-        <p className="text-sm text-fm-text bg-fm-surface rounded-md p-3 border border-fm-border">
+        <h4 className="text-xs font-semibold text-fm-text-primary mb-2">What this command does:</h4>
+        <p className="text-sm text-fm-text-primary bg-fm-surface rounded-md p-3 border border-fm-border">
           {validation.explanation}
         </p>
       </div>
@@ -98,7 +98,7 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
       {/* Concerns */}
       {validation.concerns && validation.concerns.length > 0 && (
         <div className="mb-4">
-          <h4 className="text-xs font-semibold text-fm-red mb-2 flex items-center gap-1">
+          <h4 className="text-xs font-semibold text-fm-critical mb-2 flex items-center gap-1">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
@@ -106,7 +106,7 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
           </h4>
           <ul className="space-y-1">
             {validation.concerns.map((concern, index) => (
-              <li key={index} className="text-sm text-fm-red flex items-start gap-2 bg-fm-surface rounded-md p-2 border border-fm-border">
+              <li key={index} className="text-sm text-fm-critical flex items-start gap-2 bg-fm-surface rounded-md p-2 border border-fm-border">
                 <span className="flex-shrink-0">⚠️</span>
                 <span>{concern}</span>
               </li>
@@ -118,7 +118,7 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
       {/* Safer Alternative */}
       {validation.safer_alternative && (
         <div className="mb-4">
-          <h4 className="text-xs font-semibold text-fm-green mb-2 flex items-center gap-1">
+          <h4 className="text-xs font-semibold text-fm-success mb-2 flex items-center gap-1">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
@@ -133,10 +133,10 @@ export const CommandValidationDisplay: React.FC<CommandValidationDisplayProps> =
       {/* Conditions for Safety */}
       {validation.conditions_for_safety && validation.conditions_for_safety.length > 0 && (
         <div className="mb-4">
-          <h4 className="text-xs font-semibold text-fm-blue mb-2">Safe when:</h4>
+          <h4 className="text-xs font-semibold text-fm-accent mb-2">Safe when:</h4>
           <ul className="space-y-1">
             {validation.conditions_for_safety.map((condition, index) => (
-              <li key={index} className="text-sm text-fm-blue flex items-start gap-2 bg-fm-surface rounded-md p-2 border border-fm-blue-border">
+              <li key={index} className="text-sm text-fm-accent flex items-start gap-2 bg-fm-surface rounded-md p-2 border border-fm-accent-border">
                 <span className="flex-shrink-0">✓</span>
                 <span>{condition}</span>
               </li>

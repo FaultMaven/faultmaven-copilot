@@ -4,7 +4,7 @@
  * Collapsed header view showing case title, status, and expand/collapse button
  */
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { CaseUIResponse } from '../../../../types/case';
 import type { UserCaseStatus } from '../../../../lib/api';
 
@@ -96,31 +96,37 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   const statusOptions = getAvailableStatusTransitions(caseData.status);
   const canChangeStatus = statusOptions.length > 0 && onStatusChangeRequest;
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    console.log('[HeaderSummary] handleStatusChange fired', {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen]);
+
+  const handleStatusSelect = (newStatus: UserCaseStatus) => {
+    console.log('[HeaderSummary] handleStatusSelect fired', {
       currentStatus: caseData.status,
-      newStatus: e.target.value,
+      newStatus,
       hasCallback: !!onStatusChangeRequest
     });
 
-    e.stopPropagation(); // Prevent header toggle
-    const newStatus = e.target.value as UserCaseStatus;
-
+    setDropdownOpen(false);
     if (newStatus !== caseData.status && onStatusChangeRequest) {
       console.log('[HeaderSummary] Calling onStatusChangeRequest', { newStatus });
       onStatusChangeRequest(newStatus);
-      // Reset select to current status (will update after confirmation)
-      e.target.value = caseData.status;
-    } else {
-      console.log('[HeaderSummary] NOT calling callback', {
-        sameStatus: newStatus === caseData.status,
-        noCallback: !onStatusChangeRequest
-      });
     }
   };
 
   return (
-    <div className="p-4 cursor-pointer hover:bg-fm-surface transition-colors" onClick={onToggle}>
+    <div className="p-4 cursor-pointer hover:bg-fm-elevated/40 transition-colors" onClick={onToggle}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           {/* Title and Turn */}
@@ -129,36 +135,54 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
           </h2>
 
           {/* Status Line */}
-          <div className="flex items-center gap-2 text-sm text-fm-dim">
+          <div className="flex items-center gap-2 text-xs text-fm-text-tertiary mt-0.5">
             {canChangeStatus ? (
-              <select
-                value={caseData.status}
-                onChange={handleStatusChange}
-                onClick={(e) => e.stopPropagation()}
-                className="border-none bg-transparent cursor-pointer text-fm-dim hover:text-white focus:outline-none focus:ring-1 focus:ring-fm-blue rounded px-1"
-              >
-                <option value={caseData.status}>
+              <div className="relative inline-flex items-center" ref={dropdownRef}>
+                {/* Trigger button styled as pill */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDropdownOpen(!dropdownOpen);
+                  }}
+                  className="cursor-pointer font-medium border border-fm-accent-border bg-fm-accent-soft text-fm-accent rounded-full focus:outline-none focus:ring-1 focus:ring-fm-accent pl-2.5 pr-6 py-0.5"
+                >
                   {getStatusIcon(caseData.status)} {getStatusLabel(caseData.status)}
-                </option>
-                {statusOptions.map(status => (
-                  <option key={status} value={status}>
-                    {getStatusIcon(status)} {getStatusLabel(status)}
-                  </option>
-                ))}
-              </select>
+                </button>
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-fm-accent/60 text-[10px]">▾</span>
+
+                {/* Custom dropdown menu */}
+                {dropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-fm-elevated border border-fm-border rounded-lg shadow-lg z-50 py-1">
+                    {statusOptions.map(status => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStatusSelect(status);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-fm-text-primary hover:bg-fm-accent-soft hover:text-fm-accent transition-colors"
+                      >
+                        {getStatusIcon(status)} {getStatusLabel(status)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
-              <span>
+              <span className="font-medium border border-fm-accent-border bg-fm-accent-soft text-fm-accent rounded-full px-2.5 py-0.5">
                 {getStatusIcon(caseData.status)} {getStatusLabel(caseData.status)}
               </span>
             )}
-            <span>·</span>
+            <span className="px-1 text-fm-text-tertiary">·</span>
             <span>Updated {formatTimeAgo(caseData.updated_at)}</span>
           </div>
         </div>
 
         {/* Expand/Collapse Toggle */}
         <button
-          className="ml-3 p-1.5 text-fm-dim hover:text-fm-text hover:bg-fm-elevated rounded-lg transition-colors flex-shrink-0"
+          className="ml-3 p-1.5 text-fm-text-tertiary hover:text-fm-text-primary hover:bg-fm-elevated rounded-lg transition-colors flex-shrink-0"
           onClick={(e) => {
             e.stopPropagation();
             onToggle();

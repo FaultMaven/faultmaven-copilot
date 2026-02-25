@@ -85,7 +85,7 @@ export default function DocumentRowEnhanced({
         );
       default:
         return (
-          <svg className="w-4 h-4 text-fm-muted" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-4 h-4 text-fm-text-secondary" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
           </svg>
         );
@@ -114,7 +114,7 @@ export default function DocumentRowEnhanced({
               {document.title}
             </div>
             {document.description && (
-              <div className="text-xs text-fm-dim truncate mt-0.5" title={document.description}>
+              <div className="text-xs text-fm-text-tertiary truncate mt-0.5" title={document.description}>
                 {document.description}
               </div>
             )}
@@ -123,7 +123,7 @@ export default function DocumentRowEnhanced({
       </td>
 
       {/* Document Type */}
-      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-dim" style={{ width: '120px', minWidth: '120px' }}>
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-text-tertiary" style={{ width: '120px', minWidth: '120px' }}>
         {formatDocumentType(document.document_type)}
       </td>
 
@@ -141,8 +141,8 @@ export default function DocumentRowEnhanced({
                     key={index}
                     className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
                       isStringTags 
-                        ? 'bg-fm-yellow-light text-fm-yellow border border-fm-yellow-border' 
-                        : 'bg-fm-blue-light text-fm-blue'
+                        ? 'bg-fm-warning-bg text-fm-warning border border-fm-warning-border' 
+                        : 'bg-fm-accent-soft text-fm-accent'
                     }`}
                     title={isStringTags ? `${tag} (API inconsistency: tags returned as string)` : tag}
                   >
@@ -151,7 +151,7 @@ export default function DocumentRowEnhanced({
                 ))}
                 {tags.length > 2 && (
                   <span 
-                    className="text-xs text-fm-dim"
+                    className="text-xs text-fm-text-tertiary"
                     title={`Additional tags: ${tags.slice(2).join(', ')}`}
                   >
                     +{tags.length - 2}
@@ -167,21 +167,21 @@ export default function DocumentRowEnhanced({
                 )}
               </>
             ) : (
-              <span className="text-xs text-fm-muted">-</span>
+              <span className="text-xs text-fm-text-secondary">-</span>
             );
           })()}
         </div>
       </td>
 
       {/* Category */}
-      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-dim" style={{ width: '100px', minWidth: '100px' }}>
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-text-tertiary" style={{ width: '100px', minWidth: '100px' }}>
         <span className="truncate" title={document.category}>
           {document.category || '-'}
         </span>
       </td>
 
       {/* Created Date (relative) */}
-      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-dim" style={{ width: '120px', minWidth: '120px' }}>
+      <td className="px-2 py-3 whitespace-nowrap text-xs text-fm-text-tertiary" style={{ width: '120px', minWidth: '120px' }}>
         <span title={document.created_at ? new Date(document.created_at).toLocaleString() : 'Unknown'}>
           {formatDate(document.created_at)}
         </span>
@@ -193,7 +193,7 @@ export default function DocumentRowEnhanced({
           {/* View Button */}
           <button
             onClick={() => onView(document)}
-            className="inline-flex items-center px-2 py-1 border border-fm-border text-xs leading-4 font-medium rounded text-fm-text bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-blue"
+            className="inline-flex items-center px-2 py-1 border border-fm-border text-xs leading-4 font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-accent"
             title="View document details"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +205,7 @@ export default function DocumentRowEnhanced({
           {/* Edit Button */}
           <button
             onClick={() => onEdit(document)}
-            className="inline-flex items-center px-2 py-1 border border-fm-border text-xs leading-4 font-medium rounded text-fm-text bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-blue"
+            className="inline-flex items-center px-2 py-1 border border-fm-border text-xs leading-4 font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-accent"
             title="Edit metadata"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,7 +217,7 @@ export default function DocumentRowEnhanced({
           <button
             onClick={handleDelete}
             disabled={isDeleting}
-            className="inline-flex items-center px-2 py-1 border border-transparent text-xs leading-4 font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-red"
+            className="inline-flex items-center px-2 py-1 border border-transparent text-xs leading-4 font-medium rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-critical"
             title="Delete document"
           >
             {isDeleting ? (

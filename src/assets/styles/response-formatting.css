@@ -2,11 +2,11 @@
 
 /* Code blocks — elevated surface for hierarchy */
 .code-block {
-  @apply bg-fm-bg rounded-lg border border-fm-border mb-3 overflow-hidden;
+  @apply bg-fm-codeblock rounded-lg border border-fm-codeblock-border mb-3 overflow-hidden;
 }
 
 .code-header {
-  @apply bg-fm-elevated px-3 py-1.5 border-b border-fm-border;
+  @apply bg-fm-surface px-3 py-1.5 border-b border-fm-border;
   font-size: 11px;
   font-weight: 500;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -14,19 +14,19 @@
 }
 
 .code-block pre {
-  @apply bg-fm-bg p-3 overflow-x-auto;
+  @apply bg-fm-codeblock p-3 overflow-x-auto;
   font-size: 12px;
   line-height: 1.5;
 }
 
 .code-block code {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  @apply text-fm-text;
+  @apply text-fm-codeblock-text;
 }
 
 /* Inline code — subtle elevation */
 .inline-code {
-  @apply bg-fm-elevated px-1.5 py-0.5 rounded border border-fm-border-light;
+  @apply bg-fm-code-bg px-1.5 py-0.5 rounded border border-fm-code-border;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   color: #E6EDF3;
@@ -34,19 +34,19 @@
 
 /* Special message blocks — left border accent for visual hierarchy */
 .warning-block {
-  @apply bg-fm-elevated border-l-4 border-fm-yellow p-3 mb-3 rounded-r-lg;
+  @apply bg-fm-surface-alt border-l-4 border-fm-warning p-3 mb-3 rounded-r-lg;
 }
 
 .error-block {
-  @apply bg-fm-elevated border-l-4 border-fm-red p-3 mb-3 rounded-r-lg;
+  @apply bg-fm-surface-alt border-l-4 border-fm-critical p-3 mb-3 rounded-r-lg;
 }
 
 .solution-block {
-  @apply bg-fm-elevated border-l-4 border-fm-green p-3 mb-3 rounded-r-lg;
+  @apply bg-fm-surface-alt border-l-4 border-fm-success p-3 mb-3 rounded-r-lg;
 }
 
 .info-block {
-  @apply bg-fm-elevated border-l-4 border-fm-blue p-3 mb-3 rounded-r-lg;
+  @apply bg-fm-surface-alt border-l-4 border-fm-accent p-3 mb-3 rounded-r-lg;
 }
 
 /* Response headings — finding-title scale */
@@ -54,7 +54,7 @@
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
-  @apply text-white mt-4 mb-2 border-b border-fm-border pb-1;
+  @apply text-fm-text-secondary mt-4 mb-2 border-b border-fm-border pb-1;
 }
 
 /* Tables — elevated surface */
@@ -67,7 +67,7 @@
 }
 
 .table-container th {
-  @apply bg-fm-elevated px-3 py-2 text-left border-b border-fm-border;
+  @apply bg-fm-surface px-3 py-2 text-left border-b border-fm-border;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -91,42 +91,42 @@
 }
 
 .prose-sm li {
-  @apply mb-1 text-fm-text;
+  @apply mb-1 text-fm-text-primary;
   font-size: 13px;
   line-height: 1.55;
 }
 
 /* Action items and steps — elevated cards */
 .action-item {
-  @apply flex items-start gap-2 p-2.5 bg-fm-elevated rounded-lg border-l-4 border-fm-blue mb-2;
+  @apply flex items-start gap-2 p-2.5 bg-fm-surface border-l-4 border-fm-accent mb-2;
 }
 
 .step-item {
-  @apply flex items-start gap-2 p-2.5 bg-fm-elevated rounded-lg border-l-4 border-fm-border mb-2;
+  @apply flex items-start gap-2 p-2.5 bg-fm-surface border-l-4 border-fm-border mb-2;
 }
 
 /* Severity indicators — meta scale */
 .severity-high {
-  @apply text-fm-red;
+  @apply text-fm-critical;
   font-size: 11px;
   font-weight: 600;
 }
 
 .severity-medium {
-  @apply text-fm-yellow;
+  @apply text-fm-warning;
   font-size: 11px;
   font-weight: 600;
 }
 
 .severity-low {
-  @apply text-fm-green;
+  @apply text-fm-success;
   font-size: 11px;
   font-weight: 600;
 }
 
 /* Command/Terminal blocks — monospace, deepest surface */
 .terminal-block {
-  @apply bg-fm-bg text-fm-green p-3 rounded-lg mb-3 overflow-x-auto;
+  @apply bg-fm-base text-fm-success p-3 rounded-lg mb-3 overflow-x-auto;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -134,22 +134,22 @@
 
 .terminal-block::before {
   content: "$ ";
-  @apply text-fm-muted;
+  @apply text-fm-text-tertiary;
 }
 
 /* Response type styling — elevated with accent border */
 .response-type-diagnostic {
-  @apply border-l-4 border-fm-yellow pl-3 bg-fm-elevated;
+  @apply border-l-4 border-fm-warning pl-3 bg-fm-surface-alt;
 }
 
 .response-type-procedure {
-  @apply border-l-4 border-fm-blue pl-3 bg-fm-elevated;
+  @apply border-l-4 border-fm-accent pl-3 bg-fm-surface-alt;
 }
 
 .response-type-technical {
-  @apply border-l-4 border-fm-purple pl-3 bg-fm-elevated;
+  @apply border-l-4 border-fm-accent pl-3 bg-fm-surface-alt;
 }
 
 .response-type-quick-answer {
-  @apply bg-fm-elevated p-3 rounded-lg border border-fm-green-border;
+  @apply bg-fm-surface-alt p-3 rounded-lg border border-fm-success-border;
 }

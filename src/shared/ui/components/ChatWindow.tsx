@@ -304,7 +304,7 @@ const ChatWindowComponent = function ChatWindow({
   }, [conversation]);
 
   return (
-    <div className={`flex flex-col h-full min-h-0 bg-fm-surface ${className}`}>
+    <div className={`flex flex-col h-full min-h-0 bg-fm-canvas ${className}`}>
       {/* Case Header — dark themed */}
       {activeCase && (
         <EnhancedCaseHeader
@@ -344,15 +344,15 @@ const ChatWindowComponent = function ChatWindow({
 
       {/* Report Generation Button — dark themed */}
       {activeCase && activeCase.status === 'resolved' && onGenerateReports && (
-        <div className="px-4 py-2 bg-fm-green-light border border-fm-green-border rounded-md mx-4">
+        <div className="px-4 py-2 bg-fm-success-bg border border-fm-success-border rounded-md mx-4">
           <div className="flex items-center justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-fm-green">Case Resolved</p>
-              <p className="text-xs text-fm-dim">Generate documentation reports for this case</p>
+              <p className="text-sm font-medium text-fm-success">Case Resolved</p>
+              <p className="text-xs text-fm-text-tertiary">Generate documentation reports for this case</p>
             </div>
             <button
               onClick={onGenerateReports}
-              className="px-3 py-1.5 bg-fm-green text-fm-bg text-xs font-semibold rounded-md hover:opacity-90 transition-colors"
+              className="px-3 py-1.5 bg-fm-success text-fm-base text-xs font-semibold rounded-md hover:opacity-90 transition-colors"
             >
               Generate Reports
             </button>
@@ -362,6 +362,7 @@ const ChatWindowComponent = function ChatWindow({
 
       {/* Conversation History — dark themed */}
       <div id="conversation-history" ref={conversationHistoryRef} className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-fm-content mx-auto w-full">
         <div className="h-4" />
         {Array.isArray(conversation) && conversation.map((item) => (
           <React.Fragment key={item.id}>
@@ -369,20 +370,17 @@ const ChatWindowComponent = function ChatWindow({
             {item.question && (
               <div className="flex justify-end px-4 py-2" data-turn={item.turn_number}>
                 <div
-                  className={`max-w-[85%] bg-fm-elevated border text-fm-text px-3.5 py-2.5 ${
-                    item.failed ? 'border-fm-red/50' : 'border-fm-border'
-                  }`}
+                  className={`max-w-[85%] bg-fm-elevated border text-fm-text-primary px-3.5 py-2.5 ${item.failed ? 'border-fm-critical-border' : 'border-fm-border'
+                    }`}
                   style={{ borderRadius: '8px 8px 0px 8px' }}
                 >
                   <p className="break-words m-0 text-body">{item.question}</p>
                   <div className="flex items-center justify-end gap-2 mt-1">
                     {item.failed && (
-                      <span className="text-micro text-fm-red font-medium">Failed</span>
+                      <span className="text-micro text-fm-critical font-medium">Failed</span>
                     )}
-                    {item.optimistic && !item.failed && (
-                      <span className="text-micro text-fm-blue">Sending...</span>
-                    )}
-                    <span className="text-micro text-fm-dim">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
+                    {/* Removed "Sending..." — redundant with response loading indicator */}
+                    <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
                   </div>
                 </div>
               </div>
@@ -394,224 +392,222 @@ const ChatWindowComponent = function ChatWindow({
                 {/* Avatar row */}
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <img src="/icon/square-dark.svg" alt="FM" className="w-4 h-4 rounded" />
-                  <span className="text-meta font-semibold text-white">FaultMaven</span>
-                  <span className="text-micro text-fm-dim">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
+                  <span className="text-meta font-semibold text-fm-text-primary">FaultMaven</span>
+                  <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
                 </div>
 
-                {/* Content indented */}
-                <div className={`pl-[22px] ${item.error || item.failed ? 'text-fm-red' : 'text-fm-text'}`}>
-                  {/* Error banner */}
-                  {item.failed && item.errorMessage && (
-                    <div className="mb-2 p-2.5 bg-fm-red-light border border-fm-red/30 rounded-md text-xs">
-                      <p className="text-fm-red font-medium">Message could not be sent</p>
-                      <p className="text-fm-dim mt-0.5">{item.errorMessage}</p>
-                      {item.onRetry && (
-                        <button
-                          onClick={() => item.onRetry?.(item.id)}
-                          className="mt-2 px-3 py-1 text-xs bg-fm-red text-fm-bg rounded hover:opacity-90 transition-colors font-medium"
-                        >
-                          Retry
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Loading indicator */}
-                  {item.optimistic && item.loading && !item.response && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-fm-purple-light rounded border border-fm-purple-border text-fm-purple">
-                      <div className="flex gap-[3px]">
-                        {[0, 1, 2].map(i => (
-                          <div
-                            key={i}
-                            className="w-1 h-1 rounded-full bg-fm-purple animate-pulse-dot"
-                            style={{ animationDelay: `${i * 0.2}s` }}
-                          />
-                        ))}
-                      </div>
-                      <span className="font-mono font-medium text-[11.5px]">Analyzing...</span>
-                    </div>
-                  )}
-
-                  <InlineSourcesRenderer
-                    content={item.response || ''}
-                    sources={item.sources}
-                    evidenceRequests={item.evidenceRequests}
-                    onDocumentView={onDocumentView}
-                    onConfirmationYes={handleConfirmationYes}
-                    onConfirmationNo={handleConfirmationNo}
-                    className="break-words text-body"
-                  />
-
-                  {/* OODA v3.2.0 Response Format Components */}
-                  {item.problemDetected && item.problemSummary && item.severity && (
-                    <ProblemDetectedAlert
-                      problemSummary={item.problemSummary}
-                      severity={item.severity}
-                    />
-                  )}
-
-                  {item.scopeAssessment && (
-                    <ScopeAssessmentDisplay assessment={item.scopeAssessment} />
-                  )}
-
-                  {/* Investigation Plan */}
-                  {item.plan && (
-                    <div className="mt-3 p-3 bg-fm-elevated border border-fm-blue-border rounded-lg">
-                      <div className="text-finding-title text-fm-blue mb-2 flex items-center gap-2">
-                        📋 Investigation Plan - Step {item.plan.step_number}
-                      </div>
-                      <div className="p-2.5 bg-fm-bg rounded-md border border-fm-border">
-                        <div className="text-body font-medium text-white mb-1">{item.plan.action}</div>
-                        <div className="text-body text-fm-dim">{item.plan.description}</div>
-                        {item.plan.estimated_time && (
-                          <div className="text-micro text-fm-muted mt-1.5">Estimated: {item.plan.estimated_time}</div>
+                {/* Content elevated */}
+                <div className={`mt-2 ${item.error || item.failed ? 'text-fm-critical' : ''}`}>
+                  <div className="bg-fm-surface rounded-fm-card px-5 py-[18px] border border-fm-border-subtle shadow-fm-card text-fm-text-secondary mt-1">
+                    {/* Error banner */}
+                    {item.failed && item.errorMessage && (
+                      <div className="mb-2 p-2.5 bg-fm-critical-bg border border-fm-critical-border rounded-md text-xs">
+                        <p className="text-fm-critical font-medium">Message could not be sent</p>
+                        <p className="text-fm-text-tertiary mt-0.5">{item.errorMessage}</p>
+                        {item.onRetry && (
+                          <button
+                            onClick={() => item.onRetry?.(item.id)}
+                            className="mt-2 px-3 py-1 text-xs bg-fm-critical text-fm-base rounded hover:opacity-90 transition-colors font-medium"
+                          >
+                            Retry
+                          </button>
                         )}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Suggested Actions */}
-                  {item.suggestedActions && item.suggestedActions.length > 0 && (
-                    <div className="mt-3 p-3 bg-fm-elevated border border-fm-yellow-border rounded-lg">
-                      <div className="text-finding-title text-fm-yellow mb-2">⚡ Quick Actions</div>
-                      <div className="flex flex-wrap gap-2">
-                        {item.suggestedActions.map((action, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => {
-                              if (action.type === 'question_template' && canInteract && !loading) {
-                                onQuerySubmit(action.payload);
-                              } else if (action.type === 'command') {
-                                navigator.clipboard.writeText(action.payload);
-                              }
-                            }}
-                            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                              action.type === 'question_template'
-                                ? 'bg-fm-blue-light text-fm-blue hover:opacity-80'
+                    {/* Loading indicator */}
+                    {item.optimistic && item.loading && !item.response && (
+                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-fm-accent-soft rounded border border-fm-accent-border text-fm-accent">
+                        <div className="flex gap-[3px]">
+                          {[0, 1, 2].map(i => (
+                            <div
+                              key={i}
+                              className="w-1 h-1 rounded-full bg-fm-accent animate-pulse-dot"
+                              style={{ animationDelay: `${i * 0.2}s` }}
+                            />
+                          ))}
+                        </div>
+                        <span className="font-mono font-medium text-[11.5px]">Thinking...</span>
+                      </div>
+                    )}
+
+                    <InlineSourcesRenderer
+                      content={item.response || ''}
+                      sources={item.sources}
+                      evidenceRequests={item.evidenceRequests}
+                      onDocumentView={onDocumentView}
+                      onConfirmationYes={handleConfirmationYes}
+                      onConfirmationNo={handleConfirmationNo}
+                      className="break-words text-body"
+                    />
+
+                    {/* OODA v3.2.0 Response Format Components */}
+                    {item.problemDetected && item.problemSummary && item.severity && (
+                      <ProblemDetectedAlert
+                        problemSummary={item.problemSummary}
+                        severity={item.severity}
+                      />
+                    )}
+
+                    {item.scopeAssessment && (
+                      <ScopeAssessmentDisplay assessment={item.scopeAssessment} />
+                    )}
+
+                    {/* Investigation Plan */}
+                    {item.plan && (
+                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-accent-border rounded-lg">
+                        <div className="text-finding-title text-fm-accent mb-2 flex items-center gap-2">
+                          📋 Investigation Plan - Step {item.plan.step_number}
+                        </div>
+                        <div className="p-2.5 bg-fm-canvas rounded-md border border-fm-border">
+                          <div className="text-body font-medium text-fm-text-primary mb-1">{item.plan.action}</div>
+                          <div className="text-body text-fm-text-tertiary">{item.plan.description}</div>
+                          {item.plan.estimated_time && (
+                            <div className="text-micro text-fm-text-secondary mt-1.5">Estimated: {item.plan.estimated_time}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Suggested Actions */}
+                    {item.suggestedActions && item.suggestedActions.length > 0 && (
+                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-warning-border rounded-lg">
+                        <div className="text-finding-title text-fm-warning mb-2">⚡ Quick Actions</div>
+                        <div className="flex flex-wrap gap-2">
+                          {item.suggestedActions.map((action, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                if (action.type === 'question_template' && canInteract && !loading) {
+                                  onQuerySubmit(action.payload);
+                                } else if (action.type === 'command') {
+                                  navigator.clipboard.writeText(action.payload);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${action.type === 'question_template'
+                                ? 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
                                 : action.type === 'command'
-                                ? 'bg-fm-green-light text-fm-green hover:opacity-80'
-                                : action.type === 'upload_data'
-                                ? 'bg-fm-purple-light text-fm-purple hover:opacity-80'
-                                : 'bg-fm-elevated text-fm-text hover:opacity-80'
-                            }`}
-                            disabled={!canInteract || loading}
-                          >
-                            <span className="flex items-center gap-1">
-                              {action.icon && <span>{action.icon}</span>}
-                              {action.label}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {item.clarifyingQuestions && item.clarifyingQuestions.length > 0 && (
-                    <ClarifyingQuestions
-                      questions={item.clarifyingQuestions}
-                      onQuestionClick={(question) => {
-                        if (canInteract && !loading) {
-                          onQuerySubmit(question);
-                        }
-                      }}
-                    />
-                  )}
-
-                  {item.suggestedCommands && item.suggestedCommands.length > 0 && (
-                    <SuggestedCommands
-                      commands={item.suggestedCommands}
-                      onCommandClick={(command) => {
-                        navigator.clipboard.writeText(command);
-                      }}
-                    />
-                  )}
-
-                  {item.commandValidation && (
-                    <CommandValidationDisplay validation={item.commandValidation} />
-                  )}
-
-                  {/* Next Action Hint */}
-                  {item.nextActionHint && (
-                    <div className="mt-3 p-2.5 bg-fm-elevated border border-fm-blue-border rounded-lg">
-                      <div className="text-meta font-semibold text-fm-blue mb-1">💡 Next Action</div>
-                      <div className="text-body text-fm-text">{item.nextActionHint}</div>
-                    </div>
-                  )}
-
-                  {/* New Hypotheses */}
-                  {item.newHypotheses && item.newHypotheses.length > 0 && (
-                    <div className="mt-3 p-3 bg-fm-elevated border border-fm-purple-border rounded-lg">
-                      <div className="text-finding-title text-fm-purple mb-2">🧪 New Hypotheses Generated</div>
-                      <div className="space-y-2">
-                        {item.newHypotheses.map((hypothesis, idx) => (
-                          <div key={idx} className="p-2.5 bg-fm-bg rounded-md border border-fm-border">
-                            <div className="text-body font-medium text-white mb-1">{hypothesis.statement}</div>
-                            <div className="flex items-center gap-2 text-micro text-fm-dim mb-1">
-                              <span className="px-1.5 py-0.5 bg-fm-purple-light rounded font-mono">{hypothesis.category}</span>
-                              <span>Likelihood: {(hypothesis.likelihood * 100).toFixed(0)}%</span>
-                              <span className={`px-1.5 py-0.5 rounded ${
-                                hypothesis.status === 'validated' ? 'bg-fm-green-light text-fm-green' :
-                                hypothesis.status === 'refuted' ? 'bg-fm-red-light text-fm-red' :
-                                hypothesis.status === 'testing' ? 'bg-fm-yellow-light text-fm-yellow' :
-                                'bg-fm-surface text-fm-dim'
-                              }`}>
-                                {hypothesis.status}
+                                  ? 'bg-fm-success-bg text-fm-success hover:opacity-80'
+                                  : action.type === 'upload_data'
+                                    ? 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
+                                    : 'bg-fm-elevated text-fm-text-primary hover:opacity-80'
+                                }`}
+                              disabled={!canInteract || loading}
+                            >
+                              <span className="flex items-center gap-1">
+                                {action.icon && <span>{action.icon}</span>}
+                                {action.label}
                               </span>
-                            </div>
-                            {hypothesis.testing_strategy && (
-                              <div className="text-micro text-fm-muted mt-1">
-                                <span className="font-medium">Testing:</span> {hypothesis.testing_strategy}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {item.clarifyingQuestions && item.clarifyingQuestions.length > 0 && (
+                      <ClarifyingQuestions
+                        questions={item.clarifyingQuestions}
+                        onQuestionClick={(question) => {
+                          if (canInteract && !loading) {
+                            onQuerySubmit(question);
+                          }
+                        }}
+                      />
+                    )}
+
+                    {item.suggestedCommands && item.suggestedCommands.length > 0 && (
+                      <SuggestedCommands
+                        commands={item.suggestedCommands}
+                        onCommandClick={(command) => {
+                          navigator.clipboard.writeText(command);
+                        }}
+                      />
+                    )}
+
+                    {item.commandValidation && (
+                      <CommandValidationDisplay validation={item.commandValidation} />
+                    )}
+
+                    {/* Next Action Hint */}
+                    {item.nextActionHint && (
+                      <div className="mt-3 p-2.5 bg-fm-elevated border border-fm-accent-border rounded-lg">
+                        <div className="text-meta font-semibold text-fm-accent mb-1">💡 Next Action</div>
+                        <div className="text-body text-fm-text-primary">{item.nextActionHint}</div>
+                      </div>
+                    )}
+
+                    {/* New Hypotheses */}
+                    {item.newHypotheses && item.newHypotheses.length > 0 && (
+                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-accent-border rounded-lg">
+                        <div className="text-finding-title text-fm-accent mb-2">🧪 New Hypotheses Generated</div>
+                        <div className="space-y-2">
+                          {item.newHypotheses.map((hypothesis, idx) => (
+                            <div key={idx} className="p-2.5 bg-fm-canvas rounded-md border border-fm-border">
+                              <div className="text-body font-medium text-fm-text-primary mb-1">{hypothesis.statement}</div>
+                              <div className="flex items-center gap-2 text-micro text-fm-text-tertiary mb-1">
+                                <span className="px-1.5 py-0.5 bg-fm-accent-soft rounded font-mono">{hypothesis.category}</span>
+                                <span>Likelihood: {(hypothesis.likelihood * 100).toFixed(0)}%</span>
+                                <span className={`px-1.5 py-0.5 rounded ${hypothesis.status === 'validated' ? 'bg-fm-success-bg text-fm-success' :
+                                  hypothesis.status === 'refuted' ? 'bg-fm-critical-bg text-fm-critical' :
+                                    hypothesis.status === 'testing' ? 'bg-fm-warning-bg text-fm-warning' :
+                                      'bg-fm-surface text-fm-text-tertiary'
+                                  }`}>
+                                  {hypothesis.status}
+                                </span>
                               </div>
-                            )}
-                          </div>
-                        ))}
+                              {hypothesis.testing_strategy && (
+                                <div className="text-micro text-fm-text-secondary mt-1">
+                                  <span className="font-medium">Testing:</span> {hypothesis.testing_strategy}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Hypothesis Test Results */}
-                  {item.hypothesisTested && item.testResult && (
-                    <div className={`mt-3 p-3 rounded-lg border ${
-                      item.testResult.outcome === 'supports' ? 'bg-fm-elevated border-fm-green-border' :
-                      item.testResult.outcome === 'refutes' ? 'bg-fm-elevated border-fm-red/30' :
-                      'bg-fm-elevated border-fm-yellow-border'
-                    }`}>
-                      <div className={`text-finding-title mb-2 ${
-                        item.testResult.outcome === 'supports' ? 'text-fm-green' :
-                        item.testResult.outcome === 'refutes' ? 'text-fm-red' :
-                        'text-fm-yellow'
-                      }`}>
-                        {item.testResult.outcome === 'supports' ? '✅ Hypothesis Supported' :
-                         item.testResult.outcome === 'refutes' ? '❌ Hypothesis Refuted' :
-                         '❓ Inconclusive Test'}
-                      </div>
-                      <div className="space-y-2">
-                        <div className="p-2 bg-fm-bg rounded-md border border-fm-border">
-                          <div className="text-meta font-medium text-fm-dim mb-0.5">Tested Hypothesis</div>
-                          <div className="text-body text-fm-text italic">{item.hypothesisTested}</div>
-                        </div>
-                        <div className="p-2 bg-fm-bg rounded-md border border-fm-border">
-                          <div className="text-meta font-medium text-fm-dim mb-0.5">Test: {item.testResult.test_description}</div>
-                          <div className="text-body text-fm-text">{item.testResult.evidence_summary}</div>
-                        </div>
-                        <div className="flex items-center gap-2 text-micro">
-                          <span className="font-medium text-fm-dim">Confidence Impact:</span>
-                          <span className={`px-2 py-0.5 rounded font-mono font-medium ${
-                            item.testResult.confidence_impact > 0 ? 'bg-fm-green-light text-fm-green' :
-                            item.testResult.confidence_impact < 0 ? 'bg-fm-red-light text-fm-red' :
-                            'bg-fm-surface text-fm-dim'
+                    {/* Hypothesis Test Results */}
+                    {item.hypothesisTested && item.testResult && (
+                      <div className={`mt-3 p-3 rounded-lg border ${item.testResult.outcome === 'supports' ? 'bg-fm-elevated border-fm-success-border' :
+                        item.testResult.outcome === 'refutes' ? 'bg-fm-elevated border-fm-critical-border' :
+                          'bg-fm-elevated border-fm-warning-border'
+                        }`}>
+                        <div className={`text-finding-title mb-2 ${item.testResult.outcome === 'supports' ? 'text-fm-success' :
+                          item.testResult.outcome === 'refutes' ? 'text-fm-critical' :
+                            'text-fm-warning'
                           }`}>
-                            {item.testResult.confidence_impact > 0 ? '+' : ''}{(item.testResult.confidence_impact * 100).toFixed(0)}%
-                          </span>
+                          {item.testResult.outcome === 'supports' ? '✅ Hypothesis Supported' :
+                            item.testResult.outcome === 'refutes' ? '❌ Hypothesis Refuted' :
+                              '❓ Inconclusive Test'}
+                        </div>
+                        <div className="space-y-2">
+                          <div className="p-2 bg-fm-canvas rounded-md border border-fm-border">
+                            <div className="text-meta font-medium text-fm-text-tertiary mb-0.5">Tested Hypothesis</div>
+                            <div className="text-body text-fm-text-primary italic">{item.hypothesisTested}</div>
+                          </div>
+                          <div className="p-2 bg-fm-canvas rounded-md border border-fm-border">
+                            <div className="text-meta font-medium text-fm-text-tertiary mb-0.5">Test: {item.testResult.test_description}</div>
+                            <div className="text-body text-fm-text-primary">{item.testResult.evidence_summary}</div>
+                          </div>
+                          <div className="flex items-center gap-2 text-micro">
+                            <span className="font-medium text-fm-text-tertiary">Confidence Impact:</span>
+                            <span className={`px-2 py-0.5 rounded font-mono font-medium ${item.testResult.confidence_impact > 0 ? 'bg-fm-success-bg text-fm-success' :
+                              item.testResult.confidence_impact < 0 ? 'bg-fm-critical-bg text-fm-critical' :
+                                'bg-fm-surface text-fm-text-tertiary'
+                              }`}>
+                              {item.testResult.confidence_impact > 0 ? '+' : ''}{(item.testResult.confidence_impact * 100).toFixed(0)}%
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Action required indicator */}
-                  {item.requiresAction && (
-                    <div className="mt-1 text-fm-yellow text-xs font-medium">⚠️ Action Required</div>
-                  )}
+                    {/* Action required indicator */}
+                    {item.requiresAction && (
+                      <div className="mt-1 text-fm-warning text-xs font-medium">⚠️ Action Required</div>
+                    )}
+
+                  </div>
                 </div>
               </div>
             )}
@@ -620,18 +616,19 @@ const ChatWindowComponent = function ChatWindow({
         {(!Array.isArray(conversation) || conversation.length === 0) && !loading && (
           <div className="h-full flex flex-col items-center justify-center text-center p-6">
             <img src="/icon/square-dark.svg" alt="FaultMaven" className="w-10 h-10 rounded-lg opacity-50 mb-4" />
-            <h2 className="text-base font-semibold text-fm-text mb-2">
+            <h2 className="text-base font-semibold text-fm-text-primary mb-2">
               Welcome to FaultMaven Copilot
             </h2>
-            <p className="text-sm text-fm-dim mb-4">
+            <p className="text-sm text-fm-text-tertiary mb-4">
               Your AI troubleshooting partner.
             </p>
-            <p className="text-sm text-fm-muted bg-fm-elevated p-3 rounded-md max-w-sm">
-              Provide context using the options below or ask a question directly, like <em className="text-fm-dim">"What's the runbook for a database failover?"</em>
+            <p className="text-sm text-fm-text-secondary bg-fm-elevated p-3 rounded-md max-w-sm">
+              Provide context using the options below or ask a question directly, like <em className="text-fm-text-tertiary">"What's the runbook for a database failover?"</em>
             </p>
           </div>
         )}
         <div className="h-6" />
+        </div>{/* max-w-fm-content */}
       </div>
 
       <EvidenceAnalysisModal

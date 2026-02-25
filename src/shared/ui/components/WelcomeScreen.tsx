@@ -61,7 +61,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
   };
 
   return (
-    <div className="flex items-center justify-center h-screen bg-fm-bg">
+    <div className="flex items-center justify-center h-screen bg-fm-canvas relative overflow-hidden">
       <div className="max-w-2xl mx-auto p-8">
         {/* Header */}
         <div className="text-center mb-8">
@@ -72,10 +72,10 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
               className="h-16 w-auto"
             />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">
+          <h1 className="text-3xl font-bold text-fm-text-primary mb-2">
             Welcome to FaultMaven Copilot
           </h1>
-          <p className="text-lg text-fm-dim">
+          <p className="text-lg text-fm-text-tertiary">
             AI-powered troubleshooting assistant for SRE and DevOps teams
           </p>
         </div>
@@ -85,44 +85,44 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
           {/* FaultMaven Enterprise */}
           <button
             onClick={handleCloudSetup}
-            className="group bg-fm-surface border-2 border-fm-blue-border rounded-xl p-6 hover:border-fm-blue hover:shadow-lg transition-all text-left"
+            className="group bg-fm-surface border-2 border-fm-accent-border rounded-xl p-6 hover:border-fm-accent hover:shadow-lg transition-all text-left"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-fm-blue-light rounded-lg flex items-center justify-center group-hover:bg-fm-blue transition-colors">
-                <svg className="w-6 h-6 text-fm-blue group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 bg-fm-accent-soft rounded-lg flex items-center justify-center group-hover:bg-fm-accent transition-colors">
+                <svg className="w-6 h-6 text-fm-accent group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-white">
+              <h3 className="text-xl font-semibold text-fm-text-primary">
                 FaultMaven Cloud (SaaS)
               </h3>
             </div>
 
-            <p className="text-fm-dim mb-4">
+            <p className="text-fm-text-tertiary mb-4">
               Best for teams. Immediate value with managed infrastructure.
             </p>
 
-            <ul className="space-y-2 text-sm text-fm-dim mb-6">
+            <ul className="space-y-2 text-sm text-fm-text-tertiary mb-6">
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Pre-Loaded Intelligence – Starts with a Global Knowledge Base of industry best practices</span>
               </li>
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Team Collaboration – Share runbooks and incidents across the full 3-tier knowledge system</span>
               </li>
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Enterprise Security – Fully managed with SSO, RBAC, and SOC 2 readiness</span>
               </li>
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Zero Maintenance – We handle the Kubernetes infrastructure, updates, and scaling</span>
@@ -130,8 +130,8 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
             </ul>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-fm-blue">Recommended</span>
-              <svg className="w-5 h-5 text-fm-muted group-hover:text-fm-blue transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="text-sm font-medium text-fm-accent">Recommended</span>
+              <svg className="w-5 h-5 text-fm-text-secondary group-hover:text-fm-accent transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </div>
@@ -140,44 +140,44 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
           {/* Self-Hosted */}
           <button
             onClick={handleSelfHostedSetup}
-            className="group bg-fm-surface border-2 border-fm-border rounded-xl p-6 hover:border-fm-dim hover:shadow-lg transition-all text-left"
+            className="group bg-fm-surface border-2 border-fm-border rounded-xl p-6 hover:border-fm-text-tertiary hover:shadow-lg transition-all text-left"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-fm-elevated rounded-lg flex items-center justify-center group-hover:bg-fm-dim transition-colors">
-                <svg className="w-6 h-6 text-fm-dim group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 bg-fm-elevated rounded-lg flex items-center justify-center group-hover:bg-fm-text-tertiary transition-colors">
+                <svg className="w-6 h-6 text-fm-text-tertiary group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-white">
+              <h3 className="text-xl font-semibold text-fm-text-primary">
                 FaultMaven Open Source (Local)
               </h3>
             </div>
 
-            <p className="text-fm-dim mb-4">
+            <p className="text-fm-text-tertiary mb-4">
               Best for individuals. Run the full stack on your own hardware.
             </p>
 
-            <ul className="space-y-2 text-sm text-fm-dim mb-6">
+            <ul className="space-y-2 text-sm text-fm-text-tertiary mb-6">
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Self-Hosted Infrastructure – You own the stack. Run the Core engine directly on your hardware or Docker</span>
               </li>
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Custom Knowledge Base – Starts empty. Build a personal KB tailored exactly to your specific needs</span>
               </li>
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Offline Capable – Works entirely air-gapped with local LLMs (like Ollama)</span>
               </li>
               <li className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-fm-green flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span>Self-Managed – You have full control over the container, database, and configuration</span>
@@ -185,8 +185,8 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
             </ul>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-fm-dim">Requires Docker</span>
-              <svg className="w-5 h-5 text-fm-muted group-hover:text-fm-dim transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="text-sm font-medium text-fm-text-tertiary">Requires Docker</span>
+              <svg className="w-5 h-5 text-fm-text-secondary group-hover:text-fm-text-tertiary transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </div>
@@ -194,12 +194,12 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
         </div>
 
         {error && (
-          <div className="mt-6 p-4 bg-fm-red-light border border-fm-red-border rounded-lg">
-            <p className="text-sm text-fm-red">{error}</p>
+          <div className="mt-6 p-4 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
+            <p className="text-sm text-fm-critical">{error}</p>
           </div>
         )}
 
-        <p className="text-center text-sm text-fm-muted mt-6">
+        <p className="text-center text-sm text-fm-text-secondary mt-6">
           You can change this later in extension settings
         </p>
       </div>

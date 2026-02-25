@@ -75,13 +75,13 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
           {getTitle()}
         </h3>
 
-        <div className="mb-6 text-sm text-fm-text space-y-3">
+        <div className="mb-6 text-sm text-fm-text-primary space-y-3">
           <p>
             Your request will be sent to the agent:
           </p>
 
-          <div className="bg-fm-blue-light border-l-4 border-blue-400 p-3 rounded">
-            <p className="text-sm text-fm-text italic">
+          <div className="bg-fm-accent-soft border-l-4 border-blue-400 p-3 rounded">
+            <p className="text-sm text-fm-text-primary italic">
               "{getMessage()}"
             </p>
           </div>
@@ -102,13 +102,13 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
-            className="px-4 py-2 bg-fm-elevated text-fm-text rounded hover:bg-fm-elevated transition-colors"
+            className="px-4 py-2 bg-fm-elevated text-fm-text-primary rounded hover:bg-fm-elevated transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-fm-blue text-white rounded hover:bg-fm-active transition-colors"
+            className="px-4 py-2 bg-fm-accent text-white rounded hover:opacity-90 transition-colors"
           >
             Continue
           </button>

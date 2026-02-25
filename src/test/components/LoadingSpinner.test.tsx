@@ -31,11 +31,11 @@ describe('LoadingSpinner', () => {
   it('applies correct color classes', () => {
     const { rerender } = render(<LoadingSpinner color="primary" />);
     let svg = screen.getByRole('status').querySelector('svg');
-    expect(svg).toHaveClass('text-fm-blue');
+    expect(svg).toHaveClass('text-fm-accent');
 
     rerender(<LoadingSpinner color="secondary" />);
     svg = screen.getByRole('status').querySelector('svg');
-    expect(svg).toHaveClass('text-fm-dim');
+    expect(svg).toHaveClass('text-fm-text-tertiary');
   });
 });
 

@@ -76,7 +76,7 @@ const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onD
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <sup className="text-xs text-fm-blue cursor-help hover:text-fm-blue font-medium bg-fm-blue-light px-1 rounded">
+      <sup className="text-xs text-fm-accent cursor-help hover:text-fm-accent font-medium bg-fm-accent-soft px-1 rounded">
         [{index + 1}]
       </sup>
 
@@ -92,14 +92,14 @@ const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onD
               <span className="text-sm font-medium text-white truncate">
                 {sourceTitle}
               </span>
-              <span className="text-xs text-fm-dim bg-fm-surface px-1.5 py-0.5 rounded-full flex-shrink-0">
+              <span className="text-xs text-fm-text-tertiary bg-fm-surface px-1.5 py-0.5 rounded-full flex-shrink-0">
                 {source.type === 'knowledge_base' ? '📚' : '📄'} {source.type.replace('_', ' ')}
               </span>
             </div>
           </div>
 
-          <div className="text-xs text-fm-text leading-relaxed mb-3">
-            <div className="bg-fm-bg rounded p-2 border-l-2 border-fm-blue-border">
+          <div className="text-xs text-fm-text-primary leading-relaxed mb-3">
+            <div className="bg-fm-bg rounded p-2 border-l-2 border-fm-accent-border">
               {preview}
             </div>
           </div>
@@ -111,7 +111,7 @@ const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onD
                 onDocumentView(documentId);
                 setIsHovered(false);
               }}
-              className="text-xs text-fm-blue hover:text-fm-blue font-medium"
+              className="text-xs text-fm-accent hover:text-fm-accent font-medium"
             >
               View full document →
             </button>
@@ -238,7 +238,7 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
         {/* Render evidence requests below content */}
         {evidenceRequests && evidenceRequests.length > 0 && (
           <div className="mt-4 space-y-3">
-            <div className="text-xs font-semibold text-fm-text uppercase tracking-wide mb-2">
+            <div className="text-xs font-semibold text-fm-text-primary uppercase tracking-wide mb-2">
               Evidence Requested
             </div>
             {evidenceRequests.map((request) => (
@@ -271,7 +271,7 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
       {/* Render evidence requests below content and sources */}
       {evidenceRequests && evidenceRequests.length > 0 && (
         <div className="mt-4 space-y-3">
-          <div className="text-xs font-semibold text-fm-text uppercase tracking-wide mb-2">
+          <div className="text-xs font-semibold text-fm-text-primary uppercase tracking-wide mb-2">
             Evidence Requested
           </div>
           {evidenceRequests.map((request) => (
@@ -298,7 +298,7 @@ function createMarkdownComponents(): Partial<Components> {
       if (isInline) {
         return (
           <code
-            className="bg-fm-elevated text-fm-yellow px-1 py-0.5 rounded text-sm font-mono border border-fm-border"
+            className="bg-fm-code-bg text-fm-code px-1 py-0.5 rounded text-sm font-mono border border-fm-code-border"
             {...props}
           >
             {children}
@@ -307,7 +307,7 @@ function createMarkdownComponents(): Partial<Components> {
       }
 
       return (
-        <pre className="bg-fm-bg text-fm-text p-3 rounded-md overflow-x-auto my-2 border border-fm-border">
+        <pre className="bg-fm-codeblock text-fm-codeblock-text p-3 rounded-md overflow-x-auto my-2 border border-fm-codeblock-border">
           <code className={`language-${match[1]} text-sm font-mono`} {...props}>
             {children}
           </code>
@@ -315,13 +315,13 @@ function createMarkdownComponents(): Partial<Components> {
       );
     },
     h1: ({ children }) => (
-      <h1 className="text-lg font-semibold text-white mt-4 mb-2">{children}</h1>
+      <h1 className="text-lg font-semibold mt-4 mb-2">{children}</h1>
     ),
     h2: ({ children }) => (
-      <h2 className="text-base font-semibold text-white mt-3 mb-2">{children}</h2>
+      <h2 className="text-base font-semibold mt-3 mb-2">{children}</h2>
     ),
     h3: ({ children }) => (
-      <h3 className="text-sm font-semibold text-white mt-2 mb-1">{children}</h3>
+      <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>
     ),
     ul: ({ children }) => (
       <ul className="list-disc list-outside my-2 space-y-1 pl-5">{children}</ul>
@@ -330,7 +330,7 @@ function createMarkdownComponents(): Partial<Components> {
       <ol className="list-decimal list-outside my-2 space-y-1 pl-5">{children}</ol>
     ),
     li: ({ children }) => (
-      <li className="text-sm text-fm-text">{children}</li>
+      <li className="text-sm text-fm-text-secondary">{children}</li>
     ),
     p: ({ children }) => {
       // Process PII tokens in paragraph text
@@ -338,23 +338,23 @@ function createMarkdownComponents(): Partial<Components> {
       if (textContent.includes('{{REDACTED:')) {
         const processedChildren = processPIITokens(textContent);
         return (
-          <p className="text-sm text-fm-text leading-relaxed mb-2">
+          <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">
             {processedChildren}
           </p>
         );
       }
       return (
-        <p className="text-sm text-fm-text leading-relaxed mb-2">{children}</p>
+        <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">{children}</p>
       );
     },
     strong: ({ children }) => (
-      <strong className="font-semibold text-white">{children}</strong>
+      <strong className="font-semibold">{children}</strong>
     ),
     em: ({ children }) => (
-      <em className="italic text-fm-text">{children}</em>
+      <em className="italic text-fm-text-primary">{children}</em>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="border-l-4 border-fm-blue-border pl-3 my-2 text-fm-text">
+      <blockquote className="border-l-4 border-fm-accent-border pl-3 my-2 text-fm-text-primary">
         {children}
       </blockquote>
     ),
@@ -437,7 +437,7 @@ function injectSourceCitations(
           }
 
           return (
-            <p className="text-sm text-fm-text leading-relaxed mb-2">
+            <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">
               {processedChildren}
               {citation}
             </p>

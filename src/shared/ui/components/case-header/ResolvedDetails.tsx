@@ -41,7 +41,7 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
     <div className="px-4 pb-4 space-y-3 text-sm">
       {/* Problem Statement */}
       <div>
-        <h4 className="font-medium text-fm-text mb-1">Problem:</h4>
+        <h4 className="font-medium text-fm-text-primary mb-1">Problem:</h4>
         <p className="text-white">{data.title}</p>
       </div>
 
@@ -50,7 +50,7 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
 
       {/* Investigation Completed Summary */}
       <div>
-        <h4 className="font-medium text-fm-text mb-1">Investigation Completed:</h4>
+        <h4 className="font-medium text-fm-text-primary mb-1">Investigation Completed:</h4>
         <ul className="space-y-1 pl-4">
           <li className="text-white">
             • Duration: {formatDuration(data.resolution_summary.total_duration_minutes)} ({data.resolution_summary.milestones_completed} turns)
@@ -69,11 +69,11 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
 
       {/* Root Cause */}
       <div>
-        <h4 className="font-medium text-fm-text mb-1">
+        <h4 className="font-medium text-fm-text-primary mb-1">
           ✓ Root Cause:
         </h4>
         <p className="text-white mb-1">{data.root_cause.description}</p>
-        <div className="text-xs text-fm-dim space-x-3">
+        <div className="text-xs text-fm-text-tertiary space-x-3">
           <span>Category: {data.root_cause.category}</span>
           <span>Severity: {data.root_cause.severity}</span>
         </div>
@@ -81,9 +81,9 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
 
       {/* Solution Applied */}
       <div>
-        <h4 className="font-medium text-fm-text mb-1">✓ Solution Applied:</h4>
+        <h4 className="font-medium text-fm-text-primary mb-1">✓ Solution Applied:</h4>
         <p className="text-white mb-1">{data.solution_applied.description}</p>
-        <div className="text-xs text-fm-dim">
+        <div className="text-xs text-fm-text-tertiary">
           Status: {data.verification_status.verified ? 'Successful' : 'Pending verification'}
           {data.solution_applied.applied_at && ` (${formatDate(data.solution_applied.applied_at)})`}
         </div>
@@ -95,7 +95,7 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
       {/* Documentation Available */}
       {data.reports_available && data.reports_available.length > 0 && (
         <div>
-          <h4 className="font-medium text-fm-text mb-2">
+          <h4 className="font-medium text-fm-text-primary mb-2">
             📄 Documentation Available ({data.reports_available.length} documents):
           </h4>
 
@@ -122,10 +122,10 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
                     <span>{getIcon()}</span>
                     <div className="flex-1">
                       <p className="font-medium text-white">{reportName}</p>
-                      <p className="text-xs text-fm-dim">
+                      <p className="text-xs text-fm-text-tertiary">
                         Generated: {formatDate(data.resolved_at)}
                       </p>
-                      <button className="text-xs text-fm-blue hover:text-blue-700 mt-1">
+                      <button className="text-xs text-fm-accent hover:text-blue-700 mt-1">
                         [View Document]
                       </button>
                     </div>
@@ -136,7 +136,7 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
           </div>
 
           <div className="mt-3">
-            <button className="text-xs text-fm-blue hover:text-blue-700">
+            <button className="text-xs text-fm-accent hover:text-blue-700">
               [Request Additional Documentation]
             </button>
           </div>

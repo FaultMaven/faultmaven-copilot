@@ -31,7 +31,7 @@ export const ConfirmationButtons: React.FC<ConfirmationButtonsProps> = ({
           <span>No</span>
         </button>
       </div>
-      <p className="text-xs text-fm-dim italic">
+      <p className="text-xs text-fm-text-tertiary italic">
         💡 Tip: Click a button or type to clarify
       </p>
     </div>

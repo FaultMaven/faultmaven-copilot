@@ -15,11 +15,11 @@ const markdownComponents: Partial<Components> = {
   code: ({ node, className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || '');
     const isInline = !match;
-    
+
     if (isInline) {
       return (
         <code
-          className="bg-fm-elevated text-fm-yellow px-1 py-0.5 rounded text-sm font-mono border border-fm-border"
+          className="bg-fm-code-bg text-fm-code px-1 py-0.5 rounded text-sm font-fm-mono border border-fm-code-border"
           {...props}
         >
           {children}
@@ -28,25 +28,25 @@ const markdownComponents: Partial<Components> = {
     }
 
     return (
-      <pre className="bg-fm-bg text-fm-text p-3 rounded-md overflow-x-auto my-2 border border-fm-border">
-        <code className={`language-${match[1]} text-sm font-mono`} {...props}>
+      <pre className="bg-fm-codeblock text-fm-codeblock-text p-3 rounded-md overflow-x-auto my-2 border border-fm-codeblock-border">
+        <code className={`language-${match[1]} text-sm font-fm-mono`} {...props}>
           {children}
         </code>
       </pre>
     );
   },
-  
+
   // Style headers with proper hierarchy
   h1: ({ children }) => (
-    <h1 className="text-lg font-semibold text-white mt-4 mb-2">{children}</h1>
+    <h1 className="text-lg font-semibold mt-4 mb-2">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-base font-semibold text-white mt-3 mb-2">{children}</h2>
+    <h2 className="text-base font-semibold mt-3 mb-2">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-sm font-semibold text-white mt-2 mb-1">{children}</h3>
+    <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>
   ),
-  
+
   // Style lists
   ul: ({ children }) => (
     <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>
@@ -55,31 +55,31 @@ const markdownComponents: Partial<Components> = {
     <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>
   ),
   li: ({ children }) => (
-    <li className="text-sm text-fm-text">{children}</li>
+    <li className="text-sm text-fm-text-secondary">{children}</li>
   ),
-  
+
   // Style paragraphs
   p: ({ children }) => (
-    <p className="text-sm text-fm-text leading-relaxed mb-2">{children}</p>
+    <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">{children}</p>
   ),
-  
+
   // Style strong/bold text
   strong: ({ children }) => (
-    <strong className="font-semibold text-white">{children}</strong>
+    <strong className="font-semibold">{children}</strong>
   ),
-  
+
   // Style emphasis/italic
   em: ({ children }) => (
-    <em className="italic text-fm-text">{children}</em>
+    <em className="italic text-fm-text-primary">{children}</em>
   ),
-  
+
   // Style blockquotes
   blockquote: ({ children }) => (
-    <blockquote className="border-l-4 border-fm-blue-border pl-3 my-2 text-fm-text">
+    <blockquote className="border-l-4 border-fm-accent-border pl-3 my-2 text-fm-text-primary">
       {children}
     </blockquote>
   ),
-  
+
   // Style tables (for future use)
   table: ({ children }) => (
     <div className="overflow-x-auto my-2">
@@ -99,15 +99,15 @@ const markdownComponents: Partial<Components> = {
 };
 
 // Memoized component for maximum performance
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({ 
-  content, 
-  className = '' 
+const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({
+  content,
+  className = ''
 }) => {
   // Early return for empty content
   if (!content || content.length === 0) {
     return null;
   }
-  
+
   return (
     <div className={`prose-sm max-w-none ${className}`}>
       <ReactMarkdown

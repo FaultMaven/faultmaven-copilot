@@ -36,11 +36,11 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
 
   const getStatusColor = (): string => {
     switch (progress.case_status) {
-      case 'investigating': return 'text-fm-blue';
-      case 'inquiry': return 'text-fm-purple';
-      case 'resolved': return 'text-fm-green';
-      case 'closed': return 'text-fm-dim';
-      default: return 'text-fm-dim';
+      case 'investigating': return 'text-fm-accent';
+      case 'inquiry': return 'text-fm-accent';
+      case 'resolved': return 'text-fm-success';
+      case 'closed': return 'text-fm-text-tertiary';
+      default: return 'text-fm-text-tertiary';
     }
   };
 
@@ -48,8 +48,8 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
     <div className="investigation-progress bg-fm-surface border border-fm-border rounded-lg p-4 mb-4 shadow-sm">
       {/* Header */}
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-fm-text mb-2">Investigation Progress</h3>
-        <div className="flex items-center justify-between text-xs text-fm-dim">
+        <h3 className="text-sm font-semibold text-fm-text-primary mb-2">Investigation Progress</h3>
+        <div className="flex items-center justify-between text-xs text-fm-text-tertiary">
           <span className="font-medium">{getEngagementModeLabel()}</span>
           <span className={`font-medium ${getStatusColor()}`}>
             Status: {progress.case_status.replace('_', ' ').toUpperCase()}
@@ -74,7 +74,7 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
                       transition-all duration-200 relative z-10
                       ${status === 'completed' ? 'bg-green-500 text-white' : ''}
                       ${status === 'active' ? 'bg-blue-500 text-white ring-4 ring-blue-100' : ''}
-                      ${status === 'pending' ? 'bg-fm-elevated text-fm-dim' : ''}
+                      ${status === 'pending' ? 'bg-fm-elevated text-fm-text-tertiary' : ''}
                     `}
                     title={phase.description}
                   >
@@ -85,9 +85,9 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
                   <span
                     className={`
                       mt-2 text-xs font-medium text-center
-                      ${status === 'active' ? 'text-fm-blue font-semibold' : ''}
-                      ${status === 'completed' ? 'text-fm-green' : ''}
-                      ${status === 'pending' ? 'text-fm-dim' : ''}
+                      ${status === 'active' ? 'text-fm-accent font-semibold' : ''}
+                      ${status === 'completed' ? 'text-fm-success' : ''}
+                      ${status === 'pending' ? 'text-fm-text-tertiary' : ''}
                     `}
                   >
                     {phase.name}
@@ -112,7 +112,7 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
 
       {/* Milestones Checklist */}
       <div className="milestones-checklist mb-4 bg-fm-bg rounded-md p-3 border border-fm-border">
-        <h4 className="text-xs font-semibold text-fm-text mb-2 uppercase tracking-wide">Key Milestones</h4>
+        <h4 className="text-xs font-semibold text-fm-text-primary mb-2 uppercase tracking-wide">Key Milestones</h4>
         <div className="grid grid-cols-2 gap-2 text-xs">
           {[
             { id: 'symptom_verified', label: 'Symptom Verified' },
@@ -123,10 +123,10 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
             const isCompleted = progress.completed_milestone_ids?.includes(milestone.id) ?? false;
             return (
               <div key={milestone.id} className="flex items-center space-x-2">
-                <span className={isCompleted ? 'text-green-500' : 'text-fm-muted'}>
+                <span className={isCompleted ? 'text-green-500' : 'text-fm-text-secondary'}>
                   {isCompleted ? '✅' : '○'}
                 </span>
-                <span className={isCompleted ? 'text-fm-text font-medium' : 'text-fm-dim'}>
+                <span className={isCompleted ? 'text-fm-text-primary font-medium' : 'text-fm-text-tertiary'}>
                   {milestone.label}
                 </span>
               </div>
@@ -139,16 +139,16 @@ export const InvestigationProgressIndicator: React.FC<InvestigationProgressIndic
       <div className="ooda-iteration bg-fm-bg rounded-md p-3 border border-fm-border">
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
-            <div className="text-xs text-fm-dim mb-1">OODA Cycle</div>
-            <div className="text-lg font-bold text-fm-blue">{progress.ooda_iteration}</div>
+            <div className="text-xs text-fm-text-tertiary mb-1">OODA Cycle</div>
+            <div className="text-lg font-bold text-fm-accent">{progress.ooda_iteration}</div>
           </div>
           <div>
-            <div className="text-xs text-fm-dim mb-1">Turn Count</div>
-            <div className="text-lg font-bold text-fm-text">{progress.turn_count}</div>
+            <div className="text-xs text-fm-text-tertiary mb-1">Turn Count</div>
+            <div className="text-lg font-bold text-fm-text-primary">{progress.turn_count}</div>
           </div>
           <div>
-            <div className="text-xs text-fm-dim mb-1">Current Phase</div>
-            <div className="text-lg font-bold text-fm-text">{progress.phase.number + 1}/7</div>
+            <div className="text-xs text-fm-text-tertiary mb-1">Current Phase</div>
+            <div className="text-lg font-bold text-fm-text-primary">{progress.phase.number + 1}/7</div>
           </div>
         </div>
       </div>

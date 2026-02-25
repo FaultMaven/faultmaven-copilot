@@ -48,31 +48,31 @@ export const EvidenceProgressBar: React.FC<EvidenceProgressBarProps> = ({ collec
       <div className="progress-header flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-lg">{getStatusIcon()}</span>
-          <h3 className="text-sm font-semibold text-fm-text">Evidence Collection</h3>
+          <h3 className="text-sm font-semibold text-fm-text-primary">Evidence Collection</h3>
         </div>
-        <span className="text-xs text-fm-dim">{getStatusText()}</span>
+        <span className="text-xs text-fm-text-tertiary">{getStatusText()}</span>
       </div>
 
       {/* Statistics */}
       <div className="grid grid-cols-3 gap-2 mb-3">
-        <div className="text-center bg-fm-green-light border border-fm-green-border rounded-md p-2">
-          <div className="text-lg font-bold text-fm-green">{collected}</div>
-          <div className="text-xs text-fm-green">Collected</div>
+        <div className="text-center bg-fm-success-bg border border-fm-success-border rounded-md p-2">
+          <div className="text-lg font-bold text-fm-success">{collected}</div>
+          <div className="text-xs text-fm-success">Collected</div>
         </div>
-        <div className="text-center bg-fm-yellow-light border border-fm-yellow-border rounded-md p-2">
-          <div className="text-lg font-bold text-fm-yellow">{requested}</div>
-          <div className="text-xs text-fm-yellow">Pending</div>
+        <div className="text-center bg-fm-warning-bg border border-fm-warning-border rounded-md p-2">
+          <div className="text-lg font-bold text-fm-warning">{requested}</div>
+          <div className="text-xs text-fm-warning">Pending</div>
         </div>
-        <div className="text-center bg-fm-blue-light border border-fm-blue-border rounded-md p-2">
-          <div className="text-lg font-bold text-fm-blue">{total}</div>
-          <div className="text-xs text-fm-blue">Total</div>
+        <div className="text-center bg-fm-accent-soft border border-fm-accent-border rounded-md p-2">
+          <div className="text-lg font-bold text-fm-accent">{total}</div>
+          <div className="text-xs text-fm-accent">Total</div>
         </div>
       </div>
 
       {/* Progress Bar */}
       <div className="progress-bar-container">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-fm-dim">Completion</span>
+          <span className="text-xs font-medium text-fm-text-tertiary">Completion</span>
           <span className="text-xs font-bold text-white">{completionPercentage}%</span>
         </div>
 
@@ -120,11 +120,11 @@ export const EvidenceProgressBar: React.FC<EvidenceProgressBarProps> = ({ collec
       )}
 
       {isComplete && (
-        <div className="mt-3 flex items-start gap-2 bg-fm-green-light border border-fm-green-border rounded-md p-2">
-          <svg className="w-4 h-4 text-fm-green flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="mt-3 flex items-start gap-2 bg-fm-success-bg border border-fm-success-border rounded-md p-2">
+          <svg className="w-4 h-4 text-fm-success flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-xs text-fm-green">
+          <p className="text-xs text-fm-success">
             All requested evidence has been collected. Proceeding with analysis.
           </p>
         </div>

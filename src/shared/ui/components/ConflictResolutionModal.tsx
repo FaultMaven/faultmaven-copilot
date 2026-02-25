@@ -109,12 +109,12 @@ export function ConflictResolutionModal({
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-white">{getConflictTitle()}</h2>
-                <p className="text-sm text-fm-dim">Severity: {conflict.severity}</p>
+                <p className="text-sm text-fm-text-tertiary">Severity: {conflict.severity}</p>
               </div>
             </div>
             <button
               onClick={onCancel}
-              className="text-fm-muted hover:text-fm-text transition-colors"
+              className="text-fm-text-secondary hover:text-fm-text-primary transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -125,13 +125,13 @@ export function ConflictResolutionModal({
 
         {/* Content */}
         <div className="px-6 py-4 overflow-y-auto">
-          <p className="text-sm text-fm-text mb-6">{getConflictDescription()}</p>
+          <p className="text-sm text-fm-text-primary mb-6">{getConflictDescription()}</p>
 
           {/* Conflict Details */}
           {conflict.conflictingOperations.length > 0 && (
             <div className="mb-6 p-4 bg-fm-bg rounded-lg">
               <h4 className="text-sm font-medium text-white mb-2">Conflicting Operations:</h4>
-              <ul className="text-xs text-fm-dim space-y-1">
+              <ul className="text-xs text-fm-text-tertiary space-y-1">
                 {conflict.conflictingOperations.map((opId, index) => (
                   <li key={index}>• Operation: {opId}</li>
                 ))}
@@ -155,8 +155,8 @@ export function ConflictResolutionModal({
               />
               <div className="flex-1">
                 <div className="font-medium text-white">Keep Local Changes</div>
-                <div className="text-sm text-fm-dim">Use your local data and discard server changes</div>
-                <div className="text-xs text-fm-dim mt-1">Local: {formatData(localData)}</div>
+                <div className="text-sm text-fm-text-tertiary">Use your local data and discard server changes</div>
+                <div className="text-xs text-fm-text-tertiary mt-1">Local: {formatData(localData)}</div>
               </div>
             </label>
 
@@ -172,8 +172,8 @@ export function ConflictResolutionModal({
               />
               <div className="flex-1">
                 <div className="font-medium text-white">Accept Server Changes</div>
-                <div className="text-sm text-fm-dim">Use server data and discard local changes</div>
-                <div className="text-xs text-fm-dim mt-1">Remote: {formatData(remoteData)}</div>
+                <div className="text-sm text-fm-text-tertiary">Use server data and discard local changes</div>
+                <div className="text-xs text-fm-text-tertiary mt-1">Remote: {formatData(remoteData)}</div>
               </div>
             </label>
 
@@ -190,7 +190,7 @@ export function ConflictResolutionModal({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-white">Use Automatic Merge</div>
-                  <div className="text-sm text-fm-dim">
+                  <div className="text-sm text-fm-text-tertiary">
                     Use intelligently merged data (Confidence: {mergeResult.confidence})
                   </div>
                   {mergeResult.conflicts.length > 0 && (
@@ -215,7 +215,7 @@ export function ConflictResolutionModal({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-white">Restore from Backup</div>
-                  <div className="text-sm text-fm-dim">Choose a previous version to restore</div>
+                  <div className="text-sm text-fm-text-tertiary">Choose a previous version to restore</div>
                   {selectedChoice === 'restore_backup' && (
                     <select
                       value={selectedBackupId}
@@ -238,7 +238,7 @@ export function ConflictResolutionModal({
           {/* Show Details Toggle */}
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="mt-4 text-sm text-fm-blue hover:text-fm-blue underline"
+            className="mt-4 text-sm text-fm-accent hover:text-fm-accent underline"
           >
             {showDetails ? 'Hide Details' : 'Show Detailed Differences'}
           </button>
@@ -249,13 +249,13 @@ export function ConflictResolutionModal({
               <h4 className="text-sm font-medium text-white mb-3">Detailed Information:</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <h5 className="font-medium text-fm-text mb-1">Local Data:</h5>
+                  <h5 className="font-medium text-fm-text-primary mb-1">Local Data:</h5>
                   <pre className="bg-fm-surface p-2 rounded border overflow-auto max-h-32">
                     {JSON.stringify(localData, null, 2)}
                   </pre>
                 </div>
                 <div>
-                  <h5 className="font-medium text-fm-text mb-1">Server Data:</h5>
+                  <h5 className="font-medium text-fm-text-primary mb-1">Server Data:</h5>
                   <pre className="bg-fm-surface p-2 rounded border overflow-auto max-h-32">
                     {JSON.stringify(remoteData, null, 2)}
                   </pre>
@@ -263,8 +263,8 @@ export function ConflictResolutionModal({
               </div>
               {mergeResult && mergeResult.conflicts.length > 0 && (
                 <div className="mt-3">
-                  <h5 className="font-medium text-fm-text mb-1">Detected Conflicts:</h5>
-                  <ul className="text-fm-dim space-y-1">
+                  <h5 className="font-medium text-fm-text-primary mb-1">Detected Conflicts:</h5>
+                  <ul className="text-fm-text-tertiary space-y-1">
                     {mergeResult.conflicts.map((conflict, index) => (
                       <li key={index}>• {conflict}</li>
                     ))}
@@ -279,14 +279,14 @@ export function ConflictResolutionModal({
         <div className="px-6 py-4 border-t border-fm-border flex justify-end gap-3">
           <button
             onClick={onCancel}
-            className="px-4 py-2 text-sm text-fm-dim hover:text-fm-text transition-colors"
+            className="px-4 py-2 text-sm text-fm-text-tertiary hover:text-fm-text-primary transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleResolve}
             disabled={selectedChoice === 'restore_backup' && !selectedBackupId}
-            className="px-4 py-2 bg-fm-blue text-white text-sm rounded hover:bg-fm-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-fm-accent text-white text-sm rounded hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Apply Resolution
           </button>

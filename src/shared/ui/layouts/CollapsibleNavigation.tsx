@@ -118,7 +118,7 @@ export function CollapsibleNavigation({
   if (isCollapsed) {
     return (
       <div
-        className={`flex-shrink-0 bg-fm-bg border-r border-fm-border flex flex-col h-full ${TRANSITION.ALL} ${TRANSITION.DURATION}`}
+        className={`flex-shrink-0 bg-fm-base border-r border-fm-border flex flex-col h-full ${TRANSITION.ALL} ${TRANSITION.DURATION}`}
         style={{ width: NAVIGATION_WIDTH.COLLAPSED }}
       >
         {/* Top: Logo + Toggle */}
@@ -130,7 +130,7 @@ export function CollapsibleNavigation({
           />
           <button
             onClick={onToggleCollapse}
-            className={`${collapsedBtnClass} text-fm-dim hover:text-fm-text hover:bg-fm-surface mt-1`}
+            className={`${collapsedBtnClass} text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5 mt-1`}
             title="Expand sidebar"
           >
             <ExpandIcon />
@@ -143,7 +143,7 @@ export function CollapsibleNavigation({
           {dashboardUrl && onOpenDashboard && (
             <button
               onClick={onOpenDashboard}
-              className={`${collapsedBtnClass} text-fm-dim hover:text-fm-text hover:bg-fm-surface`}
+              className={`${collapsedBtnClass} text-fm-text-secondary hover:text-fm-text-primary hover:bg-white/5 border border-fm-border-subtle`}
               title="KB Dashboard"
             >
               <KBIcon />
@@ -154,7 +154,7 @@ export function CollapsibleNavigation({
           <button
             onClick={onNewChat}
             disabled={hasUnsavedNewChat}
-            className={`${collapsedBtnClass} bg-fm-blue text-white hover:bg-fm-active disabled:opacity-50`}
+            className={`${collapsedBtnClass} bg-fm-accent-gradient text-white shadow-fm-glow hover:opacity-90 disabled:opacity-50`}
             title="New Case"
           >
             <NewCaseIcon />
@@ -169,14 +169,14 @@ export function CollapsibleNavigation({
                 browser.runtime.openOptionsPage();
               }
             }}
-            className={`${collapsedBtnClass} text-fm-dim hover:text-fm-text hover:bg-fm-surface`}
+            className={`${collapsedBtnClass} text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5`}
             title="Settings"
           >
             <SettingsIcon />
           </button>
           <button
             onClick={onLogout}
-            className={`${collapsedBtnClass} text-fm-dim hover:text-fm-text hover:bg-fm-surface`}
+            className={`${collapsedBtnClass} text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5`}
             title="Logout"
           >
             <LogoutIcon />
@@ -189,39 +189,47 @@ export function CollapsibleNavigation({
   // --- Expanded: full sidebar with case list ---
   return (
     <div
-      className={`flex-shrink-0 bg-fm-bg border-r border-fm-border flex flex-col h-full ${TRANSITION.ALL} ${TRANSITION.DURATION}`}
+      className={`flex-shrink-0 bg-fm-base border-r border-fm-border flex flex-col h-full ${TRANSITION.ALL} ${TRANSITION.DURATION}`}
       style={{ width: NAVIGATION_WIDTH.EXPANDED, maxWidth: NAVIGATION_WIDTH.EXPANDED_MAX }}
     >
       {/* Header: Logo + Collapse toggle */}
-      <div className="flex-shrink-0 px-3 pt-3 pb-2 border-b border-fm-border">
+      <div className="flex-shrink-0 px-4 pt-3 pb-2">
         <div className="flex items-center justify-between">
-          <img
-            src="/icon/square-dark.svg"
-            alt="FaultMaven"
-            className="w-7 h-7 flex-shrink-0"
-          />
+          <div className="flex items-center gap-2">
+            <img
+              src="/icon/square-dark.svg"
+              alt="FaultMaven"
+              className="w-7 h-7"
+            />
+          </div>
           <button
             onClick={onToggleCollapse}
-            className="p-1.5 text-fm-dim hover:text-fm-text hover:bg-fm-surface rounded-lg transition-colors flex-shrink-0"
+            className="p-1.5 text-fm-text-tertiary hover:text-white transition-colors"
             title="Collapse sidebar"
           >
-            <CollapseIcon />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+            </svg>
           </button>
         </div>
       </div>
 
       {/* Action buttons */}
-      <div className="flex-shrink-0 px-3 py-2 space-y-1.5">
+      <div className="flex-shrink-0 px-4 space-y-2 mb-3">
         {/* KB Dashboard */}
         {dashboardUrl && onOpenDashboard && (
           <button
             onClick={onOpenDashboard}
-            className="w-full flex items-center gap-2.5 py-2 px-3 rounded-lg transition-colors text-fm-text hover:bg-fm-surface"
+            className="w-full flex items-center justify-between py-2 px-3 rounded-md transition-colors text-fm-accent bg-fm-accent-soft border border-fm-accent-border hover:bg-fm-accent-hover group"
             title="Open Knowledge Base Dashboard"
           >
-            <KBIcon />
-            <span className="text-sm font-medium truncate">KB Dashboard</span>
-            <svg className="w-3 h-3 ml-auto text-fm-dim flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              <span className="text-[13px] font-medium">Knowledge Base</span>
+            </div>
+            <svg className="w-3 h-3 text-fm-accent/50 group-hover:text-fm-accent transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
           </button>
@@ -231,11 +239,10 @@ export function CollapsibleNavigation({
         <button
           onClick={onNewChat}
           disabled={hasUnsavedNewChat}
-          className="w-full flex items-center gap-2.5 py-2 px-3 rounded-lg transition-colors bg-fm-blue text-white hover:bg-fm-active disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-colors bg-[#6366F1] text-white hover:bg-[#4F46E5] font-semibold disabled:opacity-50"
           title="Start new case"
         >
-          <NewCaseIcon />
-          <span className="text-sm font-medium truncate">New Case</span>
+          <span className="text-[13px]">+ New Case</span>
         </button>
       </div>
 
@@ -243,11 +250,11 @@ export function CollapsibleNavigation({
       <div className="flex-1 overflow-y-auto min-h-0">
         <ErrorBoundary
           fallback={
-            <div className="p-3 bg-fm-red-light border border-fm-red-border rounded-lg m-3">
-              <p className="text-sm text-fm-red">Error loading conversations</p>
+            <div className="p-3 bg-fm-critical-bg border border-fm-critical-border rounded-lg m-3">
+              <p className="text-sm text-fm-critical">Error loading conversations</p>
               <button
                 onClick={() => window.location.reload()}
-                className="mt-2 px-3 py-1 text-xs bg-fm-surface text-fm-red rounded hover:bg-fm-elevated"
+                className="mt-2 px-3 py-1 text-xs bg-fm-surface text-fm-critical rounded hover:bg-fm-elevated"
               >
                 Retry
               </button>
@@ -268,7 +275,7 @@ export function CollapsibleNavigation({
             refreshTrigger={refreshTrigger}
             className="h-full"
             collapsed={false}
-            onFirstCaseDetected={() => {}}
+            onFirstCaseDetected={() => { }}
             onAfterDelete={onAfterDelete}
             onCasesLoaded={onCasesLoaded}
             pendingCases={optimisticCases}
@@ -279,27 +286,25 @@ export function CollapsibleNavigation({
         </ErrorBoundary>
       </div>
 
-      {/* Footer: Settings + Logout */}
-      <div className="flex-shrink-0 px-3 py-2 border-t border-fm-border space-y-1">
+      {/* Footer: Settings + Logout (compact icon row) */}
+      <div className="flex-shrink-0 flex items-center justify-center gap-2 px-2 py-2 border-t border-fm-border">
         <button
           onClick={() => {
             if (typeof browser !== 'undefined' && browser.runtime) {
               browser.runtime.openOptionsPage();
             }
           }}
-          className="w-full flex items-center gap-2.5 py-2 px-3 text-fm-text hover:bg-fm-surface rounded-lg transition-colors"
+          className="w-6 h-6 flex items-center justify-center text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5 rounded transition-colors"
           title="Settings"
         >
           <SettingsIcon />
-          <span className="text-sm font-medium">Settings</span>
         </button>
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-2.5 py-2 px-3 text-fm-text hover:bg-fm-surface rounded-lg transition-colors"
+          className="w-6 h-6 flex items-center justify-center text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5 rounded transition-colors"
           title="Logout"
         >
           <LogoutIcon />
-          <span className="text-sm font-medium">Logout</span>
         </button>
       </div>
     </div>

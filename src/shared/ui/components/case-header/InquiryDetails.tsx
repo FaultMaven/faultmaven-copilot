@@ -104,7 +104,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
   if (!data) {
     console.warn('[InquiryDetails] Backend sent null inquiry data - API contract violation. Case still functional.');
     return (
-      <div className="px-4 pb-4 space-y-3 text-sm text-fm-dim">
+      <div className="px-4 pb-4 space-y-3 text-sm text-fm-text-tertiary">
         <p className="italic">Inquiry starting - problem statement will appear after first interaction.</p>
       </div>
     );
@@ -115,7 +115,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
       {/* Problem Statement (Draft) */}
       {data.proposed_problem_statement && (
         <div>
-          <h4 className="font-medium text-sm text-fm-text mb-1">
+          <h4 className="font-medium text-sm text-fm-text-primary mb-1">
             Problem Statement (Draft):
           </h4>
           <p className="text-sm text-white">
@@ -127,11 +127,11 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
       {/* Status: Only show if problem has been proposed */}
       {data.proposed_problem_statement && (
         <div className="text-sm">
-          <span className="text-fm-text">Status: </span>
+          <span className="text-fm-text-primary">Status: </span>
           {data.problem_statement_confirmed ? (
-            <span className="text-fm-green font-medium">✓ Problem confirmed</span>
+            <span className="text-fm-success font-medium">✓ Problem confirmed</span>
           ) : (
-            <span className="text-fm-yellow">⏳ Awaiting your confirmation</span>
+            <span className="text-fm-warning">⏳ Awaiting your confirmation</span>
           )}
         </div>
       )}
@@ -139,7 +139,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
       {/* Estimated Severity */}
       {data.problem_confirmation?.severity_guess && (
         <div className="text-sm">
-          <span className="text-fm-text">Estimated Severity: </span>
+          <span className="text-fm-text-primary">Estimated Severity: </span>
           <span className="font-medium capitalize">{data.problem_confirmation.severity_guess}</span>
         </div>
       )}
@@ -155,13 +155,13 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
           <div className="flex items-center justify-between">
             <button
               onClick={onToggleFiles}
-              className="text-sm text-fm-text hover:text-white flex items-center gap-2 flex-1"
+              className="text-sm text-fm-text-primary hover:text-white flex items-center gap-2 flex-1"
             >
               <span className="font-medium">📎 Uploaded Files ({files.length > 0 ? files.length : uploadedFilesCount})</span>
             </button>
             <button
               onClick={onToggleFiles}
-              className="text-sm text-fm-blue hover:text-blue-800"
+              className="text-sm text-fm-accent hover:text-blue-800"
             >
               [{showFiles ? '▲ Hide' : '▼ Show'}]
             </button>
@@ -175,11 +175,11 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
 
               <div className="space-y-3">
                 {filesLoading && (
-                  <p className="text-sm text-fm-dim italic">Loading files...</p>
+                  <p className="text-sm text-fm-text-tertiary italic">Loading files...</p>
                 )}
 
                 {filesError && (
-                  <p className="text-sm text-fm-red">Error: {filesError}</p>
+                  <p className="text-sm text-fm-critical">Error: {filesError}</p>
                 )}
 
                 {!filesLoading && !filesError && files.length > 0 && (
@@ -190,7 +190,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
                           📄 {file.filename} · {formatFileSize(file.size_bytes)} · {onScrollToTurn ? (
                             <button
                               onClick={() => onScrollToTurn(file.uploaded_at_turn)}
-                              className="text-fm-blue hover:text-blue-800 hover:underline"
+                              className="text-fm-accent hover:text-blue-800 hover:underline"
                               title="Jump to turn in conversation"
                             >
                               Turn {file.uploaded_at_turn}
@@ -204,7 +204,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
                         {file.evidence_count !== undefined && file.evidence_count > 0 && (
                           <button
                             onClick={() => handleShowEvidence(file.file_id)}
-                            className="text-xs text-fm-green hover:text-green-800 hover:underline mt-1 ml-5 block"
+                            className="text-xs text-fm-success hover:text-green-800 hover:underline mt-1 ml-5 block"
                             title="View evidence derived from this file"
                           >
                             ✓ Referenced in {file.evidence_count} evidence item{file.evidence_count > 1 ? 's' : ''}
@@ -212,7 +212,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
                         )}
 
                         {file.summary && (
-                          <div className="text-xs text-fm-text mt-1 ml-5 italic">
+                          <div className="text-xs text-fm-text-primary mt-1 ml-5 italic">
                             {file.summary}
                           </div>
                         )}
@@ -222,7 +222,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
                 )}
 
                 {!filesLoading && !filesError && files.length === 0 && uploadedFilesCount > 0 && (
-                  <p className="text-sm text-fm-dim italic">No files found</p>
+                  <p className="text-sm text-fm-text-tertiary italic">No files found</p>
                 )}
               </div>
             </>

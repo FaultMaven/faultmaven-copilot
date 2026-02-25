@@ -60,7 +60,7 @@ export const ClarifyingQuestions: React.FC<ClarifyingQuestionsProps> = ({ questi
             </div>
 
             {/* Question Text */}
-            <p className="flex-1 text-sm text-fm-text">
+            <p className="flex-1 text-sm text-fm-text-primary">
               {question}
             </p>
 

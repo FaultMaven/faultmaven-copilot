@@ -63,7 +63,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
         </div>
 
         {/* Description */}
-        <p className="text-sm text-fm-text mb-3">
+        <p className="text-sm text-fm-text-primary mb-3">
           {request.description}
         </p>
 
@@ -79,7 +79,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
           </span>
 
           {/* Completeness Percentage */}
-          <span className="text-xs text-fm-dim" aria-label={`${completenessPercent}% complete`}>
+          <span className="text-xs text-fm-text-tertiary" aria-label={`${completenessPercent}% complete`}>
             {completenessPercent}% complete
           </span>
         </div>
@@ -101,8 +101,8 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
 
         {/* Expected Output (if available) */}
         {request.guidance.expected_output && (
-          <div className="mt-3 p-2 bg-fm-blue-light border-l-2 border-blue-400 rounded">
-            <p className="text-xs text-fm-blue">
+          <div className="mt-3 p-2 bg-fm-accent-soft border-l-2 border-blue-400 rounded">
+            <p className="text-xs text-fm-accent">
               <span className="font-medium">Expected: </span>
               {request.guidance.expected_output}
             </p>
@@ -115,7 +115,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
         <div className="border-t border-fm-border">
           <button
             onClick={() => setIsGuidanceExpanded(!isGuidanceExpanded)}
-            className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-fm-text hover:bg-fm-surface transition-colors"
+            className="w-full px-4 py-2 flex items-center justify-between text-sm font-medium text-fm-text-primary hover:bg-fm-surface transition-colors"
             aria-expanded={isGuidanceExpanded}
             aria-controls={`guidance-${request.request_id}`}
           >
@@ -131,7 +131,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
               </svg>
               How to obtain this evidence
             </span>
-            <span className="text-xs text-fm-dim">
+            <span className="text-xs text-fm-text-tertiary">
               {isGuidanceExpanded ? 'Hide' : 'Show'} guidance
             </span>
           </button>
@@ -189,7 +189,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
                   title="Alternative Methods"
                   icon="🔄"
                   items={request.guidance.alternatives}
-                  iconColor="text-fm-dim"
+                  iconColor="text-fm-text-tertiary"
                 />
               )}
             </div>
@@ -219,11 +219,11 @@ const GuidanceSection: React.FC<GuidanceSectionProps> = memo(({
   icon,
   items,
   monospace = false,
-  iconColor = 'text-fm-dim'
+  iconColor = 'text-fm-text-tertiary'
 }) => {
   return (
     <div>
-      <h4 className="text-xs font-semibold text-fm-text mb-1 flex items-center gap-1">
+      <h4 className="text-xs font-semibold text-fm-text-primary mb-1 flex items-center gap-1">
         <span className={iconColor} aria-hidden="true">{icon}</span>
         {title}
       </h4>
@@ -231,7 +231,7 @@ const GuidanceSection: React.FC<GuidanceSectionProps> = memo(({
         {items.map((item, index) => (
           <li
             key={index}
-            className={`text-xs text-fm-text pl-5 ${monospace ? 'font-mono bg-fm-surface rounded px-2 py-1' : ''}`}
+            className={`text-xs text-fm-text-primary pl-5 ${monospace ? 'font-mono bg-fm-surface rounded px-2 py-1' : ''}`}
           >
             {item}
           </li>
@@ -253,31 +253,31 @@ function getCategoryInfo(category: EvidenceCategory): { label: string; icon: str
       return {
         label: 'Symptoms',
         icon: '🩺',
-        className: 'bg-fm-red-light text-fm-red border border-fm-red-border'
+        className: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border'
       };
     case EvidenceCategory.TIMELINE:
       return {
         label: 'Timeline',
         icon: '📅',
-        className: 'bg-fm-blue-light text-fm-blue border border-fm-blue-border'
+        className: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border'
       };
     case EvidenceCategory.CHANGES:
       return {
         label: 'Changes',
         icon: '🔄',
-        className: 'bg-fm-purple-light text-fm-purple border border-fm-purple-border'
+        className: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border'
       };
     case EvidenceCategory.CONFIGURATION:
       return {
         label: 'Config',
         icon: '⚙️',
-        className: 'bg-fm-yellow-light text-fm-yellow border border-fm-yellow-border'
+        className: 'bg-fm-warning-bg text-fm-warning border border-fm-warning-border'
       };
     case EvidenceCategory.SCOPE:
       return {
         label: 'Scope',
         icon: '🎯',
-        className: 'bg-fm-green-light text-fm-green border border-fm-green-border'
+        className: 'bg-fm-success-bg text-fm-success border border-fm-success-border'
       };
     case EvidenceCategory.METRICS:
       return {
@@ -295,7 +295,7 @@ function getCategoryInfo(category: EvidenceCategory): { label: string; icon: str
       return {
         label: category,
         icon: '📋',
-        className: 'bg-fm-surface text-fm-text border border-fm-border'
+        className: 'bg-fm-surface text-fm-text-primary border border-fm-border'
       };
   }
 }
@@ -305,37 +305,37 @@ function getStatusInfo(status: EvidenceStatus): { label: string; className: stri
     case EvidenceStatus.PENDING:
       return {
         label: 'Pending',
-        className: 'bg-fm-surface text-fm-text border border-fm-border',
+        className: 'bg-fm-surface text-fm-text-primary border border-fm-border',
         dotColor: '#6b7280'
       };
     case EvidenceStatus.PARTIAL:
       return {
         label: 'Partial',
-        className: 'bg-fm-yellow-light text-fm-yellow border border-fm-yellow-border',
+        className: 'bg-fm-warning-bg text-fm-warning border border-fm-warning-border',
         dotColor: '#f59e0b'
       };
     case EvidenceStatus.COMPLETE:
       return {
         label: 'Complete',
-        className: 'bg-fm-green-light text-fm-green border border-fm-green-border',
+        className: 'bg-fm-success-bg text-fm-success border border-fm-success-border',
         dotColor: '#10b981'
       };
     case EvidenceStatus.BLOCKED:
       return {
         label: 'Blocked',
-        className: 'bg-fm-red-light text-fm-red border border-fm-red-border',
+        className: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border',
         dotColor: '#ef4444'
       };
     case EvidenceStatus.OBSOLETE:
       return {
         label: 'Obsolete',
-        className: 'bg-fm-surface text-fm-dim border border-fm-border',
+        className: 'bg-fm-surface text-fm-text-tertiary border border-fm-border',
         dotColor: '#9ca3af'
       };
     default:
       return {
         label: status,
-        className: 'bg-fm-surface text-fm-text border border-fm-border',
+        className: 'bg-fm-surface text-fm-text-primary border border-fm-border',
         dotColor: '#6b7280'
       };
   }
@@ -343,7 +343,7 @@ function getStatusInfo(status: EvidenceStatus): { label: string; className: stri
 
 function getCompletenessBarColor(completeness: number): string {
   if (completeness >= 1.0) return 'bg-green-500';
-  if (completeness >= 0.7) return 'bg-fm-blue-light0';
+  if (completeness >= 0.7) return 'bg-fm-accent-soft0';
   if (completeness >= 0.4) return 'bg-yellow-500';
   return 'bg-orange-500';
 }

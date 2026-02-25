@@ -26,10 +26,10 @@ export const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonPr
     const baseClasses = 'relative group inline-flex items-center justify-center font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2';
     
     const variantClasses = {
-      primary: 'bg-fm-blue text-white hover:bg-fm-active focus:ring-fm-blue disabled:bg-fm-elevated',
-      secondary: 'bg-fm-elevated text-white hover:bg-fm-elevated focus:ring-fm-blue disabled:bg-fm-surface',
-      danger: 'bg-fm-red text-white hover:bg-fm-active focus:ring-fm-red disabled:bg-fm-elevated',
-      ghost: 'bg-transparent text-fm-text hover:bg-fm-surface focus:ring-fm-blue disabled:text-fm-muted'
+      primary: 'bg-fm-accent text-white hover:opacity-90 focus:ring-fm-accent disabled:bg-fm-elevated',
+      secondary: 'bg-fm-elevated text-white hover:bg-fm-elevated focus:ring-fm-accent disabled:bg-fm-surface',
+      danger: 'bg-fm-critical text-white hover:opacity-90 focus:ring-fm-critical disabled:bg-fm-elevated',
+      ghost: 'bg-transparent text-fm-text-primary hover:bg-fm-surface focus:ring-fm-accent disabled:text-fm-text-tertiary'
     } as const;
 
     const sizeClasses = {
@@ -92,9 +92,9 @@ export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps
 
     return (
       <div className="space-y-1">
-        <label htmlFor={id} className="block text-sm font-medium text-fm-text">
+        <label htmlFor={id} className="block text-sm font-medium text-fm-text-primary">
           {label}
-          {required && <span className="text-fm-red ml-1">*</span>}
+          {required && <span className="text-fm-critical ml-1">*</span>}
         </label>
         <input
           ref={ref}
@@ -103,20 +103,20 @@ export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps
           aria-invalid={error ? 'true' : 'false'}
           className={`
             block w-full px-3 py-2 border rounded-md shadow-sm
-            focus:outline-none focus:ring-2 focus:ring-fm-blue focus:border-fm-blue
-            disabled:bg-fm-bg disabled:text-fm-dim
+            focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-fm-accent
+            disabled:bg-fm-bg disabled:text-fm-text-tertiary
             ${error ? 'border-fm-border' : 'border-fm-border'}
             ${className}
           `}
           {...props}
         />
         {error && (
-          <p id={errorId} className="text-sm text-fm-red" role="alert">
+          <p id={errorId} className="text-sm text-fm-critical" role="alert">
             {error}
           </p>
         )}
         {helperText && !error && (
-          <p id={helperId} className="text-sm text-fm-dim">
+          <p id={helperId} className="text-sm text-fm-text-tertiary">
             {helperText}
           </p>
         )}
@@ -141,9 +141,9 @@ export const AccessibleTextarea = forwardRef<HTMLTextAreaElement, AccessibleText
 
     return (
       <div className="space-y-1">
-        <label htmlFor={id} className="block text-sm font-medium text-fm-text">
+        <label htmlFor={id} className="block text-sm font-medium text-fm-text-primary">
           {label}
-          {required && <span className="text-fm-red ml-1">*</span>}
+          {required && <span className="text-fm-critical ml-1">*</span>}
         </label>
         <textarea
           ref={ref}
@@ -152,20 +152,20 @@ export const AccessibleTextarea = forwardRef<HTMLTextAreaElement, AccessibleText
           aria-invalid={error ? 'true' : 'false'}
           className={`
             block w-full px-3 py-2 border rounded-md shadow-sm resize-none
-            focus:outline-none focus:ring-2 focus:ring-fm-blue focus:border-fm-blue
-            disabled:bg-fm-bg disabled:text-fm-dim
+            focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-fm-accent
+            disabled:bg-fm-bg disabled:text-fm-text-tertiary
             ${error ? 'border-fm-border' : 'border-fm-border'}
             ${className}
           `}
           {...props}
         />
         {error && (
-          <p id={errorId} className="text-sm text-fm-red" role="alert">
+          <p id={errorId} className="text-sm text-fm-critical" role="alert">
             {error}
           </p>
         )}
         {helperText && !error && (
-          <p id={helperId} className="text-sm text-fm-dim">
+          <p id={helperId} className="text-sm text-fm-text-tertiary">
             {helperText}
           </p>
         )}
@@ -216,7 +216,7 @@ export function AccessibleModal({ isOpen, onClose, title, children, size = 'md' 
             </h2>
             <button
               onClick={onClose}
-              className="text-fm-muted hover:text-fm-text focus:outline-none focus:text-fm-text"
+              className="text-fm-text-secondary hover:text-fm-text-primary focus:outline-none focus:text-fm-text-primary"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -27,15 +27,15 @@ export function ErrorState({ message, onRetry, title = "An Error Occurred" }: Er
       </div>
 
       {/* Error Title */}
-      <h3 className="text-lg font-semibold text-fm-text mb-2">{title}</h3>
+      <h3 className="text-lg font-semibold text-fm-text-primary mb-2">{title}</h3>
 
       {/* Error Message */}
-      <p className="text-sm text-fm-dim text-center max-w-sm mb-6">{message}</p>
+      <p className="text-sm text-fm-text-tertiary text-center max-w-sm mb-6">{message}</p>
 
       {/* Retry Button */}
       <button
         onClick={onRetry}
-        className="px-4 py-2 bg-fm-blue text-white text-sm font-medium rounded-md hover:bg-fm-active transition-colors focus:outline-none focus:ring-2 focus:ring-fm-blue focus:ring-offset-2"
+        className="px-4 py-2 bg-fm-accent text-white text-sm font-medium rounded-md hover:opacity-90 transition-colors focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2"
       >
         Retry
       </button>

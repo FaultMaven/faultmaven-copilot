@@ -71,12 +71,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="mb-4">
             <img src="/icon/square-dark.svg" alt="FaultMaven" className="w-12 h-12 mx-auto rounded-lg opacity-60" />
           </div>
-          <h2 className="text-base font-semibold text-fm-text mb-2">Start a conversation</h2>
-          <p className="text-sm text-fm-dim mb-4">Select a case from the list or create a new one.</p>
+          <h2 className="text-base font-semibold text-fm-text-primary mb-2">Start a new case</h2>
+          <p className="text-sm text-fm-text-tertiary mb-4">Select a case from the list or create a new one.</p>
           {onNewChat && (
             <button
               onClick={onNewChat}
-              className="inline-flex items-center gap-2 py-2 px-4 bg-fm-blue text-fm-bg rounded-md hover:opacity-90 text-sm font-medium"
+              className="inline-flex items-center gap-2 py-2 px-4 bg-fm-accent text-fm-bg rounded-md hover:opacity-90 text-sm font-medium"
             >
               + New Case
             </button>
@@ -96,23 +96,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           {failedOperations.map((operation) => {
             const errorInfo = getErrorMessageForOperation(operation);
             return (
-              <div key={operation.id} className="bg-fm-yellow-light border border-fm-yellow-border rounded-md p-3">
+              <div key={operation.id} className="bg-fm-warning-bg border border-fm-warning-border rounded-md p-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h4 className="text-sm font-medium text-fm-yellow">{errorInfo.title}</h4>
-                    <p className="text-xs text-fm-dim mt-1">{errorInfo.message}</p>
-                    <p className="text-xs text-fm-muted mt-1 italic">{errorInfo.recoveryHint}</p>
+                    <h4 className="text-sm font-medium text-fm-warning">{errorInfo.title}</h4>
+                    <p className="text-xs text-fm-text-tertiary mt-1">{errorInfo.message}</p>
+                    <p className="text-xs text-fm-text-secondary mt-1 italic">{errorInfo.recoveryHint}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
                     <button
                       onClick={() => onRetryFailedOperation(operation.id)}
-                      className="px-3 py-1 text-xs bg-fm-elevated text-fm-yellow rounded hover:bg-fm-surface transition-colors font-medium"
+                      className="px-3 py-1 text-xs bg-fm-elevated text-fm-warning rounded hover:bg-fm-surface transition-colors font-medium"
                     >
                       Retry
                     </button>
                     <button
                       onClick={() => onDismissFailedOperation(operation.id)}
-                      className="text-fm-dim hover:text-fm-text transition-colors"
+                      className="text-fm-text-tertiary hover:text-fm-text-primary transition-colors"
                       title="Dismiss"
                     >
                       ✕
@@ -126,7 +126,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )}
 
       {/* Chat History Area */}
-      <div className="flex-1 overflow-hidden relative bg-fm-surface min-h-0">
+      <div className="flex-1 overflow-hidden relative bg-fm-canvas min-h-0">
         <ChatWindow
           conversation={currentMessages}
           activeCase={activeCase}

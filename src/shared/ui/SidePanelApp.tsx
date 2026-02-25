@@ -539,7 +539,7 @@ function SidePanelAppContent() {
   return (
     <ErrorBoundary>
       {/* ADR 003: SRE-Native Dark Theme root layout */}
-      <div className="flex h-screen bg-fm-bg text-fm-text text-sm font-sans relative overflow-hidden">
+      <div className="flex h-screen bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
         {/* Inline Sidebar (Mode A) — CollapsibleNavigation */}
         <CollapsibleNavigation
           isCollapsed={sidebarCollapsed}

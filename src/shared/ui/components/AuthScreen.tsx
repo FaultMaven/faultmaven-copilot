@@ -86,8 +86,8 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     return (
       <div className="flex items-center justify-center h-screen bg-fm-bg">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-fm-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-fm-dim">Loading authentication...</p>
+          <div className="w-12 h-12 border-4 border-fm-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-fm-text-tertiary">Loading authentication...</p>
         </div>
       </div>
     );
@@ -98,15 +98,15 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       <div className="flex items-center justify-center h-screen bg-fm-bg">
         <div className="max-w-md mx-auto p-8 bg-fm-surface rounded-xl border border-fm-border">
           <div className="text-center mb-4">
-            <svg className="w-16 h-16 text-fm-red mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 text-fm-critical mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <h2 className="text-xl font-bold text-white mb-2">Authentication Error</h2>
-            <p className="text-fm-dim">{error || 'Failed to load authentication configuration'}</p>
+            <p className="text-fm-text-tertiary">{error || 'Failed to load authentication configuration'}</p>
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="w-full px-4 py-2 bg-fm-blue text-white rounded-lg hover:bg-fm-active transition-colors"
+            className="w-full px-4 py-2 bg-fm-accent text-white rounded-lg hover:opacity-90 transition-colors"
           >
             Retry
           </button>
@@ -130,7 +130,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           <h1 className="text-3xl font-bold text-white mb-2">
             FaultMaven Copilot
           </h1>
-          <p className="text-lg text-fm-dim">
+          <p className="text-lg text-fm-text-tertiary">
             Sign in to get started
           </p>
         </div>
@@ -143,13 +143,13 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
           {(authConfig.provider === 'oidc' || authConfig.provider === 'saml') && (
             <>
-              <p className="text-fm-dim mb-4 text-center">
+              <p className="text-fm-text-tertiary mb-4 text-center">
                 Sign in using your organization's SSO
               </p>
               <button
                 onClick={handleSSOLogin}
                 disabled={isAuthenticating}
-                className="w-full px-6 py-3 bg-fm-blue text-white font-medium rounded-lg hover:bg-fm-active transition-colors disabled:bg-fm-elevated disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full px-6 py-3 bg-fm-accent text-white font-medium rounded-lg hover:opacity-90 transition-colors disabled:bg-fm-elevated disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isAuthenticating ? (
                   <>
@@ -169,13 +169,13 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           )}
 
           {error && (
-            <div className="mt-4 p-3 bg-fm-red-light border border-fm-red-border rounded-lg">
-              <p className="text-sm text-fm-red">{error}</p>
+            <div className="mt-4 p-3 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
+              <p className="text-sm text-fm-critical">{error}</p>
             </div>
           )}
         </div>
 
-        <p className="text-center text-sm text-fm-muted mt-6">
+        <p className="text-center text-sm text-fm-text-secondary mt-6">
           Powered by FaultMaven AI
         </p>
       </div>

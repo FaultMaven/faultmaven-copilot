@@ -15,9 +15,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
     switch (sev) {
       case 'critical':
         return {
-          bg: 'bg-fm-red-light',
-          border: 'border-fm-red',
-          text: 'text-fm-red',
+          bg: 'bg-fm-critical-bg',
+          border: 'border-fm-critical',
+          text: 'text-fm-critical',
           badge: 'bg-red-600',
           badgeText: 'text-white',
           icon: '🚨',
@@ -26,9 +26,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       case 'high':
         return {
-          bg: 'bg-fm-yellow-light',
-          border: 'border-fm-yellow',
-          text: 'text-fm-yellow',
+          bg: 'bg-fm-warning-bg',
+          border: 'border-fm-warning',
+          text: 'text-fm-warning',
           badge: 'bg-orange-600',
           badgeText: 'text-white',
           icon: '⚠️',
@@ -37,9 +37,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       case 'medium':
         return {
-          bg: 'bg-fm-yellow-light',
-          border: 'border-fm-yellow',
-          text: 'text-fm-yellow',
+          bg: 'bg-fm-warning-bg',
+          border: 'border-fm-warning',
+          text: 'text-fm-warning',
           badge: 'bg-yellow-600',
           badgeText: 'text-white',
           icon: '⚡',
@@ -48,9 +48,9 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
         };
       case 'low':
         return {
-          bg: 'bg-fm-blue-light',
-          border: 'border-fm-blue',
-          text: 'text-fm-blue',
+          bg: 'bg-fm-accent-soft',
+          border: 'border-fm-accent',
+          text: 'text-fm-accent',
           badge: 'bg-blue-600',
           badgeText: 'text-white',
           icon: 'ℹ️',
@@ -119,7 +119,7 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
           <p className={`text-xs font-semibold ${config.text}`}>
             Investigation Started
           </p>
-          <p className="text-xs text-fm-text mt-1">
+          <p className="text-xs text-fm-text-primary mt-1">
             I'll help you investigate this issue systematically. Let's gather information to understand the scope and find the root cause.
           </p>
         </div>

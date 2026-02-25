@@ -433,9 +433,7 @@ export function UnifiedInputBar({
   return (
     <div
       ref={dropZoneRef}
-      className={`flex-shrink-0 bg-fm-surface border-t border-fm-border px-5 py-3 pb-4 relative transition-colors ${
-        isDragging ? 'border-fm-active border-2' : ''
-      }`}
+      className={`flex-shrink-0 bg-fm-surface border-t border-fm-border-subtle px-5 py-3 pb-4 relative transition-colors ${isDragging ? 'border-fm-accent border-2' : ''}`}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -443,14 +441,14 @@ export function UnifiedInputBar({
     >
       {/* Drag overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-fm-blue-light/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg pointer-events-none">
-          <div className="flex flex-col items-center gap-3 text-fm-blue">
+        <div className="absolute inset-0 bg-fm-base/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-fm-accent">
             <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <div className="text-center">
-              <div className="text-sm font-semibold text-fm-text">Drop file here</div>
-              <div className="text-xs text-fm-dim">Supported: .txt, .log, .json, .csv, .md (max 10 MB)</div>
+              <div className="text-sm font-semibold text-fm-text-primary">Drop file here</div>
+              <div className="text-xs text-fm-text-tertiary">Supported: .txt, .log, .json, .csv, .md (max 10 MB)</div>
             </div>
           </div>
         </div>
@@ -462,22 +460,29 @@ export function UnifiedInputBar({
           {/* Validation error */}
           {validationError && (
             <div
-              className={`flex items-center gap-2 text-xs rounded-md px-2.5 py-1.5 ${
-                validationError.type === 'error'
-                  ? 'text-fm-red bg-fm-red-light border border-fm-red/30'
-                  : 'text-fm-yellow bg-fm-yellow-light border border-fm-yellow-border'
-              }`}
+              className={`flex items-center justify-between gap-2 text-xs rounded-md px-2.5 py-1.5 ${validationError.type === 'error'
+                ? 'text-fm-critical bg-fm-critical-bg border border-fm-critical-border'
+                : 'text-fm-warning bg-fm-warning-bg border border-fm-warning-border'
+                }`}
               role="alert"
               aria-live="polite"
             >
               <span>{validationError.message}</span>
+              <button
+                onClick={() => setValidationError(null)}
+                className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+                title="Dismiss"
+                aria-label="Dismiss error"
+              >
+                ✕
+              </button>
             </div>
           )}
 
           {/* Mode indicator */}
           {inputMode === 'data' && !selectedFile && !capturedPageUrl && !stagedPastedContent && !validationError && (
             <div
-              className="flex items-center gap-2 text-xs text-fm-yellow bg-fm-yellow-light border border-fm-yellow-border rounded-md px-2.5 py-1.5"
+              className="flex items-center gap-2 text-xs text-fm-warning bg-fm-warning-bg border border-fm-warning-border rounded-md px-2.5 py-1.5"
               role="status"
             >
               <span>Large text detected — will be processed as data</span>
@@ -489,10 +494,10 @@ export function UnifiedInputBar({
             <div className="flex items-center justify-between bg-fm-surface border border-dashed border-fm-border rounded-md px-3 py-2">
               <div className="flex items-center gap-2 text-xs min-w-0">
                 <span>📄</span>
-                <span className="font-semibold text-fm-text font-mono truncate">{selectedFile.name}</span>
-                <span className="text-fm-dim font-mono">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                <span className="font-semibold text-fm-text-primary font-mono truncate">{selectedFile.name}</span>
+                <span className="text-fm-text-tertiary font-mono">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
               </div>
-              <button onClick={handleRemoveFile} className="text-fm-dim hover:text-fm-text text-xs ml-2" title="Remove file">✕</button>
+              <button onClick={handleRemoveFile} className="text-fm-text-tertiary hover:text-fm-text-primary text-xs ml-2" title="Remove file">✕</button>
             </div>
           )}
 
@@ -501,21 +506,21 @@ export function UnifiedInputBar({
             <div className="bg-fm-surface border border-dashed border-fm-border rounded-md px-3 py-2">
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[11.5px] font-semibold text-fm-text">📋 Pasted context</span>
-                  <span className="text-[10px] text-fm-dim font-mono">
+                  <span className="text-[11.5px] font-semibold text-fm-text-primary">📋 Pasted context</span>
+                  <span className="text-[10px] text-fm-text-tertiary font-mono">
                     {stagedPastedContent.split('\n').length} lines · {(stagedPastedContent.length / 1024).toFixed(1)} KB
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setShowPasteScratchpad(true)} className="text-fm-dim hover:text-fm-text text-[10px]" title="Edit">Edit</button>
-                  <button onClick={handleRemovePastedContent} className="text-fm-dim hover:text-fm-text text-xs" title="Remove">✕</button>
+                  <button onClick={() => setShowPasteScratchpad(true)} className="text-fm-text-tertiary hover:text-fm-text-primary text-[10px]" title="Edit">Edit</button>
+                  <button onClick={handleRemovePastedContent} className="text-fm-text-tertiary hover:text-fm-text-primary text-xs" title="Remove">✕</button>
                 </div>
               </div>
               <div className="bg-fm-bg rounded px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed overflow-hidden">
                 {stagedPastedContent.split('\n').slice(0, 5).map((l, i) => (
                   <div key={i} className="flex gap-2 opacity-80">
-                    <span className="text-fm-dim min-w-[16px] text-right select-none text-[10px]">{i + 1}</span>
-                    <span className="text-fm-text truncate">{l}</span>
+                    <span className="text-fm-text-tertiary min-w-[16px] text-right select-none text-[10px]">{i + 1}</span>
+                    <span className="text-fm-text-primary truncate">{l}</span>
                   </div>
                 ))}
               </div>
@@ -526,10 +531,10 @@ export function UnifiedInputBar({
           {capturedPageUrl && (
             <div className="flex items-center gap-2.5 px-3 py-2 bg-fm-surface border border-dashed border-fm-border rounded-md">
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-fm-text truncate">📸 Captured: {capturedPageUrl}</div>
-                <div className="text-[10.5px] text-fm-dim">🔒 Secrets redacted · {(capturedPageContent.length / 1024).toFixed(0)} KB</div>
+                <div className="text-xs font-semibold text-fm-text-primary truncate">📸 Captured: {capturedPageUrl}</div>
+                <div className="text-[10.5px] text-fm-text-tertiary">🔒 Secrets redacted · {(capturedPageContent.length / 1024).toFixed(0)} KB</div>
               </div>
-              <button onClick={handleRemovePage} className="text-fm-dim hover:text-fm-text text-xs flex-shrink-0" title="Remove">✕</button>
+              <button onClick={handleRemovePage} className="text-fm-text-tertiary hover:text-fm-text-primary text-xs flex-shrink-0" title="Remove">✕</button>
             </div>
           )}
         </div>
@@ -547,9 +552,8 @@ export function UnifiedInputBar({
 
       {/* Input field row: [Page|Upload|Paste] [textarea] [Send] */}
       <div
-        className={`flex items-end gap-1 bg-fm-bg rounded-lg border px-1 py-1 transition-colors ${
-          hasAnyAttachment ? 'border-fm-active' : 'border-fm-border'
-        }`}
+        className={`flex items-end gap-1 bg-fm-surface-alt rounded-lg border px-1 py-1 transition-colors ${hasAnyAttachment ? 'border-fm-accent' : 'border-fm-border'
+          }`}
       >
         {/* Left action buttons */}
         <div className="flex items-center gap-0.5 py-0.5 pl-0.5">
@@ -558,22 +562,21 @@ export function UnifiedInputBar({
             <button
               type="button"
               onClick={() => setIsCapturingPage(false)}
-              className="p-1.5 text-fm-blue rounded transition-colors"
+              className="p-1.5 text-fm-accent rounded transition-colors"
               aria-label="Cancel page capture"
               title="Cancel capture"
             >
-              <div className="w-4 h-4 border-2 border-fm-border border-t-fm-blue rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-fm-border border-t-fm-accent rounded-full animate-spin" />
             </button>
           ) : (
             <button
               type="button"
               onClick={handlePageInjectClick}
               disabled={isProcessing || !onPageInject}
-              className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
-                capturedPageUrl
-                  ? 'text-fm-blue bg-fm-blue-light'
-                  : 'text-fm-dim hover:text-fm-text'
-              }`}
+              className={`p-1.5 rounded transition-colors disabled:opacity-50 ${capturedPageUrl
+                ? 'text-fm-accent bg-fm-accent-soft'
+                : 'text-fm-text-tertiary hover:text-fm-text-primary'
+                }`}
               aria-label="Analyze current page"
               title="Analyze current page"
             >
@@ -588,11 +591,10 @@ export function UnifiedInputBar({
             type="button"
             onClick={handleFileButtonClick}
             disabled={isProcessing}
-            className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
-              selectedFile
-                ? 'text-fm-green bg-fm-green-light'
-                : 'text-fm-dim hover:text-fm-text'
-            }`}
+            className={`p-1.5 rounded transition-colors disabled:opacity-50 ${selectedFile
+              ? 'text-fm-success bg-fm-success-bg'
+              : 'text-fm-text-tertiary hover:text-fm-text-primary'
+              }`}
             aria-label="Upload file"
             title="Upload file"
           >
@@ -606,11 +608,10 @@ export function UnifiedInputBar({
             type="button"
             onClick={() => setShowPasteScratchpad(!showPasteScratchpad)}
             disabled={isProcessing}
-            className={`p-1.5 rounded transition-colors disabled:opacity-50 ${
-              showPasteScratchpad || stagedPastedContent
-                ? 'text-fm-purple bg-fm-purple-light'
-                : 'text-fm-dim hover:text-fm-text'
-            }`}
+            className={`p-1.5 rounded transition-colors disabled:opacity-50 ${showPasteScratchpad || stagedPastedContent
+              ? 'text-fm-accent bg-fm-accent-soft'
+              : 'text-fm-text-tertiary hover:text-fm-text-primary'
+              }`}
             aria-label="Paste data"
             title="Paste data"
           >
@@ -636,7 +637,7 @@ export function UnifiedInputBar({
           rows={calculateRows()}
           maxLength={maxLength}
           disabled={isInputDisabled}
-          className="flex-1 bg-transparent border-none text-fm-text text-[13px] leading-relaxed resize-none outline-none px-1.5 py-1 font-sans disabled:opacity-50"
+          className="flex-1 bg-transparent border-none text-fm-text-primary text-[13px] leading-relaxed resize-none outline-none px-1.5 py-1 font-sans disabled:opacity-50"
           style={{ minHeight: 22, maxHeight: 180 }}
           aria-label="Type your message"
         />
@@ -647,11 +648,10 @@ export function UnifiedInputBar({
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className={`p-1.5 rounded-md transition-colors ${
-              canSubmit
-                ? 'text-fm-bg bg-fm-blue hover:opacity-90'
-                : 'text-fm-dim bg-fm-elevated'
-            }`}
+            className={`p-1.5 rounded-md transition-colors ${canSubmit
+              ? 'text-white bg-fm-accent-gradient shadow-fm-glow hover:opacity-90'
+              : 'text-fm-text-tertiary bg-white/5'
+              }`}
             aria-label="Send message"
             title="Send"
           >
@@ -678,7 +678,7 @@ export function UnifiedInputBar({
 
       {/* Character count */}
       {input.length > maxLength * 0.8 && !submitting && !isCapturingPage && (
-        <div className="text-[10px] text-fm-dim text-right mt-1" aria-live="polite">
+        <div className="text-[10px] text-fm-text-tertiary text-right mt-1" aria-live="polite">
           {input.length}/{maxLength}
         </div>
       )}

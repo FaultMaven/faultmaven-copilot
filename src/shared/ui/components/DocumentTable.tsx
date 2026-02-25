@@ -21,7 +21,7 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
     return (
       <div className="bg-fm-surface rounded-lg border border-fm-border p-6 shadow-sm">
         <div className="text-center">
-          <div className="mx-auto w-12 h-12 text-fm-muted mb-3">
+          <div className="mx-auto w-12 h-12 text-fm-text-secondary mb-3">
             <svg
               fill="none"
               stroke="currentColor"
@@ -37,7 +37,7 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
             </svg>
           </div>
           <h3 className="text-sm font-medium text-white mb-1">No documents yet</h3>
-          <p className="text-xs text-fm-dim">
+          <p className="text-xs text-fm-text-tertiary">
             Upload your first document to get started with the knowledge base.
           </p>
         </div>
@@ -49,7 +49,7 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
     <div className="bg-fm-surface rounded-lg border border-fm-border shadow-sm">
       {/* Table Header */}
       <div className="px-4 py-3 border-b border-fm-border bg-fm-bg">
-        <h3 className="text-sm font-medium text-fm-text">Documents ({documentList.length})</h3>
+        <h3 className="text-sm font-medium text-fm-text-primary">Documents ({documentList.length})</h3>
       </div>
 
       {/* Table with scroll support - ensure all columns are accessible */}
@@ -57,22 +57,22 @@ export default function DocumentTable({ documents, onDelete, loading }: Document
         <table className="w-full divide-y divide-fm-border" style={{ minWidth: '800px' }}>
           <thead className="bg-fm-bg sticky top-0 z-10">
             <tr>
-              <th className="px-3 py-3 text-left text-xs font-medium text-fm-dim uppercase tracking-wider" style={{ width: '200px', minWidth: '200px' }}>
+              <th className="px-3 py-3 text-left text-xs font-medium text-fm-text-tertiary uppercase tracking-wider" style={{ width: '200px', minWidth: '200px' }}>
                 Title
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-fm-dim uppercase tracking-wider" style={{ width: '120px', minWidth: '120px' }}>
+              <th className="px-2 py-3 text-left text-xs font-medium text-fm-text-tertiary uppercase tracking-wider" style={{ width: '120px', minWidth: '120px' }}>
                 Type
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-fm-dim uppercase tracking-wider" style={{ width: '100px', minWidth: '100px' }}>
+              <th className="px-2 py-3 text-left text-xs font-medium text-fm-text-tertiary uppercase tracking-wider" style={{ width: '100px', minWidth: '100px' }}>
                 Status
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-fm-dim uppercase tracking-wider" style={{ width: '120px', minWidth: '120px' }}>
+              <th className="px-2 py-3 text-left text-xs font-medium text-fm-text-tertiary uppercase tracking-wider" style={{ width: '120px', minWidth: '120px' }}>
                 Tags
               </th>
-              <th className="px-2 py-3 text-left text-xs font-medium text-fm-dim uppercase tracking-wider" style={{ width: '140px', minWidth: '140px' }}>
+              <th className="px-2 py-3 text-left text-xs font-medium text-fm-text-tertiary uppercase tracking-wider" style={{ width: '140px', minWidth: '140px' }}>
                 Date Added
               </th>
-              <th className="px-2 py-3 text-right text-xs font-medium text-fm-dim uppercase tracking-wider" style={{ width: '120px', minWidth: '120px' }}>
+              <th className="px-2 py-3 text-right text-xs font-medium text-fm-text-tertiary uppercase tracking-wider" style={{ width: '120px', minWidth: '120px' }}>
                 Delete
               </th>
             </tr>

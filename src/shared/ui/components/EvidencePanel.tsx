@@ -93,7 +93,7 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
             {item.filename || `Content (${item.data_id.substring(0, 7)})`}
           </h3>
           {item.file_size && (
-            <span className="text-xs text-fm-dim flex-shrink-0">
+            <span className="text-xs text-fm-text-tertiary flex-shrink-0">
               ({formatFileSize(item.file_size)})
             </span>
           )}
@@ -101,7 +101,7 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
       </div>
 
       {/* Metadata Row */}
-      <div className="text-xs text-fm-dim mb-2 space-y-1">
+      <div className="text-xs text-fm-text-tertiary mb-2 space-y-1">
         <div className="flex items-center gap-2">
           <span className="font-medium">{sourceInfo.label}:</span>
           <span>{formattedDate}, {formattedTime}</span>
@@ -114,7 +114,7 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
               href={sourceInfo.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-fm-blue hover:underline truncate"
+              className="text-fm-accent hover:underline truncate"
             >
               {sourceInfo.url}
             </a>
@@ -125,7 +125,7 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
         {item.classification && (
           <div className="flex items-center gap-2">
             <span className="font-medium">Type:</span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fm-blue-light text-fm-blue">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fm-accent-soft text-fm-accent">
               {formatDataType(item.classification.data_type)}
             </span>
           </div>
@@ -134,7 +134,7 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
         {/* Status */}
         <div className="flex items-center gap-2">
           <span className="font-medium">Status:</span>
-          <span className="inline-flex items-center gap-1 text-fm-green">
+          <span className="inline-flex items-center gap-1 text-fm-success">
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
@@ -147,7 +147,7 @@ const EvidenceItem: React.FC<EvidenceItemProps> = memo(({
       <div className="flex items-center gap-2 pt-2 border-t border-fm-border">
         <button
           onClick={onViewAnalysis}
-          className="w-full px-3 py-1.5 text-xs font-medium text-fm-blue bg-fm-blue-light border border-fm-blue-border rounded hover:bg-fm-blue-light transition-colors"
+          className="w-full px-3 py-1.5 text-xs font-medium text-fm-accent bg-fm-accent-soft border border-fm-accent-border rounded hover:bg-fm-accent-soft transition-colors"
           aria-label="View analysis details"
         >
           View Analysis

@@ -23,9 +23,9 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
       case 'safe':
         return {
           color: 'green',
-          bg: 'bg-fm-green-light',
-          border: 'border-fm-green-border',
-          text: 'text-fm-green',
+          bg: 'bg-fm-success-bg',
+          border: 'border-fm-success-border',
+          text: 'text-fm-success',
           badge: 'bg-green-600',
           icon: '✓',
           label: 'Safe'
@@ -33,9 +33,9 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
       case 'read_only':
         return {
           color: 'blue',
-          bg: 'bg-fm-blue-light',
-          border: 'border-fm-blue-border',
-          text: 'text-fm-blue',
+          bg: 'bg-fm-accent-soft',
+          border: 'border-fm-accent-border',
+          text: 'text-fm-accent',
           badge: 'bg-blue-600',
           icon: '👁',
           label: 'Read-Only'
@@ -43,9 +43,9 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
       case 'caution':
         return {
           color: 'yellow',
-          bg: 'bg-fm-yellow-light',
-          border: 'border-fm-yellow-border',
-          text: 'text-fm-yellow',
+          bg: 'bg-fm-warning-bg',
+          border: 'border-fm-warning-border',
+          text: 'text-fm-warning',
           badge: 'bg-yellow-600',
           icon: '⚠️',
           label: 'Caution'
@@ -55,7 +55,7 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
           color: 'gray',
           bg: 'bg-fm-bg',
           border: 'border-fm-border',
-          text: 'text-fm-text',
+          text: 'text-fm-text-primary',
           badge: 'bg-gray-600',
           icon: '?',
           label: 'Unknown'
@@ -80,11 +80,11 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
     <div className="suggested-commands bg-fm-surface border border-fm-border rounded-lg p-4 mb-4 shadow-sm">
       {/* Header */}
       <div className="mb-3 flex items-center gap-2">
-        <svg className="w-5 h-5 text-fm-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-5 h-5 text-fm-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
-        <h3 className="text-sm font-semibold text-fm-text">Diagnostic Commands</h3>
-        <span className="text-xs text-fm-dim">({commands.length})</span>
+        <h3 className="text-sm font-semibold text-fm-text-primary">Diagnostic Commands</h3>
+        <span className="text-xs text-fm-text-tertiary">({commands.length})</span>
       </div>
 
       {/* Commands List */}
@@ -152,15 +152,15 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
                 <div className="px-3 pb-3 space-y-2 border-t" style={{ borderColor: config.border.replace('border-', '') }}>
                   {/* Why Section */}
                   <div>
-                    <p className="text-xs font-semibold text-fm-text mb-1">Why run this?</p>
-                    <p className="text-xs text-fm-dim">{cmd.why}</p>
+                    <p className="text-xs font-semibold text-fm-text-primary mb-1">Why run this?</p>
+                    <p className="text-xs text-fm-text-tertiary">{cmd.why}</p>
                   </div>
 
                   {/* Expected Output */}
                   {cmd.expected_output && (
                     <div>
-                      <p className="text-xs font-semibold text-fm-text mb-1">What to look for:</p>
-                      <p className="text-xs text-fm-dim italic">{cmd.expected_output}</p>
+                      <p className="text-xs font-semibold text-fm-text-primary mb-1">What to look for:</p>
+                      <p className="text-xs text-fm-text-tertiary italic">{cmd.expected_output}</p>
                     </div>
                   )}
 
@@ -187,7 +187,7 @@ export const SuggestedCommands: React.FC<SuggestedCommandsProps> = ({ commands, 
       </div>
 
       {/* Footer Hint */}
-      <div className="mt-3 text-xs text-fm-dim italic">
+      <div className="mt-3 text-xs text-fm-text-tertiary italic">
         Click a command to expand details and safety information
       </div>
     </div>

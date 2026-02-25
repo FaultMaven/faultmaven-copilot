@@ -93,15 +93,15 @@ const ContentAreaComponent = ({
     if (!activeCaseId && !hasUnsavedNewChat) {
       log.debug('Showing empty state');
       return (
-        <div className="flex items-center justify-center h-full bg-fm-bg">
+        <div className="flex items-center justify-center h-full bg-fm-canvas">
           <div className="text-center max-w-md p-6">
-            <h2 className="text-base font-semibold text-fm-text mb-2">Start a conversation</h2>
-            <p className="text-sm text-fm-dim mb-4">Select a chat from the list or create a new one.</p>
+            <h2 className="text-base font-semibold text-fm-text-primary mb-2">Start a new case</h2>
+            <p className="text-sm text-fm-text-tertiary mb-4">Select a case from the sidebar or create a new one.</p>
             <button
               onClick={onNewChat}
-              className="inline-flex items-center gap-2 py-2 px-4 bg-fm-blue text-white rounded hover:bg-fm-active text-sm"
+              className="inline-flex items-center gap-2 py-2 px-4 bg-fm-accent text-white rounded hover:opacity-90 text-sm"
             >
-              New chat
+              + New Case
             </button>
           </div>
         </div>
@@ -111,11 +111,11 @@ const ContentAreaComponent = ({
     return (
       <ErrorBoundary
         fallback={
-          <div className="p-4 bg-fm-red-light border border-fm-red-border rounded-lg">
-            <p className="text-sm text-fm-red">Error loading chat</p>
+          <div className="p-4 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
+            <p className="text-sm text-fm-critical">Error loading chat</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-2 px-3 py-1 text-xs bg-fm-surface text-fm-red rounded hover:bg-fm-elevated"
+              className="mt-2 px-3 py-1 text-xs bg-fm-surface text-fm-critical rounded hover:bg-fm-elevated"
             >
               Retry
             </button>

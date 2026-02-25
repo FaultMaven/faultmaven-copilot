@@ -55,7 +55,7 @@ export default function DocumentDetailsModal({
                 <h3 className="text-lg font-medium leading-6 text-white mb-2">
                   {document.title}
                 </h3>
-                <div className="flex items-center space-x-4 text-sm text-fm-dim">
+                <div className="flex items-center space-x-4 text-sm text-fm-text-tertiary">
                   <span>{formatDocumentType(document.document_type)}</span>
                   {document.category && (
                     <>
@@ -70,7 +70,7 @@ export default function DocumentDetailsModal({
               <div className="flex items-center space-x-2 ml-4">
                 <button
                   onClick={() => onEdit(document)}
-                  className="inline-flex items-center px-3 py-1.5 border border-fm-border text-sm font-medium rounded text-fm-text bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-3 py-1.5 border border-fm-border text-sm font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -79,7 +79,7 @@ export default function DocumentDetailsModal({
                 </button>
                 <button
                   onClick={onClose}
-                  className="rounded-md bg-fm-surface text-fm-muted hover:text-fm-dim focus:outline-none focus:ring-2 focus:ring-fm-blue focus:ring-offset-2"
+                  className="rounded-md bg-fm-surface text-fm-text-secondary hover:text-fm-text-tertiary focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -94,7 +94,7 @@ export default function DocumentDetailsModal({
               {document.description && (
                 <div>
                   <h4 className="text-sm font-medium text-white mb-2">Description</h4>
-                  <p className="text-sm text-fm-text bg-fm-bg p-3 rounded-lg">
+                  <p className="text-sm text-fm-text-primary bg-fm-bg p-3 rounded-lg">
                     {document.description}
                   </p>
                 </div>
@@ -110,7 +110,7 @@ export default function DocumentDetailsModal({
                       {tags.map((tag, index) => (
                         <span
                           key={index}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-fm-blue-light text-fm-blue"
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-fm-accent-soft text-fm-accent"
                         >
                           {tag}
                         </span>
@@ -128,7 +128,7 @@ export default function DocumentDetailsModal({
                     href={document.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-fm-blue hover:text-fm-blue underline break-all"
+                    className="text-sm text-fm-accent hover:text-fm-accent underline break-all"
                   >
                     {document.source_url}
                   </a>
@@ -140,7 +140,7 @@ export default function DocumentDetailsModal({
                 <div>
                   <h4 className="text-sm font-medium text-white mb-2">Content Preview</h4>
                   <div className="bg-fm-bg p-4 rounded-lg max-h-64 overflow-y-auto">
-                    <pre className="text-xs text-fm-text whitespace-pre-wrap font-mono">
+                    <pre className="text-xs text-fm-text-primary whitespace-pre-wrap font-mono">
                       {document.content.length > 1000 
                         ? `${document.content.substring(0, 1000)}...` 
                         : document.content
@@ -148,7 +148,7 @@ export default function DocumentDetailsModal({
                     </pre>
                   </div>
                   {document.content.length > 1000 && (
-                    <p className="text-xs text-fm-dim mt-2">
+                    <p className="text-xs text-fm-text-tertiary mt-2">
                       Content truncated. Showing first 1000 characters.
                     </p>
                   )}
@@ -160,38 +160,38 @@ export default function DocumentDetailsModal({
                 <h4 className="text-sm font-medium text-white mb-3">Document Information</h4>
                 <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
                   <div>
-                    <dt className="text-xs font-medium text-fm-dim">Document ID</dt>
+                    <dt className="text-xs font-medium text-fm-text-tertiary">Document ID</dt>
                     <dd className="mt-1 text-xs text-white font-mono break-all">
                       {document.document_id}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs font-medium text-fm-dim">Type</dt>
+                    <dt className="text-xs font-medium text-fm-text-tertiary">Type</dt>
                     <dd className="mt-1 text-xs text-white">
                       {formatDocumentType(document.document_type)}
                     </dd>
                   </div>
                   {document.category && (
                     <div>
-                      <dt className="text-xs font-medium text-fm-dim">Category</dt>
+                      <dt className="text-xs font-medium text-fm-text-tertiary">Category</dt>
                       <dd className="mt-1 text-xs text-white">{document.category}</dd>
                     </div>
                   )}
                   {document.status && (
                     <div>
-                      <dt className="text-xs font-medium text-fm-dim">Status</dt>
+                      <dt className="text-xs font-medium text-fm-text-tertiary">Status</dt>
                       <dd className="mt-1 text-xs text-white">{document.status}</dd>
                     </div>
                   )}
                   <div>
-                    <dt className="text-xs font-medium text-fm-dim">Created</dt>
+                    <dt className="text-xs font-medium text-fm-text-tertiary">Created</dt>
                     <dd className="mt-1 text-xs text-white">
                       {formatDate(document.created_at)}
                     </dd>
                   </div>
                   {document.updated_at && document.updated_at !== document.created_at && (
                     <div>
-                      <dt className="text-xs font-medium text-fm-dim">Last Updated</dt>
+                      <dt className="text-xs font-medium text-fm-text-tertiary">Last Updated</dt>
                       <dd className="mt-1 text-xs text-white">
                         {formatDate(document.updated_at)}
                       </dd>
