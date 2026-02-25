@@ -5,6 +5,9 @@ test.describe('API Integration', () => {
         const page = await context.newPage();
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
+        // Reset mock server state to prevent leaks from other test files
+        await page.request.post('http://localhost:8091/__admin/reset').catch(() => {});
+
         await page.evaluate(() => {
             return new Promise<void>((resolve) => {
                 // @ts-ignore
@@ -71,8 +74,8 @@ test.describe('API Integration', () => {
         await expect(input).toBeEnabled();
         await input.fill('Send to dead server');
 
-        // Intercept and abort the query POST request to simulate a network failure on send
-        await page.route('**/api/v1/cases/*/queries', route => route.abort('failed'));
+        // Intercept and abort the turn POST request to simulate a network failure on send
+        await page.route('**/api/v1/cases/*/turns', route => route.abort('failed'));
 
         await page.getByRole('button', { name: /Send/i }).click();
 

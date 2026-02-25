@@ -95,12 +95,12 @@ test.describe('UI Rendering', () => {
         await expect(input).toBeEnabled();
 
         await input.fill('Simulate long load');
-        const sendBtn2 = page.locator('button:has-text("Send")');
+        const sendBtn2 = page.getByRole('button', { name: /Send/i });
         await expect(sendBtn2).toBeEnabled();
         await sendBtn2.click();
 
-        // Verify our unified input bar has a submitting/loading indicator
-        await expect(page.getByText('Sending...')).toBeVisible();
+        // Verify the agent response area shows a loading/thinking indicator
+        await expect(page.getByText('Thinking...')).toBeVisible();
     });
 
     test('Error response (500) shows user-friendly error message after sending', async ({ context, extensionId }) => {
@@ -119,7 +119,7 @@ test.describe('UI Rendering', () => {
         await input.waitFor({ state: 'visible' });
         await expect(input).toBeEnabled();
         await input.fill('Trigger error');
-        const sendBtn3 = page.locator('button:has-text("Send")');
+        const sendBtn3 = page.getByRole('button', { name: /Send/i });
         await expect(sendBtn3).toBeEnabled();
         await sendBtn3.click();
 
@@ -134,17 +134,34 @@ test.describe('UI Rendering', () => {
 
     test('Rate limited (429) shows retry message', async ({ context, extensionId }) => {
         const page = await context.newPage();
+        await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
+
+        // Clear case cache so the next page load forces a fresh API call
+        await page.evaluate(() => {
+            return new Promise<void>((resolve) => {
+                // @ts-ignore
+                chrome.storage.local.remove(['faultmaven_case_cache'], resolve);
+            });
+        });
 
         await page.request.post('http://localhost:8091/__admin/state', {
             data: { rateLimit: true }
         });
 
-        await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
+        // Reload to trigger fresh API calls that will hit the rate-limited server
+        await page.reload();
 
-        // This could trigger on login or listing cases depending on the API calls on startup
         const body = page.locator('body');
-        await expect(body).toContainText(/(limit|exceeded|try again)/i);
+        await expect(body).toContainText(/(limit|exceeded|try again|rate limit)/i);
 
         await page.request.post('http://localhost:8091/__admin/reset');
+    });
+
+    // Always reset mock server state to prevent leaks between tests
+    test.afterEach(async ({ context }) => {
+        const page = context.pages()[0];
+        if (page) {
+            await page.request.post('http://localhost:8091/__admin/reset').catch(() => {});
+        }
     });
 });

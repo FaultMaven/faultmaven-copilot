@@ -93,6 +93,29 @@ app.post('/api/v1/cases/:id/queries', (req, res) => {
     sendFixture(res, 'query_response');
 });
 
+// Current turn-based submission endpoint (replaces legacy queries)
+app.post('/api/v1/cases/:id/turns', (req, res) => {
+    sendFixture(res, 'turn_response');
+});
+
+// Case conversation messages
+app.get('/api/v1/cases/:id/messages', (req, res) => {
+    sendFixture(res, 'case_messages');
+});
+
+// Case UI endpoint (used by ChatWindow for status reconciliation)
+app.get('/api/v1/cases/:id/ui', (req, res) => {
+    res.json({
+        case_id: req.params.id,
+        title: 'E2E Test Case',
+        status: 'inquiry',
+        created_at: '2026-02-20T21:42:36.236Z',
+        updated_at: '2026-02-20T21:42:36.236Z',
+        current_turn: 0,
+        messages: []
+    });
+});
+
 app.get('/api/v1/users/me', (req, res) => {
     sendFixture(res, 'user_me');
 });
