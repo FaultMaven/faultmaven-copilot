@@ -169,6 +169,7 @@ export interface TurnResponse {
   progress_made: boolean;
   is_stuck: boolean;
   attachments_processed: AttachmentResult[];
+  suggested_actions?: SuggestedAction[];
 }
 
 export interface Case {

@@ -204,6 +204,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                    response: response.agent_response,
                    turn_number: response.turn_number,
                    caseStatus: response.case_status,
+                   suggestedActions: response.suggested_actions ?? null,
                    optimistic: false,
                    loading: false,
                    originalId: aiMessageId,
