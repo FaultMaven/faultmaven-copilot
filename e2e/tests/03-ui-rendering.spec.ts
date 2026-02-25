@@ -88,6 +88,11 @@ test.describe('UI Rendering', () => {
         const page = await context.newPage();
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
+        // Slow down the turns response so the loading indicator stays visible
+        await page.request.post('http://localhost:8091/__admin/state', {
+            data: { responseDelayMs: 5000 }
+        });
+
         await page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first().click().catch(() => { });
 
         const input = page.locator('textarea').first();

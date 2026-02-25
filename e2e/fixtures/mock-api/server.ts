@@ -33,6 +33,7 @@ let testState = {
     shouldFail: false,
     rateLimit: false,
     authExpired: false,
+    responseDelayMs: 0,
 };
 
 // Admin endpoint for tests to reset/change server state
@@ -47,6 +48,7 @@ app.post('/__admin/reset', (req, res) => {
         shouldFail: false,
         rateLimit: false,
         authExpired: false,
+        responseDelayMs: 0,
     };
     res.json({ success: true });
 });
@@ -94,7 +96,10 @@ app.post('/api/v1/cases/:id/queries', (req, res) => {
 });
 
 // Current turn-based submission endpoint (replaces legacy queries)
-app.post('/api/v1/cases/:id/turns', (req, res) => {
+app.post('/api/v1/cases/:id/turns', async (req, res) => {
+    if (testState.responseDelayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, testState.responseDelayMs));
+    }
     sendFixture(res, 'turn_response');
 });
 
