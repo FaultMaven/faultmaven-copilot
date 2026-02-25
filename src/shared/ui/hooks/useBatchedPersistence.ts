@@ -124,9 +124,9 @@ export function useBatchedPersistence(state: PersistenceState) {
       return;
     }
 
-    // Skip if state hasn't actually changed
-    if (lastPersistedState.current &&
-        JSON.stringify(state) === JSON.stringify(lastPersistedState.current)) {
+    // Skip if state object reference hasn't changed
+    // (Individual property references are already checked by the useEffect dependency array)
+    if (lastPersistedState.current === state) {
       return;
     }
 

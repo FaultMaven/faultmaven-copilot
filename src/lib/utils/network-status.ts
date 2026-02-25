@@ -38,7 +38,7 @@ export class NetworkStatusMonitor {
       clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
-      console.warn('[NetworkStatus] Server health check failed:', error);
+      log.warn('[NetworkStatus] Server health check failed:', error);
       return false;
     }
   }
@@ -112,7 +112,7 @@ export class NetworkStatusMonitor {
       try {
         listener(isOnline);
       } catch (error) {
-        console.error('[NetworkStatus] Listener error:', error);
+        log.error('[NetworkStatus] Listener error:', error);
       }
     });
   }

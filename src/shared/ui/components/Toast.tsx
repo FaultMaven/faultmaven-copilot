@@ -1,6 +1,9 @@
 // src/shared/ui/components/Toast.tsx
 import React, { useEffect, useState, memo, useCallback } from 'react';
 import { ActiveError } from '../../../lib/errors/useErrorHandler';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('Toast');
 
 interface ToastProps {
   activeError: ActiveError;
@@ -30,7 +33,7 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
         await onRetry(id);
         handleDismiss();
       } catch (retryError) {
-        console.error('[Toast] Retry failed:', retryError);
+        log.error('Retry failed', retryError);
       }
     }
   };

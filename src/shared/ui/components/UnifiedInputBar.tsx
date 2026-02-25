@@ -290,7 +290,7 @@ export function UnifiedInputBar({
 
     // Check MIME type if available
     if (file.type && !INPUT_LIMITS.ALLOWED_MIME_TYPES.includes(file.type as any)) {
-      console.warn(`[UnifiedInputBar] File type "${file.type}" not in allowed MIME types, but extension is valid`);
+      log.warn('File type not in allowed MIME types, but extension is valid', { fileType: file.type });
     }
 
     return null;
@@ -346,7 +346,7 @@ export function UnifiedInputBar({
         throw new Error('Could not retrieve current page URL');
       }
     } catch (error: any) {
-      console.error('[UnifiedInputBar] Page capture failed:', error);
+      log.error('Page capture failed', error);
       setValidationError({
         message: error.message || 'Failed to capture page content',
         type: 'error',

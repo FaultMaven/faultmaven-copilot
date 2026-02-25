@@ -7,6 +7,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { CaseUIResponse } from '../../../../types/case';
 import type { UserCaseStatus } from '../../../../lib/api';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('HeaderSummary');
 
 interface HeaderSummaryProps {
   caseData: CaseUIResponse;
@@ -112,7 +115,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   }, [dropdownOpen]);
 
   const handleStatusSelect = (newStatus: UserCaseStatus) => {
-    console.log('[HeaderSummary] handleStatusSelect fired', {
+    log.debug('handleStatusSelect fired', {
       currentStatus: caseData.status,
       newStatus,
       hasCallback: !!onStatusChangeRequest
@@ -120,7 +123,6 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
     setDropdownOpen(false);
     if (newStatus !== caseData.status && onStatusChangeRequest) {
-      console.log('[HeaderSummary] Calling onStatusChangeRequest', { newStatus });
       onStatusChangeRequest(newStatus);
     }
   };

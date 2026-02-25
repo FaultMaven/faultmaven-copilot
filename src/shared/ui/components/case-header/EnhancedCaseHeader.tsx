@@ -14,6 +14,9 @@ import { InquiryDetails } from './InquiryDetails';
 import { InvestigatingDetails } from './InvestigatingDetails';
 import { ResolvedDetails } from './ResolvedDetails';
 import { StatusChangeRequestModal } from './StatusChangeRequestModal';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('EnhancedCaseHeader');
 
 interface EnhancedCaseHeaderProps {
   caseData: CaseUIResponse | null;
@@ -71,7 +74,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   };
 
   const handleStatusChangeRequest = (newStatus: UserCaseStatus) => {
-    console.log('[EnhancedCaseHeader] handleStatusChangeRequest called', {
+    log.debug('handleStatusChangeRequest called', {
       newStatus,
       isSubmittingStatusChange,
       hasParentCallback: !!onStatusChangeRequest
@@ -79,23 +82,22 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 
     // Prevent multiple status change requests while one is in progress
     if (isSubmittingStatusChange) {
-      console.log('[EnhancedCaseHeader] Blocked: already submitting');
+      log.debug('Blocked: already submitting');
       return;
     }
     setRequestedStatus(newStatus);
     setShowStatusModal(true);
-    console.log('[EnhancedCaseHeader] Modal opened for status:', newStatus);
   };
 
   const handleConfirmStatusChange = () => {
-    console.log('[EnhancedCaseHeader] handleConfirmStatusChange called', {
+    log.debug('handleConfirmStatusChange called', {
       requestedStatus,
       hasCallback: !!onStatusChangeRequest,
       isSubmittingStatusChange
     });
 
     if (requestedStatus && onStatusChangeRequest && !isSubmittingStatusChange) {
-      console.log('[EnhancedCaseHeader] Calling parent onStatusChangeRequest', { requestedStatus });
+      log.debug('Calling parent onStatusChangeRequest', { requestedStatus });
       setIsSubmittingStatusChange(true);
       onStatusChangeRequest(requestedStatus);
       setShowStatusModal(false);
@@ -104,7 +106,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
       // Reset after a short delay to allow the request to complete
       setTimeout(() => setIsSubmittingStatusChange(false), 3000);
     } else {
-      console.log('[EnhancedCaseHeader] NOT calling parent callback', {
+      log.debug('NOT calling parent callback', {
         noRequestedStatus: !requestedStatus,
         noCallback: !onStatusChangeRequest,
         isSubmitting: isSubmittingStatusChange

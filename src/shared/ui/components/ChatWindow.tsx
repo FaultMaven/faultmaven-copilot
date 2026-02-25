@@ -180,14 +180,14 @@ const ChatWindowComponent = function ChatWindow({
    * Handle status change request from CaseHeader dropdown
    */
   const handleStatusChangeRequest = useCallback((newStatus: UserCaseStatus) => {
-    console.log('[ChatWindow] handleStatusChangeRequest called', {
+    log.debug('handleStatusChangeRequest called', {
       newStatus,
       hasActiveCase: !!activeCase,
       activeCaseStatus: activeCase?.status
     });
 
     if (!activeCase) {
-      console.log('[ChatWindow] No active case, returning');
+      log.debug('No active case, returning');
       return;
     }
 
@@ -195,7 +195,7 @@ const ChatWindowComponent = function ChatWindow({
     const currentStatus = activeCase.status;
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
-    console.log('[ChatWindow] getStatusChangeMessage result', {
+    log.debug('getStatusChangeMessage result', {
       currentStatus,
       newStatus,
       message,
@@ -203,12 +203,11 @@ const ChatWindowComponent = function ChatWindow({
     });
 
     if (!message) {
-      log.error('Invalid status transition:', { currentStatus, newStatus });
-      console.error('[ChatWindow] No message found for transition');
+      log.error('Invalid status transition', { currentStatus, newStatus });
       return;
     }
 
-    log.info('Status change request:', { from: currentStatus, to: newStatus });
+    log.info('Status change request', { from: currentStatus, to: newStatus });
 
     // Send with structured intent for reliable backend routing
     const intent: QueryIntent = {
@@ -218,7 +217,7 @@ const ChatWindowComponent = function ChatWindow({
       user_confirmed: true
     };
 
-    console.log('[ChatWindow] Calling onQuerySubmit', { message, intent });
+    log.debug('Calling onQuerySubmit', { message, intent });
     onQuerySubmit(message, intent);
   }, [activeCase, onQuerySubmit]);
 

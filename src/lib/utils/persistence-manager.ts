@@ -156,7 +156,7 @@ export class PersistenceManager {
       return shouldRecover;
 
     } catch (error) {
-      console.warn('[PersistenceManager] Detection error - defaulting to safe recovery:', error);
+      log.warn('Detection error - defaulting to safe recovery:', error);
       return true;
     }
   }
@@ -173,7 +173,7 @@ export class PersistenceManager {
       });
       log.info('Reload flag set');
     } catch (error) {
-      console.warn('[PersistenceManager] Failed to set reload flag:', error);
+      log.warn('Failed to set reload flag:', error);
     }
   }
 
@@ -185,7 +185,7 @@ export class PersistenceManager {
       await browser.storage.local.remove([PersistenceManager.RELOAD_FLAG_KEY]);
       log.info('Reload flag cleared');
     } catch (error) {
-      console.warn('[PersistenceManager] Failed to clear reload flag:', error);
+      log.warn('Failed to clear reload flag:', error);
     }
   }
 
@@ -296,7 +296,7 @@ export class PersistenceManager {
       return result;
 
     } catch (error) {
-      console.error('[PersistenceManager] ❌ Conversation recovery failed:', error);
+      log.error('❌ Conversation recovery failed:', error);
       result.errors.push(`Recovery failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       result.strategy = 'full_recovery'; // Indicate we attempted full recovery
       return result;
@@ -329,7 +329,7 @@ export class PersistenceManager {
         [PersistenceManager.SESSION_ID_KEY]: browser.runtime.id
       });
     } catch (error) {
-      console.warn('[PersistenceManager] Failed to mark sync complete:', error);
+      log.warn('Failed to mark sync complete:', error);
     }
   }
 
@@ -354,7 +354,7 @@ export class PersistenceManager {
         extensionVersion: stored[PersistenceManager.VERSION_KEY] || 'unknown'
       };
     } catch (error) {
-      console.warn('[PersistenceManager] Failed to get current state:', error);
+      log.warn('Failed to get current state:', error);
       return {};
     }
   }
@@ -375,7 +375,7 @@ export class PersistenceManager {
 
     try {
       if (!await authManager.isAuthenticated()) {
-        console.error('[PersistenceManager] Not authenticated - cannot test API');
+        log.error('Not authenticated - cannot test API');
         return;
       }
 
@@ -384,7 +384,7 @@ export class PersistenceManager {
         log.info('Fetching user cases');
         const cases = await getUserCases();
         if (!cases || cases.length === 0) {
-          console.warn('[PersistenceManager] No cases found for testing');
+          log.warn('No cases found for testing');
           return;
         }
         caseId = cases[0].case_id;
@@ -407,21 +407,21 @@ export class PersistenceManager {
 
       // Analyze the results
       if (response.total_count > 0 && response.retrieved_count === 0) {
-        console.error('[PersistenceManager] 🚨 ISSUE DETECTED: Messages exist but none retrieved');
-        console.error('[PersistenceManager] Debug details:', response.debug_info);
+        log.error('🚨 ISSUE DETECTED: Messages exist but none retrieved');
+        log.error('Debug details:', response.debug_info);
       } else if (response.total_count === response.retrieved_count && response.messages?.length > 0) {
         log.info(' ✅ API working correctly - all messages retrieved');
       } else if (response.total_count === 0) {
         log.info(' ℹ️ Case is empty (no messages)');
       } else {
-        console.warn('[PersistenceManager] ⚠️ Partial retrieval:', {
+        log.warn('⚠️ Partial retrieval:', {
           total: response.total_count,
           retrieved: response.retrieved_count
         });
       }
 
     } catch (error) {
-      console.error('[PersistenceManager] ❌ Enhanced API test failed:', error);
+      log.error('❌ Enhanced API test failed:', error);
     }
   }
 
@@ -447,7 +447,7 @@ export class PersistenceManager {
       ]);
       log.info('All persistence data cleared');
     } catch (error) {
-      console.warn('[PersistenceManager] Failed to clear persistence data:', error);
+      log.warn('Failed to clear persistence data:', error);
     }
   }
 }

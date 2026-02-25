@@ -178,21 +178,3 @@ export function debounce<T extends (...args: any[]) => any>(
 
   return debounced as DebounceFunction<T> & { cancel: () => void; flush: () => void };
 }
-
-/**
- * Throttle function - ensures function is called at most once per interval
- *
- * @param func - The function to throttle
- * @param wait - Minimum time between calls in milliseconds
- * @returns Throttled function
- */
-export function throttle<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): DebounceFunction<T> & { cancel: () => void; flush: () => void } {
-  return debounce(func, {
-    wait,
-    leading: true,
-    maxWait: wait
-  });
-}

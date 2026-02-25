@@ -4,6 +4,9 @@ import { authManager } from "../../auth/auth-manager";
 import { authenticatedFetch, prepareBody } from "../client";
 import { APIError, AuthState, AuthTokenResponse, UserProfile } from "../types";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('AuthService');
 
 export async function devLogin(
   username: string,
@@ -87,7 +90,7 @@ export async function logoutAuth(): Promise<void> {
         });
       } catch (error) {
         // Ignore messaging errors - not critical for logout
-        console.warn('[API] Failed to broadcast logout:', error);
+        log.warn('Failed to broadcast logout', error);
       }
     }
   }

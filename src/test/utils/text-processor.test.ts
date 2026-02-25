@@ -3,8 +3,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   cleanResponseText,
-  registerPIIToken,
-  extractPIITokens
 } from '../../lib/utils/text-processor';
 
 describe('Text Processor', () => {
@@ -102,52 +100,6 @@ describe('Text Processor', () => {
       const output = cleanResponseText(input);
 
       expect(output).toContain('{{REDACTED:CUSTOM TOKEN}}');
-    });
-  });
-
-  describe('registerPIIToken', () => {
-    it('should register new PII tokens', () => {
-      registerPIIToken('CUSTOM_ID', 'Custom Identifier');
-
-      const input = 'User has custom ID: <CUSTOM_ID>';
-      const output = cleanResponseText(input);
-
-      expect(output).toContain('{{REDACTED:Custom Identifier}}');
-    });
-
-    it('should not override existing tokens', () => {
-      registerPIIToken('PHONE_NUMBER', 'Should Not Override');
-
-      const input = 'Phone: <PHONE_NUMBER>';
-      const output = cleanResponseText(input);
-
-      // Should still use the original label
-      expect(output).toContain('{{REDACTED:Phone Number}}');
-    });
-  });
-
-  describe('extractPIITokens', () => {
-    it('should extract all unique PII tokens from text', () => {
-      const input = 'Contact: <EMAIL_ADDRESS>, Phone: <PHONE_NUMBER>, Email again: <EMAIL_ADDRESS>';
-      const tokens = extractPIITokens(input);
-
-      expect(tokens).toEqual(['EMAIL_ADDRESS', 'PHONE_NUMBER']);
-      expect(tokens.length).toBe(2); // Should deduplicate
-    });
-
-    it('should return empty array for text without PII tokens', () => {
-      const input = 'Normal text without any redacted content.';
-      const tokens = extractPIITokens(input);
-
-      expect(tokens).toEqual([]);
-    });
-
-    it('should extract tokens from both angle and square brackets', () => {
-      const input = 'Mix: <EMAIL_ADDRESS> and [PHONE_NUMBER]';
-      const tokens = extractPIITokens(input);
-
-      expect(tokens).toContain('EMAIL_ADDRESS');
-      expect(tokens).toContain('PHONE_NUMBER');
     });
   });
 });

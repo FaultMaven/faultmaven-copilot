@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { browser } from 'wxt/browser';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('WelcomeScreen');
 
 interface WelcomeScreenProps {
   onComplete: () => void;
@@ -19,7 +22,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
       onComplete();
     } catch (err) {
       setError('Failed to configure cloud deployment');
-      console.error('Cloud setup error:', err);
+      log.error('Cloud setup error:', err);
     }
   };
 
@@ -48,7 +51,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
       try {
         await browser.runtime.openOptionsPage();
       } catch (optionsError) {
-        console.warn('Could not open options page:', optionsError);
+        log.warn('Could not open options page:', optionsError);
         // Continue anyway - settings page is optional
       }
 
@@ -56,7 +59,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to configure local deployment: ${errorMessage}`);
-      console.error('Self-hosted setup error:', err);
+      log.error('Self-hosted setup error:', err);
     }
   };
 

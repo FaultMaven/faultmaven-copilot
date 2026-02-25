@@ -7,7 +7,6 @@
 
 export { useAuth } from './useAuth';
 export { useSessionManagement } from './useSessionManagement';
-export { useConflictResolution } from './useConflictResolution';
 export { usePendingOperations } from './usePendingOperations';
 export { useDataRecovery } from './useDataRecovery';
 export { useBatchedPersistence } from './useBatchedPersistence';

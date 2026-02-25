@@ -70,7 +70,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
           log.debug(' ✅ Files array length:', Array.isArray(fetchedFiles) ? fetchedFiles.length : 'NOT AN ARRAY');
           setFiles(fetchedFiles);
         } catch (error) {
-          console.error('[InquiryDetails] ❌ Failed to fetch files:', error);
+          log.error('Failed to fetch files', error);
           setFilesError(error instanceof Error ? error.message : 'Failed to load files');
         } finally {
           setFilesLoading(false);
@@ -88,7 +88,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
       const details = await filesApi.getUploadedFileDetails(caseId, fileId);
       setEvidenceDetails(details);
     } catch (error) {
-      console.error('[InquiryDetails] Failed to fetch evidence details:', error);
+      log.error('Failed to fetch evidence details', error);
     } finally {
       setEvidenceLoading(false);
     }
@@ -102,7 +102,7 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
   // Defensive: Handle null inquiry data for brand new cases (current_turn: 0)
   // This is non-critical - user can still chat and interact normally
   if (!data) {
-    console.warn('[InquiryDetails] Backend sent null inquiry data - API contract violation. Case still functional.');
+    log.warn('Backend sent null inquiry data - API contract violation. Case still functional.');
     return (
       <div className="px-4 pb-4 space-y-3 text-sm text-fm-text-tertiary">
         <p className="italic">Inquiry starting - problem statement will appear after first interaction.</p>

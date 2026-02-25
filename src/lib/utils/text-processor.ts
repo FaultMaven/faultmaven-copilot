@@ -115,30 +115,3 @@ function normalizeWhitespace(text: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
-
-/**
- * Adds PII token to the registry dynamically if not already present
- */
-export function registerPIIToken(token: string, label: string): void {
-  if (!PII_TOKEN_LABELS[token]) {
-    PII_TOKEN_LABELS[token] = label;
-  }
-}
-
-/**
- * Extracts all PII tokens found in text for analytics/debugging
- */
-export function extractPIITokens(text: string): string[] {
-  const piiTokenRegex = /<([A-Z_]+)>|\[([A-Z_]+)\]/g;
-  const tokens: string[] = [];
-  let match;
-
-  while ((match = piiTokenRegex.exec(text)) !== null) {
-    const token = match[1] || match[2];
-    if (!tokens.includes(token)) {
-      tokens.push(token);
-    }
-  }
-
-  return tokens;
-}

@@ -65,7 +65,7 @@ class CapabilitiesManager {
         return caps;
 
       } catch (error) {
-        console.warn('[CapabilitiesManager] Fetch failed, trying cache:', error);
+        log.warn('Fetch failed, trying cache', error);
 
         // Try cache
         if (typeof browser !== 'undefined' && browser.storage) {

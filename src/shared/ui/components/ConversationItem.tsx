@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Session } from '../../../lib/api';
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('ConversationItem');
 
 interface ConversationItemProps {
   session: Session;
@@ -148,7 +151,7 @@ export function ConversationItem({
 
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     } catch (error) {
-      console.error('[ConversationItem] Error formatting time:', error, 'for dateString:', dateString);
+      log.error('Error formatting time', { error, dateString });
       return 'Unknown';
     }
   };

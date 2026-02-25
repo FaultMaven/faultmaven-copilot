@@ -147,8 +147,7 @@ src/
 │       ├── data-integrity.ts            # Strict data separation utilities
 │       ├── network-status.ts            # Network connectivity detection
 │       ├── memory-manager.ts            # Memory management
-│       ├── api-error-handler.ts         # API error handling utilities
-│       └── helpers.ts                   # General utilities
+│       └── api-error-handler.ts         # API error handling utilities
 │
 ├── shared/ui/                 # React UI layer
 │   ├── SidePanelApp.tsx                 # Main app component
@@ -243,7 +242,7 @@ URL configuration is done via the Settings page and stored in `browser.storage.l
 
 - **Vitest**: Fast testing with jsdom environment
 - **React Testing Library**: Component testing
-- **Coverage**: 17+ test files covering API, hooks, components, and integration
+- **Coverage**: 20 test files covering API, hooks, components, and integration
 - **Mocks**: Browser API and Fetch mocked in `src/test/setup.ts`
 
 ## Development Guidelines

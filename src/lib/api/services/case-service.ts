@@ -93,7 +93,7 @@ export function normalizeStatus(status: string | undefined | null): UserCaseStat
   }
   const normalized = status.toLowerCase();
 
-  if (normalized === 'inquiry' || normalized === 'inquiry') return 'inquiry';
+  if (normalized === 'inquiry' || normalized === 'consulting') return 'inquiry';
   if (normalized === 'investigating') return 'investigating';
   if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved';
   if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed';

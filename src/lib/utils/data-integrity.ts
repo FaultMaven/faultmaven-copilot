@@ -81,7 +81,7 @@ export const validateRealId = (id: string): void => {
  */
 export const sanitizeBackendCases = (cases: UserCase[], context: string = 'unknown'): RealCase[] => {
   if (!Array.isArray(cases)) {
-    console.warn(`[DataIntegrity] Invalid cases array in ${context}:`, cases);
+    log.warn(`Invalid cases array in ${context}:`, cases);
     return [];
   }
 
@@ -90,7 +90,7 @@ export const sanitizeBackendCases = (cases: UserCase[], context: string = 'unkno
 
   cases.forEach(caseItem => {
     if (!caseItem || !caseItem.case_id) {
-      console.warn(`[DataIntegrity] Invalid case in ${context}:`, caseItem);
+      log.warn(`Invalid case in ${context}:`, caseItem);
       return;
     }
 
@@ -102,13 +102,13 @@ export const sanitizeBackendCases = (cases: UserCase[], context: string = 'unkno
     } else if (isOptimisticId(caseItem.case_id)) {
       contaminatedCases.push(caseItem);
     } else {
-      console.warn(`[DataIntegrity] Unknown ID format in ${context}: ${caseItem.case_id}`);
+      log.warn(`Unknown ID format in ${context}: ${caseItem.case_id}`);
     }
   });
 
   // Log contamination violations
   if (contaminatedCases.length > 0) {
-    console.error(`[DataIntegrity] ARCHITECTURE VIOLATION in ${context}: Optimistic IDs found in backend data:`,
+    log.error(`ARCHITECTURE VIOLATION in ${context}: Optimistic IDs found in backend data:`,
       contaminatedCases.map(c => c.case_id));
   }
 
@@ -122,7 +122,7 @@ export const sanitizeBackendCases = (cases: UserCase[], context: string = 'unkno
  */
 export const sanitizeOptimisticCases = (cases: OptimisticUserCase[], context: string = 'unknown'): OptimisticCase[] => {
   if (!Array.isArray(cases)) {
-    console.warn(`[DataIntegrity] Invalid cases array in ${context}:`, cases);
+    log.warn(`Invalid cases array in ${context}:`, cases);
     return [];
   }
 
@@ -131,7 +131,7 @@ export const sanitizeOptimisticCases = (cases: OptimisticUserCase[], context: st
 
   cases.forEach(caseItem => {
     if (!caseItem || !caseItem.case_id) {
-      console.warn(`[DataIntegrity] Invalid case in ${context}:`, caseItem);
+      log.warn(`Invalid case in ${context}:`, caseItem);
       return;
     }
 
@@ -145,13 +145,13 @@ export const sanitizeOptimisticCases = (cases: OptimisticUserCase[], context: st
     } else if (isRealId(caseItem.case_id)) {
       contaminatedCases.push(caseItem);
     } else {
-      console.warn(`[DataIntegrity] Unknown ID format in ${context}: ${caseItem.case_id}`);
+      log.warn(`Unknown ID format in ${context}: ${caseItem.case_id}`);
     }
   });
 
   // Log contamination violations
   if (contaminatedCases.length > 0) {
-    console.error(`[DataIntegrity] ARCHITECTURE VIOLATION in ${context}: Real IDs found in optimistic data:`,
+    log.error(`ARCHITECTURE VIOLATION in ${context}: Real IDs found in optimistic data:`,
       contaminatedCases.map(c => c.case_id));
   }
 
@@ -211,7 +211,7 @@ export const mergeOptimisticAndReal = (
 
   // Log violations
   if (violations.length > 0) {
-    console.warn(`[DataIntegrity] Merge violations in ${context}:`, violations);
+    log.warn(`Merge violations in ${context}:`, violations);
   }
 
   return {
@@ -238,21 +238,21 @@ export const validateStateIntegrity = (state: {
   let isValid = true;
   const violations: string[] = [];
 
-  // Check for mixed IDs in conversations
+  // Check for optimistic IDs leaking into conversations (should only contain real IDs)
   if (state.conversations) {
     Object.keys(state.conversations).forEach(caseId => {
-      if (isOptimisticId(caseId) && isRealId(caseId)) {
-        violations.push(`Mixed ID format in conversations: ${caseId}`);
+      if (isOptimisticId(caseId)) {
+        violations.push(`Optimistic ID in conversations: ${caseId}`);
         isValid = false;
       }
     });
   }
 
-  // Check for mixed IDs in conversation titles
+  // Check for optimistic IDs leaking into conversation titles (should only contain real IDs)
   if (state.conversationTitles) {
     Object.keys(state.conversationTitles).forEach(caseId => {
-      if (isOptimisticId(caseId) && isRealId(caseId)) {
-        violations.push(`Mixed ID format in titles: ${caseId}`);
+      if (isOptimisticId(caseId)) {
+        violations.push(`Optimistic ID in titles: ${caseId}`);
         isValid = false;
       }
     });
@@ -269,7 +269,7 @@ export const validateStateIntegrity = (state: {
   }
 
   if (!isValid) {
-    console.error(`[DataIntegrity] State integrity violations in ${context}:`, violations);
+    log.error(`State integrity violations in ${context}:`, violations);
   }
 
   return isValid;

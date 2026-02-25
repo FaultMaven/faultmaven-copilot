@@ -493,7 +493,9 @@ function SidePanelAppContent() {
       const document = await getKnowledgeDocument(documentId);
       setViewingDocument(document);
       setIsDocumentModalOpen(true);
-    } catch { }
+    } catch (error) {
+      log.error('Failed to load document', { documentId, error });
+    }
   };
 
   // --- Render ---

@@ -126,7 +126,7 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     });
 
     // Log error for debugging
-    console.error('[ErrorHandler] Error shown:', {
+    log.error('Error shown', {
       id: errorId,
       category: userFacingError.category,
       userTitle: userFacingError.userTitle,

@@ -25,7 +25,7 @@ export default defineContentScript({
             url: window.location.href
           });
         } catch (e: any) {
-          console.error("[PageContent] Error getting page content:", e);
+          log.error('Error getting page content', e);
           sendResponse({ status: "error", message: e.message || "Failed to get page content" });
         }
         return true; // Indicate that sendResponse will be called

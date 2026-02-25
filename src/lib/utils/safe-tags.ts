@@ -3,6 +3,10 @@
  * Provides defensive handling for API contract compliance
  */
 
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('SafeTags');
+
 let hasLoggedWarning = false;
 
 export function normalizeTags(tags: unknown): string[] {
@@ -15,8 +19,8 @@ export function normalizeTags(tags: unknown): string[] {
   if (typeof tags === 'string' && tags.trim()) {
     // Log API inconsistency for debugging (only once per session)
     if (!hasLoggedWarning) {
-      console.warn('[API] Backend returned tags as string instead of array:', tags);
-      console.warn('[API] This indicates a backend regression - tags should always be string[]');
+      log.warn('Backend returned tags as string instead of array', { tags });
+      log.warn('This indicates a backend regression - tags should always be string[]');
       hasLoggedWarning = true;
     }
     return tags.split(',').map(tag => tag.trim()).filter(tag => tag);

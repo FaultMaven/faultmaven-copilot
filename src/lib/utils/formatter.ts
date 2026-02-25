@@ -1,5 +1,9 @@
 // src/lib/utils/formatter.ts
 
+import { createLogger } from '~/lib/utils/logger';
+
+const log = createLogger('Formatter');
+
 /**
  * Format FaultMaven responses for better readability
  * @param {string} responseText - The raw response text from the server
@@ -8,7 +12,7 @@
 export function formatResponse(responseText: string): string {
   // Defensive programming: ensure responseText is a string
   if (!responseText || typeof responseText !== 'string') {
-    console.warn('[Formatter] Invalid response text:', typeof responseText, responseText);
+    log.warn('Invalid response text', { type: typeof responseText });
     return String(responseText || '');
   }
 

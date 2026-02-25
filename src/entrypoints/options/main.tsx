@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
+import { createLogger } from '~/lib/utils/logger';
 import '../../assets/styles/globals.css';
+
+const log = createLogger('Settings');
 
 // Preset Dashboard endpoints for quick selection
 // Users configure Dashboard URL (where they log in), not API URL
@@ -50,7 +53,7 @@ function OptionsApp() {
         const caps = await capabilitiesManager.fetch(apiUrl);
         setCapabilities(caps);
       } catch (error) {
-        console.warn('Failed to load capabilities:', error);
+        log.warn('Failed to load capabilities', error);
       }
     } finally {
       setLoading(false);
@@ -102,7 +105,7 @@ function OptionsApp() {
 
       // Warn about insecure HTTP for non-localhost
       if (parsedUrl.protocol === 'http:' && !['localhost', '127.0.0.1', '0.0.0.0'].includes(parsedUrl.hostname)) {
-        console.warn('[Settings] Insecure HTTP endpoint detected:', dashboardUrl);
+        log.warn('Insecure HTTP endpoint detected', { dashboardUrl });
       }
     } catch (error) {
       return { success: false, error: 'Invalid URL format' };
@@ -222,11 +225,11 @@ function OptionsApp() {
         const caps = await capabilitiesManager.fetch(apiUrl);
         setCapabilities(caps);
       } catch (error) {
-        console.warn('Failed to load capabilities after save:', error);
+        log.warn('Failed to load capabilities after save', error);
         setCapabilities(null);
       }
     } catch (error) {
-      console.error('[Settings] Save failed:', error);
+      log.error('Save failed', error);
       showStatus('Failed to save settings', 'error');
     } finally {
       setSaving(false);
