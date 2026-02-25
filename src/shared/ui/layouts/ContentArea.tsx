@@ -111,14 +111,22 @@ const ContentAreaComponent = ({
     return (
       <ErrorBoundary
         fallback={
-          <div className="p-4 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
-            <p className="text-sm text-fm-critical">Error loading chat</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-2 px-3 py-1 text-xs bg-fm-surface text-fm-critical rounded hover:bg-fm-elevated"
-            >
-              Retry
-            </button>
+          <div className="p-4 bg-fm-critical-bg border border-fm-critical-border rounded-lg m-4">
+            <p className="text-sm text-fm-critical mb-2">Error loading chat</p>
+            <div className="flex gap-2">
+              <button
+                onClick={onNewChat}
+                className="px-3 py-1 text-xs bg-fm-accent text-white rounded hover:opacity-90"
+              >
+                Return to Dashboard
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-3 py-1 text-xs bg-fm-surface text-fm-critical rounded hover:bg-fm-elevated"
+              >
+                Reload
+              </button>
+            </div>
           </div>
         }
       >

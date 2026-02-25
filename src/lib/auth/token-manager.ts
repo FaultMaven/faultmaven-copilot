@@ -77,17 +77,34 @@ export class TokenManager {
 
   /**
    * Refresh the access token using the refresh token.
-   * Only one refresh happens at a time (deduplication).
+   * Uses Web Locks API for cross-context coordination (background + sidepanel).
+   * Falls back to in-context deduplication when Web Locks is unavailable.
    */
   private async refreshAccessToken(): Promise<void> {
-    // Deduplicate concurrent refresh requests
+    // Web Locks API: true cross-context mutex (MV3 service worker + sidepanel)
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+      return navigator.locks.request(
+        'faultmaven-token-refresh',
+        { mode: 'exclusive' },
+        async () => {
+          // Re-check: another context may have refreshed while we waited for the lock
+          const tokens = await this.getStoredTokens();
+          if (tokens && (tokens.expires_at - Date.now()) > 5 * 60 * 1000) {
+            log.debug('Token already refreshed by another context');
+            return;
+          }
+          await this.performRefresh();
+        }
+      );
+    }
+
+    // Fallback: in-context deduplication (single JS context only)
     if (this.refreshPromise) {
       log.debug('Refresh already in progress, waiting...');
       return this.refreshPromise;
     }
 
     this.refreshPromise = this.performRefresh();
-
     try {
       await this.refreshPromise;
     } finally {

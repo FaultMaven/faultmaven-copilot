@@ -18,7 +18,7 @@ const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
 import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation } from "../../lib/api";
-import { isOptimisticId } from "../../lib/utils/data-integrity";
+import { isOptimisticId, isRealId } from "../../lib/utils/data-integrity";
 import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
 
 // Layouts
@@ -397,15 +397,20 @@ function SidePanelAppContent() {
         message_count: conversations[caseId]?.length || 0
       });
     } else {
+      // Derive last known status from conversation messages instead of hardcoding 'inquiry'
+      const caseMessages = conversations[caseId] || [];
+      const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_status);
+      const lastKnownStatus = lastStatusMessage?.case_status || 'inquiry';
+
       // Set minimal case data - ChatWindow will load full data
       setActiveCase({
         case_id: caseId,
         title: conversationTitles[caseId] || 'Loading...',
-        status: 'inquiry',
+        status: lastKnownStatus,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         owner_id: '',
-        message_count: conversations[caseId]?.length || 0
+        message_count: caseMessages.length || 0
       });
     }
 
@@ -420,6 +425,20 @@ function SidePanelAppContent() {
 
     if (alreadyLoaded || hasLocalData) {
       log.debug('Case already loaded, skipping fetch', { caseId, resolvedCaseId, alreadyLoaded, hasLocalData });
+      // Background status reconciliation (non-blocking, bypasses caseCacheManager)
+      // ChatWindow's getCaseUI() also syncs, but this pre-sync reduces the stale status window
+      if (isRealId(resolvedCaseId)) {
+        getCaseConversation(resolvedCaseId).then(data => {
+          const messages = data.messages || [];
+          const latestStatus = [...messages].reverse().find((m: any) => m.case_status)?.case_status;
+          if (latestStatus) {
+            setActiveCase((prev: any) => prev && prev.case_id === caseId && prev.status !== latestStatus
+              ? { ...prev, status: latestStatus }
+              : prev
+            );
+          }
+        }).catch(err => log.warn('Background status sync failed', err));
+      }
       return;
     }
 
@@ -542,133 +561,181 @@ function SidePanelAppContent() {
     <ErrorBoundary>
       {/* ADR 003: SRE-Native Dark Theme root layout */}
       <div className="flex h-screen bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
-        {/* Inline Sidebar (Mode A) — CollapsibleNavigation */}
-        <CollapsibleNavigation
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          activeTab={activeTab}
-          activeCaseId={activeCaseId || undefined}
-          sessionId={sessionId || undefined}
-          hasUnsavedNewChat={hasUnsavedNewChat}
-          isAdmin={isAdmin()}
-          conversationTitles={conversationTitles}
-          optimisticCases={optimisticCases}
-          pinnedCases={pinnedCases}
-          refreshTrigger={refreshSessions}
-          dashboardUrl={capabilities?.dashboardUrl}
-          onTabChange={setActiveTab}
-          onOpenDashboard={() => capabilities?.dashboardUrl && window.open(capabilities.dashboardUrl, '_blank')}
-          onCaseSelect={handleCaseSelect}
-          onNewChat={handleNewChatFromNav}
-          onLogout={handleLogout}
-          onCaseTitleChange={async (caseId: string, newTitle: string) => {
-            setConversationTitles(prev => ({ ...prev, [caseId]: newTitle }));
-            setTitleSources(prev => ({ ...prev, [caseId]: 'user' }));
-            try {
-              await updateCaseTitle(caseId, newTitle);
-              log.info('[SidePanelApp] Case title updated successfully', { caseId, newTitle });
-            } catch (error) {
-              log.error('[SidePanelApp] Failed to update case title', { caseId, newTitle, error });
-              showError({
-                title: 'Failed to update title',
-                message: error instanceof Error ? error.message : 'Unknown error',
-                type: 'error'
-              });
-              setConversationTitles(prev => {
-                const { [caseId]: _, ...rest } = prev;
-                return rest;
-              });
-            }
-          }}
-          onPinToggle={(id) => {
-            const newSet = new Set(pinnedCases);
-            if (newSet.has(id)) newSet.delete(id);
-            else newSet.add(id);
-            setPinnedCases(newSet);
-          }}
-          onAfterDelete={() => { }}
-          onCasesLoaded={() => { }}
-        />
-
-        {/* Main panel */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Content Area */}
-          <ContentArea
+        {/* Navigation — isolated boundary (keeps sidebar functional when content crashes) */}
+        <ErrorBoundary
+          fallback={
+            <div className="w-16 bg-fm-surface border-r border-fm-border p-4 flex flex-col items-center">
+              <p className="text-xs text-fm-critical text-center mt-4">Nav error</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-2 text-xs text-fm-accent hover:underline"
+              >
+                Reload
+              </button>
+            </div>
+          }
+          onError={(error) => log.error('Navigation boundary caught error', { error })}
+        >
+          <CollapsibleNavigation
+            isCollapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             activeTab={activeTab}
             activeCaseId={activeCaseId || undefined}
-            activeCase={activeCase}
-            conversations={conversations}
-            loading={submitting || isUploading}
-            submitting={submitting}
-            sessionId={sessionId}
+            sessionId={sessionId || undefined}
             hasUnsavedNewChat={hasUnsavedNewChat}
-            investigationProgress={investigationProgress}
-            caseEvidence={caseEvidence}
-            failedOperations={getFailedOperationsForUser()}
-            onQuerySubmit={handleQuerySubmit}
-            onTurnSubmit={handleTurnSubmit}
-            onDocumentView={handleDocumentView}
-            onGenerateReports={() => setShowReportDialog(true)}
+            isAdmin={isAdmin()}
+            conversationTitles={conversationTitles}
+            optimisticCases={optimisticCases}
+            pinnedCases={pinnedCases}
+            refreshTrigger={refreshSessions}
+            dashboardUrl={capabilities?.dashboardUrl}
+            onTabChange={setActiveTab}
+            onOpenDashboard={() => capabilities?.dashboardUrl && window.open(capabilities.dashboardUrl, '_blank')}
+            onCaseSelect={handleCaseSelect}
             onNewChat={handleNewChatFromNav}
-            onRetryFailedOperation={handleUserRetry}
-            onDismissFailedOperation={handleDismissFailedOperation}
-            getErrorMessageForOperation={getErrorMessageForOperation}
-            setActiveCase={setActiveCase}
+            onLogout={handleLogout}
+            onCaseTitleChange={async (caseId: string, newTitle: string) => {
+              setConversationTitles(prev => ({ ...prev, [caseId]: newTitle }));
+              setTitleSources(prev => ({ ...prev, [caseId]: 'user' }));
+              try {
+                await updateCaseTitle(caseId, newTitle);
+                log.info('[SidePanelApp] Case title updated successfully', { caseId, newTitle });
+              } catch (error) {
+                log.error('[SidePanelApp] Failed to update case title', { caseId, newTitle, error });
+                showError({
+                  title: 'Failed to update title',
+                  message: error instanceof Error ? error.message : 'Unknown error',
+                  type: 'error'
+                });
+                setConversationTitles(prev => {
+                  const { [caseId]: _, ...rest } = prev;
+                  return rest;
+                });
+              }
+            }}
+            onPinToggle={(id) => {
+              const newSet = new Set(pinnedCases);
+              if (newSet.has(id)) newSet.delete(id);
+              else newSet.add(id);
+              setPinnedCases(newSet);
+            }}
+            onAfterDelete={() => { }}
+            onCasesLoaded={() => { }}
           />
+        </ErrorBoundary>
+
+        {/* Content — isolated boundary with "Return to Dashboard" recovery */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <ErrorBoundary
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-6">
+                <div className="text-center max-w-sm">
+                  <h3 className="text-sm font-medium text-fm-critical mb-2">Chat Error</h3>
+                  <p className="text-sm text-fm-text-tertiary mb-4">
+                    Something went wrong loading this case.
+                  </p>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      onClick={() => { setActiveCaseId(null); setActiveCase(null); }}
+                      className="px-3 py-2 bg-fm-accent text-white text-xs rounded hover:opacity-90"
+                    >
+                      Return to Dashboard
+                    </button>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="px-3 py-2 bg-fm-surface text-fm-text-primary text-xs rounded hover:bg-fm-elevated border border-fm-border"
+                    >
+                      Reload Extension
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+            onError={(error) => log.error('Content area boundary caught error', { error })}
+          >
+            <ContentArea
+              activeTab={activeTab}
+              activeCaseId={activeCaseId || undefined}
+              activeCase={activeCase}
+              conversations={conversations}
+              loading={submitting || isUploading}
+              submitting={submitting}
+              sessionId={sessionId}
+              hasUnsavedNewChat={hasUnsavedNewChat}
+              investigationProgress={investigationProgress}
+              caseEvidence={caseEvidence}
+              failedOperations={getFailedOperationsForUser()}
+              onQuerySubmit={handleQuerySubmit}
+              onTurnSubmit={handleTurnSubmit}
+              onDocumentView={handleDocumentView}
+              onGenerateReports={() => setShowReportDialog(true)}
+              onNewChat={handleNewChatFromNav}
+              onRetryFailedOperation={handleUserRetry}
+              onDismissFailedOperation={handleDismissFailedOperation}
+              getErrorMessageForOperation={getErrorMessageForOperation}
+              setActiveCase={setActiveCase}
+            />
+          </ErrorBoundary>
         </div>
       </div>
 
-      <ToastContainer
-        activeErrors={getErrorsByType('toast')}
-        onDismiss={dismissError}
-        onRetry={async () => { }}
-        position="top-right"
-      />
-
-      <ErrorModal
-        activeError={getErrorsByType('modal')[0] || null}
-        onAction={async (errorId) => {
-          const modalError = getErrorsByType('modal').find(e => e.id === errorId);
-          if (modalError?.error.category === 'authentication') {
-            await handleLogout();
-          }
-          dismissError(errorId);
-        }}
-      />
-
-      <DocumentDetailsModal
-        document={viewingDocument}
-        isOpen={isDocumentModalOpen}
-        onClose={() => { setIsDocumentModalOpen(false); setViewingDocument(null); }}
-        onEdit={() => { setIsDocumentModalOpen(false); setViewingDocument(null); }}
-      />
-
-      <ConflictResolutionModal
-        isOpen={conflictResolutionData.isOpen}
-        conflict={conflictResolutionData.conflict!}
-        localData={conflictResolutionData.localData}
-        remoteData={conflictResolutionData.remoteData}
-        mergeResult={conflictResolutionData.mergeResult}
-        availableBackups={conflictResolutionData.conflict ? conflictResolver.getBackupsForCase(conflictResolutionData.conflict.affectedData.caseId || '') : []}
-        onResolve={(res) => {
-          if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback(res);
-          setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
-        }}
-        onCancel={() => {
-          if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback({ choice: 'keep_local' });
-          setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
-        }}
-      />
-
-      {showReportDialog && activeCaseId && (
-        <ReportGenerationDialog
-          caseId={activeCaseId}
-          caseTitle={activeCase?.title || 'Untitled Case'}
-          isOpen={showReportDialog}
-          onClose={() => setShowReportDialog(false)}
-          onReportsGenerated={() => setShowReportDialog(false)}
+      {/* Modals — isolated boundary (fail silently, main UI stays functional) */}
+      <ErrorBoundary
+        fallback={null}
+        onError={(error) => log.error('Modal boundary caught error', { error })}
+      >
+        <ToastContainer
+          activeErrors={getErrorsByType('toast')}
+          onDismiss={dismissError}
+          onRetry={async () => { }}
+          position="top-right"
         />
-      )}
+
+        <ErrorModal
+          activeError={getErrorsByType('modal')[0] || null}
+          onAction={async (errorId) => {
+            const modalError = getErrorsByType('modal').find(e => e.id === errorId);
+            if (modalError?.error.category === 'authentication') {
+              await handleLogout();
+            }
+            dismissError(errorId);
+          }}
+        />
+
+        <DocumentDetailsModal
+          document={viewingDocument}
+          isOpen={isDocumentModalOpen}
+          onClose={() => { setIsDocumentModalOpen(false); setViewingDocument(null); }}
+          onEdit={() => { setIsDocumentModalOpen(false); setViewingDocument(null); }}
+        />
+
+        <ConflictResolutionModal
+          isOpen={conflictResolutionData.isOpen}
+          conflict={conflictResolutionData.conflict!}
+          localData={conflictResolutionData.localData}
+          remoteData={conflictResolutionData.remoteData}
+          mergeResult={conflictResolutionData.mergeResult}
+          availableBackups={conflictResolutionData.conflict ? conflictResolver.getBackupsForCase(conflictResolutionData.conflict.affectedData.caseId || '') : []}
+          onResolve={(res) => {
+            if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback(res);
+            setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
+          }}
+          onCancel={() => {
+            if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback({ choice: 'keep_local' });
+            setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
+          }}
+        />
+
+        {showReportDialog && activeCaseId && (
+          <ReportGenerationDialog
+            caseId={activeCaseId}
+            caseTitle={activeCase?.title || 'Untitled Case'}
+            isOpen={showReportDialog}
+            onClose={() => setShowReportDialog(false)}
+            onReportsGenerated={() => setShowReportDialog(false)}
+          />
+        )}
+      </ErrorBoundary>
     </ErrorBoundary>
   );
 }

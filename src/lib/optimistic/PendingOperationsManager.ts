@@ -26,15 +26,19 @@ export class PendingOperationsManager {
   private cleanupTimer?: NodeJS.Timeout;
 
   constructor(private cleanupIntervalMs: number = 300000) { // 5 minutes default
-    this.startCleanupTimer();
+    // Elastic: timer starts on first add(), not in constructor
   }
 
   /**
    * Add a new pending operation
    */
   add(operation: PendingOperation): void {
+    const wasEmpty = this.operations.size === 0;
     log.debug('Adding operation', { id: operation.id, type: operation.type });
     this.operations.set(operation.id, operation);
+    if (wasEmpty) {
+      this.startCleanupTimer();
+    }
   }
 
   /**
@@ -152,6 +156,11 @@ export class PendingOperationsManager {
     if (toRemove.length > 0) {
       log.info('Cleaned up old operations', { count: toRemove.length });
     }
+
+    // Elastic: stop timer when no operations remain
+    if (this.operations.size === 0) {
+      this.stopCleanupTimer();
+    }
   }
 
   /**
@@ -236,12 +245,19 @@ export class PendingOperationsManager {
   }
 
   /**
-   * Stop automatic cleanup timer
+   * Stop the cleanup timer (elastic: called when operations map becomes empty)
    */
-  destroy(): void {
+  private stopCleanupTimer(): void {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = undefined;
     }
+  }
+
+  /**
+   * Stop automatic cleanup timer and clear all operations
+   */
+  destroy(): void {
+    this.stopCleanupTimer();
   }
 }

@@ -69,10 +69,25 @@ export interface CasesSlice {
   resetCasesState: () => void;
 }
 
-// Debounce helper for title sync (outside store to persist across renders)
-const debouncedTitleSync = debounce(async (caseId: string, title: string, operationId: string, syncFn: any) => {
-  await syncFn(caseId, title, operationId);
-}, { wait: 1000, maxWait: 3000 });
+// Per-case debounce map for title sync (prevents cross-case cancellation)
+const titleSyncDebouncers = new Map<string, ReturnType<typeof debounce>>();
+
+function getDebouncedTitleSync(caseId: string) {
+  if (!titleSyncDebouncers.has(caseId)) {
+    titleSyncDebouncers.set(
+      caseId,
+      debounce(async (caseId: string, title: string, operationId: string, syncFn: any) => {
+        await syncFn(caseId, title, operationId);
+      }, { wait: 1000, maxWait: 3000 })
+    );
+  }
+  return titleSyncDebouncers.get(caseId)!;
+}
+
+function flushAllTitleSyncs() {
+  titleSyncDebouncers.forEach(debouncedFn => debouncedFn.flush());
+  titleSyncDebouncers.clear();
+}
 
 export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
   // Initial State
@@ -388,8 +403,8 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       pendingOperations: { ...state.pendingOperations, [operationId]: operation }
     }));
 
-    // 3. Debounced Sync
-    debouncedTitleSync(caseId, newTitle, operationId, get().syncTitleToBackend);
+    // 3. Per-case Debounced Sync (independent timers per case)
+    getDebouncedTitleSync(caseId)(caseId, newTitle, operationId, get().syncTitleToBackend);
   },
 
   syncTitleToBackend: async (caseId: string, title: string, operationId: string) => {
@@ -538,6 +553,9 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
   },
 
   resetCasesState: () => {
+    // Flush all pending title syncs before clearing state (ensures data is saved, not lost)
+    flushAllTitleSyncs();
+
     set({
       conversations: {},
       conversationTitles: {},
