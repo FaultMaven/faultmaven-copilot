@@ -6,7 +6,6 @@ import {
   EvidenceRequest,
   InvestigationMode,
   CaseStatus,
-  InvestigationProgress,
   CommandSuggestion,
   CommandValidation,
   ScopeAssessment,
@@ -18,10 +17,6 @@ import {
   IntentType
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
-import { InvestigationProgressIndicator } from "./InvestigationProgressIndicator";
-import { HypothesisTracker } from "./HypothesisTracker";
-import { EvidenceProgressBar } from "./EvidenceProgressBar";
-import { AnomalyAlert } from "./AnomalyAlert";
 import { SuggestedCommands } from "./SuggestedCommands";
 import { ClarifyingQuestions } from "./ClarifyingQuestions";
 import { CommandValidationDisplay } from "./CommandValidationDisplay";
@@ -101,9 +96,6 @@ interface ChatWindowProps {
   isNewUnsavedChat?: boolean;
   className?: string;
 
-  // OODA Framework v3.2.0
-  investigationProgress?: InvestigationProgress | null;
-
   // Phase 3 Week 7: Evidence Management
   evidence?: UploadedData[];
 
@@ -123,7 +115,6 @@ const ChatWindowComponent = function ChatWindow({
   sessionId,
   isNewUnsavedChat = false,
   className = '',
-  investigationProgress,
   evidence = [],
   onQuerySubmit,
   onDocumentView,
@@ -314,21 +305,6 @@ const ChatWindowComponent = function ChatWindow({
           onStatusChangeRequest={handleStatusChangeRequest}
           onScrollToTurn={scrollToTurn}
         />
-      )}
-
-      {/* OODA Investigation Progress */}
-      {investigationProgress && (
-        <div className="ooda-investigation-panel px-2 py-1">
-          <InvestigationProgressIndicator progress={investigationProgress} />
-          <HypothesisTracker hypotheses={investigationProgress.hypotheses} />
-          <EvidenceProgressBar
-            collected={investigationProgress.evidence_collected}
-            requested={investigationProgress.evidence_requested}
-          />
-          {investigationProgress.anomaly_frame && (
-            <AnomalyAlert anomaly={investigationProgress.anomaly_frame} />
-          )}
-        </div>
       )}
 
       {/* Evidence Panel */}

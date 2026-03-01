@@ -16,7 +16,7 @@ import { ChatInterface } from '../components/ChatInterface';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('ContentArea');
-import type { UserCase, InvestigationProgress, UploadedData } from '../../../lib/api';
+import type { UserCase, UploadedData } from '../../../lib/api';
 import type { OptimisticConversationItem } from '../../../lib/optimistic';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 
@@ -32,7 +32,6 @@ export interface ContentAreaProps {
   submitting: boolean;
   sessionId: string | null;
   hasUnsavedNewChat: boolean;
-  investigationProgress: Record<string, InvestigationProgress>;
 
   // Evidence state (Phase 3 Week 7)
   caseEvidence: Record<string, UploadedData[]>;
@@ -67,7 +66,6 @@ const ContentAreaComponent = ({
   submitting,
   sessionId,
   hasUnsavedNewChat,
-  investigationProgress,
   caseEvidence,
   failedOperations,
   onQuerySubmit,
@@ -144,7 +142,6 @@ const ContentAreaComponent = ({
             onRetryFailedOperation={onRetryFailedOperation}
             onDismissFailedOperation={onDismissFailedOperation}
             getErrorMessageForOperation={getErrorMessageForOperation}
-            investigationProgress={investigationProgress}
             caseEvidence={caseEvidence}
             onDocumentView={onDocumentView}
             onGenerateReports={onGenerateReports}
@@ -195,15 +192,6 @@ const arePropsEqual = (prevProps: ContentAreaProps, nextProps: ContentAreaProps)
 
   // Re-render on active case object changes (deep comparison by case_id)
   if (prevProps.activeCase?.case_id !== nextProps.activeCase?.case_id) return false;
-
-  // Re-render on investigation progress changes for active case
-  if (prevProps.activeCaseId && nextProps.activeCaseId) {
-    const prevProgress = prevProps.investigationProgress[prevProps.activeCaseId];
-    const nextProgress = nextProps.investigationProgress[nextProps.activeCaseId];
-    if (prevProgress?.phase !== nextProgress?.phase) return false;
-    if (prevProgress?.ooda_iteration !== nextProgress?.ooda_iteration) return false;
-    if (prevProgress?.case_status !== nextProgress?.case_status) return false;
-  }
 
   // Phase 3 Week 7: Re-render on evidence changes for active case
   if (prevProps.activeCaseId && nextProps.activeCaseId) {

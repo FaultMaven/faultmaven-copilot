@@ -17,10 +17,11 @@ interface InvestigatingDetailsProps {
 export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
   data,
 }) => {
-  // Calculate progress percentage
-  const progressPercent = Math.round(
-    (data.progress.milestones_completed / data.progress.total_milestones) * 100
-  );
+  // Calculate progress from completed indicators + stage gates
+  const completedCount = (data.progress.completed_indicators?.length ?? 0) +
+    (data.progress.completed_stage_gates?.length ?? 0);
+  const totalMilestones = 10; // 6 indicators + 4 stage gates
+  const progressPercent = Math.round((completedCount / totalMilestones) * 100);
 
   // Format date/time
   const formatDate = (dateStr: string) => {
@@ -61,7 +62,7 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
       <div>
         <div className="flex items-center justify-between mb-1">
           <span className="font-medium text-fm-text-primary">
-            🎯 Investigation Progress: {data.progress.current_stage.replace(/_/g, ' ')} ({data.progress.milestones_completed}/{data.progress.total_milestones})
+            🎯 Investigation Progress: {data.progress.current_stage.replace(/_/g, ' ')} ({completedCount}/{totalMilestones} milestones)
           </span>
         </div>
         <div className="flex items-center gap-2">

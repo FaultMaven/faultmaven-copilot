@@ -428,6 +428,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/snapshot/{turn_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get case snapshot at specific turn
+         * @description Get the full state of a case at a specific turn number.
+         *
+         *     This is a read-only operation that reconstructs the case from the checkpoint.
+         */
+        get: operations["get_case_snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diff two case states
+         * @description Compute the semantic difference between two turns of a case.
+         *
+         *     Returns a dictionary describing added, removed, and modified fields.
+         */
+        get: operations["diff_case_turns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}": {
         parameters: {
             query?: never;
@@ -488,7 +532,7 @@ export interface paths {
          *
          *     Default Filtering Behavior:
          *     - INCLUDES empty cases (current_turn == 0) - newly created cases are visible
-         *     - EXCLUDES archived/closed cases unless include_archived=true
+         *     - INCLUDES closed/resolved cases (frontend categorizes by status)
          *     - Use include_empty=false to hide cases with no conversation yet
          *     - Use status filter to further refine results
          */
@@ -690,6 +734,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Turn
+         * @description Submit a turn to a case investigation.
+         *
+         *     A turn consists of an optional query and/or optional attachments.
+         *     Attachments are preprocessed through Tier 0+1 before the LLM sees them.
+         *     If no query is provided with attachments, an implicit query is generated.
+         */
+        post: operations["submit_turn_api_v1_cases__case_id__turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/queries": {
         parameters: {
             query?: never;
@@ -697,29 +765,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Case Queries
-         * @description List queries for a specific case with pagination.
-         *
-         *     CRITICAL: Must return 200 [] for empty results, NOT 404
-         */
-        get: operations["list_case_queries_api_v1_cases__case_id__queries_get"];
+        get?: never;
         put?: never;
         /**
-         * Submit Case Query
-         * @description Submit user message to advance the investigation (milestone-based).
-         *
-         *     Processes the message through MilestoneEngine and returns investigation progress.
-         *     Each turn represents one user message and the agent's response.
-         *
-         *     Production features:
-         *     - Session validation
-         *     - Idempotency key support
-         *     - Query history tracking
-         *     - Correlation ID tracking
-         *     - Comprehensive error handling
+         * Submit Case Query Gone
+         * @description DELETED: Use POST /{case_id}/turns instead.
          */
-        post: operations["submit_case_query_api_v1_cases__case_id__queries_post"];
+        post: operations["submit_case_query_gone_api_v1_cases__case_id__queries_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -766,25 +818,10 @@ export interface paths {
         get: operations["list_case_data_api_v1_cases__case_id__data_get"];
         put?: never;
         /**
-         * Upload Case Data
-         * @description Upload data file to a specific case (case-scoped endpoint).
-         *
-         *     This endpoint follows the complete data submission pipeline:
-         *     1. Data preprocessing (extraction and sanitization)
-         *     2. Evidence creation
-         *     3. Hypothesis analysis
-         *     4. Agent response generation
-         *
-         *     The session_id is optional - if not provided, it will be derived from the case.
-         *
-         *     Returns:
-         *         DataUploadResponse with:
-         *         - file_id: Unique identifier for the uploaded file
-         *         - filename: Original filename
-         *         - preprocessing metadata (data_type, extraction_method, etc.)
-         *         - agent_response: AI analysis of the uploaded data
+         * Upload Case Data Gone
+         * @description DELETED: Use POST /{case_id}/turns with file attachments instead.
          */
-        post: operations["upload_case_data_api_v1_cases__case_id__data_post"];
+        post: operations["upload_case_data_gone_api_v1_cases__case_id__data_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2388,6 +2425,11 @@ export interface paths {
          *     - If `client_id` matches an expired session, returns 404/410 error (frontend creates new session)
          *     - If `client_id` is new or not provided, creates fresh session
          *
+         *     **User ID Resolution:**
+         *     - Priority 1: `user_id` query parameter (explicit override)
+         *     - Priority 2: Authenticated user from JWT token (prevents anonymous session creation)
+         *     - Priority 3: Auto-generated anonymous user (development/unauthenticated only)
+         *
          *     **Session Timeout:**
          *     - Sessions automatically expire after `timeout_minutes` of inactivity
          *     - Default timeout: 180 minutes (3 hours)
@@ -2401,6 +2443,7 @@ export interface paths {
          *     Args:
          *         request: Session creation parameters including optional client_id and timeout
          *         user_id: Optional user identifier (query param)
+         *         current_user: Optional authenticated user from JWT token
          *
          *     Returns:
          *         Session creation/resumption response with expiration information
@@ -3259,6 +3302,49 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActionAttempt
+         * @description Records a user's attempt to execute a ProposedAction.
+         *
+         *     When the user submits results after executing (or attempting to execute)
+         *     a proposed action, an ActionAttempt is created. Compliance detection
+         *     analyzes the attempt to determine if stage-gate milestones should be set.
+         */
+        ActionAttempt: {
+            /**
+             * Attempt Id
+             * @description Unique attempt identifier
+             */
+            attempt_id?: string;
+            /**
+             * Action Id
+             * @description ProposedAction this attempt relates to
+             */
+            action_id: string;
+            /**
+             * User Message
+             * @description The user's message containing attempt results
+             */
+            user_message: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             * @description When the attempt was submitted
+             */
+            submitted_at?: string;
+            /**
+             * Compliance Detected
+             * @description Whether the user appears to have executed the proposed action
+             * @default false
+             */
+            compliance_detected: boolean;
+            /**
+             * Compliance Confidence
+             * @description Confidence that user complied with the proposed action
+             * @default 0
+             */
+            compliance_confidence: number;
+        };
+        /**
          * AgentExecutionRequest
          * @description Request model for executing an AI agent.
          *
@@ -3318,48 +3404,20 @@ export interface components {
             tool_calls: components["schemas"]["ToolCallResponse"][];
         };
         /**
-         * AgentResponse
-         * @description The single, unified JSON payload returned from the backend (v3.1.0 - Evidence-Centric).
+         * AttachmentResult
+         * @description Result of preprocessing a single attachment.
          */
-        AgentResponse: {
-            /**
-             * Schema Version
-             * @default 3.1.0
-             */
-            schema_version: string;
-            /** Content */
-            content: string;
-            response_type: components["schemas"]["ResponseType"];
-            /** Session Id */
-            session_id: string;
-            /** Case Id */
-            case_id?: string | null;
-            /** Likelihood */
-            likelihood?: number | null;
-            /** Sources */
-            sources?: components["schemas"]["Source"][];
-            /** Next Action Hint */
-            next_action_hint?: string | null;
-            view_state?: components["schemas"]["ViewState"] | null;
-            /** Plan */
-            plan?: components["schemas"]["PlanStep"][] | null;
-            /**
-             * Evidence Requests
-             * @description Active evidence requests for this turn
-             */
-            evidence_requests?: components["schemas"]["EvidenceRequestToAdd"][];
-            /**
-             * @description Current investigation approach (speed vs depth)
-             * @default active_incident
-             */
-            investigation_mode: components["schemas"]["InvestigationStrategy"];
-            /**
-             * @description Current case investigation state
-             * @default inquiry
-             */
-            case_status: components["schemas"]["CaseStatus"];
-        } & {
-            [key: string]: unknown;
+        AttachmentResult: {
+            /** Evidence Id */
+            evidence_id: string;
+            /** Filename */
+            filename: string;
+            /** Data Type */
+            data_type: string;
+            /** File Size */
+            file_size: number;
+            /** Processing Status */
+            processing_status: string;
         };
         /**
          * AuthConfigResponse
@@ -3488,17 +3546,21 @@ export interface components {
              */
             role: string;
         };
-        /** Body_upload_case_data_api_v1_cases__case_id__data_post */
-        Body_upload_case_data_api_v1_cases__case_id__data_post: {
+        /** Body_submit_turn_api_v1_cases__case_id__turns_post */
+        Body_submit_turn_api_v1_cases__case_id__turns_post: {
+            /** Query */
+            query?: string | null;
             /**
-             * File
-             * Format: binary
+             * Files
+             * @default []
              */
-            file: string;
-            /** Session Id */
-            session_id?: string | null;
-            /** Description */
-            description?: string | null;
+            files: string[];
+            /** Pasted Content */
+            pasted_content?: string | null;
+            /** Intent Type */
+            intent_type?: string | null;
+            /** Intent Data */
+            intent_data?: string | null;
         };
         /** Body_upload_document_api_v1_knowledge_documents_post */
         Body_upload_document_api_v1_knowledge_documents_post: {
@@ -3536,38 +3598,208 @@ export interface components {
         };
         /**
          * Case
-         * @description Represents a troubleshooting case.
+         * @description Root case entity.
+         *     Represents one complete troubleshooting investigation.
          */
         Case: {
-            /** Case Id */
-            case_id: string;
-            /** Title */
+            /**
+             * Case Id
+             * @description Unique case identifier
+             */
+            case_id?: string;
+            /**
+             * User Id
+             * @description User who created the case
+             */
+            user_id: string;
+            /**
+             * Organization Id
+             * @description Organization this case belongs to
+             */
+            organization_id: string;
+            /**
+             * Title
+             * @description Short case title for list views and headers (e.g., 'API Performance Issue')
+             */
             title: string;
-            /** Description */
-            description?: string | null;
             /**
-             * Status
+             * Description
+             * @description Confirmed problem description - canonical, user-facing, displayed prominently in UI.
+             *
+             *             Lifecycle:
+             *             1. Empty initially during INQUIRY (while agent formalizes problem)
+             *             2. Set when user confirms proposed_problem_statement and decides to investigate
+             *             3. Immutable after status becomes INVESTIGATING (provides stable reference)
+             *             4. Used for UI display, search, and documentation
+             *
+             *             Example: "API experiencing slowness with 30% of requests taking >5s response time
+             *                       across all US regions, started 2 hours ago coinciding with v2.1.3 deployment"
+             * @default
+             */
+            description: string;
+            /**
+             * @description Current lifecycle status
              * @default inquiry
-             * @enum {string}
              */
-            status: "inquiry" | "investigating" | "resolved" | "closed";
+            status: components["schemas"]["CaseStatus"];
             /**
-             * Priority
-             * @default medium
-             * @enum {string}
+             * Status History
+             * @description Complete history of status changes
              */
-            priority: "low" | "medium" | "high" | "critical";
-            /** Created At */
-            created_at?: string;
-            /** Updated At */
-            updated_at?: string;
+            status_history?: components["schemas"]["CaseStatusTransition"][];
+            /**
+             * Closure Reason
+             * @description Why case was closed: resolved | abandoned | escalated | inquiry_only | duplicate | other
+             */
+            closure_reason?: string | null;
+            /**
+             * Pending Transition
+             * @description Pending status transition awaiting user confirmation (User-Agent Handshake pattern).
+             *
+             *             Used for terminal transitions that require explicit user confirmation:
+             *             - to_status: Target status (str)
+             *             - reason: Why transition is being proposed (str)
+             *             - summary: Agent's explanation to user (str)
+             *             - evidence_ids: Supporting evidence (List[str])
+             *             - proposed_at: When transition was proposed (str ISO datetime)
+             *             - proposed_by: Who proposed it ("agent" | "user" | user_id)
+             *
+             *             Cleared after transition executes or is cancelled.
+             */
+            pending_transition?: Record<string, never> | null;
+            /** @description Milestone-based progress tracking */
+            progress?: components["schemas"]["InvestigationProgress"];
+            /**
+             * Current Turn
+             * @description Current turn number (increments with each user-agent exchange)
+             * @default 0
+             */
+            current_turn: number;
+            /**
+             * Turns Without Progress
+             * @description Consecutive turns with no milestone advancement (for stuck detection)
+             * @default 0
+             */
+            turns_without_progress: number;
+            /**
+             * Turn History
+             * @description Complete history of all turns
+             */
+            turn_history?: components["schemas"]["TurnProgress"][];
+            /**
+             * Messages
+             * @description Complete conversation history (user queries + agent responses).
+             *
+             *             Per case-storage-design.md Section 4.7, each message contains:
+             *             - message_id: str - Unique identifier
+             *             - case_id: str - Case this message belongs to
+             *             - turn_number: int - Which turn this message belongs to
+             *             - role: str - "user" | "assistant" | "system"
+             *             - content: str - The actual message text
+             *             - created_at: datetime - When message was created (ISO format)
+             *             - token_count: Optional[int] - Number of tokens in content
+             *             - metadata: dict - Additional data (sources, tools used, etc.)
+             *
+             *             NOTE: Does NOT contain session_id (per case-and-session-concepts.md)
+             *             Sessions provide authentication only, not message ownership.
+             *
+             *             Relationship to turn_history:
+             *             - messages[i].turn_number references turn_history[j].turn_number
+             *             - Provides the "what was said" to complement turn_history's "what happened"
+             */
+            messages?: Record<string, never>[];
             /**
              * Message Count
+             * @description Total number of messages (user + agent combined)
              * @default 0
              */
             message_count: number;
-            /** Owner Id */
-            owner_id: string;
+            /** @description Selected investigation path (MITIGATION vs ROOT_CAUSE) */
+            path_selection?: components["schemas"]["PathSelection"] | null;
+            /**
+             * @description Investigation approach: ACTIVE_INCIDENT (speed) vs POST_MORTEM (thoroughness)
+             * @default post_mortem
+             */
+            investigation_strategy: components["schemas"]["InvestigationStrategy"];
+            /** @description Pre-investigation INQUIRY status data */
+            inquiry?: components["schemas"]["InquiryData"];
+            /** @description Consolidated verification data (symptom, scope, timeline, changes) */
+            problem_verification?: components["schemas"]["ProblemVerification"] | null;
+            /**
+             * Uploaded Files
+             * @description All files uploaded to this case (raw file metadata).
+             *
+             *             Files can be uploaded at ANY phase (INQUIRY or INVESTIGATING).
+             *             Evidence is DERIVED from uploaded files after analysis during INVESTIGATING phase.
+             *
+             *             Difference from evidence:
+             *             - uploaded_files: Raw file metadata (file_id, filename, size, upload time)
+             *             - evidence: Investigation data linked to hypotheses (only in INVESTIGATING phase)
+             */
+            uploaded_files?: components["schemas"]["UploadedFile"][];
+            /**
+             * Evidence
+             * @description All evidence collected during investigation
+             */
+            evidence?: components["schemas"]["Evidence"][];
+            /**
+             * Hypotheses
+             * @description Generated hypotheses (key = hypothesis_id)
+             */
+            hypotheses?: {
+                [key: string]: components["schemas"]["Hypothesis"];
+            };
+            /**
+             * Solutions
+             * @description Proposed and applied solutions
+             */
+            solutions?: components["schemas"]["Solution"][];
+            /**
+             * Proposed Actions
+             * @description Actions proposed by agent for user to execute (evidence-driven framework)
+             */
+            proposed_actions?: components["schemas"]["ProposedAction"][];
+            /**
+             * Action Attempts
+             * @description User attempts to execute proposed actions (compliance tracking)
+             */
+            action_attempts?: components["schemas"]["ActionAttempt"][];
+            /** @description Agent current best understanding (updated iteratively) */
+            working_conclusion?: components["schemas"]["WorkingConclusion"] | null;
+            /** @description Final root cause determination */
+            root_cause_conclusion?: components["schemas"]["RootCauseConclusion"] | null;
+            /** @description Escalated to human expert */
+            escalation_state?: components["schemas"]["EscalationState"] | null;
+            /** @description Generated documentation and lessons learned */
+            documentation?: components["schemas"]["DocumentationData"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description When case was created
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Last modification timestamp
+             */
+            updated_at?: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             * @description Most recent user/agent interaction (for 'updated Xm ago' display)
+             */
+            last_activity_at?: string;
+            /**
+             * Resolved At
+             * @description When case reached RESOLVED status
+             */
+            resolved_at?: string | null;
+            /**
+             * Closed At
+             * @description When case reached terminal state (RESOLVED or CLOSED)
+             */
+            closed_at?: string | null;
         };
         /**
          * CaseCreateRequest
@@ -3645,8 +3877,6 @@ export interface components {
             milestones_completed: string[];
             /** Pending Milestones */
             pending_milestones: string[];
-            /** Completion Percentage */
-            completion_percentage: number;
             /** Evidence Count */
             evidence_count: number;
             /** Hypothesis Count */
@@ -3661,6 +3891,11 @@ export interface components {
             degraded_mode_active: boolean;
             /** Escalated */
             escalated: boolean;
+            /**
+             * Valid Next States
+             * @description Allowed status transitions from current state for user-initiated changes
+             */
+            valid_next_states?: string[];
         };
         /**
          * CaseListResponse
@@ -3712,43 +3947,6 @@ export interface components {
             debug_info?: components["schemas"]["MessageRetrievalDebugInfo"] | null;
         };
         /**
-         * CaseQueryRequest
-         * @description Request to submit a query to a case investigation.
-         *
-         *     Used by POST /cases/{case_id}/queries endpoint.
-         */
-        CaseQueryRequest: {
-            /**
-             * Message
-             * @description User message
-             */
-            message: string;
-            /**
-             * Attachments
-             * @description File attachments (file_id, filename, data_type, size, summary, s3_uri)
-             */
-            attachments?: Record<string, never>[] | null;
-        };
-        /**
-         * CaseQueryResponse
-         * @description Response for case query submission.
-         *
-         *     Returned by POST /cases/{case_id}/queries endpoint.
-         */
-        CaseQueryResponse: {
-            /** Agent Response */
-            agent_response: string;
-            /** Turn Number */
-            turn_number: number;
-            /** Milestones Completed */
-            milestones_completed: string[];
-            case_status: components["schemas"]["CaseStatus"];
-            /** Progress Made */
-            progress_made: boolean;
-            /** Is Stuck */
-            is_stuck: boolean;
-        };
-        /**
          * CaseReport
          * @description Generated case documentation report (DR-005).
          *     Supports DUAL runbook sources:
@@ -3783,6 +3981,7 @@ export interface components {
              * @description Report format
              * @default markdown
              * @constant
+             * @enum {string}
              */
             format: "markdown";
             /** @description Generation status */
@@ -3866,6 +4065,33 @@ export interface components {
          */
         CaseStatus: "inquiry" | "investigating" | "resolved" | "closed";
         /**
+         * CaseStatusTransition
+         * @description Record of one status change.
+         *     Provides audit trail for case lifecycle.
+         */
+        CaseStatusTransition: {
+            /** @description Status before transition */
+            from_status: components["schemas"]["CaseStatus"];
+            /** @description Status after transition */
+            to_status: components["schemas"]["CaseStatus"];
+            /**
+             * Triggered At
+             * Format: date-time
+             * @description When transition occurred
+             */
+            triggered_at?: string;
+            /**
+             * Triggered By
+             * @description Who triggered: user_id or 'system' for automatic transitions
+             */
+            triggered_by: string;
+            /**
+             * Reason
+             * @description Human-readable reason for transition
+             */
+            reason: string;
+        };
+        /**
          * CaseSummary
          * @description Minimal case information for list views.
          */
@@ -3915,6 +4141,11 @@ export interface components {
             is_stuck: boolean;
             /** Is Terminal */
             is_terminal: boolean;
+            /**
+             * Valid Next States
+             * @description Allowed status transitions from current state for user-initiated changes
+             */
+            valid_next_states?: string[];
         };
         /**
          * CaseUIResponse_Inquiry
@@ -3961,6 +4192,11 @@ export interface components {
              * @description Total files uploaded
              */
             uploaded_files_count: number;
+            /**
+             * Valid Next States
+             * @description Allowed status transitions from current state for user-initiated changes
+             */
+            valid_next_states?: string[];
             /** @description Nested inquiry phase data */
             inquiry: components["schemas"]["InquiryResponseData"];
         };
@@ -3988,6 +4224,11 @@ export interface components {
              */
             title: string;
             /**
+             * Current Turn
+             * @description Current turn counter
+             */
+            current_turn: number;
+            /**
              * Created At
              * Format: date-time
              * @description When case was created
@@ -3999,6 +4240,11 @@ export interface components {
              * @description Last update timestamp
              */
             updated_at: string;
+            /**
+             * Valid Next States
+             * @description Allowed status transitions from current state for user-initiated changes
+             */
+            valid_next_states?: string[];
             /** @description Agent's current understanding of the problem */
             working_conclusion?: components["schemas"]["WorkingConclusionSummary"] | null;
             /** @description Milestone-based progress tracking */
@@ -4025,13 +4271,13 @@ export interface components {
             agent_status: string;
             /**
              * Is Stuck
-             * @description Whether investigation is stuck (no progress for 3+ turns)
+             * @description Whether investigation is stuck (no progress for 5+ turns)
              * @default false
              */
             is_stuck: boolean;
             /**
              * Degraded Mode
-             * @description Whether investigation is in degraded mode
+             * @description Deprecated: always False. DegradedMode has been removed.
              * @default false
              */
             degraded_mode: boolean;
@@ -4054,15 +4300,20 @@ export interface components {
              */
             case_id: string;
             /**
-             * @description Always 'resolved' for this response type (enum property replaced by openapi-typescript)
+             * @description Case terminal status: 'resolved' (with solution) or 'closed' (without investigation) (enum property replaced by openapi-typescript)
              * @enum {string}
              */
-            status: "resolved";
+            status: "resolved" | "closed";
             /**
              * Title
              * @description Case title
              */
             title: string;
+            /**
+             * Current Turn
+             * @description Current turn counter
+             */
+            current_turn: number;
             /**
              * Created At
              * Format: date-time
@@ -4081,6 +4332,11 @@ export interface components {
              * @description When case was resolved
              */
             resolved_at: string;
+            /**
+             * Valid Next States
+             * @description Allowed status transitions from current state for user-initiated changes
+             */
+            valid_next_states?: string[];
             /** @description What caused the problem */
             root_cause: components["schemas"]["RootCauseSummary"];
             /** @description Solution that fixed the problem */
@@ -4114,58 +4370,74 @@ export interface components {
             status?: components["schemas"]["CaseStatus"] | null;
         };
         /**
-         * DataType
-         * @description 12 purpose-driven data classifications for preprocessing pipeline.
+         * Change
+         * @description Recent change that may be relevant to the problem.
+         */
+        Change: {
+            /**
+             * Description
+             * @description What changed
+             */
+            description: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             * @description When the change occurred
+             */
+            occurred_at: string;
+            /**
+             * Change Type
+             * @description Type of change: deployment | config | scaling | code | infrastructure | data | other
+             */
+            change_type: string;
+            /**
+             * Changed By
+             * @description Who made the change (user, system, team)
+             */
+            changed_by?: string | null;
+            /**
+             * Details
+             * @description Additional structured details (version numbers, config values, etc.)
+             */
+            details?: Record<string, never> | null;
+        };
+        /**
+         * ConfidenceLevel
+         * @description Categorical confidence levels.
+         *     Maps to numeric confidence scores.
          * @enum {string}
          */
-        DataType: "logs_and_errors" | "unstructured_text" | "structured_config" | "metrics_and_performance" | "source_code" | "visual_evidence" | "trace_data" | "profiling_data" | "error_report" | "documentation" | "command_output" | "unanalyzable";
+        ConfidenceLevel: "speculation" | "probable" | "confident" | "verified";
         /**
-         * DataUploadResponse
-         * @description Response payload for data upload with AI analysis.
+         * Correlation
+         * @description Correlation between a change and the symptom.
          */
-        DataUploadResponse: {
+        Correlation: {
             /**
-             * Schema Version
-             * @default 3.1.0
-             * @constant
+             * Change Description
+             * @description Description of the change
              */
-            schema_version: "3.1.0";
-            /** Data Id */
-            data_id: string;
+            change_description: string;
             /**
-             * Case Id
-             * @description Actual case ID (may differ from optimistic ID in request)
+             * Timing Description
+             * @description Temporal relationship: '2 minutes before', 'immediately after', 'coincides with', etc.
              */
-            case_id: string;
+            timing_description: string;
             /**
-             * Filename
-             * @description Uploaded filename
+             * Confidence
+             * @description Confidence in this correlation (0.0 = weak, 1.0 = strong)
              */
-            filename: string;
+            confidence: number;
             /**
-             * File Size
-             * @description File size in bytes
+             * Correlation Type
+             * @description Type: temporal | causal | coincidental | other
              */
-            file_size: number;
+            correlation_type: string;
             /**
-             * Data Type
-             * @description Classified data type
+             * Evidence
+             * @description Evidence supporting this correlation
              */
-            data_type: string;
-            processing_status: components["schemas"]["ProcessingStatus"];
-            /**
-             * Uploaded At
-             * @description Upload timestamp (ISO 8601)
-             */
-            uploaded_at: string;
-            /** @description Conversational AI analysis of the uploaded data */
-            agent_response?: components["schemas"]["AgentResponse"] | null;
-            /**
-             * Classification
-             * @description Classification confidence and metadata
-             */
-            classification?: Record<string, never> | null;
-            view_state?: components["schemas"]["ViewState"] | null;
+            evidence?: string | null;
         };
         /**
          * DeleteResponse
@@ -4195,6 +4467,17 @@ export interface components {
             category: string;
             /** Collected At Turn */
             collected_at_turn: number;
+            /**
+             * Source Type
+             * @description LOGS | METRICS | TRACES | etc.
+             */
+            source_type: string;
+            /** Content Hash */
+            content_hash?: string | null;
+            /** Preprocessing Method */
+            preprocessing_method?: string | null;
+            /** Primary Purpose */
+            primary_purpose?: string | null;
             /** Related Hypothesis Ids */
             related_hypothesis_ids?: string[];
         };
@@ -4263,6 +4546,248 @@ export interface components {
             /** Relevance Score */
             relevance_score?: number | null;
         };
+        /**
+         * DocumentType
+         * @description Type of generated document
+         * @enum {string}
+         */
+        DocumentType: "incident_report" | "post_mortem" | "runbook" | "chat_summary" | "timeline" | "evidence_bundle" | "other";
+        /**
+         * DocumentationData
+         * @description Documentation generated when case closes.
+         *     Captures lessons learned and artifacts.
+         */
+        DocumentationData: {
+            /**
+             * Documents Generated
+             * @description All documents generated for this case
+             */
+            documents_generated?: components["schemas"]["GeneratedDocument"][];
+            /**
+             * Runbook Entry
+             * @description Runbook entry created from this case
+             */
+            runbook_entry?: string | null;
+            /**
+             * Post Mortem Id
+             * @description Link to post-mortem doc if created
+             */
+            post_mortem_id?: string | null;
+            /**
+             * Lessons Learned
+             * @description Key takeaways from investigation
+             */
+            lessons_learned?: string[];
+            /**
+             * What Went Well
+             * @description Positive aspects of investigation
+             */
+            what_went_well?: string[];
+            /**
+             * What Could Improve
+             * @description Areas for improvement
+             */
+            what_could_improve?: string[];
+            /**
+             * Preventive Measures
+             * @description How to prevent recurrence
+             */
+            preventive_measures?: string[];
+            /**
+             * Monitoring Recommendations
+             * @description Monitoring/alerts to add
+             */
+            monitoring_recommendations?: string[];
+            /**
+             * Generated At
+             * @description When documentation was generated
+             */
+            generated_at?: string | null;
+            /**
+             * Generated By
+             * @description Who generated: 'agent' or user_id
+             * @default agent
+             */
+            generated_by: string;
+        };
+        /**
+         * EscalationState
+         * @description Investigation escalated to human expert.
+         *     Tracks escalation lifecycle.
+         */
+        EscalationState: {
+            /** @description Why escalation was needed */
+            escalation_type: components["schemas"]["EscalationType"];
+            /**
+             * Reason
+             * @description Detailed explanation of escalation reason
+             */
+            reason: string;
+            /**
+             * Escalated To
+             * @description Team or person escalated to
+             */
+            escalated_to?: string | null;
+            /**
+             * Escalated At
+             * Format: date-time
+             * @description When escalation occurred
+             */
+            escalated_at?: string;
+            /**
+             * Context Summary
+             * @description Summary of investigation so far for escalation recipient
+             */
+            context_summary: string;
+            /**
+             * Key Findings
+             * @description Key findings to communicate to expert
+             */
+            key_findings?: string[];
+            /**
+             * Resolution
+             * @description How escalation was resolved
+             */
+            resolution?: string | null;
+            /**
+             * Resolved At
+             * @description When escalation was resolved
+             */
+            resolved_at?: string | null;
+        };
+        /**
+         * EscalationType
+         * @description Reason for escalation
+         * @enum {string}
+         */
+        EscalationType: "expertise_required" | "permissions_required" | "no_progress" | "user_request" | "critical_severity" | "other";
+        /**
+         * Evidence
+         * @description Evidence collected during investigation.
+         *     Categorized by purpose to drive milestone advancement.
+         *
+         *     NOTE: Evidence.category is SYSTEM-INFERRED, not LLM-specified!
+         *     System categorizes based on:
+         *     - Which milestones are incomplete (if symptom not verified -> SYMPTOM_EVIDENCE)
+         *     - Hypothesis evaluation results (if creates hypothesis_evidence links -> CAUSAL_EVIDENCE)
+         *     - Solution state (if solution proposed -> RESOLUTION_EVIDENCE)
+         *
+         *     LLM provides: summary, analysis
+         *     LLM evaluates: stance per hypothesis (creates hypothesis_evidence links)
+         *     System infers: category, advances_milestones
+         */
+        Evidence: {
+            /**
+             * Evidence Id
+             * @description Unique evidence identifier
+             */
+            evidence_id?: string;
+            /** @description System-inferred category: SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | RESOLUTION_EVIDENCE | OTHER */
+            category: components["schemas"]["EvidenceCategory"];
+            /**
+             * Primary Purpose
+             * @description What this evidence validates (milestone name or hypothesis ID)
+             */
+            primary_purpose: string;
+            /**
+             * Summary
+             * @description Brief summary of evidence content (<500 chars) for UI display and quick scanning
+             */
+            summary: string;
+            /**
+             * Preprocessed Content
+             * @description Extracted relevant diagnostic information from preprocessing pipeline.
+             *
+             *             This is what the agent uses for hypothesis evaluation and evidence analysis.
+             *             Contains only the high-signal portions extracted from raw files.
+             *
+             *             Examples:
+             *             - Logs: Crime scene extraction (approx. 200 lines around errors)
+             *             - Metrics: Anomaly detection results with statistical analysis
+             *             - Config: Parsed configuration with secrets redacted
+             *             - Code: AST-extracted functions and classes
+             *             - Text: LLM-generated summary
+             *             - Images: Vision model description
+             *
+             *             Size: Typically 5 to 50 KB (compressed from larger raw files).
+             *             Compression ratios: 200:1 for logs, 167:1 for metrics, 50:1 for code.
+             *
+             *             This field is REQUIRED for all evidence. Raw files remain in S3 for audit/deep dive.
+             */
+            preprocessed_content: string;
+            /**
+             * Content Ref
+             * @description S3 URI to original raw file (1-10MB) for audit, compliance, and deep dive analysis. May be None for user-typed evidence.
+             */
+            content_ref?: string | null;
+            /**
+             * Content Size Bytes
+             * @description Size of original raw file in bytes
+             */
+            content_size_bytes: number;
+            /**
+             * Preprocessing Method
+             * @description Preprocessing method used to extract preprocessed_content from raw file.
+             *             Examples: crime_scene_extraction, anomaly_detection, parse_and_sanitize,
+             *             ast_extraction, vision_analysis, single_shot_summary, map_reduce_summary
+             */
+            preprocessing_method: string;
+            /**
+             * Compression Ratio
+             * @description Ratio of preprocessed to raw content size (e.g., 0.005 = 200:1 compression)
+             */
+            compression_ratio?: number | null;
+            /**
+             * Analysis
+             * @description Agent analysis of this evidence and its significance to the investigation
+             */
+            analysis?: string | null;
+            /**
+             * Data Type
+             * @description Unified data type from preprocessing (logs, metrics, configuration, code, text, image). Maps to UnifiedDataType enum. None for legacy evidence.
+             */
+            data_type?: string | null;
+            /**
+             * Content Hash
+             * @description SHA-256 hash of raw file content for deduplication. Computed from raw bytes before any extraction. UNIQUE per (case_id, content_hash) — prevents duplicate uploads.
+             */
+            content_hash?: string | null;
+            /**
+             * Extraction Method
+             * @description Tier 1 extraction method used: structural_index, statistical_profile, parse_and_sanitize, ast_extraction, structure_extraction, metadata_extraction
+             */
+            extraction_method?: string | null;
+            /** @description Type of evidence source */
+            source_type: components["schemas"]["EvidenceSourceType"];
+            /** @description How evidence was provided: DOCUMENT, USER_TEXT, or SUBMITTED_DATA */
+            form: components["schemas"]["EvidenceForm"];
+            /**
+             * Source File Id
+             * @description ID of the UploadedFile this evidence was derived from (None if from user input)
+             */
+            source_file_id?: string | null;
+            /**
+             * Advances Milestones
+             * @description Which milestones this evidence helped complete
+             */
+            advances_milestones?: string[];
+            /**
+             * Collected At
+             * Format: date-time
+             * @description When evidence was collected
+             */
+            collected_at?: string;
+            /**
+             * Collected By
+             * @description Who collected: user_id or 'system' for automated collection
+             */
+            collected_by: string;
+            /**
+             * Collected At Turn
+             * @description Turn number when evidence was collected
+             */
+            collected_at_turn: number;
+        };
         /** EvidenceArtifact */
         EvidenceArtifact: {
             /** Evidence Id */
@@ -4319,6 +4844,19 @@ export interface components {
          */
         EvidenceArtifactType: "screenshot" | "log_file" | "network_trace" | "code_snippet" | "configuration" | "video_recording" | "har_file" | "crash_dump" | "heap_dump" | "thread_dump" | "metrics_export" | "other";
         /**
+         * EvidenceCategory
+         * @description Evidence classification by investigation purpose.
+         *
+         *     Post-redesign (2026-02-11):
+         *     - UNCLASSIFIED removed (single-phase evidence creation)
+         *     - OTHER renamed to CONTEXTUAL_EVIDENCE (clearer purpose)
+         *     - REJECTED added (track rejected submissions for deduplication)
+         *
+         *     Evidence is created AFTER LLM evaluation with complete classification.
+         * @enum {string}
+         */
+        EvidenceCategory: "symptom_evidence" | "causal_evidence" | "mitigation_evidence" | "solution_evidence" | "solution_evidence" | "contextual_evidence" | "rejected";
+        /**
          * EvidenceDetailsResponse
          * @description Detailed evidence information with source and hypothesis linkage.
          */
@@ -4354,6 +4892,17 @@ export interface components {
             analysis?: string | null;
         };
         /**
+         * EvidenceForm
+         * @description How evidence entered the system.
+         *
+         *     Form is determined by payload context:
+         *     - DOCUMENT: Turn had attachments (file upload or pasted data)
+         *     - USER_TEXT: Query-only turn, no attachments
+         *     - SUBMITTED_DATA: Evidence created by agent tools (search_file, deep_analyze_file)
+         * @enum {string}
+         */
+        EvidenceForm: "document" | "user_text" | "submitted_data";
+        /**
          * EvidenceLinkRequest
          * @description Request to link evidence to a case.
          */
@@ -4365,30 +4914,29 @@ export interface components {
             case_id: string;
         };
         /**
-         * EvidenceRequestToAdd
-         * @description Evidence request the LLM wants to make to the user.
+         * EvidenceSourceType
+         * @description Fundamental type of data source.
          *
-         *     Example: "Please upload logs from the API gateway between 10:00-10:30 UTC"
+         *     Post-redesign (2026-02-14): Updated to align with data-classification-strategy.md (6 types).
+         *
+         *     Migration mapping:
+         *     - log_file, command_output, trace_data, api_response, other → LOGS
+         *     - metrics_data, monitoring_alert → METRICS
+         *     - config_file, database_query → CONFIGURATION
+         *     - code_review → CODE
+         *     - user_report → TEXT
+         *     - screenshot → IMAGE
+         * @enum {string}
          */
-        EvidenceRequestToAdd: {
-            /**
-             * Request Text
-             * @description What evidence is requested
-             */
-            request_text: string;
-            /**
-             * Priority
-             * @description How critical this evidence is
-             * @default medium
-             * @enum {string}
-             */
-            priority: "high" | "medium" | "low";
-            /**
-             * Purpose
-             * @description Why this evidence is needed
-             */
-            purpose: string;
-        };
+        EvidenceSourceType: "logs" | "metrics" | "configuration" | "code" | "text" | "image";
+        /**
+         * EvidenceStance
+         * @description How evidence relates to a hypothesis.
+         *     Evaluated by LLM after evidence submission against ALL active hypotheses.
+         *     One evidence can have different stances for different hypotheses.
+         * @enum {string}
+         */
+        EvidenceStance: "supports" | "neutral" | "refutes";
         /**
          * EvidenceSummary
          * @description Summary of evidence for INVESTIGATING phase UI.
@@ -4422,16 +4970,43 @@ export interface components {
             relevance_score: number;
         };
         /**
-         * FileAnalysis
-         * @description Detailed AI analysis of file.
+         * GeneratedDocument
+         * @description A generated document artifact.
          */
-        FileAnalysis: {
-            /** Key Findings */
-            key_findings?: string[];
-            /** Timeline Events */
-            timeline_events?: components["schemas"]["TimelineEvent"][];
-            /** Relevance */
-            relevance?: string | null;
+        GeneratedDocument: {
+            /**
+             * Document Id
+             * @description Unique document identifier
+             */
+            document_id?: string;
+            /** @description Type of document */
+            document_type: components["schemas"]["DocumentType"];
+            /**
+             * Title
+             * @description Document title
+             */
+            title: string;
+            /**
+             * Content Ref
+             * @description Reference to document content (S3 URI, file path, etc.)
+             */
+            content_ref: string;
+            /**
+             * Generated At
+             * Format: date-time
+             * @description When document was generated
+             */
+            generated_at?: string;
+            /**
+             * Format
+             * @description Document format: markdown | pdf | html | json | other
+             */
+            format: string;
+            /**
+             * Size Bytes
+             * @description Document size in bytes
+             */
+            size_bytes?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4439,22 +5014,160 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
-         * HypothesisRelationship
-         * @description How a file relates to a hypothesis.
+         * Hypothesis
+         * @description Hypothesis for systematic root cause exploration.
+         *
+         *     Philosophy: Hypotheses are OPTIONAL. Agent may:
+         *     - Identify root cause directly from evidence (no hypotheses)
+         *     - OR generate hypotheses for systematic testing (when unclear)
          */
-        HypothesisRelationship: {
-            /** Hypothesis Id */
-            hypothesis_id: string;
-            /** Hypothesis Description */
-            hypothesis_description: string;
+        Hypothesis: {
             /**
-             * Stance
-             * @description strongly_supports | supports | neutral | contradicts | strongly_contradicts | irrelevant
+             * Hypothesis Id
+             * @description Unique hypothesis identifier
              */
-            stance: string;
-            /** Reasoning */
-            reasoning: string;
+            hypothesis_id?: string;
+            /**
+             * Statement
+             * @description Hypothesis statement (what we think caused the problem)
+             */
+            statement: string;
+            /** @description Hypothesis category (for anchoring detection) */
+            category: components["schemas"]["HypothesisCategory"];
+            /**
+             * @description Current hypothesis status
+             * @default captured
+             */
+            status: components["schemas"]["HypothesisStatus"];
+            /**
+             * Likelihood
+             * @description Estimated likelihood this hypothesis is correct (0.0-1.0)
+             * @default 0.5
+             */
+            likelihood: number;
+            /**
+             * Initial Likelihood
+             * @description Original likelihood when hypothesis was generated
+             * @default 0.5
+             */
+            initial_likelihood: number;
+            /**
+             * Evidence Links
+             * @description Maps evidence_id to relationship details.
+             *
+             *             ONE evidence can:
+             *             - STRONGLY_SUPPORTS hypothesis A
+             *             - REFUTES hypothesis B
+             *             - Be IRRELEVANT to hypothesis C
+             *
+             *             Backed by hypothesis_evidence junction table in database.
+             *             LLM evaluates each evidence against ALL active hypotheses after submission.
+             */
+            evidence_links?: {
+                [key: string]: components["schemas"]["HypothesisEvidenceLink"];
+            };
+            /**
+             * Generated At Turn
+             * @description Turn number when hypothesis was generated
+             */
+            generated_at_turn: number;
+            /**
+             * Last Updated Turn
+             * @description Turn number when hypothesis was last updated
+             * @default 0
+             */
+            last_updated_turn: number;
+            /**
+             * Last Progress At Turn
+             * @description Turn number when hypothesis last showed progress
+             * @default 0
+             */
+            last_progress_at_turn: number;
+            /**
+             * Iterations Without Progress
+             * @description Count of consecutive iterations without progress
+             * @default 0
+             */
+            iterations_without_progress: number;
+            generation_mode: components["schemas"]["HypothesisGenerationMode"];
+            /**
+             * Retirement Reason
+             * @description Reason if hypothesis was retired
+             */
+            retirement_reason?: string | null;
+            /**
+             * Rationale
+             * @description Why this hypothesis was generated
+             */
+            rationale: string;
+            /**
+             * Tested At
+             * @description When hypothesis testing began
+             */
+            tested_at?: string | null;
+            /**
+             * Concluded At
+             * @description When hypothesis was validated/refuted/retired
+             */
+            concluded_at?: string | null;
         };
+        /**
+         * HypothesisCategory
+         * @description Hypothesis categories for anchoring detection.
+         *
+         *     If agent tests 4+ hypotheses in same category without validation,
+         *     it is "anchored" and should try different category.
+         * @enum {string}
+         */
+        HypothesisCategory: "code" | "config" | "environment" | "network" | "data" | "database" | "hardware" | "security" | "external" | "human" | "other";
+        /**
+         * HypothesisEvidenceLink
+         * @description Many-to-many relationship between hypothesis and evidence.
+         *
+         *     ONE evidence can have DIFFERENT stances for DIFFERENT hypotheses:
+         *     - Evidence "Pool at 95%" -> STRONGLY_SUPPORTS "pool exhausted" hypothesis
+         *     - Evidence "Pool at 95%" -> REFUTES "network latency" hypothesis
+         *     - Evidence "Pool at 95%" -> IRRELEVANT to "memory leak" hypothesis
+         *
+         *     Stored in hypothesis_evidence junction table.
+         *     LLM evaluates evidence against ALL active hypotheses after submission.
+         */
+        HypothesisEvidenceLink: {
+            /**
+             * Hypothesis Id
+             * @description Hypothesis being evaluated
+             */
+            hypothesis_id: string;
+            /**
+             * Evidence Id
+             * @description Evidence being evaluated
+             */
+            evidence_id: string;
+            /** @description How this evidence relates to THIS hypothesis (including IRRELEVANT) */
+            stance: components["schemas"]["EvidenceStance"];
+            /**
+             * Reasoning
+             * @description LLM's explanation of the relationship
+             */
+            reasoning: string;
+            /**
+             * Stance Confidence
+             * @description Confidence in the stance assessment (0.0-1.0). Use for granularity instead of STRONGLY_ variants.
+             */
+            stance_confidence: number;
+            /**
+             * Analyzed At
+             * Format: date-time
+             * @description When this relationship was established
+             */
+            analyzed_at?: string;
+        };
+        /**
+         * HypothesisGenerationMode
+         * @description How hypothesis was generated
+         * @enum {string}
+         */
+        HypothesisGenerationMode: "opportunistic" | "systematic" | "forced_alternative";
         /**
          * HypothesisStatus
          * @description Hypothesis lifecycle status
@@ -4511,6 +5224,74 @@ export interface components {
             affected_regions?: string[] | null;
         };
         /**
+         * InquiryData
+         * @description Pre-investigation INQUIRY status data.
+         *     Captures early problem exploration before formal investigation commitment.
+         */
+        InquiryData: {
+            /** @description Agent initial understanding of the problem */
+            problem_confirmation?: components["schemas"]["ProblemConfirmation"] | null;
+            /**
+             * Proposed Problem Statement
+             * @description Agent formalized problem statement (clear, specific, actionable) - ITERATIVE REFINEMENT pattern.
+             *
+             *             UI Display:
+             *             - When None: Display "To be defined" or blank (no problem detected yet)
+             *             - When set: Display the statement text
+             *
+             *             Lifecycle:
+             *             1. LLM creates initial formalization from conversation context
+             *             2. LLM can UPDATE iteratively based on user corrections/refinements
+             *             3. Becomes IMMUTABLE once problem_statement_confirmed = True
+             *             4. Copied to case.description when investigation starts
+             *
+             *             Pattern: Iterative Refinement - refine until user confirms without reservation
+             */
+            proposed_problem_statement?: string | null;
+            /**
+             * Problem Statement Confirmed
+             * @description User confirmed the formalized problem statement
+             * @default false
+             */
+            problem_statement_confirmed: boolean;
+            /**
+             * Problem Statement Confirmed At
+             * @description When user confirmed the problem statement
+             */
+            problem_statement_confirmed_at?: string | null;
+            /**
+             * Quick Suggestions
+             * @description Quick fixes or guidance provided during inquiry
+             */
+            quick_suggestions?: string[];
+            /**
+             * Decided To Investigate
+             * @description Whether user committed to formal investigation
+             * @default false
+             */
+            decided_to_investigate: boolean;
+            /**
+             * Decision Made At
+             * @description When user decided to investigate (or not)
+             */
+            decision_made_at?: string | null;
+            /**
+             * Inquiry Turns
+             * @description Number of turns spent in INQUIRY status
+             * @default 0
+             */
+            inquiry_turns: number;
+            /**
+             * Knowledge Matches
+             * @description Potential solutions found in KB
+             */
+            knowledge_matches?: components["schemas"]["KnowledgeMatch"][];
+            /** @description Resolution details if fixed via KB match */
+            knowledge_resolution?: components["schemas"]["KnowledgeResolution"] | null;
+            /** @description Early urgency assessment */
+            preliminary_urgency?: components["schemas"]["PreliminaryUrgency"] | null;
+        };
+        /**
          * InquiryResponseData
          * @description Nested inquiry data for INQUIRY phase response.
          */
@@ -4545,55 +5326,197 @@ export interface components {
             problem_confirmation?: Record<string, never> | null;
         };
         /**
+         * InvestigationActionType
+         * @description Type of action proposed during investigation.
+         * @enum {string}
+         */
+        InvestigationActionType: "mitigation" | "solution" | "diagnostic";
+        /**
+         * InvestigationMomentum
+         * @description Investigation momentum indicator for progress tracking.
+         *
+         *     Used to signal overall investigation health and guide agent behavior.
+         *     Calculated from recent progress patterns (evidence collection, hypothesis updates).
+         * @enum {string}
+         */
+        InvestigationMomentum: "high" | "moderate" | "low" | "blocked";
+        /**
+         * InvestigationPath
+         * @description Investigation routing strategy (3-stage workflow).
+         *
+         *     IMPORTANT: Path is SYSTEM-DETERMINED from matrix (temporal_state x urgency_level).
+         *     LLM provides inputs (temporal_state, urgency_level) during DIAGNOSIS.
+         *     System calls determine_investigation_path() to select path deterministically.
+         *
+         *     Two paths through the 3-stage model:
+         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION → DIAGNOSIS → TREATMENT
+         *     - ROOT_CAUSE: DIAGNOSIS → TREATMENT
+         * @enum {string}
+         */
+        InvestigationPath: "mitigation_first" | "root_cause" | "user_choice";
+        /**
+         * InvestigationProgress
+         * @description Evidence-driven progress tracking with two distinct milestone types:
+         *
+         *     1. STAGE-GATE MILESTONES (4): Drive stage transitions.
+         *        Set by the LLM in structured output when it detects user compliance
+         *        with a ProposedAction (Framework §4.1). The LLM is the compliance
+         *        detector — the user's action is the trigger; the LLM recognizes it.
+         *     2. PROGRESS INDICATORS (6): Provide LLM context and analytics.
+         *        Set by LLM in structured output. Do NOT drive stage transitions.
+         */
+        InvestigationProgress: {
+            /**
+             * Mitigation Accepted
+             * @description User complied with proposed temp fix (inferred from submission). Triggers DIAGNOSIS → MITIGATION transition.
+             * @default false
+             */
+            mitigation_accepted: boolean;
+            /**
+             * Mitigation Verified
+             * @description User confirmed mitigation worked. Triggers MITIGATION → DIAGNOSIS return for RCA.
+             * @default false
+             */
+            mitigation_verified: boolean;
+            /**
+             * Solution Accepted
+             * @description User complied with proposed solution (inferred from submission). Triggers DIAGNOSIS → TREATMENT transition.
+             * @default false
+             */
+            solution_accepted: boolean;
+            /**
+             * Solution Verified
+             * @description Solution effectiveness verified via User-Agent Handshake. NOT directly settable by LLM — requires explicit user confirmation. Triggers TREATMENT → RESOLVED transition.
+             * @default false
+             */
+            solution_verified: boolean;
+            /**
+             * Symptom Verified
+             * @description Symptom confirmed with concrete evidence (logs, metrics, user reports)
+             * @default false
+             */
+            symptom_verified: boolean;
+            /**
+             * Scope Assessed
+             * @description Scope determined: affected users/services/regions, blast radius
+             * @default false
+             */
+            scope_assessed: boolean;
+            /**
+             * Timeline Established
+             * @description Timeline determined: when problem started, when noticed, duration
+             * @default false
+             */
+            timeline_established: boolean;
+            /**
+             * Changes Identified
+             * @description Recent changes identified: deployments, configs, scaling events
+             * @default false
+             */
+            changes_identified: boolean;
+            /**
+             * Root Cause Identified
+             * @description Root cause determined (directly or via hypothesis validation)
+             * @default false
+             */
+            root_cause_identified: boolean;
+            /**
+             * Solution Proposed
+             * @description Set programmatically when ProposedAction with action_type=SOLUTION is created. Not directly set by LLM.
+             * @default false
+             */
+            solution_proposed: boolean;
+            /**
+             * Root Cause Likelihood
+             * @description Likelihood in root cause identification (0.0 = unknown, 1.0 = certain)
+             * @default 0
+             */
+            root_cause_likelihood: number;
+            /**
+             * Root Cause Method
+             * @description How root cause was identified: direct_analysis | hypothesis_validation | single_shot_validation | correlation | other
+             */
+            root_cause_method?: string | null;
+            /**
+             * Verification Completed At
+             * @description When all verification milestones (symptom, scope, timeline, changes) were completed
+             */
+            verification_completed_at?: string | null;
+            /**
+             * Investigation Completed At
+             * @description When root cause was identified
+             */
+            investigation_completed_at?: string | null;
+            /**
+             * Resolution Completed At
+             * @description When solution was verified
+             */
+            resolution_completed_at?: string | null;
+        };
+        /**
          * InvestigationProgressSummary
          * @description Progress metrics for INVESTIGATING phase.
+         *
+         *     Purely descriptive — all backward-looking facts, no speculative
+         *     forward-looking predictions. The frontend derives "what's next"
+         *     from current_stage if needed.
          */
         InvestigationProgressSummary: {
             /**
-             * Milestones Completed
-             * @description Number of milestones completed
+             * Completed Indicators
+             * @description Completed progress indicators (e.g. symptom_verified, scope_assessed)
              */
-            milestones_completed: number;
+            completed_indicators?: string[];
             /**
-             * Total Milestones
-             * @description Total milestones (always 8)
+             * Completed Stage Gates
+             * @description Completed stage-gate milestones (e.g. mitigation_accepted, solution_verified)
              */
-            total_milestones: number;
-            /**
-             * Completed Milestone Ids
-             * @description IDs of completed milestones
-             */
-            completed_milestone_ids?: string[];
-            /** @description Current stage: UNDERSTANDING | DIAGNOSING | RESOLVING */
+            completed_stage_gates?: string[];
+            /** @description Current stage: DIAGNOSIS | MITIGATION | TREATMENT */
             current_stage: components["schemas"]["InvestigationStage"];
+            /**
+             * Turns Without Progress
+             * @description Consecutive turns without milestone, evidence, or hypothesis progress
+             * @default 0
+             */
+            turns_without_progress: number;
+            /**
+             * Total Evidence
+             * @description Total evidence items collected
+             * @default 0
+             */
+            total_evidence: number;
+            /**
+             * Active Hypotheses
+             * @description Number of hypotheses currently being tested
+             * @default 0
+             */
+            active_hypotheses: number;
         };
         /**
          * InvestigationStage
-         * @description Investigation stage within INVESTIGATING phase (4 stages).
+         * @description Investigation stage within INVESTIGATING status (3 stages).
+         *     Computed from stage-gate milestones.
          *
-         *     Purpose: User-facing progress label computed from completed milestones.
-         *     NOT used for workflow control - milestones drive advancement opportunistically.
-         *     Only relevant when case status = INVESTIGATING.
+         *     Stages:
+         *     - DIAGNOSIS: Understand, diagnose, propose actions
+         *     - MITIGATION: Apply and verify temporary fix (optional detour)
+         *     - TREATMENT: Verify permanent fix, resolve case
          *
-         *     Stage Progression (Path-Dependent):
-         *     - MITIGATION_FIRST: 1 -> 4 -> 2 -> 3 -> 4 (quick mitigation, then return for RCA)
-         *     - ROOT_CAUSE: 1 -> 2 -> 3 -> 4 (traditional RCA)
+         *     Stage transitions are inference-based — user compliance with
+         *     proposed actions triggers transitions via compliance detection.
+         *     The stage determines which prompt template the LLM receives.
          *
-         *     Stage determines the investigation focus based on what has been completed:
-         *     - Stage 1: Where and when (symptom verification)
-         *     - Stage 2: Why (hypothesis formulation)
-         *     - Stage 3: Why really (hypothesis validation)
-         *     - Stage 4: How (solution application)
+         *     Investigation Paths:
+         *     - ROOT_CAUSE: DIAGNOSIS → TREATMENT
+         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION → DIAGNOSIS → TREATMENT
          * @enum {string}
          */
-        InvestigationStage: "symptom_verification" | "hypothesis_formulation" | "hypothesis_validation" | "solution";
+        InvestigationStage: "diagnosis" | "mitigation" | "treatment";
         /**
          * InvestigationStrategy
-         * @description Investigation approach - speed vs depth
-         *
-         *     Selected when Lead Investigator Mode activated:
-         *     - Active Incident: Speed priority, mitigation first
-         *     - Post-Mortem: Thoroughness priority, complete RCA
+         * @description Investigation approach mode.
+         *     Affects decision thresholds, workflow behavior, and agent prompts.
          * @enum {string}
          */
         InvestigationStrategy: "active_incident" | "post_mortem";
@@ -4657,6 +5580,38 @@ export interface components {
             verification_reason?: string | null;
             /** Source Suggestion Id */
             source_suggestion_id?: string | null;
+        };
+        /**
+         * KnowledgeMatch
+         * @description Records a potential KB match during INQUIRY.
+         */
+        KnowledgeMatch: {
+            /** Match Id */
+            match_id: string;
+            /** Match Type */
+            match_type: string;
+            /** Relevance Score */
+            relevance_score: number;
+            /** Summary */
+            summary: string;
+            /** Potential Solution */
+            potential_solution?: string | null;
+        };
+        /**
+         * KnowledgeResolution
+         * @description Records instant resolution via KB match during INQUIRY phase.
+         */
+        KnowledgeResolution: {
+            /** Match Id */
+            match_id: string;
+            /** Match Type */
+            match_type: string;
+            /** Solution Applied */
+            solution_applied: string;
+            /** User Confirmation */
+            user_confirmation: string;
+            /** Resolution Turn */
+            resolution_turn: number;
         };
         /**
          * LinkCaseRequest
@@ -5008,6 +5963,48 @@ export interface components {
             description?: string | null;
         };
         /**
+         * PathSelection
+         * @description Path selection details.
+         *     Records how investigation path was chosen.
+         *
+         *     IMPORTANT: Path is SYSTEM-DETERMINED from matrix (temporal_state x urgency_level).
+         *     LLM provides inputs (temporal_state, urgency_level) during verification.
+         *     System calls determine_investigation_path() to select path deterministically.
+         *     LLM does NOT choose the path directly!
+         */
+        PathSelection: {
+            /** @description Selected investigation path (system-determined from matrix) */
+            path: components["schemas"]["InvestigationPath"];
+            /**
+             * Auto Selected
+             * @description True if system auto-selected, False if user chose
+             */
+            auto_selected: boolean;
+            /**
+             * Rationale
+             * @description Why this path was selected
+             */
+            rationale: string;
+            /** @description Alternative path user could have chosen (if auto-selected) */
+            alternate_path?: components["schemas"]["InvestigationPath"] | null;
+            /**
+             * Selected At
+             * Format: date-time
+             * @description When path was selected
+             */
+            selected_at?: string;
+            /**
+             * Selected By
+             * @description Who selected: 'system' for auto, or user_id for manual
+             * @default system
+             */
+            selected_by: string;
+            /** @description Temporal state used in decision */
+            temporal_state?: components["schemas"]["TemporalState"] | null;
+            /** @description Urgency level used in decision */
+            urgency_level?: components["schemas"]["UrgencyLevel"] | null;
+        };
+        /**
          * PermissionCheckRequest
          * @description Request to check user permission
          */
@@ -5033,12 +6030,159 @@ export interface components {
             org_id: string;
         };
         /**
-         * PlanStep
-         * @description Represents one step in a multi-step plan.
+         * PreliminaryUrgency
+         * @description Early urgency assessment using semantic business impact.
          */
-        PlanStep: {
-            /** Description */
-            description: string;
+        PreliminaryUrgency: {
+            level: components["schemas"]["UrgencyLevel"];
+            /**
+             * Is Ongoing
+             * @default false
+             */
+            is_ongoing: boolean;
+            /**
+             * Is Incident Report
+             * @default false
+             */
+            is_incident_report: boolean;
+            /** Impact Assessment */
+            impact_assessment: string;
+            /** Assessed At Turn */
+            assessed_at_turn: number;
+        };
+        /**
+         * ProblemConfirmation
+         * @description Agents initial problem understanding during inquiry.
+         */
+        ProblemConfirmation: {
+            /**
+             * Problem Type
+             * @description Classified problem type: error | slowness | unavailability | data_issue | other
+             */
+            problem_type: string;
+            /**
+             * Severity Guess
+             * @description Initial severity assessment: critical | high | medium | low | unknown
+             */
+            severity_guess: string;
+            /**
+             * Preliminary Guidance
+             * @description Initial guidance or suggestions
+             */
+            preliminary_guidance: string;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When this confirmation was created
+             */
+            created_at?: string;
+        };
+        /**
+         * ProblemVerification
+         * @description Consolidated problem verification data.
+         *
+         *     Contains all data gathered during verification phase:
+         *     - Symptom details
+         *     - Scope assessment
+         *     - Timeline
+         *     - Recent changes
+         *     - Correlations
+         */
+        ProblemVerification: {
+            /**
+             * Symptom Statement
+             * @description Clear statement of the problem symptom
+             */
+            symptom_statement: string;
+            /**
+             * Symptom Indicators
+             * @description Specific metrics/observations confirming symptom (e.g., 'Error rate: 15%', 'P99 latency: 5s')
+             */
+            symptom_indicators?: string[];
+            /**
+             * Affected Services
+             * @description Services/components affected
+             */
+            affected_services?: string[];
+            /**
+             * Affected Users
+             * @description User impact description: 'all users' | '10% of users' | 'premium tier' | etc.
+             */
+            affected_users?: string | null;
+            /**
+             * Affected Regions
+             * @description Geographic regions affected
+             */
+            affected_regions?: string[];
+            /**
+             * Severity
+             * @description Assessed severity: CRITICAL | HIGH | MEDIUM | LOW
+             */
+            severity: string;
+            /**
+             * User Impact
+             * @description Description of user-facing impact
+             */
+            user_impact?: string | null;
+            /**
+             * Started At
+             * @description When problem began (best estimate)
+             */
+            started_at?: string | null;
+            /**
+             * Noticed At
+             * @description When problem was noticed/reported
+             */
+            noticed_at?: string | null;
+            /**
+             * Resolved Naturally At
+             * @description If problem resolved on its own, when?
+             */
+            resolved_naturally_at?: string | null;
+            /**
+             * Duration
+             * @description How long problem lasted (for historical problems)
+             */
+            duration?: string | null;
+            /** @description ONGOING | HISTORICAL */
+            temporal_state?: components["schemas"]["TemporalState"] | null;
+            /**
+             * Recent Changes
+             * @description Recent changes that may be relevant (deployments, configs, etc.)
+             */
+            recent_changes?: components["schemas"]["Change"][];
+            /**
+             * Correlations
+             * @description Identified correlations between changes and symptom
+             */
+            correlations?: components["schemas"]["Correlation"][];
+            /**
+             * Correlation Confidence
+             * @description Confidence in change-symptom correlation (0.0 = no correlation, 1.0 = certain)
+             * @default 0
+             */
+            correlation_confidence: number;
+            /**
+             * @description Urgency classification for path routing
+             * @default unknown
+             */
+            urgency_level: components["schemas"]["UrgencyLevel"];
+            /**
+             * Urgency Factors
+             * @description Factors contributing to urgency assessment
+             */
+            urgency_factors?: string[];
+            /**
+             * Verified At
+             * @description When verification was completed
+             */
+            verified_at?: string | null;
+            /**
+             * Verification Confidence
+             * @description Overall confidence in verification accuracy
+             * @default 0
+             */
+            verification_confidence: number;
         };
         /**
          * ProblemVerificationData
@@ -5066,11 +6210,54 @@ export interface components {
             user_impact?: string | null;
         };
         /**
-         * ProcessingStatus
-         * @description Defines the status of data processing operations.
-         * @enum {string}
+         * ProposedAction
+         * @description A concrete action proposed by the agent for the user to execute.
+         *
+         *     ProposedActions are the mechanism by which the agent communicates
+         *     actionable next steps. User compliance with a proposed action
+         *     triggers stage-gate milestone transitions via compliance detection.
          */
-        ProcessingStatus: "pending" | "processing" | "completed" | "failed";
+        ProposedAction: {
+            /**
+             * Action Id
+             * @description Unique action identifier
+             */
+            action_id?: string;
+            /**
+             * Case Id
+             * @description Case this action belongs to
+             */
+            case_id: string;
+            /** @description Whether this is a mitigation or solution action */
+            action_type: components["schemas"]["InvestigationActionType"];
+            /**
+             * Description
+             * @description Human-readable description of the proposed action
+             */
+            description: string;
+            /**
+             * Commands
+             * @description Specific commands for the user to execute
+             */
+            commands?: string[];
+            /**
+             * Proposed At
+             * Format: date-time
+             * @description When the action was proposed
+             */
+            proposed_at?: string;
+            /**
+             * Proposed In Turn
+             * @description Turn number when this action was proposed
+             */
+            proposed_in_turn: number;
+            /**
+             * Status
+             * @description pending | accepted | rejected | superseded
+             * @default pending
+             */
+            status: string;
+        };
         /**
          * RelatedHypothesis
          * @description Hypothesis linked to this evidence.
@@ -5280,14 +6467,56 @@ export interface components {
             key_insights?: string[];
         };
         /**
-         * ResponseType
-         * @description Defines the agent's primary intent for this turn - v3.0 Response-Format-Driven Design
-         *
-         *     9 response formats designed to serve 16 QueryIntent categories (1.8:1 ratio).
-         *     Each format has strict structural requirements for frontend parsing.
-         * @enum {string}
+         * RootCauseConclusion
+         * @description Final determination of root cause.
+         *     More authoritative than WorkingConclusion.
          */
-        ResponseType: "ANSWER" | "PLAN_PROPOSAL" | "CLARIFICATION_REQUEST" | "CONFIRMATION_REQUEST" | "SOLUTION_READY" | "NEEDS_MORE_DATA" | "ESCALATION_REQUIRED" | "VISUAL_DIAGRAM" | "COMPARISON_TABLE";
+        RootCauseConclusion: {
+            /**
+             * Root Cause
+             * @description Definitive statement of root cause
+             */
+            root_cause: string;
+            /** @description Categorical confidence level */
+            confidence_level: components["schemas"]["ConfidenceLevel"];
+            /**
+             * Likelihood
+             * @description Numeric likelihood score (0.0-1.0)
+             */
+            likelihood: number;
+            /**
+             * Mechanism
+             * @description How this root cause led to the symptom
+             */
+            mechanism: string;
+            /**
+             * Evidence Basis
+             * @description Evidence IDs supporting this conclusion
+             */
+            evidence_basis?: string[];
+            /**
+             * Validated Hypothesis Id
+             * @description If identified via hypothesis validation, the hypothesis ID
+             */
+            validated_hypothesis_id?: string | null;
+            /**
+             * Contributing Factors
+             * @description Secondary factors that made the problem worse or more likely
+             */
+            contributing_factors?: string[];
+            /**
+             * Determined At
+             * Format: date-time
+             * @description When root cause was determined
+             */
+            determined_at?: string;
+            /**
+             * Determined By
+             * @description Who determined: 'agent' or user_id
+             * @default agent
+             */
+            determined_by: string;
+        };
         /**
          * RootCauseSummary
          * @description Root cause information for RESOLVED phase.
@@ -5424,6 +6653,55 @@ export interface components {
             metadata?: Record<string, never> | null;
         };
         /**
+         * SessionResponse
+         * @description Response model for investigation session.
+         */
+        SessionResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Case Id */
+            case_id: string;
+            /** User Id */
+            user_id: string;
+            /** Organization Id */
+            organization_id: string;
+            status: components["schemas"]["SessionStatus"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Total Duration Ms */
+            total_duration_ms?: number | null;
+            /** Session Goal */
+            session_goal?: string | null;
+            /** Findings Summary */
+            findings_summary?: string | null;
+            /** Total Token Usage */
+            total_token_usage: number;
+            /** Total Agent Executions */
+            total_agent_executions: number;
+            /** Token Budget Limit */
+            token_budget_limit?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * SessionRestoreRequest
          * @description Request model for session restoration.
          */
@@ -5518,6 +6796,91 @@ export interface components {
             updated_at: string;
         };
         /**
+         * Solution
+         * @description Proposed or applied solution/mitigation.
+         */
+        Solution: {
+            /**
+             * Solution Id
+             * @description Unique solution identifier
+             */
+            solution_id?: string;
+            /** @description Type of solution */
+            solution_type: components["schemas"]["SolutionType"];
+            /**
+             * Title
+             * @description Short solution title
+             */
+            title: string;
+            /**
+             * Immediate Action
+             * @description Quick fix or mitigation (temporary)
+             */
+            immediate_action?: string | null;
+            /**
+             * Longterm Fix
+             * @description Permanent solution (comprehensive)
+             */
+            longterm_fix?: string | null;
+            /**
+             * Implementation Steps
+             * @description Step-by-step implementation instructions
+             */
+            implementation_steps?: string[];
+            /**
+             * Commands
+             * @description Specific commands to execute
+             */
+            commands?: string[];
+            /**
+             * Risks
+             * @description Risks or side effects of this solution
+             */
+            risks?: string[];
+            /**
+             * Proposed At
+             * Format: date-time
+             * @description When solution was proposed
+             */
+            proposed_at?: string;
+            /**
+             * Proposed By
+             * @description Who proposed: 'agent' or user_id
+             * @default agent
+             */
+            proposed_by: string;
+            /**
+             * Applied At
+             * @description When solution was applied
+             */
+            applied_at?: string | null;
+            /**
+             * Applied By
+             * @description Who applied the solution
+             */
+            applied_by?: string | null;
+            /**
+             * Verified At
+             * @description When solution effectiveness was verified
+             */
+            verified_at?: string | null;
+            /**
+             * Verification Method
+             * @description How effectiveness was verified
+             */
+            verification_method?: string | null;
+            /**
+             * Verification Evidence Id
+             * @description Evidence ID proving solution worked
+             */
+            verification_evidence_id?: string | null;
+            /**
+             * Effectiveness
+             * @description How well solution worked (0.0 = failed, 1.0 = perfect)
+             */
+            effectiveness?: number | null;
+        };
+        /**
          * SolutionSummary
          * @description Solution information for RESOLVED phase.
          */
@@ -5540,22 +6903,11 @@ export interface components {
             applied_by: string;
         };
         /**
-         * Source
-         * @description Represents a single piece of citable evidence to build user trust.
+         * SolutionType
+         * @description Type of solution/mitigation
+         * @enum {string}
          */
-        Source: {
-            type: components["schemas"]["SourceType"];
-            /** Content */
-            content: string;
-            /** Confidence */
-            confidence?: number | null;
-            /** Metadata */
-            metadata?: Record<string, never> | null;
-            /** Verification Status */
-            verification_status?: ("verified" | "community" | "experimental") | null;
-            /** Verification Reason */
-            verification_reason?: string | null;
-        };
+        SolutionType: "rollback" | "config_change" | "restart" | "scaling" | "code_fix" | "workaround" | "infrastructure" | "data_fix" | "other";
         /**
          * SourceFileReference
          * @description Reference to source file that evidence was derived from.
@@ -5569,12 +6921,6 @@ export interface components {
             uploaded_at_turn: number;
         };
         /**
-         * SourceType
-         * @description Defines the origin of a piece of evidence.
-         * @enum {string}
-         */
-        SourceType: "knowledge_base" | "log_file" | "web_search" | "documentation" | "previous_analysis" | "user_provided";
-        /**
          * StorageBackend
          * @description Storage backend types.
          *
@@ -5582,6 +6928,18 @@ export interface components {
          * @enum {string}
          */
         StorageBackend: "local_filesystem" | "s3" | "azure_blob" | "gcs";
+        /**
+         * SuggestedActionResponse
+         * @description A clickable follow-up action returned with agent responses.
+         */
+        SuggestedActionResponse: {
+            /** Label */
+            label: string;
+            /** Type */
+            type: string;
+            /** Payload */
+            payload: string;
+        };
         /**
          * TeamCreateRequest
          * @description Request to create a new team
@@ -5685,6 +7043,13 @@ export interface components {
             settings?: Record<string, never> | null;
         };
         /**
+         * TemporalState
+         * @description Problem temporal classification.
+         *     Used for investigation path routing.
+         * @enum {string}
+         */
+        TemporalState: "ongoing" | "historical";
+        /**
          * TemporalStateData
          * @description Temporal information about problem occurrence.
          */
@@ -5704,19 +7069,6 @@ export interface components {
              * @description Temporal state: ongoing | historical | intermittent
              */
             state?: string | null;
-        };
-        /**
-         * TimelineEvent
-         * @description Timeline event extracted from file.
-         */
-        TimelineEvent: {
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-            /** Event */
-            event: string;
         };
         /**
          * TitleResponse
@@ -5748,38 +7100,156 @@ export interface components {
             status: string;
         };
         /**
-         * UploadedData
-         * @description A strongly-typed model for data uploaded by the user.
+         * TurnOutcome
+         * @description Turn outcome classification.
+         *
+         *     NOTE: Outcomes are LLM-observable only (what happened this turn).
+         *     Workflow control uses direct metrics (turns_without_progress).
+         *     Outcomes are for analytics and prompt context, not control flow.
+         * @enum {string}
          */
-        UploadedData: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            type: components["schemas"]["DataType"];
-            /** Size Bytes */
-            size_bytes: number;
-            /** Upload Timestamp */
-            upload_timestamp: string;
-            processing_status: components["schemas"]["ProcessingStatus"];
-            /** Processing Summary */
-            processing_summary?: string | null;
-            /** Likelihood */
-            likelihood?: number | null;
+        TurnOutcome: "milestone_completed" | "data_provided" | "data_requested" | "data_not_provided" | "hypothesis_tested" | "case_resolved" | "conversation" | "other";
+        /**
+         * TurnProgress
+         * @description Record of what happened in one turn.
+         *     Turn = one user message + one agent response.
+         */
+        TurnProgress: {
+            /**
+             * Turn Number
+             * @description Sequential turn number
+             */
+            turn_number: number;
+            /**
+             * Timestamp
+             * Format: date-time
+             * @description When turn occurred
+             */
+            timestamp?: string;
+            /**
+             * Milestones Completed
+             * @description Milestone names completed this turn (e.g., 'symptom_verified')
+             */
+            milestones_completed?: string[];
+            /**
+             * Evidence Added
+             * @description Evidence IDs added this turn
+             */
+            evidence_added?: string[];
+            /**
+             * Hypotheses Generated
+             * @description Hypothesis IDs generated this turn
+             */
+            hypotheses_generated?: string[];
+            /**
+             * Hypotheses Validated
+             * @description Hypothesis IDs validated this turn
+             */
+            hypotheses_validated?: string[];
+            /**
+             * Solutions Proposed
+             * @description Solution IDs proposed this turn
+             */
+            solutions_proposed?: string[];
+            /**
+             * Progress Made
+             * @description Did investigation advance this turn?
+             */
+            progress_made: boolean;
+            /**
+             * Actions Taken
+             * @description Agent actions: 'verified_symptom', 'requested_logs', 'generated_hypothesis', etc.
+             */
+            actions_taken?: string[];
+            /** @description Turn outcome classification */
+            outcome: components["schemas"]["TurnOutcome"];
+            /**
+             * User Message Summary
+             * @description Summary of user message
+             */
+            user_message_summary?: string | null;
+            /**
+             * Agent Response Summary
+             * @description Summary of agent response
+             */
+            agent_response_summary?: string | null;
+            /**
+             * System Feedback
+             * @description Instruction or error from system to agent (e.g., 'Invalid evidence ID')
+             */
+            system_feedback?: string | null;
+            /** @description Investigation momentum indicator for this turn */
+            momentum?: components["schemas"]["InvestigationMomentum"] | null;
+            /**
+             * Blocked Reasons
+             * @description Reasons why investigation is blocked or progressing slowly
+             */
+            blocked_reasons?: string[];
+            /**
+             * Next Steps
+             * @description Suggested next steps for the investigation
+             */
+            next_steps?: string[];
+            /**
+             * Stagnation Detected
+             * @description Stagnation type detected this turn: no_progress, hypothesis_anchoring, action_loop, hypothesis_deadlock
+             */
+            stagnation_detected?: string | null;
+            /**
+             * Validation Repairs
+             * @description State repairs made by StateValidator this turn (e.g., 'Fixed milestone ordering')
+             */
+            validation_repairs?: string[];
         };
         /**
-         * UploadedFileDetails
-         * @description Detailed file information including analysis.
+         * TurnResponse
+         * @description Response for POST /cases/{id}/turns.
          */
-        UploadedFileDetails: {
+        TurnResponse: {
+            /** Agent Response */
+            agent_response: string;
+            /** Turn Number */
+            turn_number: number;
+            /** Milestones Completed */
+            milestones_completed: string[];
+            case_status: components["schemas"]["CaseStatus"];
+            /** Progress Made */
+            progress_made: boolean;
+            /** Is Stuck */
+            is_stuck: boolean;
+            /** Attachments Processed */
+            attachments_processed?: components["schemas"]["AttachmentResult"][];
+            /** Suggested Actions */
+            suggested_actions?: components["schemas"]["SuggestedActionResponse"][];
+        };
+        /**
+         * UploadedFile
+         * @description Raw file metadata for files uploaded to a case.
+         *
+         *     Key Distinction:
+         *     - UploadedFile: Raw file metadata, exists in ANY case state (INQUIRY, INVESTIGATING, etc.)
+         *     - Evidence: Data classified by the LLM based on content. Created via evidence_to_add
+         *       when the LLM evaluates the submission.
+         *
+         *     Evidence classification is content-based, not stage-based (see Section 5.2 of
+         *     evidence-driven-investigation-framework.md). The LLM evaluates the data and
+         *     classifies it by what it contains:
+         *     - Error logs → symptom_evidence (even during INQUIRY)
+         *     - Normal configs → contextual_evidence
+         *     - Post-fix metrics → solution_evidence
+         *
+         *     UploadedFile records exist independently of Evidence. Not all uploaded files
+         *     produce Evidence — the LLM decides what is relevant during its analysis.
+         */
+        UploadedFile: {
             /**
              * File Id
-             * @description Evidence/File identifier
+             * @description Unique file identifier (same as data_id in data service)
              */
-            file_id: string;
+            file_id?: string;
             /**
              * Filename
-             * @description Original or generated filename
+             * @description Original filename
              */
             filename: string;
             /**
@@ -5788,13 +7258,13 @@ export interface components {
              */
             size_bytes: number;
             /**
-             * Size Display
-             * @description Human-readable size (e.g., '2.3 MB')
+             * Data Type
+             * @description Detected data type from preprocessing (log, metric, config, code, text, image, etc.)
              */
-            size_display: string;
+            data_type: string;
             /**
              * Uploaded At Turn
-             * @description Turn when file was uploaded
+             * @description Turn number when file was uploaded
              */
             uploaded_at_turn: number;
             /**
@@ -5802,34 +7272,23 @@ export interface components {
              * Format: date-time
              * @description Upload timestamp
              */
-            uploaded_at: string;
+            uploaded_at?: string;
             /**
              * Source Type
              * @description file_upload | paste | screenshot | page_injection | agent_generated
+             * @default file_upload
              */
             source_type: string;
             /**
-             * Analysis Status
-             * @description pending | processing | completed | failed
+             * Preprocessing Summary
+             * @description Brief summary from preprocessing pipeline (<500 chars)
              */
-            analysis_status: string;
+            preprocessing_summary?: string | null;
             /**
-             * Summary
-             * @description AI-generated summary (1-2 sentences)
+             * Content Ref
+             * @description Reference to stored file content (S3 URI or data_id). May be None if processing pending.
              */
-            summary?: string | null;
-            /**
-             * Source Metadata
-             * @description Additional metadata for page injections
-             */
-            source_metadata?: Record<string, never> | null;
-            /** @description Detailed AI analysis */
-            full_analysis?: components["schemas"]["FileAnalysis"] | null;
-            /**
-             * Hypothesis Relationships
-             * @description How this file relates to hypotheses (investigating phase only)
-             */
-            hypothesis_relationships?: components["schemas"]["HypothesisRelationship"][] | null;
+            content_ref?: string | null;
         };
         /**
          * UploadedFileDetailsResponse
@@ -5915,7 +7374,7 @@ export interface components {
             summary?: string | null;
             /**
              * Source Metadata
-             * @description Additional metadata for page injections
+             * @description Source origin metadata (e.g. page capture URL)
              */
             source_metadata?: Record<string, never> | null;
         };
@@ -5949,21 +7408,16 @@ export interface components {
             files: components["schemas"]["UploadedFileMetadata"][];
         };
         /**
-         * User
-         * @description Represents a user in the system.
+         * UrgencyLevel
+         * @description Urgency classification for path routing.
+         *
+         *     Used with TemporalState to determine investigation path:
+         *     - ONGOING + HIGH/CRITICAL -> MITIGATION
+         *     - HISTORICAL + LOW/MEDIUM -> ROOT_CAUSE
+         *     - Other combinations -> USER_CHOICE
+         * @enum {string}
          */
-        User: {
-            /** User Id */
-            user_id: string;
-            /** Email */
-            email: string;
-            /** Name */
-            name: string;
-            /** Created At */
-            created_at?: string;
-            /** Last Login */
-            last_login?: string | null;
-        };
+        UrgencyLevel: "critical" | "high" | "medium" | "low" | "unknown";
         /**
          * UserInfoResponse
          * @description Extended user information response
@@ -6127,42 +7581,49 @@ export interface components {
             details: string;
         };
         /**
-         * ViewState
-         * @description Comprehensive view state representing the complete frontend rendering state.
-         *     This is the single source of truth for what the frontend should display.
+         * WorkingConclusion
+         * @description Agent current best understanding of the problem.
+         *     Updated iteratively as investigation progresses.
+         *
+         *     Less authoritative than RootCauseConclusion.
          */
-        ViewState: {
-            /** Session Id */
-            session_id: string;
-            user: components["schemas"]["User"];
-            active_case?: components["schemas"]["Case"] | null;
-            /** Cases */
-            cases?: components["schemas"]["Case"][];
-            /** Messages */
-            messages?: Record<string, never>[];
-            /** Uploaded Data */
-            uploaded_data?: components["schemas"]["UploadedData"][];
+        WorkingConclusion: {
             /**
-             * Show Case Selector
-             * @default true
+             * Statement
+             * @description Current conclusion statement
              */
-            show_case_selector: boolean;
+            statement: string;
             /**
-             * Show Data Upload
-             * @default true
+             * Likelihood
+             * @description Likelihood of this conclusion (0.0-1.0)
              */
-            show_data_upload: boolean;
-            /** Loading State */
-            loading_state?: string | null;
-            /** Memory Context */
-            memory_context?: Record<string, never> | null;
-            /** Planning State */
-            planning_state?: Record<string, never> | null;
+            likelihood: number;
             /**
-             * Investigation Progress
-             * @description OODA investigation progress (phase, iteration, hypotheses)
+             * Reasoning
+             * @description Why agent believes this conclusion
              */
-            investigation_progress?: Record<string, never> | null;
+            reasoning: string;
+            /**
+             * Supporting Evidence Ids
+             * @description Evidence IDs supporting this conclusion
+             */
+            supporting_evidence_ids?: string[];
+            /**
+             * Caveats
+             * @description Limitations or uncertainties
+             */
+            caveats?: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             * @description When this conclusion was formed/updated
+             */
+            updated_at?: string;
+            /**
+             * Supersedes Conclusion At
+             * @description Timestamp of previous conclusion this replaces
+             */
+            supersedes_conclusion_at?: string | null;
         };
         /**
          * WorkingConclusionSummary
@@ -6188,55 +7649,6 @@ export interface components {
         };
         /**
          * SessionResponse
-         * @description Response model for investigation session.
-         */
-        faultmaven__api__models__SessionResponse: {
-            /** Session Id */
-            session_id: string;
-            /** Case Id */
-            case_id: string;
-            /** User Id */
-            user_id: string;
-            /** Organization Id */
-            organization_id: string;
-            status: components["schemas"]["SessionStatus"];
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /** Ended At */
-            ended_at?: string | null;
-            /**
-             * Last Activity At
-             * Format: date-time
-             */
-            last_activity_at: string;
-            /** Total Duration Ms */
-            total_duration_ms?: number | null;
-            /** Session Goal */
-            session_goal?: string | null;
-            /** Findings Summary */
-            findings_summary?: string | null;
-            /** Total Token Usage */
-            total_token_usage: number;
-            /** Total Agent Executions */
-            total_agent_executions: number;
-            /** Token Budget Limit */
-            token_budget_limit?: number | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * SessionResponse
          * @description Response payload for auth session operations - API spec compliance.
          */
         faultmaven__models__api__SessionResponse: {
@@ -6244,6 +7656,7 @@ export interface components {
              * Schema Version
              * @default 3.1.0
              * @constant
+             * @enum {string}
              */
             schema_version: "3.1.0";
             /** Session Id */
@@ -6774,6 +8187,78 @@ export interface operations {
             };
         };
     };
+    get_case_snapshot: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+                turn_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Case"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_case_turns: {
+        parameters: {
+            query: {
+                /** @description Start turn number */
+                from: number;
+                /** @description End turn number */
+                to: number;
+            };
+            header?: {
+                Authorization?: string | null;
+            };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_case_api_v1_cases__case_id__get: {
         parameters: {
             query?: never;
@@ -7207,15 +8692,47 @@ export interface operations {
             };
         };
     };
-    list_case_queries_api_v1_cases__case_id__queries_get: {
+    submit_turn_api_v1_cases__case_id__turns_post: {
         parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
+            query?: never;
             header?: {
                 Authorization?: string | null;
             };
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_submit_turn_api_v1_cases__case_id__turns_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_case_query_gone_api_v1_cases__case_id__queries_post: {
+        parameters: {
+            query?: never;
+            header?: never;
             path: {
                 case_id: string;
             };
@@ -7230,43 +8747,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    submit_case_query_api_v1_cases__case_id__queries_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CaseQueryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CaseQueryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7338,30 +8818,24 @@ export interface operations {
             };
         };
     };
-    upload_case_data_api_v1_cases__case_id__data_post: {
+    upload_case_data_gone_api_v1_cases__case_id__data_post: {
         parameters: {
             query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
+            header?: never;
             path: {
                 case_id: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_upload_case_data_api_v1_cases__case_id__data_post"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DataUploadResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -7931,7 +9405,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"][];
+                    "application/json": components["schemas"]["SessionResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -7968,7 +9442,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8001,7 +9475,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"] | null;
+                    "application/json": components["schemas"]["SessionResponse"] | null;
                 };
             };
             /** @description Validation Error */
@@ -8035,7 +9509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8073,7 +9547,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8107,7 +9581,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8141,7 +9615,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8179,7 +9653,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9853,7 +11327,9 @@ export interface operations {
             query?: {
                 user_id?: string | null;
             };
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: never;
         };

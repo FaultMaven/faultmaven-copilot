@@ -74,7 +74,6 @@ function SidePanelAppContent() {
   const [pinnedCases, setPinnedCases] = useState<Set<string>>(new Set());
   const [loadedConversationIds, setLoadedConversationIds] = useState<Set<string>>(new Set());
   const [activeCase, setActiveCase] = useState<any | null>(null); // Should be UserCase
-  const [investigationProgress, setInvestigationProgress] = useState<Record<string, any>>({});
   const [caseEvidence, setCaseEvidence] = useState<Record<string, any[]>>({}); // Should be UploadedData[]
 
   // --- Case Management ---
@@ -161,7 +160,6 @@ function SidePanelAppContent() {
     setOptimisticCases,
     setConversationTitles,
     setTitleSources,
-    setInvestigationProgress,
     createOptimisticCaseInBackground: async (optimisticId, title) => {
       try {
         log.info('Creating case on backend', { optimisticId, title });
@@ -359,7 +357,6 @@ function SidePanelAppContent() {
     setOptimisticCases([]);
     setPinnedCases(new Set());
     setLoadedConversationIds(new Set());
-    setInvestigationProgress({});
     setCaseEvidence({});
 
     // 4. Reset Active State
@@ -662,7 +659,6 @@ function SidePanelAppContent() {
               submitting={submitting}
               sessionId={sessionId}
               hasUnsavedNewChat={hasUnsavedNewChat}
-              investigationProgress={investigationProgress}
               caseEvidence={caseEvidence}
               failedOperations={getFailedOperationsForUser()}
               onQuerySubmit={handleQuerySubmit}
