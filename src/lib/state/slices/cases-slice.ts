@@ -19,7 +19,6 @@ import {
   TurnRequest,
   TurnResponse,
   AttachmentResult,
-  InvestigationProgress,
   formatFileSize
 } from '../../api';
 import { isOptimisticId, isRealId } from '../../utils/data-integrity';
@@ -43,7 +42,6 @@ export interface CasesSlice {
   pendingOperations: Record<string, PendingOperation>;
   loading: boolean;
   submitting: boolean;
-  investigationProgress: Record<string, InvestigationProgress>;
   caseEvidence: Record<string, AttachmentResult[]>;
   loadedConversationIds: Set<string>; // Track which cases have been fetched (even if empty)
 
@@ -567,7 +565,6 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       pendingOperations: {},
       loading: false,
       submitting: false,
-      investigationProgress: {},
       caseEvidence: {},
       loadedConversationIds: new Set()
     });

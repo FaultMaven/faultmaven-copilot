@@ -69,7 +69,6 @@ describe('useMessageSubmission', () => {
     setOptimisticCases: vi.fn(),
     setConversationTitles: vi.fn(),
     setTitleSources: vi.fn(),
-    setInvestigationProgress: vi.fn(),
     createOptimisticCaseInBackground: vi.fn(),
     refreshSession: vi.fn(),
     showError: vi.fn(),

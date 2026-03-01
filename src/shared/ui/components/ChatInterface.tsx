@@ -21,7 +21,6 @@ interface ChatInterfaceProps {
   onRetryFailedOperation: (opId: string) => void;
   onDismissFailedOperation: (opId: string) => void;
   getErrorMessageForOperation: (op: PendingOperation) => { title: string; message: string; recoveryHint: string };
-  investigationProgress?: Record<string, any>;
   caseEvidence?: Record<string, UploadedData[]>;
   onDocumentView?: (docId: string) => void;
   onGenerateReports?: () => void;
@@ -43,7 +42,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onRetryFailedOperation,
   onDismissFailedOperation,
   getErrorMessageForOperation,
-  investigationProgress,
   caseEvidence,
   onDocumentView,
   onGenerateReports,
@@ -54,7 +52,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { handlePageInject } = usePageContent();
 
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
-  const currentProgress = activeCaseId ? investigationProgress?.[activeCaseId] : undefined;
   const currentEvidence = activeCaseId ? caseEvidence?.[activeCaseId] : undefined;
 
   // Check if interaction is allowed
@@ -132,7 +129,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           activeCase={activeCase}
           loading={loading}
           sessionId={sessionId}
-          investigationProgress={currentProgress}
           evidence={currentEvidence}
           onQuerySubmit={onQuerySubmit}
           onDocumentView={onDocumentView}

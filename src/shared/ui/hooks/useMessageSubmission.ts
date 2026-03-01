@@ -59,8 +59,7 @@ export interface UseMessageSubmissionProps {
   setOptimisticCases: React.Dispatch<React.SetStateAction<OptimisticUserCase[]>>;
   setConversationTitles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
-  setInvestigationProgress: React.Dispatch<React.SetStateAction<Record<string, any>>>;
-  
+
   // Callbacks
   createOptimisticCaseInBackground: (optimisticCaseId: string, title: string | null) => Promise<string>;
   refreshSession: () => Promise<string>;

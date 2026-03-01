@@ -301,37 +301,6 @@ export interface PlanStep {
   required_tools?: string[];
 }
 
-export interface InvestigationPhase {
-  current: string;
-  number: number;
-}
-
-export interface HypothesesSummary {
-  total: number;
-  validated: string | null;
-  validated_likelihood: number | null;
-}
-
-export interface AnomalyFrame {
-  statement: string;
-  severity: string;
-  affected_components: string[];
-}
-
-export interface InvestigationProgress {
-  phase: InvestigationPhase;
-  engagement_mode: "consultant" | "lead_investigator";
-  ooda_iteration: number;
-  turn_count: number;
-  case_status: CaseStatus;
-  hypotheses: HypothesesSummary;
-  evidence_collected: number;
-  evidence_requested: number;
-  anomaly_frame?: AnomalyFrame;
-  // Milestones tracking
-  completed_milestone_ids?: string[];
-}
-
 export interface AcquisitionGuidance {
   commands: string[];
   file_locations: string[];
@@ -601,7 +570,6 @@ export interface ViewState {
   loading_state?: string | null;
   memory_context?: Record<string, any> | null;
   planning_state?: Record<string, any> | null;
-  investigation_progress?: InvestigationProgress | null;
 }
 
 export interface TitleGenerateRequest {
