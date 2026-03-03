@@ -9,3 +9,4 @@ export { HeaderSummary } from './HeaderSummary';
 export { InquiryDetails } from './InquiryDetails';
 export { InvestigatingDetails } from './InvestigatingDetails';
 export { ResolvedDetails } from './ResolvedDetails';
+export { ClosedDetails } from './ClosedDetails';

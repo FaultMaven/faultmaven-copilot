@@ -299,6 +299,7 @@ const ChatWindowComponent = function ChatWindow({
       {activeCase && (
         <EnhancedCaseHeader
           caseData={fullCaseData}
+          activeCase={activeCase}
           loading={caseLoading}
           error={caseError}
           initialExpanded={false}

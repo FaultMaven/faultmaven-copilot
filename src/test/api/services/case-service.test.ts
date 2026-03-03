@@ -217,7 +217,7 @@ describe('Case Service', () => {
   describe('Utility Functions', () => {
     it('should return valid transitions', () => {
       const transitions = caseService.getValidTransitions('inquiry');
-      expect(transitions).toEqual(['investigating', 'closed']);
+      expect(transitions).toEqual(['investigating', 'closed', 'resolved']);
     });
 
     it('should get correct status change message', () => {

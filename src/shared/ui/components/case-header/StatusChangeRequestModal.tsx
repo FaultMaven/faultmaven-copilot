@@ -18,6 +18,7 @@ interface StatusChangeRequestModalProps {
 const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
   inquiry: {
     investigating: "I want to start a formal investigation to find the root cause.",
+    resolved: "The answer was found in existing knowledge. Mark as resolved.",
     closed: "Close this case. I don't need further investigation."
   },
   investigating: {
@@ -30,6 +31,7 @@ const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
 const ACTION_TITLES: Record<string, Record<string, string>> = {
   inquiry: {
     investigating: "Start formal investigation?",
+    resolved: "Mark as resolved from knowledge base?",
     closed: "Close case without investigating?"
   },
   investigating: {
@@ -87,7 +89,7 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
           </div>
 
           <p>
-            The case will change from{' '}
+            The agent will be asked to transition from{' '}
             <strong>{getStatusLabel(currentStatus)}</strong> to{' '}
             <strong>{getStatusLabel(newStatus)}</strong>.
           </p>

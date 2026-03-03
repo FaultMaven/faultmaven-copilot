@@ -53,7 +53,7 @@ export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
         <h4 className="font-medium text-fm-text-primary mb-1">Investigation Completed:</h4>
         <ul className="space-y-1 pl-4">
           <li className="text-white">
-            • Duration: {formatDuration(data.resolution_summary.total_duration_minutes)} ({data.resolution_summary.milestones_completed} turns)
+            • Duration: {formatDuration(data.resolution_summary.total_duration_minutes)} ({data.resolution_summary.milestones_completed} milestones)
           </li>
           <li className="text-white">
             • Started: {formatDate(data.created_at)}

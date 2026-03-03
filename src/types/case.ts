@@ -95,6 +95,8 @@ export function isCaseResolved(
   return caseData.status === 'resolved';
 }
 
-export function isCaseClosed(caseData: { status: string }): boolean {
+export function isCaseClosed(
+  caseData: CaseUIResponse | { status: string }
+): caseData is CaseUIResponse_Resolved {
   return caseData.status === 'closed';
 }
