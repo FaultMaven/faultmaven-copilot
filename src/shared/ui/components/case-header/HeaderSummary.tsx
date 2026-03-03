@@ -75,17 +75,17 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
   const filesCount = getFilesCount();
 
-  // Get available status transitions (forward only)
+  // Get available case actions (phase transitions / dispositions)
   // Use server-provided valid_next_states if available, otherwise fall back to client-side logic
-  const getAvailableStatusTransitions = (currentStatus: string): UserCaseStatus[] => {
-    // Use server-provided transitions if available
+  const getAvailableCaseActions = (currentStatus: string): UserCaseStatus[] => {
+    // Use server-provided actions if available
     if ('valid_next_states' in caseData && caseData.valid_next_states) {
       return caseData.valid_next_states as UserCaseStatus[];
     }
 
     // Fallback to client-side logic (for backward compatibility during rollout)
     if (currentStatus === 'resolved' || currentStatus === 'closed') {
-      return []; // Terminal states - no transitions
+      return []; // Dispositions — no further actions
     }
     if (currentStatus === 'inquiry') {
       return ['investigating' as UserCaseStatus, 'closed' as UserCaseStatus];
@@ -96,7 +96,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     return [];
   };
 
-  const statusOptions = getAvailableStatusTransitions(caseData.status);
+  const statusOptions = getAvailableCaseActions(caseData.status);
   const canChangeStatus = statusOptions.length > 0 && onStatusChangeRequest;
 
   const [dropdownOpen, setDropdownOpen] = useState(false);

@@ -1,7 +1,7 @@
 /**
  * ResolvedDetails Component
  *
- * Expanded header content for RESOLVED phase
+ * Expanded header content for RESOLVED disposition
  * Shows: Problem, Investigation Summary, Root Cause, Solution, Documentation
  * Design based on: ui-mockups-text-diagrams.md lines 344-385
  */

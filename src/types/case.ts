@@ -10,13 +10,14 @@ import { components } from './api.generated';
 
 // ==================== Type Aliases from API Contract ====================
 
-// Backend status types
+// Case lifecycle status: Phases (active) + Dispositions (terminal)
 export type CaseStatus = 'inquiry' | 'investigating' | 'resolved' | 'closed';
 export type CaseDetail = components['schemas']['CaseDetail'];
 
 /**
- * User-Facing Case Status Types (4 states)
- * Based on FRONTEND_CASE_STATUS_DROPDOWN_GUIDE.md
+ * User-Facing Case Status Types (4 values)
+ * Phases: inquiry, investigating (active work)
+ * Dispositions: resolved, closed (terminal)
  */
 export type UserCaseStatus = CaseStatus;
 
@@ -39,7 +40,7 @@ export interface UserCase {
   organization_id: string; // Required per multi-tenant storage fixes (commit b434152a)
   closure_reason: string | null; // Required for terminal states (RESOLVED, CLOSED) per commit b434152a
   closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
-  valid_next_states?: string[]; // Server-provided list of allowed status transitions (empty for terminal states)
+  valid_next_states?: string[]; // Server-provided list of allowed case actions (empty for dispositions)
 }
 
 // Inquiry Phase Types
@@ -53,7 +54,7 @@ export type ProblemVerification = components['schemas']['ProblemVerificationData
 export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'];
 export type InvestigationStrategy = components['schemas']['InvestigationStrategyData'];
 
-// Resolved Phase Types
+// Resolved Disposition Types
 export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'];
 export type RootCause = components['schemas']['RootCauseSummary'];
 export type Solution = components['schemas']['SolutionSummary'];
@@ -92,4 +93,8 @@ export function isCaseResolved(
   caseData: CaseUIResponse
 ): caseData is CaseUIResponse_Resolved {
   return caseData.status === 'resolved';
+}
+
+export function isCaseClosed(caseData: { status: string }): boolean {
+  return caseData.status === 'closed';
 }

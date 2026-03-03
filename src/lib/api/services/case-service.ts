@@ -17,14 +17,16 @@ const log = createLogger('CaseService');
 
 
 /**
- * Allowed status transitions
+ * Allowed case actions (phase transitions and dispositions)
  */
-export const ALLOWED_TRANSITIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
+export const ALLOWED_ACTIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
   inquiry: ['investigating', 'closed'],
   investigating: ['resolved', 'closed'],
-  resolved: [],     // Terminal
-  closed: []        // Terminal
+  resolved: [],     // Disposition — terminal
+  closed: []        // Disposition — terminal
 };
+/** @deprecated Use ALLOWED_ACTIONS */
+export const ALLOWED_TRANSITIONS = ALLOWED_ACTIONS;
 
 /**
  * Human-readable status labels
@@ -47,41 +49,49 @@ export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
 };
 
 /**
- * Predefined messages for status change requests (used for display only)
+ * Predefined messages for case actions (used for display only)
  * Actual backend routing uses structured QueryIntent
  */
-export const STATUS_CHANGE_MESSAGES: Record<string, string> = {
+export const CASE_ACTION_MESSAGES: Record<string, string> = {
   'inquiry_to_investigating': 'I want to start a formal investigation to find the root cause.',
   'inquiry_to_closed': "Close this case. I don't need further investigation.",
   'investigating_to_resolved': 'The issue is resolved. Generate final documentation with root cause and solution.',
   'investigating_to_closed': 'Close this case as unresolved. Summarize what we found so far.'
 };
+/** @deprecated Use CASE_ACTION_MESSAGES */
+export const STATUS_CHANGE_MESSAGES = CASE_ACTION_MESSAGES;
 
 /**
- * Get valid transitions for currentStatus
+ * Get valid case actions for current status
  */
-export function getValidTransitions(currentStatus: string): UserCaseStatus[] {
+export function getValidActions(currentStatus: string): UserCaseStatus[] {
   const normalizedStatus = normalizeStatus(currentStatus);
-  return ALLOWED_TRANSITIONS[normalizedStatus] || [];
+  return ALLOWED_ACTIONS[normalizedStatus] || [];
 }
+/** @deprecated Use getValidActions */
+export const getValidTransitions = getValidActions;
 
 /**
- * Get status change message for a transition
+ * Get agent message for a case action
  */
-export function getStatusChangeMessage(from: string, to: string): string | null {
+export function getCaseActionMessage(from: string, to: string): string | null {
   const fromNormalized = normalizeStatus(from);
   const toNormalized = normalizeStatus(to);
   const key = `${fromNormalized}_to_${toNormalized}`;
-  return STATUS_CHANGE_MESSAGES[key] || null;
+  return CASE_ACTION_MESSAGES[key] || null;
 }
+/** @deprecated Use getCaseActionMessage */
+export const getStatusChangeMessage = getCaseActionMessage;
 
 /**
- * Check if a status is terminal
+ * Check if a status is a disposition (terminal)
  */
-export function isTerminalStatus(status: string): boolean {
+export function isDisposition(status: string): boolean {
   const normalized = normalizeStatus(status);
   return normalized === 'resolved' || normalized === 'closed';
 }
+/** @deprecated Use isDisposition */
+export const isTerminalStatus = isDisposition;
 
 /**
  * Normalize status string to UserCaseStatus type
@@ -93,10 +103,12 @@ export function normalizeStatus(status: string | undefined | null): UserCaseStat
   }
   const normalized = status.toLowerCase();
 
-  if (normalized === 'inquiry' || normalized === 'consulting') return 'inquiry';
+  // Phases (active work)
+  if (normalized === 'inquiry' || normalized === 'consulting') return 'inquiry'; // 'consulting' is legacy
   if (normalized === 'investigating') return 'investigating';
-  if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved';
-  if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed';
+  // Dispositions (terminal)
+  if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved'; // 'closed_resolved' is legacy
+  if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed'; // legacy variants
 
   log.warn('Unknown status, defaulting to inquiry', { status });
   return 'inquiry';
@@ -308,11 +320,11 @@ export async function updateCaseStatus(
   status: UserCaseStatus,
   closureReason?: string
 ): Promise<void> {
-  const isTerminal = isTerminalStatus(status);
+  const isTerminal = isDisposition(status);
 
-  // Validate terminal state requirements per backend validation (models.py:3158-3202)
+  // Validate disposition requirements per backend validation (models.py:3158-3202)
   if (isTerminal && !closureReason) {
-    throw new Error('Terminal states (resolved/closed) require closure_reason');
+    throw new Error('Dispositions (resolved/closed) require closure_reason');
   }
 
   const updateData: CaseUpdateRequest = {
