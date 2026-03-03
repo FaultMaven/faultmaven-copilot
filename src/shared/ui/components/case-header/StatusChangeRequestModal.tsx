@@ -1,7 +1,7 @@
 /**
  * StatusChangeRequestModal Component
  *
- * Confirmation modal for manual status change requests
+ * Confirmation modal for case actions (phase transitions and dispositions).
  */
 
 import React from 'react';
@@ -14,10 +14,11 @@ interface StatusChangeRequestModalProps {
   onCancel: () => void;
 }
 
-// Status transition messages that will be sent to the agent
-const STATUS_MESSAGES: Record<string, Record<string, string>> = {
+// Agent messages for each case action
+const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
   inquiry: {
     investigating: "I want to start a formal investigation to find the root cause.",
+    resolved: "The answer was found in existing knowledge. Mark as resolved.",
     closed: "Close this case. I don't need further investigation."
   },
   investigating: {
@@ -26,10 +27,11 @@ const STATUS_MESSAGES: Record<string, Record<string, string>> = {
   }
 };
 
-// User-friendly titles for each transition
-const TRANSITION_TITLES: Record<string, Record<string, string>> = {
+// User-friendly titles for each case action
+const ACTION_TITLES: Record<string, Record<string, string>> = {
   inquiry: {
     investigating: "Start formal investigation?",
+    resolved: "Mark as resolved from knowledge base?",
     closed: "Close case without investigating?"
   },
   investigating: {
@@ -58,14 +60,14 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
   };
 
   const getMessage = () => {
-    return STATUS_MESSAGES[currentStatus]?.[newStatus] || '';
+    return CASE_ACTION_MESSAGES[currentStatus]?.[newStatus] || '';
   };
 
   const getTitle = () => {
-    return TRANSITION_TITLES[currentStatus]?.[newStatus] || 'Change case status?';
+    return ACTION_TITLES[currentStatus]?.[newStatus] || 'Perform case action?';
   };
 
-  const isTerminalState = newStatus === 'resolved' || newStatus === 'closed';
+  const isDisposition = newStatus === 'resolved' || newStatus === 'closed';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -87,14 +89,14 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
           </div>
 
           <p>
-            The case status will change immediately from{' '}
+            The agent will be asked to transition from{' '}
             <strong>{getStatusLabel(currentStatus)}</strong> to{' '}
             <strong>{getStatusLabel(newStatus)}</strong>.
           </p>
 
-          {isTerminalState && (
+          {isDisposition && (
             <p className="text-amber-700 bg-amber-50 p-2 rounded text-xs">
-              ⚠️ {getStatusLabel(newStatus)} is a terminal state. The case cannot be reopened from the UI.
+              ⚠️ {getStatusLabel(newStatus)} is a disposition (terminal). The case cannot be reopened from the UI.
             </p>
           )}
         </div>

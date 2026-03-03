@@ -17,14 +17,16 @@ const log = createLogger('CaseService');
 
 
 /**
- * Allowed status transitions
+ * Allowed case actions (phase transitions and dispositions)
  */
-export const ALLOWED_TRANSITIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
-  inquiry: ['investigating', 'closed'],
+export const ALLOWED_ACTIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
+  inquiry: ['investigating', 'closed', 'resolved'],  // 'resolved' = fast-track KB resolution
   investigating: ['resolved', 'closed'],
-  resolved: [],     // Terminal
-  closed: []        // Terminal
+  resolved: [],     // Disposition — terminal
+  closed: []        // Disposition — terminal
 };
+/** @deprecated Use ALLOWED_ACTIONS */
+export const ALLOWED_TRANSITIONS = ALLOWED_ACTIONS;
 
 /**
  * Human-readable status labels
@@ -43,45 +45,137 @@ export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
   inquiry: 'Q&A mode - exploring the issue',
   investigating: 'Active troubleshooting - systematic investigation',
   resolved: 'Issue resolved with root cause and solution',
-  closed: 'Case closed without resolution'
+  closed: 'Case closed — see closure reason for details'
 };
 
 /**
- * Predefined messages for status change requests (used for display only)
+ * Investigation stage display info for INVESTIGATING substage pill.
+ * Maps InvestigationStage enum values → user-facing label, icon, and pill style.
+ */
+export const STAGE_DISPLAY_INFO: Record<string, { label: string; icon: string; pillClass: string }> = {
+  diagnosis: {
+    label: 'Diagnosing',
+    icon: '🔍',
+    pillClass: 'border border-fm-accent-border bg-fm-accent-soft text-fm-accent',
+  },
+  mitigation: {
+    label: 'Mitigating',
+    icon: '⚡',
+    pillClass: 'border border-fm-warning-border bg-fm-warning-bg text-fm-warning',
+  },
+  treatment: {
+    label: 'Resolving',
+    icon: '🔧',
+    pillClass: 'border border-fm-success-border bg-fm-success-bg text-fm-success',
+  },
+};
+
+/**
+ * Closure reason display info for CLOSED status pill and ClosedDetails banner.
+ */
+export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: string; description: string }> = {
+  mitigation_sufficient: {
+    label: 'Mitigated',
+    bannerClass: 'bg-fm-warning-bg border border-fm-warning-border text-fm-warning',
+    description: 'Temporary mitigation applied; root cause investigation deferred.',
+  },
+  abandoned: {
+    label: 'Abandoned',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'Investigation stopped without reaching a conclusion.',
+  },
+  escalated: {
+    label: 'Escalated',
+    bannerClass: 'bg-fm-info-bg border border-fm-info-border text-fm-info',
+    description: 'Case escalated to another team or external support.',
+  },
+  inquiry_only: {
+    label: 'Inquiry Only',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'Q&A session completed, no investigation needed.',
+  },
+  duplicate: {
+    label: 'Duplicate',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'Duplicate of another case.',
+  },
+  other: {
+    label: 'Other',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'Case closed.',
+  },
+};
+
+/**
+ * Evidence source type display info (for EvidenceSummary.type badge).
+ */
+export const EVIDENCE_TYPE_DISPLAY_INFO: Record<string, { label: string; icon: string; badgeClass: string }> = {
+  log_file: { label: 'Logs', icon: '📄', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
+  metrics_data: { label: 'Metrics', icon: '📊', badgeClass: 'bg-fm-success-bg text-fm-success border border-fm-success-border' },
+  config_file: { label: 'Config', icon: '⚙️', badgeClass: 'bg-fm-warning-bg text-fm-warning border border-fm-warning-border' },
+  trace_data: { label: 'Traces', icon: '🔗', badgeClass: 'bg-fm-info-bg text-fm-info border border-fm-info-border' },
+  error_output: { label: 'Errors', icon: '❌', badgeClass: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border' },
+  screenshot: { label: 'Screenshot', icon: '🖼️', badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border' },
+  api_response: { label: 'API', icon: '🌐', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
+  monitoring_alert: { label: 'Alert', icon: '🔔', badgeClass: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border' },
+  database_query: { label: 'DB Query', icon: '🗄️', badgeClass: 'bg-fm-info-bg text-fm-info border border-fm-info-border' },
+  code_review: { label: 'Code', icon: '💻', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
+  user_report: { label: 'Report', icon: '💬', badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border' },
+};
+
+/** Get evidence type display info with fallback for unknown types */
+export function getEvidenceTypeInfo(type: string): { label: string; icon: string; badgeClass: string } {
+  return EVIDENCE_TYPE_DISPLAY_INFO[type] || {
+    label: type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    icon: '📋',
+    badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border',
+  };
+}
+
+/**
+ * Predefined messages for case actions (used for display only)
  * Actual backend routing uses structured QueryIntent
  */
-export const STATUS_CHANGE_MESSAGES: Record<string, string> = {
+export const CASE_ACTION_MESSAGES: Record<string, string> = {
   'inquiry_to_investigating': 'I want to start a formal investigation to find the root cause.',
   'inquiry_to_closed': "Close this case. I don't need further investigation.",
   'investigating_to_resolved': 'The issue is resolved. Generate final documentation with root cause and solution.',
   'investigating_to_closed': 'Close this case as unresolved. Summarize what we found so far.'
 };
+/** @deprecated Use CASE_ACTION_MESSAGES */
+export const STATUS_CHANGE_MESSAGES = CASE_ACTION_MESSAGES;
 
 /**
- * Get valid transitions for currentStatus
+ * Get valid case actions for current status
  */
-export function getValidTransitions(currentStatus: string): UserCaseStatus[] {
+export function getValidActions(currentStatus: string): UserCaseStatus[] {
   const normalizedStatus = normalizeStatus(currentStatus);
-  return ALLOWED_TRANSITIONS[normalizedStatus] || [];
+  return ALLOWED_ACTIONS[normalizedStatus] || [];
 }
+/** @deprecated Use getValidActions */
+export const getValidTransitions = getValidActions;
 
 /**
- * Get status change message for a transition
+ * Get agent message for a case action
  */
-export function getStatusChangeMessage(from: string, to: string): string | null {
+export function getCaseActionMessage(from: string, to: string): string | null {
   const fromNormalized = normalizeStatus(from);
   const toNormalized = normalizeStatus(to);
   const key = `${fromNormalized}_to_${toNormalized}`;
-  return STATUS_CHANGE_MESSAGES[key] || null;
+  return CASE_ACTION_MESSAGES[key] || null;
 }
+/** @deprecated Use getCaseActionMessage */
+export const getStatusChangeMessage = getCaseActionMessage;
 
 /**
- * Check if a status is terminal
+ * Check if a status is a disposition (terminal)
  */
-export function isTerminalStatus(status: string): boolean {
+export function isDisposition(status: string): boolean {
   const normalized = normalizeStatus(status);
   return normalized === 'resolved' || normalized === 'closed';
 }
+/** @deprecated Use isDisposition */
+export const isTerminalStatus = isDisposition;
 
 /**
  * Normalize status string to UserCaseStatus type
@@ -93,10 +187,12 @@ export function normalizeStatus(status: string | undefined | null): UserCaseStat
   }
   const normalized = status.toLowerCase();
 
-  if (normalized === 'inquiry' || normalized === 'consulting') return 'inquiry';
+  // Phases (active work)
+  if (normalized === 'inquiry' || normalized === 'consulting') return 'inquiry'; // 'consulting' is legacy
   if (normalized === 'investigating') return 'investigating';
-  if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved';
-  if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed';
+  // Dispositions (terminal)
+  if (normalized === 'resolved' || normalized === 'closed_resolved') return 'resolved'; // 'closed_resolved' is legacy
+  if (normalized === 'closed' || normalized === 'unresolved' || normalized === 'closed_unresolved') return 'closed'; // legacy variants
 
   log.warn('Unknown status, defaulting to inquiry', { status });
   return 'inquiry';
@@ -308,11 +404,11 @@ export async function updateCaseStatus(
   status: UserCaseStatus,
   closureReason?: string
 ): Promise<void> {
-  const isTerminal = isTerminalStatus(status);
+  const isTerminal = isDisposition(status);
 
-  // Validate terminal state requirements per backend validation (models.py:3158-3202)
+  // Validate disposition requirements per backend validation (models.py:3158-3202)
   if (isTerminal && !closureReason) {
-    throw new Error('Terminal states (resolved/closed) require closure_reason');
+    throw new Error('Dispositions (resolved/closed) require closure_reason');
   }
 
   const updateData: CaseUpdateRequest = {

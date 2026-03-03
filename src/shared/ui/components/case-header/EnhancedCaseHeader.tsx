@@ -6,13 +6,14 @@
  */
 
 import React, { useState } from 'react';
-import type { CaseUIResponse, UploadedFileMetadata } from '../../../../types/case';
-import { isCaseInquiry, isCaseInvestigating, isCaseResolved } from '../../../../types/case';
+import type { CaseUIResponse, UserCase } from '../../../../types/case';
+import { isCaseInquiry, isCaseInvestigating, isCaseResolved, isCaseClosed } from '../../../../types/case';
 import type { UserCaseStatus } from '../../../../lib/api';
 import { HeaderSummary } from './HeaderSummary';
 import { InquiryDetails } from './InquiryDetails';
 import { InvestigatingDetails } from './InvestigatingDetails';
 import { ResolvedDetails } from './ResolvedDetails';
+import { ClosedDetails } from './ClosedDetails';
 import { StatusChangeRequestModal } from './StatusChangeRequestModal';
 import { createLogger } from '~/lib/utils/logger';
 
@@ -20,6 +21,7 @@ const log = createLogger('EnhancedCaseHeader');
 
 interface EnhancedCaseHeaderProps {
   caseData: CaseUIResponse | null;
+  activeCase?: UserCase | null;
   loading?: boolean;
   error?: string | null;
   initialExpanded?: boolean;
@@ -29,6 +31,7 @@ interface EnhancedCaseHeaderProps {
 
 export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   caseData,
+  activeCase,
   loading = false,
   error = null,
   initialExpanded = true,
@@ -125,6 +128,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
         {/* Collapsed Summary */}
         <HeaderSummary
           caseData={caseData}
+          activeCase={activeCase}
           expanded={expanded}
           onToggle={handleToggle}
           onStatusChangeRequest={handleStatusChangeRequest}
@@ -133,7 +137,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
         {/* Expanded Details (phase-specific) */}
         {expanded && (
           <div className="border-t border-fm-border">
-            {renderDetails(caseData, showFiles, setShowFiles, onScrollToTurn ? (turnNumber: number) => {
+            {renderDetails(caseData, activeCase ?? null, showFiles, setShowFiles, onScrollToTurn ? (turnNumber: number) => {
               setExpanded(false);
               onScrollToTurn(turnNumber);
             } : undefined)}
@@ -157,6 +161,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 
 function renderDetails(
   caseData: CaseUIResponse,
+  activeCase: UserCase | null,
   showFiles: boolean,
   setShowFiles: (show: boolean) => void,
   onScrollToTurn?: (turnNumber: number) => void
@@ -183,7 +188,16 @@ function renderDetails(
     );
   }
 
-  if (isCaseResolved(caseData)) {
+  if (isCaseResolved(caseData) || isCaseClosed(caseData)) {
+    if (caseData.status === 'closed') {
+      return (
+        <ClosedDetails
+          data={caseData}
+          caseId={caseData.case_id}
+          closureReason={activeCase?.closure_reason ?? null}
+        />
+      );
+    }
     return (
       <ResolvedDetails
         data={caseData}
