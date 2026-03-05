@@ -445,30 +445,31 @@ const ChatWindowComponent = function ChatWindow({
                       </div>
                     )}
 
-                    {/* Suggested Actions */}
-                    {item.suggestedActions && item.suggestedActions.length > 0 && (
-                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-warning-border rounded-lg">
-                        <div className="text-finding-title text-fm-warning mb-2">⚡ Quick Actions</div>
-                        <div className="flex flex-wrap gap-2">
-                          {item.suggestedActions.map((action, idx) => (
+                    {/* Agent Actions — only backend-driven actions (transition, create_runbook, command) */}
+                    {item.suggestedActions && item.suggestedActions.length > 0 && (() => {
+                      const agentActions = item.suggestedActions!.filter(
+                        a => a.type === 'transition' || a.type === 'create_runbook' || a.type === 'command'
+                      );
+                      if (agentActions.length === 0) return null;
+
+                      return (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {agentActions.map((action, idx) => (
                             <button
                               key={idx}
                               onClick={() => {
-                                if (action.type === 'question_template' && canInteract && !loading) {
-                                  onQuerySubmit(action.payload);
-                                } else if (action.type === 'command') {
+                                if (action.type === 'command') {
                                   navigator.clipboard.writeText(action.payload);
+                                } else if (canInteract && !loading) {
+                                  onQuerySubmit(action.payload);
                                 }
                               }}
-                              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${action.type === 'question_template'
-                                ? 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
-                                : action.type === 'command'
+                              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                                action.type === 'command'
                                   ? 'bg-fm-success-bg text-fm-success hover:opacity-80'
-                                  : action.type === 'upload_data'
-                                    ? 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
-                                    : 'bg-fm-elevated text-fm-text-primary hover:opacity-80'
-                                }`}
-                              disabled={!canInteract || loading}
+                                  : 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
+                              }`}
+                              disabled={action.type !== 'command' && (!canInteract || loading)}
                             >
                               <span className="flex items-center gap-1">
                                 {action.icon && <span>{action.icon}</span>}
@@ -477,8 +478,8 @@ const ChatWindowComponent = function ChatWindow({
                             </button>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {item.clarifyingQuestions && item.clarifyingQuestions.length > 0 && (
                       <ClarifyingQuestions

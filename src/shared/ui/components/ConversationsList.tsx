@@ -474,20 +474,25 @@ export function ConversationsList({
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {hasUnsavedNewChat && (
-          <div className="space-y-1 pb-2">
-            <ConversationItem
-              key="__new_chat__"
-              session={{ session_id: 'new', created_at: new Date().toISOString(), status: 'active', last_activity: new Date().toISOString(), metadata: {} } as any}
-              title="New Case"
-              isActive={!activeCaseId}
-              isUnsavedNew={true}
-              onSelect={() => onNewSession('')}
-              onDelete={undefined}
-              onRename={undefined}
-            />
-          </div>
-        )}
+        {hasUnsavedNewChat && (() => {
+          const now = new Date();
+          const mm = String(now.getMonth() + 1).padStart(2, '0');
+          const dd = String(now.getDate()).padStart(2, '0');
+          return (
+            <div className="space-y-1 pb-2">
+              <ConversationItem
+                key="__new_chat__"
+                session={{ session_id: 'new', created_at: now.toISOString(), status: 'active', last_activity: now.toISOString(), metadata: {} } as any}
+                title={`Case-${mm}${dd}-?`}
+                isActive={!activeCaseId}
+                isUnsavedNew={true}
+                onSelect={() => onNewSession('')}
+                onDelete={undefined}
+                onRename={undefined}
+              />
+            </div>
+          );
+        })()}
 
         {mergedCases.length === 0 && !error?.includes('Failed to fetch') ? (
           <div className="text-center py-8 px-4">

@@ -146,11 +146,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         submitting={submitting}
         disabled={!canInteract}
         placeholder={
-          !activeCase
-            ? "Select a case to start chatting..."
-            : !canInteract
-              ? "This case is closed. Reopen to continue."
-              : "Ask FaultMaven..."
+          !canInteract
+            ? "This case is closed. Reopen to continue."
+            : "Ask FaultMaven..."
         }
       />
     </div>
