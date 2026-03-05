@@ -83,9 +83,8 @@ const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onD
       {isHovered && (
         <div
           ref={tooltipRef}
-          className={`absolute bottom-full z-50 w-80 mb-2 p-3 bg-fm-surface border border-fm-border rounded-lg shadow-lg ${
-            tooltipPosition === 'right' ? 'right-0' : 'left-0'
-          }`}
+          className={`absolute bottom-full z-50 w-80 mb-2 p-3 bg-fm-surface border border-fm-border rounded-lg shadow-lg ${tooltipPosition === 'right' ? 'right-0' : 'left-0'
+            }`}
         >
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -134,7 +133,7 @@ interface PIIBadgeProps {
 const PIIBadge: React.FC<PIIBadgeProps> = memo(({ label }) => {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-md"
+      className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 text-xs font-medium bg-fm-surface text-fm-text-secondary border border-fm-border rounded-md opacity-80"
       title={`This information has been redacted for privacy: ${label}`}
     >
       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -192,6 +191,46 @@ function processPIITokens(text: string): React.ReactNode[] {
   }
 
   return parts.length > 0 ? parts : [text];
+}
+
+/**
+ * Helper to extract raw text from React nodes
+ */
+function extractText(node: React.ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (React.isValidElement(node) && node.props && 'children' in (node.props as any)) {
+    return extractText((node.props as any).children as React.ReactNode);
+  }
+  return '';
+}
+
+/**
+ * Helper to recursively process PII tokens while preserving React elements
+ */
+function processChildrenForPII(children: React.ReactNode): React.ReactNode {
+  if (typeof children === 'string') {
+    if (children.includes('{{REDACTED:')) {
+      return processPIITokens(children);
+    }
+    return children;
+  }
+
+  if (Array.isArray(children)) {
+    return React.Children.map(children, child => processChildrenForPII(child));
+  }
+
+  if (React.isValidElement(children)) {
+    if (children.props && 'children' in (children.props as any)) {
+      return React.cloneElement(children as React.ReactElement<any>, {
+        ...(children.props as object),
+        children: processChildrenForPII((children.props as any).children as React.ReactNode)
+      });
+    }
+  }
+
+  return children;
 }
 
 const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
@@ -333,18 +372,18 @@ function createMarkdownComponents(): Partial<Components> {
       <li className="text-sm text-fm-text-secondary">{children}</li>
     ),
     p: ({ children }) => {
-      // Process PII tokens in paragraph text
-      const textContent = String(children);
+      // Process PII tokens in paragraph text while preserving React elements
+      const textContent = extractText(children);
+      let processedChildren: React.ReactNode = children;
+
       if (textContent.includes('{{REDACTED:')) {
-        const processedChildren = processPIITokens(textContent);
-        return (
-          <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">
-            {processedChildren}
-          </p>
-        );
+        processedChildren = processChildrenForPII(children);
       }
+
       return (
-        <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">{children}</p>
+        <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">
+          {processedChildren}
+        </p>
       );
     },
     strong: ({ children }) => (
@@ -375,9 +414,9 @@ function createMarkdownComponents(): Partial<Components> {
     ),
     // Add text node processor to handle PII tokens in any text content
     text: ({ children }) => {
-      const textContent = String(children);
+      const textContent = extractText(children);
       if (textContent.includes('{{REDACTED:')) {
-        return <>{processPIITokens(textContent)}</>;
+        return <>{processChildrenForPII(children)}</>;
       }
       return <>{children}</>;
     },
@@ -404,19 +443,19 @@ function injectSourceCitations(
         ...baseComponents,
         // Enhance paragraph rendering to include contextual citations AND PII handling
         p: ({ children }) => {
-          const textContent = String(children);
+          const textContent = extractText(children);
           const shouldHaveCitation = textContent.length > 40 &&
-                                   sources.length > 0 &&
-                                   citationIndex < sources.length &&
-                                   (textContent.includes('based on') ||
-                                    textContent.includes('according to') ||
-                                    textContent.includes('documentation') ||
-                                    textContent.includes('shows') ||
-                                    textContent.includes('indicates') ||
-                                    textContent.toLowerCase().includes('error') ||
-                                    textContent.toLowerCase().includes('issue') ||
-                                    textContent.toLowerCase().includes('problem') ||
-                                    citationIndex === 0); // Always cite first substantive paragraph
+            sources.length > 0 &&
+            citationIndex < sources.length &&
+            (textContent.includes('based on') ||
+              textContent.includes('according to') ||
+              textContent.includes('documentation') ||
+              textContent.includes('shows') ||
+              textContent.includes('indicates') ||
+              textContent.toLowerCase().includes('error') ||
+              textContent.toLowerCase().includes('issue') ||
+              textContent.toLowerCase().includes('problem') ||
+              citationIndex === 0); // Always cite first substantive paragraph
 
           let citation = null;
           if (shouldHaveCitation) {
@@ -430,10 +469,10 @@ function injectSourceCitations(
             citationIndex++;
           }
 
-          // Process PII tokens in paragraph text
+          // Process PII tokens in paragraph text while preserving React elements
           let processedChildren: React.ReactNode = children;
           if (textContent.includes('{{REDACTED:')) {
-            processedChildren = processPIITokens(textContent);
+            processedChildren = processChildrenForPII(children);
           }
 
           return (

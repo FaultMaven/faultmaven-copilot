@@ -95,8 +95,8 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
           </p>
 
           {isDisposition && (
-            <p className="text-amber-700 bg-amber-50 p-2 rounded text-xs">
-              ⚠️ {getStatusLabel(newStatus)} is a disposition (terminal). The case cannot be reopened from the UI.
+            <p className="text-fm-warning bg-fm-warning-bg/50 border border-fm-warning-border p-2 rounded text-xs">
+              {getStatusLabel(newStatus)} is a terminal disposition. The case cannot be reopened from the UI.
             </p>
           )}
         </div>
