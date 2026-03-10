@@ -14,7 +14,8 @@ import {
   EvidenceRequest,
   InvestigationMode,
   Hypothesis,
-  TestResult
+  TestResult,
+  AttachmentResult,
 } from '../api';
 
 import { CaseStatus, UserCase } from '../../types/case';
@@ -61,6 +62,9 @@ export interface ConversationItem {
   newHypotheses?: Hypothesis[];
   hypothesisTested?: string | null;
   testResult?: TestResult | null;
+
+  // File attachments processed in this turn
+  attachments?: AttachmentResult[];
 
   // Additional properties for optimistic updates (optional in base)
   role?: 'user' | 'assistant' | 'system';

@@ -158,11 +158,15 @@ src/
 │   │   ├── LocalLoginForm.tsx           # Local auth form
 │   │   ├── HypothesisTracker.tsx        # Hypothesis tracking display
 │   │   ├── case-header/                 # Case header components
-│   │   │   ├── EnhancedCaseHeader.tsx   # Phase-adaptive header
-│   │   │   ├── HeaderSummary.tsx        # Header summary
-│   │   │   ├── ConsultingDetails.tsx    # Consulting phase details
-│   │   │   ├── InvestigatingDetails.tsx # Investigation details
-│   │   │   └── ResolvedDetails.tsx      # Resolved case details
+│   │   │   ├── shared.tsx               # SVG icons, DetailRow, SeverityChip, helpers
+│   │   │   ├── EnhancedCaseHeader.tsx   # Phase-adaptive header wrapper
+│   │   │   ├── HeaderSummary.tsx        # Collapsed 2-line status bar
+│   │   │   ├── InquiryDetails.tsx       # Inquiry phase compact rows
+│   │   │   ├── InvestigatingDetails.tsx # Investigation compact rows + drill-down
+│   │   │   ├── ResolvedDetails.tsx      # Resolved case compact rows
+│   │   │   ├── ClosedDetails.tsx        # Closed case compact rows
+│   │   │   ├── EvidenceDetailsModal.tsx # Evidence detail modal
+│   │   │   └── StatusChangeRequestModal.tsx # Status change confirmation
 │   │   └── ...                          # Many more components
 │   ├── hooks/                           # Custom hooks
 │   │   ├── useAuth.ts                   # Authentication hook
@@ -442,7 +446,7 @@ Cases follow a defined status lifecycle with specific transitions:
 
 | Status | Description | Valid Transitions |
 |--------|-------------|-------------------|
-| `consulting` | Q&A mode - exploring the issue | `investigating`, `closed` |
+| `inquiry` | Q&A mode - exploring the issue | `investigating`, `closed` |
 | `investigating` | Active troubleshooting | `resolved`, `closed` |
 | `resolved` | Issue resolved (terminal) | - |
 | `closed` | Closed without resolution (terminal) | - |
@@ -456,10 +460,10 @@ import {
 } from '~/lib/api/services/case-service';
 
 // Get valid transitions for current status
-const transitions = getValidTransitions('consulting'); // ['investigating', 'closed']
+const transitions = getValidTransitions('inquiry'); // ['investigating', 'closed']
 
 // Get predefined message for status change
-const msg = getStatusChangeMessage('consulting', 'investigating');
+const msg = getStatusChangeMessage('inquiry', 'investigating');
 // "I want to start a formal investigation to find the root cause."
 ```
 

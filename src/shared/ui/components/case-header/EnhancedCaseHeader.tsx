@@ -1,8 +1,9 @@
 /**
  * EnhancedCaseHeader Component
  *
- * Main wrapper for case header with expand/collapse functionality
- * Routes to phase-specific detail components based on case status
+ * Main wrapper for case header with expand/collapse functionality.
+ * Routes to phase-specific detail components based on case status.
+ * Manages drill-down section state (accordion — one section at a time).
  */
 
 import React, { useState } from 'react';
@@ -15,6 +16,7 @@ import { InvestigatingDetails } from './InvestigatingDetails';
 import { ResolvedDetails } from './ResolvedDetails';
 import { ClosedDetails } from './ClosedDetails';
 import { StatusChangeRequestModal } from './StatusChangeRequestModal';
+import { getSeverity } from './shared';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('EnhancedCaseHeader');
@@ -41,7 +43,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   const [expanded, setExpanded] = useState(initialExpanded);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [requestedStatus, setRequestedStatus] = useState<UserCaseStatus | null>(null);
-  const [showFiles, setShowFiles] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [isSubmittingStatusChange, setIsSubmittingStatusChange] = useState(false);
 
   if (loading) {
@@ -63,7 +65,6 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
     );
   }
 
-  // If no data yet (shouldn't happen if loading/error handled above, but be safe)
   if (!caseData) {
     return (
       <div className="bg-fm-surface-alt border-b border-fm-border-strong p-4">
@@ -72,9 +73,22 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
     );
   }
 
+  const severity = getSeverity(activeCase, caseData);
+
   const handleToggle = () => {
     setExpanded(!expanded);
   };
+
+  const handleToggleSection = (section: string) => {
+    setExpandedSection(prev => prev === section ? null : section);
+  };
+
+  const handleScrollToTurn = onScrollToTurn
+    ? (turnNumber: number) => {
+      setExpanded(false);
+      onScrollToTurn(turnNumber);
+    }
+    : undefined;
 
   const handleStatusChangeRequest = (newStatus: UserCaseStatus) => {
     log.debug('handleStatusChangeRequest called', {
@@ -83,7 +97,6 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
       hasParentCallback: !!onStatusChangeRequest
     });
 
-    // Prevent multiple status change requests while one is in progress
     if (isSubmittingStatusChange) {
       log.debug('Blocked: already submitting');
       return;
@@ -130,6 +143,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
           caseData={caseData}
           activeCase={activeCase}
           expanded={expanded}
+          severity={severity}
           onToggle={handleToggle}
           onStatusChangeRequest={handleStatusChangeRequest}
         />
@@ -137,10 +151,13 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
         {/* Expanded Details (phase-specific) */}
         {expanded && (
           <div className="border-t border-fm-border">
-            {renderDetails(caseData, activeCase ?? null, showFiles, setShowFiles, onScrollToTurn ? (turnNumber: number) => {
-              setExpanded(false);
-              onScrollToTurn(turnNumber);
-            } : undefined)}
+            {renderDetails(
+              caseData,
+              activeCase ?? null,
+              expandedSection,
+              handleToggleSection,
+              handleScrollToTurn,
+            )}
           </div>
         )}
       </div>
@@ -162,9 +179,9 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 function renderDetails(
   caseData: CaseUIResponse,
   activeCase: UserCase | null,
-  showFiles: boolean,
-  setShowFiles: (show: boolean) => void,
-  onScrollToTurn?: (turnNumber: number) => void
+  expandedSection: string | null,
+  onToggleSection: (section: string) => void,
+  onScrollToTurn?: (turnNumber: number) => void,
 ): React.ReactNode {
   if (isCaseInquiry(caseData)) {
     return (
@@ -172,8 +189,8 @@ function renderDetails(
         data={caseData.inquiry}
         caseId={caseData.case_id}
         uploadedFilesCount={'uploaded_files_count' in caseData ? caseData.uploaded_files_count : 0}
-        showFiles={showFiles}
-        onToggleFiles={() => setShowFiles(!showFiles)}
+        expandedSection={expandedSection}
+        onToggleSection={onToggleSection}
         onScrollToTurn={onScrollToTurn}
       />
     );
@@ -184,6 +201,9 @@ function renderDetails(
       <InvestigatingDetails
         data={caseData}
         caseId={caseData.case_id}
+        expandedSection={expandedSection}
+        onToggleSection={onToggleSection}
+        onScrollToTurn={onScrollToTurn}
       />
     );
   }
@@ -195,6 +215,8 @@ function renderDetails(
           data={caseData}
           caseId={caseData.case_id}
           closureReason={activeCase?.closure_reason ?? null}
+          expandedSection={expandedSection}
+          onToggleSection={onToggleSection}
         />
       );
     }
@@ -202,6 +224,8 @@ function renderDetails(
       <ResolvedDetails
         data={caseData}
         caseId={caseData.case_id}
+        expandedSection={expandedSection}
+        onToggleSection={onToggleSection}
       />
     );
   }

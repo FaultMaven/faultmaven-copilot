@@ -1,146 +1,95 @@
 /**
  * ResolvedDetails Component
  *
- * Expanded header content for RESOLVED disposition
- * Shows: Problem, Investigation Summary, Root Cause, Solution, Documentation
- * Design based on: ui-mockups-text-diagrams.md lines 344-385
+ * Expanded header content for RESOLVED disposition.
+ * Compact rows: Problem, Root Cause (confirmed), Solution, Duration, Reports (drill-down).
  */
 
 import React from 'react';
 import type { CaseUIResponse_Resolved } from '../../../../types/case';
+import { DetailRow, CheckCircleIcon, formatDuration, formatTimeAgo } from './shared';
 
 interface ResolvedDetailsProps {
   data: CaseUIResponse_Resolved;
   caseId: string;
+  expandedSection: string | null;
+  onToggleSection: (section: string) => void;
 }
 
 export const ResolvedDetails: React.FC<ResolvedDetailsProps> = ({
   data,
+  expandedSection,
+  onToggleSection,
 }) => {
-  // Format date/time
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    });
-  };
+  const reportsExpanded = expandedSection === 'reports';
 
-  // Format duration
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hours === 0) return `${mins}m`;
-    return `${hours}h ${mins}m`;
+  const formatReportName = (reportType: string): string => {
+    return reportType
+      .replace(/_/g, ' ')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   };
 
   return (
-    <div className="px-4 pb-4 space-y-3 text-sm">
-      {/* Problem Statement */}
-      <div>
-        <h4 className="font-medium text-fm-text-primary mb-1">Problem:</h4>
-        <p className="text-white">{data.title}</p>
-      </div>
+    <div className="px-4 pb-2 pt-1.5 space-y-0">
+      {/* Problem */}
+      <DetailRow label="Problem">
+        {data.title}
+      </DetailRow>
 
-      {/* Separator */}
-      <div className="border-t border-fm-border"></div>
+      {/* Root Cause — confirmed */}
+      <DetailRow label="Root Cause">
+        <span className="inline-flex items-center gap-1">
+          <span className="truncate">{data.root_cause.description}</span>
+          <CheckCircleIcon className="w-3.5 h-3.5 text-fm-success flex-shrink-0" />
+        </span>
+      </DetailRow>
 
-      {/* Investigation Completed Summary */}
-      <div>
-        <h4 className="font-medium text-fm-text-primary mb-1">Investigation Completed:</h4>
-        <ul className="space-y-1 pl-4">
-          <li className="text-white">
-            • Duration: {formatDuration(data.resolution_summary.total_duration_minutes)} ({data.resolution_summary.milestones_completed} milestones)
-          </li>
-          <li className="text-white">
-            • Started: {formatDate(data.created_at)}
-          </li>
-          <li className="text-white">
-            • Resolved: {formatDate(data.resolved_at)}
-          </li>
-        </ul>
-      </div>
+      {/* Solution */}
+      <DetailRow label="Solution">
+        {data.solution_applied.description}
+      </DetailRow>
 
-      {/* Separator */}
-      <div className="border-t border-fm-border"></div>
+      {/* Duration */}
+      <DetailRow label="Duration">
+        {formatDuration(data.resolution_summary.total_duration_minutes)} · {data.resolution_summary.milestones_completed} milestones
+      </DetailRow>
 
-      {/* Root Cause */}
-      <div>
-        <h4 className="font-medium text-fm-text-primary mb-1">
-          ✓ Root Cause:
-        </h4>
-        <p className="text-white mb-1">{data.root_cause.description}</p>
-        <div className="text-xs text-fm-text-tertiary space-x-3">
-          <span>Category: {data.root_cause.category}</span>
-          <span>Severity: {data.root_cause.severity}</span>
-        </div>
-      </div>
-
-      {/* Solution Applied */}
-      <div>
-        <h4 className="font-medium text-fm-text-primary mb-1">✓ Solution Applied:</h4>
-        <p className="text-white mb-1">{data.solution_applied.description}</p>
-        <div className="text-xs text-fm-text-tertiary">
-          Status: {data.verification_status.verified ? 'Successful' : 'Pending verification'}
-          {data.solution_applied.applied_at && ` (${formatDate(data.solution_applied.applied_at)})`}
-        </div>
-      </div>
-
-      {/* Separator */}
-      <div className="border-t border-fm-border"></div>
-
-      {/* Documentation Available */}
+      {/* Reports — expandable */}
       {data.reports_available && data.reports_available.length > 0 && (
-        <div>
-          <h4 className="font-medium text-fm-text-primary mb-2">
-            📄 Documentation Available ({data.reports_available.length} documents):
-          </h4>
+        <>
+          <DetailRow
+            label="Reports"
+            expandable
+            expanded={reportsExpanded}
+            onToggle={() => onToggleSection('reports')}
+          >
+            {data.reports_available.map(r => formatReportName(r.report_type)).join(', ')}
+          </DetailRow>
 
-          <div className="space-y-3">
-            {data.reports_available.map((report) => {
-              // Format report names
-              const reportName = report.report_type
-                .replace(/_/g, ' ')
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
-
-              // Get icon based on type
-              const getIcon = () => {
-                if (report.report_type.includes('post')) return '📋';
-                if (report.report_type.includes('runbook')) return '📖';
-                if (report.report_type.includes('timeline')) return '📅';
-                return '📄';
-              };
-
-              return (
-                <div key={report.report_type} className="pl-4">
-                  <div className="flex items-start gap-2">
-                    <span>{getIcon()}</span>
-                    <div className="flex-1">
-                      <p className="font-medium text-white">{reportName}</p>
-                      <p className="text-xs text-fm-text-tertiary">
-                        Generated: {formatDate(data.resolved_at)}
-                      </p>
-                      <button className="text-xs text-fm-accent hover:text-blue-700 mt-1">
-                        [View Document]
-                      </button>
+          {reportsExpanded && (
+            <div className="pl-[84px] pb-0.5">
+              <div className="space-y-1.5">
+                {data.reports_available.map((report, idx) => {
+                  const isLast = idx === data.reports_available!.length - 1;
+                  return (
+                    <div key={report.report_type} className="flex items-start gap-2 text-fm-xs">
+                      <span className="text-fm-text-tertiary">{isLast ? '└' : '├'}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-fm-text-primary font-medium">{formatReportName(report.report_type)}</span>
+                        <span className="text-fm-text-tertiary ml-2">{formatTimeAgo(data.resolved_at)}</span>
+                        <button className="text-fm-accent hover:text-fm-accent/80 ml-2 text-fm-xs">
+                          View
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-3">
-            <button className="text-xs text-fm-accent hover:text-blue-700">
-              [Request Additional Documentation]
-            </button>
-          </div>
-        </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

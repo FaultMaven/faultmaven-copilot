@@ -166,38 +166,23 @@ export function useDataUpload({
       log.info('Turn submitted successfully:', targetCaseId);
 
       // Step 4: Build conversation messages
-      const attachmentsSummary = turnResponse.attachments_processed
-        .map(a => `${a.filename} (${formatFileSize(a.file_size)}) [${a.data_type}]`)
-        .join(', ');
+      const userQuestion = payload.query?.trim() || 'Submitted data for analysis';
 
-      // Build user message text
-      const parts: string[] = [];
-      if (payload.query?.trim()) {
-        parts.push(payload.query.trim());
-      }
-
-      const attachmentLabels: string[] = [];
-      if (attachmentsSummary) {
-        attachmentLabels.push(attachmentsSummary);
-      } else {
-        // Fallback labels when backend hasn't processed yet
-        if (payload.files?.length) {
-          attachmentLabels.push(payload.files.map(f => f.name).join(', '));
-        }
-        if (payload.pastedContent) {
-          attachmentLabels.push('pasted data');
-        }
-      }
-
-      if (attachmentLabels.length > 0) {
-        parts.push(`[Attached: ${attachmentLabels.join(', ')}]`);
-      }
-
-      const userQuestion = parts.join('\n\n') || 'Submitted data for analysis';
+      // Build attachments list: prefer backend-processed results, fall back to local file info
+      const attachments: AttachmentResult[] = turnResponse.attachments_processed.length > 0
+        ? turnResponse.attachments_processed
+        : (payload.files || []).map(f => ({
+            evidence_id: '',
+            filename: f.name,
+            data_type: '',
+            file_size: f.size,
+            processing_status: 'pending',
+          }));
 
       const userMessage: OptimisticConversationItem = {
         id: `upload-${Date.now()}`,
         question: userQuestion,
+        attachments: attachments.length > 0 ? attachments : undefined,
         timestamp: new Date().toISOString(),
         turn_number: turnResponse.turn_number,
         optimistic: false

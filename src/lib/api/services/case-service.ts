@@ -52,20 +52,17 @@ export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
  * Investigation stage display info for INVESTIGATING substage pill.
  * Maps InvestigationStage enum values → user-facing label, icon, and pill style.
  */
-export const STAGE_DISPLAY_INFO: Record<string, { label: string; icon: string; pillClass: string }> = {
+export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: string }> = {
   diagnosis: {
     label: 'Diagnosing',
-    icon: '🔍',
     pillClass: 'border border-fm-accent-border bg-fm-accent-soft text-fm-accent',
   },
   mitigation: {
     label: 'Mitigating',
-    icon: '⚡',
     pillClass: 'border border-fm-warning-border bg-fm-warning-bg text-fm-warning',
   },
   treatment: {
     label: 'Resolving',
-    icon: '🔧',
     pillClass: 'border border-fm-success-border bg-fm-success-bg text-fm-success',
   },
 };
@@ -109,25 +106,25 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: 
 /**
  * Evidence source type display info (for EvidenceSummary.type badge).
  */
-export const EVIDENCE_TYPE_DISPLAY_INFO: Record<string, { label: string; icon: string; badgeClass: string }> = {
-  log_file: { label: 'Logs', icon: '📄', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
-  metrics_data: { label: 'Metrics', icon: '📊', badgeClass: 'bg-fm-success-bg text-fm-success border border-fm-success-border' },
-  config_file: { label: 'Config', icon: '⚙️', badgeClass: 'bg-fm-warning-bg text-fm-warning border border-fm-warning-border' },
-  trace_data: { label: 'Traces', icon: '🔗', badgeClass: 'bg-fm-info-bg text-fm-info border border-fm-info-border' },
-  error_output: { label: 'Errors', icon: '❌', badgeClass: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border' },
-  screenshot: { label: 'Screenshot', icon: '🖼️', badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border' },
-  api_response: { label: 'API', icon: '🌐', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
-  monitoring_alert: { label: 'Alert', icon: '🔔', badgeClass: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border' },
-  database_query: { label: 'DB Query', icon: '🗄️', badgeClass: 'bg-fm-info-bg text-fm-info border border-fm-info-border' },
-  code_review: { label: 'Code', icon: '💻', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
-  user_report: { label: 'Report', icon: '💬', badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border' },
+export const EVIDENCE_TYPE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; badgeClass: string }> = {
+  log_file: { label: 'Logs', shortLabel: 'LOG', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
+  metrics_data: { label: 'Metrics', shortLabel: 'MET', badgeClass: 'bg-fm-success-bg text-fm-success border border-fm-success-border' },
+  config_file: { label: 'Config', shortLabel: 'CFG', badgeClass: 'bg-fm-warning-bg text-fm-warning border border-fm-warning-border' },
+  trace_data: { label: 'Traces', shortLabel: 'TRC', badgeClass: 'bg-fm-info-bg text-fm-info border border-fm-info-border' },
+  error_output: { label: 'Errors', shortLabel: 'ERR', badgeClass: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border' },
+  screenshot: { label: 'Image', shortLabel: 'IMG', badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border' },
+  api_response: { label: 'API', shortLabel: 'API', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
+  monitoring_alert: { label: 'Alert', shortLabel: 'ALT', badgeClass: 'bg-fm-critical-bg text-fm-critical border border-fm-critical-border' },
+  database_query: { label: 'DB', shortLabel: 'DBQ', badgeClass: 'bg-fm-info-bg text-fm-info border border-fm-info-border' },
+  code_review: { label: 'Code', shortLabel: 'COD', badgeClass: 'bg-fm-accent-soft text-fm-accent border border-fm-accent-border' },
+  user_report: { label: 'Report', shortLabel: 'RPT', badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border' },
 };
 
 /** Get evidence type display info with fallback for unknown types */
-export function getEvidenceTypeInfo(type: string): { label: string; icon: string; badgeClass: string } {
+export function getEvidenceTypeInfo(type: string): { label: string; shortLabel: string; badgeClass: string } {
   return EVIDENCE_TYPE_DISPLAY_INFO[type] || {
     label: type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    icon: '📋',
+    shortLabel: type.replace(/_/g, '').slice(0, 3).toUpperCase(),
     badgeClass: 'bg-fm-surface text-fm-text-primary border border-fm-border',
   };
 }

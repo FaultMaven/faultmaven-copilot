@@ -14,7 +14,9 @@ import {
   Hypothesis,
   TestResult,
   QueryIntent,
-  IntentType
+  IntentType,
+  AttachmentResult,
+  formatFileSize,
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
 import { SuggestedCommands } from "./SuggestedCommands";
@@ -73,6 +75,9 @@ interface ConversationItem {
   newHypotheses?: Hypothesis[];
   hypothesisTested?: string | null;
   testResult?: TestResult | null;
+
+  // File attachments processed in this turn
+  attachments?: AttachmentResult[];
 
   // Optimistic update metadata
   optimistic?: boolean;
@@ -351,6 +356,20 @@ const ChatWindowComponent = function ChatWindow({
                   style={{ borderRadius: '8px 8px 0px 8px' }}
                 >
                   <p className="break-words m-0 text-body">{item.question}</p>
+                  {/* File attachment indicator */}
+                  {item.attachments && item.attachments.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1.5 border-t border-fm-border/50">
+                      <svg className="w-3.5 h-3.5 text-fm-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                      </svg>
+                      {item.attachments.map((att, idx) => (
+                        <span key={att.evidence_id || idx} className="text-fm-xs text-fm-text-tertiary">
+                          {att.filename}{att.file_size > 0 ? ` (${formatFileSize(att.file_size)})` : ''}
+                          {idx < item.attachments!.length - 1 ? ',' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex items-center justify-end gap-2 mt-1">
                     {item.failed && (
                       <span className="text-micro text-fm-critical font-medium">Failed</span>

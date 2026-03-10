@@ -1,44 +1,30 @@
 /**
  * InquiryDetails Component
  *
- * Expanded header content for INQUIRY phase
- * Shows: Problem statement draft, confirmation status, severity estimate
- * Design based on: ui-mockups-text-diagrams.md lines 88-107
+ * Expanded header content for INQUIRY phase.
+ * Progressive rendering: shows only rows with data.
+ * Early inquiry = minimal (maybe just Files), late inquiry = problem/severity/status/files.
  */
 
 import React, { useState, useEffect } from 'react';
 import type { InquiryData, UploadedFileMetadata, UploadedFileDetailsResponse } from '../../../../types/case';
 import { filesApi } from '../../../../lib/api/files-service';
 import { EvidenceDetailsModal } from './EvidenceDetailsModal';
+import { DetailRow, CheckCircleIcon, formatFileSize } from './shared';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('InquiryDetails');
 
-/**
- * Extended UploadedFileMetadata with evidence_count
- * Note: Backend schema missing this field - will be added in future API update
- */
 interface UploadedFileWithEvidence extends UploadedFileMetadata {
   evidence_count?: number;
-}
-
-/**
- * Format file size in human-readable format
- */
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
 interface InquiryDetailsProps {
   data: InquiryData;
   caseId: string;
   uploadedFilesCount: number;
-  showFiles: boolean;
-  onToggleFiles: () => void;
+  expandedSection: string | null;
+  onToggleSection: (section: string) => void;
   onScrollToTurn?: (turnNumber: number) => void;
 }
 
@@ -46,8 +32,8 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
   data,
   caseId,
   uploadedFilesCount,
-  showFiles,
-  onToggleFiles,
+  expandedSection,
+  onToggleSection,
   onScrollToTurn,
 }) => {
   const [files, setFiles] = useState<UploadedFileWithEvidence[]>([]);
@@ -57,17 +43,17 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
   const [evidenceDetails, setEvidenceDetails] = useState<UploadedFileDetailsResponse | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
 
+  const filesExpanded = expandedSection === 'files';
+
   // Fetch files when files section is expanded
   useEffect(() => {
-    if (showFiles && files.length === 0) {
+    if (filesExpanded && files.length === 0) {
       const fetchFiles = async () => {
-        log.debug(' 📂 Fetching files for case:', caseId);
+        log.debug('Fetching files for case:', caseId);
         setFilesLoading(true);
         setFilesError(null);
         try {
           const fetchedFiles = await filesApi.getUploadedFiles(caseId);
-          log.debug(' ✅ Files fetched:', fetchedFiles);
-          log.debug(' ✅ Files array length:', Array.isArray(fetchedFiles) ? fetchedFiles.length : 'NOT AN ARRAY');
           setFiles(fetchedFiles);
         } catch (error) {
           log.error('Failed to fetch files', error);
@@ -78,9 +64,8 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
       };
       fetchFiles();
     }
-  }, [showFiles, caseId, files.length]);
+  }, [filesExpanded, caseId, files.length]);
 
-  // Handler to show evidence details for a file
   const handleShowEvidence = async (fileId: string) => {
     setSelectedFileForEvidence(fileId);
     setEvidenceLoading(true);
@@ -99,133 +84,107 @@ export const InquiryDetails: React.FC<InquiryDetailsProps> = ({
     setEvidenceDetails(null);
   };
 
-  // Defensive: Handle null inquiry data for brand new cases (current_turn: 0)
-  // This is non-critical - user can still chat and interact normally
+  // Null inquiry data — brand new case
   if (!data) {
     log.warn('Backend sent null inquiry data - API contract violation. Case still functional.');
     return (
-      <div className="px-4 pb-4 space-y-3 text-sm text-fm-text-tertiary">
-        <p className="italic">Inquiry starting - problem statement will appear after first interaction.</p>
+      <div className="px-4 pb-2 pt-1.5 text-fm-sm text-fm-text-tertiary italic">
+        Inquiry starting — details will appear after first interaction.
+      </div>
+    );
+  }
+
+  const hasFiles = uploadedFilesCount > 0 || files.length > 0;
+  const hasProblem = !!data.proposed_problem_statement;
+  const severityGuess = (data.problem_confirmation as Record<string, unknown> | null)?.severity_guess as string | undefined;
+
+  // Nothing to show yet
+  if (!hasProblem && !hasFiles) {
+    return (
+      <div className="px-4 pb-2 pt-1.5 text-fm-sm text-fm-text-tertiary italic">
+        Inquiry in progress...
       </div>
     );
   }
 
   return (
-    <div className="px-4 pb-4 space-y-3">
-      {/* Problem Statement (Draft) */}
-      {data.proposed_problem_statement && (
-        <div>
-          <h4 className="font-medium text-sm text-fm-text-primary mb-1">
-            Problem Statement (Draft):
-          </h4>
-          <p className="text-sm text-white">
-            "{data.proposed_problem_statement}"
-          </p>
-        </div>
+    <div className="px-4 pb-2 pt-1.5 space-y-0">
+      {hasProblem && (
+        <DetailRow label="Problem">
+          <span className="italic">"{data.proposed_problem_statement}"</span>
+        </DetailRow>
       )}
 
-      {/* Status: Only show if problem has been proposed */}
-      {data.proposed_problem_statement && (
-        <div className="text-sm">
-          <span className="text-fm-text-primary">Status: </span>
+      {hasProblem && severityGuess && (
+        <DetailRow label="Severity">
+          <span className="capitalize">{severityGuess} (estimated)</span>
+        </DetailRow>
+      )}
+
+      {hasProblem && (
+        <DetailRow label="Status">
           {data.problem_statement_confirmed ? (
-            <span className="text-fm-success font-medium">✓ Problem confirmed</span>
+            <span className="text-fm-success font-medium inline-flex items-center gap-1">
+              <CheckCircleIcon className="w-3.5 h-3.5" /> Confirmed
+            </span>
           ) : (
-            <span className="text-fm-warning">⏳ Awaiting your confirmation</span>
+            <span className="text-fm-warning">Awaiting confirmation</span>
           )}
-        </div>
+        </DetailRow>
       )}
 
-      {/* Estimated Severity */}
-      {data.problem_confirmation?.severity_guess && (
-        <div className="text-sm">
-          <span className="text-fm-text-primary">Estimated Severity: </span>
-          <span className="font-medium capitalize">{data.problem_confirmation.severity_guess}</span>
-        </div>
-      )}
-
-      {/* Files Section - Show if backend reports files OR if we fetched files */}
-      {(uploadedFilesCount > 0 || files.length > 0) && (
+      {hasFiles && (
         <>
-          {/* Separator - only if there's content above */}
-          {(data.proposed_problem_statement || data.problem_confirmation?.severity_guess) && (
-            <div className="border-t border-fm-border my-3"></div>
-          )}
+          <DetailRow
+            label="Files"
+            expandable
+            expanded={filesExpanded}
+            onToggle={() => onToggleSection('files')}
+          >
+            {files.length > 0 ? files.length : uploadedFilesCount} uploaded
+          </DetailRow>
 
-          <div className="flex items-center justify-between">
-            <button
-              onClick={onToggleFiles}
-              className="text-sm text-fm-text-primary hover:text-white flex items-center gap-2 flex-1"
-            >
-              <span className="font-medium">📎 Uploaded Files ({files.length > 0 ? files.length : uploadedFilesCount})</span>
-            </button>
-            <button
-              onClick={onToggleFiles}
-              className="text-sm text-fm-accent hover:text-blue-800"
-            >
-              [{showFiles ? '▲ Hide' : '▼ Show'}]
-            </button>
-          </div>
-
-          {/* Files List (when expanded) */}
-          {showFiles && (
-            <>
-              {/* Separator for expanded files section */}
-              <div className="border-t border-fm-border my-3"></div>
-
-              <div className="space-y-3">
-                {filesLoading && (
-                  <p className="text-sm text-fm-text-tertiary italic">Loading files...</p>
-                )}
-
-                {filesError && (
-                  <p className="text-sm text-fm-critical">Error: {filesError}</p>
-                )}
-
-                {!filesLoading && !filesError && files.length > 0 && (
-                  <div className="space-y-3">
-                    {files.map((file) => (
-                      <div key={file.file_id} className="text-sm">
-                        <div className="font-medium text-white">
-                          📄 {file.filename} · {formatFileSize(file.size_bytes)} · {onScrollToTurn ? (
-                            <button
-                              onClick={() => onScrollToTurn(file.uploaded_at_turn)}
-                              className="text-fm-accent hover:text-blue-800 hover:underline"
-                              title="Jump to turn in conversation"
-                            >
-                              Turn {file.uploaded_at_turn}
-                            </button>
-                          ) : (
-                            <span>Turn {file.uploaded_at_turn}</span>
-                          )}
-                        </div>
-
-                        {/* Evidence count - only show if file has derived evidence */}
-                        {file.evidence_count !== undefined && file.evidence_count > 0 && (
-                          <button
-                            onClick={() => handleShowEvidence(file.file_id)}
-                            className="text-xs text-fm-success hover:text-green-800 hover:underline mt-1 ml-5 block"
-                            title="View evidence derived from this file"
-                          >
-                            ✓ Referenced in {file.evidence_count} evidence item{file.evidence_count > 1 ? 's' : ''}
-                          </button>
-                        )}
-
-                        {file.summary && (
-                          <div className="text-xs text-fm-text-primary mt-1 ml-5 italic">
-                            {file.summary}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {!filesLoading && !filesError && files.length === 0 && uploadedFilesCount > 0 && (
-                  <p className="text-sm text-fm-text-tertiary italic">No files found</p>
-                )}
-              </div>
-            </>
+          {/* Files drill-down */}
+          {filesExpanded && (
+            <div className="pl-[84px] pb-0.5">
+              {filesLoading && (
+                <p className="text-fm-xs text-fm-text-tertiary italic py-1">Loading files...</p>
+              )}
+              {filesError && (
+                <p className="text-fm-xs text-fm-critical py-1">Error: {filesError}</p>
+              )}
+              {!filesLoading && !filesError && files.length > 0 && (
+                <div className="space-y-1">
+                  {files.map((file, idx) => (
+                    <div key={file.file_id} className="flex items-center gap-2 text-fm-xs text-fm-text-primary">
+                      <span className="text-fm-text-tertiary">{idx < files.length - 1 ? '├' : '└'}</span>
+                      <span className="truncate">{file.filename}</span>
+                      <span className="text-fm-text-tertiary flex-shrink-0">({formatFileSize(file.size_bytes)})</span>
+                      {file.evidence_count !== undefined && file.evidence_count > 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleShowEvidence(file.file_id); }}
+                          className="text-fm-success hover:text-fm-success/80 flex-shrink-0"
+                        >
+                          {file.evidence_count} evidence
+                        </button>
+                      )}
+                      {onScrollToTurn && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onScrollToTurn(file.uploaded_at_turn); }}
+                          className="text-fm-accent hover:text-fm-accent/80 flex-shrink-0"
+                          title="Jump to turn in conversation"
+                        >
+                          → T{file.uploaded_at_turn}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!filesLoading && !filesError && files.length === 0 && uploadedFilesCount > 0 && (
+                <p className="text-fm-xs text-fm-text-tertiary italic py-1">No files found</p>
+              )}
+            </div>
           )}
         </>
       )}

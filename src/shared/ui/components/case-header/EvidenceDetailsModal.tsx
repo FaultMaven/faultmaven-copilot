@@ -62,7 +62,7 @@ export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
                       {' · '}
                       <button
                         onClick={() => onScrollToTurn(evidenceDetails.uploaded_at_turn)}
-                        className="text-fm-accent hover:text-blue-800 hover:underline"
+                        className="text-fm-accent hover:text-fm-accent/80 hover:underline"
                         title="Jump to turn in conversation"
                       >
                         View in Chat

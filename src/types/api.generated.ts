@@ -3638,15 +3638,15 @@ export interface components {
              */
             description: string;
             /**
-             * @description Current lifecycle status
+             * @description Current lifecycle status (phase or disposition)
              * @default inquiry
              */
             status: components["schemas"]["CaseStatus"];
             /**
-             * Status History
-             * @description Complete history of status changes
+             * Action History
+             * @description Complete history of case actions (phase transitions and dispositions)
              */
-            status_history?: components["schemas"]["CaseStatusTransition"][];
+            action_history?: components["schemas"]["CaseAction"][];
             /**
              * Closure Reason
              * @description Why case was closed: resolved | abandoned | escalated | inquiry_only | duplicate | other
@@ -3800,6 +3800,33 @@ export interface components {
              * @description When case reached terminal state (RESOLVED or CLOSED)
              */
             closed_at?: string | null;
+        };
+        /**
+         * CaseAction
+         * @description Record of one case action (phase transition or disposition change).
+         *     Provides audit trail for case lifecycle.
+         */
+        CaseAction: {
+            /** @description Status before the action */
+            from_status: components["schemas"]["CaseStatus"];
+            /** @description Status after the action */
+            to_status: components["schemas"]["CaseStatus"];
+            /**
+             * Triggered At
+             * Format: date-time
+             * @description When the action occurred
+             */
+            triggered_at?: string;
+            /**
+             * Triggered By
+             * @description Who triggered: user_id or 'system' for automatic actions
+             */
+            triggered_by: string;
+            /**
+             * Reason
+             * @description Human-readable reason for the action
+             */
+            reason: string;
         };
         /**
          * CaseCreateRequest
@@ -4053,44 +4080,21 @@ export interface components {
         };
         /**
          * CaseStatus
-         * @description Case lifecycle status.
+         * @description Case lifecycle status — passive label describing a case's current condition.
          *
-         *     Lifecycle Flow:
-         *       INQUIRY -> INVESTIGATING -> RESOLVED (terminal)
-         *                                  -> CLOSED (terminal)
-         *                -> CLOSED (terminal)
+         *     Values fall into two categories:
+         *     - **Phases** (active work): INQUIRY, INVESTIGATING
+         *     - **Dispositions** (terminal resolution): RESOLVED, CLOSED
          *
-         *     Terminal States: RESOLVED, CLOSED (no further transitions)
+         *     Case Actions (phase transitions and dispositions):
+         *       INQUIRY → INVESTIGATING  (phase transition)
+         *       INQUIRY → RESOLVED       (fast-track disposition)
+         *       INQUIRY → CLOSED         (disposition)
+         *       INVESTIGATING → RESOLVED (disposition)
+         *       INVESTIGATING → CLOSED   (disposition)
          * @enum {string}
          */
         CaseStatus: "inquiry" | "investigating" | "resolved" | "closed";
-        /**
-         * CaseStatusTransition
-         * @description Record of one status change.
-         *     Provides audit trail for case lifecycle.
-         */
-        CaseStatusTransition: {
-            /** @description Status before transition */
-            from_status: components["schemas"]["CaseStatus"];
-            /** @description Status after transition */
-            to_status: components["schemas"]["CaseStatus"];
-            /**
-             * Triggered At
-             * Format: date-time
-             * @description When transition occurred
-             */
-            triggered_at?: string;
-            /**
-             * Triggered By
-             * @description Who triggered: user_id or 'system' for automatic transitions
-             */
-            triggered_by: string;
-            /**
-             * Reason
-             * @description Human-readable reason for transition
-             */
-            reason: string;
-        };
         /**
          * CaseSummary
          * @description Minimal case information for list views.
@@ -4241,6 +4245,12 @@ export interface components {
              */
             updated_at: string;
             /**
+             * Uploaded Files Count
+             * @description Number of uploaded files
+             * @default 0
+             */
+            uploaded_files_count: number;
+            /**
              * Valid Next States
              * @description Allowed status transitions from current state for user-initiated changes
              */
@@ -4332,6 +4342,12 @@ export interface components {
              * @description When case was resolved
              */
             resolved_at: string;
+            /**
+             * Uploaded Files Count
+             * @description Number of uploaded files
+             * @default 0
+             */
+            uploaded_files_count: number;
             /**
              * Valid Next States
              * @description Allowed status transitions from current state for user-initiated changes
@@ -4754,9 +4770,20 @@ export interface components {
             content_hash?: string | null;
             /**
              * Extraction Method
-             * @description Tier 1 extraction method used: structural_index, statistical_profile, parse_and_sanitize, ast_extraction, structure_extraction, metadata_extraction
+             * @description Extraction method used: structural_index, statistical_profile, parse_and_sanitize, ast_extraction, structure_extraction, metadata_extraction
              */
             extraction_method?: string | null;
+            /**
+             * Processing Mode
+             * @description Processing mode: triage | directed_analysis | semantic_search
+             */
+            processing_mode?: string | null;
+            /**
+             * Da Invocation Count
+             * @description DA invocations across turns for this evidence (failure trigger #4)
+             * @default 0
+             */
+            da_invocation_count: number;
             /** @description Type of evidence source */
             source_type: components["schemas"]["EvidenceSourceType"];
             /** @description How evidence was provided: DOCUMENT, USER_TEXT, or SUBMITTED_DATA */
@@ -4766,6 +4793,11 @@ export interface components {
              * @description ID of the UploadedFile this evidence was derived from (None if from user input)
              */
             source_file_id?: string | null;
+            /**
+             * Original Filename
+             * @description Original filename when uploaded (e.g., 'OpenSSH_2k.log'). Used by search_file tool for display.
+             */
+            original_filename?: string | null;
             /**
              * Advances Milestones
              * @description Which milestones this evidence helped complete
@@ -4968,6 +5000,18 @@ export interface components {
              * @description Relevance to current investigation (0.0-1.0)
              */
             relevance_score: number;
+            /**
+             * Collected At Turn
+             * @description Turn number when evidence was collected
+             * @default 0
+             */
+            collected_at_turn: number;
+            /**
+             * Category
+             * @description Evidence purpose: SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | RESOLUTION_EVIDENCE | OTHER
+             * @default OTHER
+             */
+            category: string;
         };
         /**
          * GeneratedDocument
@@ -5342,14 +5386,14 @@ export interface components {
         InvestigationMomentum: "high" | "moderate" | "low" | "blocked";
         /**
          * InvestigationPath
-         * @description Investigation routing strategy (3-stage workflow).
+         * @description Investigation routing strategy (2-stage model with mitigation detour).
          *
          *     IMPORTANT: Path is SYSTEM-DETERMINED from matrix (temporal_state x urgency_level).
          *     LLM provides inputs (temporal_state, urgency_level) during DIAGNOSIS.
          *     System calls determine_investigation_path() to select path deterministically.
          *
-         *     Two paths through the 3-stage model:
-         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION → DIAGNOSIS → TREATMENT
+         *     Two paths through the 2-stage model:
+         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION (detour) → DIAGNOSIS → TREATMENT
          *     - ROOT_CAUSE: DIAGNOSIS → TREATMENT
          * @enum {string}
          */
@@ -5495,21 +5539,25 @@ export interface components {
         };
         /**
          * InvestigationStage
-         * @description Investigation stage within INVESTIGATING status (3 stages).
-         *     Computed from stage-gate milestones.
+         * @description Investigation stage within the Investigating Phase.
          *
-         *     Stages:
-         *     - DIAGNOSIS: Understand, diagnose, propose actions
+         *     2-stage model with mitigation detour:
+         *     - DIAGNOSIS: Understand, diagnose, propose actions (core stage)
+         *     - TREATMENT: Verify permanent fix, resolve case (core stage)
          *     - MITIGATION: Apply and verify temporary fix (optional detour)
-         *     - TREATMENT: Verify permanent fix, resolve case
          *
-         *     Stage transitions are inference-based — user compliance with
-         *     proposed actions triggers transitions via compliance detection.
-         *     The stage determines which prompt template the LLM receives.
+         *     DIAGNOSIS and TREATMENT are the two core stages every investigation
+         *     passes through. MITIGATION is an optional detour that temporarily
+         *     narrows focus to "stop the bleeding" before returning to DIAGNOSIS.
+         *
+         *     Computed from stage-gate milestones. Stage transitions are
+         *     inference-based — user compliance with proposed actions triggers
+         *     transitions via compliance detection. The stage determines which
+         *     prompt template the LLM receives.
          *
          *     Investigation Paths:
          *     - ROOT_CAUSE: DIAGNOSIS → TREATMENT
-         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION → DIAGNOSIS → TREATMENT
+         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION (detour) → DIAGNOSIS → TREATMENT
          * @enum {string}
          */
         InvestigationStage: "diagnosis" | "mitigation" | "treatment";
@@ -6654,52 +6702,32 @@ export interface components {
         };
         /**
          * SessionResponse
-         * @description Response model for investigation session.
+         * @description Response payload for auth session operations - API spec compliance.
          */
         SessionResponse: {
+            /**
+             * Schema Version
+             * @default 3.1.0
+             * @constant
+             * @enum {string}
+             */
+            schema_version: "3.1.0";
             /** Session Id */
             session_id: string;
-            /** Case Id */
-            case_id: string;
             /** User Id */
-            user_id: string;
-            /** Organization Id */
-            organization_id: string;
-            status: components["schemas"]["SessionStatus"];
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /** Ended At */
-            ended_at?: string | null;
-            /**
-             * Last Activity At
-             * Format: date-time
-             */
-            last_activity_at: string;
-            /** Total Duration Ms */
-            total_duration_ms?: number | null;
-            /** Session Goal */
-            session_goal?: string | null;
-            /** Findings Summary */
-            findings_summary?: string | null;
-            /** Total Token Usage */
-            total_token_usage: number;
-            /** Total Agent Executions */
-            total_agent_executions: number;
-            /** Token Budget Limit */
-            token_budget_limit?: number | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            user_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** @default active */
+            status: components["schemas"]["AuthSessionStatus"];
+            /** Created At */
             created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+            /** Session Resumed */
+            session_resumed?: boolean | null;
         };
         /**
          * SessionRestoreRequest
@@ -7649,32 +7677,52 @@ export interface components {
         };
         /**
          * SessionResponse
-         * @description Response payload for auth session operations - API spec compliance.
+         * @description Response model for investigation session.
          */
-        faultmaven__models__api__SessionResponse: {
-            /**
-             * Schema Version
-             * @default 3.1.0
-             * @constant
-             * @enum {string}
-             */
-            schema_version: "3.1.0";
+        faultmaven__api__models__SessionResponse: {
             /** Session Id */
             session_id: string;
+            /** Case Id */
+            case_id: string;
             /** User Id */
-            user_id?: string | null;
-            /** Client Id */
-            client_id?: string | null;
-            /** @default active */
-            status: components["schemas"]["AuthSessionStatus"];
-            /** Created At */
+            user_id: string;
+            /** Organization Id */
+            organization_id: string;
+            status: components["schemas"]["SessionStatus"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Total Duration Ms */
+            total_duration_ms?: number | null;
+            /** Session Goal */
+            session_goal?: string | null;
+            /** Findings Summary */
+            findings_summary?: string | null;
+            /** Total Token Usage */
+            total_token_usage: number;
+            /** Total Agent Executions */
+            total_agent_executions: number;
+            /** Token Budget Limit */
+            token_budget_limit?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
-            /** Expires At */
-            expires_at?: string | null;
-            /** Metadata */
-            metadata?: Record<string, never> | null;
-            /** Session Resumed */
-            session_resumed?: boolean | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
     };
     responses: never;
@@ -9405,7 +9453,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"][];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -9442,7 +9490,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9475,7 +9523,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"] | null;
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"] | null;
                 };
             };
             /** @description Validation Error */
@@ -9509,7 +9557,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9547,7 +9595,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9581,7 +9629,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9615,7 +9663,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9653,7 +9701,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["faultmaven__api__models__SessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11394,7 +11442,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__models__api__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
