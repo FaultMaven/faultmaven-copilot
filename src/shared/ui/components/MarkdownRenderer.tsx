@@ -19,7 +19,7 @@ const markdownComponents: Partial<Components> = {
     if (isInline) {
       return (
         <code
-          className="bg-fm-code-bg text-fm-code px-1 py-0.5 rounded text-sm font-fm-mono border border-fm-code-border"
+          className="bg-fm-code-bg text-fm-code px-1 py-0.5 rounded text-[0.9em] font-fm-mono border border-fm-code-border"
           {...props}
         >
           {children}

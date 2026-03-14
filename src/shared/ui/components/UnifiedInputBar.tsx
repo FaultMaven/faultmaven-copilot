@@ -7,7 +7,8 @@
  * - File uploads
  * - Captured page content
  *
- * Any combination can be submitted together in a single turn.
+ * Only one data source (file, page capture, or pasted data) per turn.
+ * Selecting a new source automatically clears the previous one.
  * Query-only submissions use the optimistic UI path (onQuerySubmit).
  * Submissions with attachments use the unified turn path (onTurnSubmit).
  */
@@ -231,11 +232,8 @@ export function UnifiedInputBar({
         payload.query = generateAutoQuery({ hasFile, hasPage, hasPasted, selectedFile, capturedPageUrl });
       }
 
-      // Assemble pasted content (staged data + page content)
-      if (hasPasted && hasPage) {
-        const pageSection = `--- Page Content (${capturedPageUrl}) ---\n${capturedPageContent}`;
-        payload.pastedContent = `${stagedPastedContent}\n\n${pageSection}`;
-      } else if (hasPasted) {
+      // Assemble pasted content (only one source active per turn)
+      if (hasPasted) {
         payload.pastedContent = stagedPastedContent;
       } else if (hasPage) {
         payload.pastedContent = `--- Page Content (${capturedPageUrl}) ---\n${capturedPageContent}`;
@@ -312,9 +310,13 @@ export function UnifiedInputBar({
       return;
     }
 
-    // File is valid
+    // File is valid — clear other data sources (one source per turn)
     setValidationError(null);
     setSelectedFile(file);
+    setCapturedPageUrl(null);
+    setCapturedPageContent("");
+    setStagedPastedContent("");
+    setShowPasteScratchpad(false);
   };
 
   // Handle file upload button click
@@ -334,6 +336,14 @@ export function UnifiedInputBar({
 
       if (!pageHtmlContent || pageHtmlContent.trim().length === 0) {
         throw new Error('No page content captured');
+      }
+
+      // Clear other data sources (one source per turn)
+      setSelectedFile(null);
+      setStagedPastedContent("");
+      setShowPasteScratchpad(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
 
       setCapturedPageContent(pageHtmlContent);
@@ -413,8 +423,13 @@ export function UnifiedInputBar({
       return;
     }
 
+    // Clear other data sources (one source per turn)
     setValidationError(null);
     setSelectedFile(file);
+    setCapturedPageUrl(null);
+    setCapturedPageContent("");
+    setStagedPastedContent("");
+    setShowPasteScratchpad(false);
     log.debug('File dropped', { fileName: file.name });
   };
 
@@ -532,7 +547,7 @@ export function UnifiedInputBar({
             <div className="flex items-center gap-2.5 px-3 py-2 bg-fm-surface border border-dashed border-fm-border rounded-md">
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-semibold text-fm-text-primary truncate">📸 Captured: {capturedPageUrl}</div>
-                <div className="text-[10.5px] text-fm-text-tertiary">🔒 Secrets redacted · {(capturedPageContent.length / 1024).toFixed(0)} KB</div>
+                <div className="text-[10.5px] text-fm-text-tertiary">{(capturedPageContent.length / 1024).toFixed(0)} KB</div>
               </div>
               <button onClick={handleRemovePage} className="text-fm-text-tertiary hover:text-fm-text-primary text-xs flex-shrink-0" title="Remove">✕</button>
             </div>
@@ -544,7 +559,16 @@ export function UnifiedInputBar({
       {showPasteScratchpad && (
         <PasteDataScratchpad
           initialContent={stagedPastedContent}
-          onStage={(content) => setStagedPastedContent(content)}
+          onStage={(content) => {
+            // Clear other data sources (one source per turn)
+            setSelectedFile(null);
+            setCapturedPageUrl(null);
+            setCapturedPageContent("");
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+            }
+            setStagedPastedContent(content);
+          }}
           onClear={() => setStagedPastedContent("")}
           onClose={() => setShowPasteScratchpad(false)}
         />
@@ -631,7 +655,7 @@ export function UnifiedInputBar({
             submitting || isUploadingData
               ? 'Processing...'
               : hasAnyAttachment
-                ? 'Ask about the context...'
+                ? 'Ask about the data...'
                 : placeholder || 'Ask FaultMaven...'
           }
           rows={calculateRows()}

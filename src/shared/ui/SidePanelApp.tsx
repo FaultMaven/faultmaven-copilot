@@ -264,6 +264,7 @@ function SidePanelAppContent() {
   const { handleTurnSubmit, uploading: isUploading } = useDataUpload({
     sessionId,
     activeCaseId: activeCaseId || undefined,
+    conversations,
     setActiveCaseId,
     setHasUnsavedNewChat,
     setActiveCase,

@@ -64,10 +64,10 @@ module.exports = {
           "info-bg": "rgba(96, 165, 250, 0.08)",
           "info-border": "rgba(96, 165, 250, 0.2)",
 
-          /* --- Inline Code (Amber) --- */
-          "code": "#F59E0B",
-          "code-bg": "rgba(245, 158, 11, 0.1)",
-          "code-border": "rgba(245, 158, 11, 0.2)",
+          /* --- Inline Code --- */
+          "code": "#CBD5E1",
+          "code-bg": "rgba(148, 163, 184, 0.12)",
+          "code-border": "rgba(148, 163, 184, 0.2)",
 
           /* --- Code Blocks --- */
           "codeblock": "#0B1120",

@@ -6,12 +6,9 @@ import {
   TurnRequest,
   TurnResponse,
   AttachmentResult,
-  formatFileSize,
 } from '../../../lib/api';
 import {
   OptimisticConversationItem,
-  OptimisticIdGenerator,
-  OptimisticUserCase
 } from '../../../lib/optimistic';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { classifyError, formatErrorForAlert } from '../../../lib/utils/api-error-handler';
@@ -23,6 +20,7 @@ const log = createLogger('useDataUpload');
 interface UseDataUploadProps {
   sessionId: string | null;
   activeCaseId: string | undefined;
+  conversations: Record<string, OptimisticConversationItem[]>;
   setActiveCaseId: (id: string) => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
   setActiveCase: (caseData: any) => void;
@@ -36,6 +34,7 @@ interface UseDataUploadProps {
 export function useDataUpload({
   sessionId,
   activeCaseId,
+  conversations,
   setActiveCaseId,
   setHasUnsavedNewChat,
   setActiveCase,
@@ -142,7 +141,53 @@ export function useDataUpload({
         turnRequest.files = payload.files;
       }
 
-      // Step 3: Submit via unified /turns endpoint
+      // Step 3: Add optimistic messages immediately (instant "Thinking..." feedback)
+      const userQuestion = payload.query?.trim() || 'Submitted data for analysis';
+      const messageTimestamp = new Date().toISOString();
+      const userMessageId = `upload-${Date.now()}`;
+      const aiMessageId = `response-${Date.now()}`;
+
+      // Build local attachments list for immediate display
+      const localAttachments: AttachmentResult[] = (payload.files || []).map(f => ({
+        evidence_id: '',
+        filename: f.name,
+        data_type: '',
+        file_size: f.size,
+        processing_status: 'pending',
+      }));
+
+      const existingMessages = conversations[targetCaseId!] || [];
+      const highestTurn = existingMessages.reduce((max: number, msg: OptimisticConversationItem) =>
+        Math.max(max, msg.turn_number || 0), 0
+      );
+      const nextTurnNumber = highestTurn + 1;
+
+      const optimisticUserMessage: OptimisticConversationItem = {
+        id: userMessageId,
+        question: userQuestion,
+        attachments: localAttachments.length > 0 ? localAttachments : undefined,
+        timestamp: messageTimestamp,
+        turn_number: nextTurnNumber,
+        optimistic: true,
+        loading: false,
+      };
+
+      const optimisticAiMessage: OptimisticConversationItem = {
+        id: aiMessageId,
+        question: '',
+        response: '',
+        timestamp: messageTimestamp,
+        turn_number: nextTurnNumber,
+        optimistic: true,
+        loading: true,
+      };
+
+      setConversations(prev => ({
+        ...prev,
+        [targetCaseId!]: [...(prev[targetCaseId!] || []), optimisticUserMessage, optimisticAiMessage]
+      }));
+
+      // Step 4: Submit via unified /turns endpoint
       let turnResponse: TurnResponse;
       try {
         turnResponse = await resilientOperation({
@@ -160,46 +205,50 @@ export function useDataUpload({
           }
         });
       } catch (error) {
+        // Update optimistic AI message to show error
+        setConversations(prev => ({
+          ...prev,
+          [targetCaseId!]: (prev[targetCaseId!] || []).map(item =>
+            item.id === aiMessageId
+              ? { ...item, response: '', optimistic: false, loading: false, error: true, failed: true } as OptimisticConversationItem
+              : item
+          )
+        }));
         throw error;
       }
 
       log.info('Turn submitted successfully:', targetCaseId);
 
-      // Step 4: Build conversation messages
-      const userQuestion = payload.query?.trim() || 'Submitted data for analysis';
-
-      // Build attachments list: prefer backend-processed results, fall back to local file info
+      // Step 5: Update optimistic messages with real response data
+      // Prefer backend-processed attachments over local file info
       const attachments: AttachmentResult[] = turnResponse.attachments_processed.length > 0
         ? turnResponse.attachments_processed
-        : (payload.files || []).map(f => ({
-            evidence_id: '',
-            filename: f.name,
-            data_type: '',
-            file_size: f.size,
-            processing_status: 'pending',
-          }));
-
-      const userMessage: OptimisticConversationItem = {
-        id: `upload-${Date.now()}`,
-        question: userQuestion,
-        attachments: attachments.length > 0 ? attachments : undefined,
-        timestamp: new Date().toISOString(),
-        turn_number: turnResponse.turn_number,
-        optimistic: false
-      };
-
-      const aiMessage: OptimisticConversationItem = {
-        id: `response-${Date.now()}`,
-        response: turnResponse.agent_response || "Data uploaded and processed successfully.",
-        timestamp: new Date().toISOString(),
-        turn_number: turnResponse.turn_number,
-        caseStatus: turnResponse.case_status,
-        optimistic: false
-      };
+        : localAttachments;
 
       setConversations(prev => ({
         ...prev,
-        [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiMessage]
+        [targetCaseId!]: (prev[targetCaseId!] || []).map(item => {
+          if (item.id === userMessageId) {
+            return {
+              ...item,
+              attachments: attachments.length > 0 ? attachments : undefined,
+              turn_number: turnResponse.turn_number,
+              optimistic: false,
+            } as OptimisticConversationItem;
+          }
+          if (item.id === aiMessageId) {
+            return {
+              ...item,
+              response: turnResponse.agent_response || "Data uploaded and processed successfully.",
+              turn_number: turnResponse.turn_number,
+              caseStatus: turnResponse.case_status,
+              suggestedActions: turnResponse.suggested_actions ?? null,
+              optimistic: false,
+              loading: false,
+            } as OptimisticConversationItem;
+          }
+          return item;
+        })
       }));
 
       // Track processed attachments as evidence
