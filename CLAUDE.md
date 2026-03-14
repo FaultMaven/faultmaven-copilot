@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is the **FaultMaven Copilot** browser extension - an AI-powered troubleshooting assistant built with WXT framework. The extension provides engineers (especially in SRE and DevOps roles) with in-context help, analyzes web content, and enables interaction with the FaultMaven AI to diagnose and resolve issues efficiently.
+This is the **FaultMaven Copilot** browser extension - an AI-powered troubleshooting assistant built with WXT framework. The extension provides in-context help, analyzes web content, and enables interaction with the FaultMaven AI to diagnose and resolve issues efficiently.
 
 **Key Technologies**: WXT v0.20.6, React 19.x, TypeScript 5.x, Tailwind CSS, Vitest, Zustand 5.x, TanStack Query 5.x.
 

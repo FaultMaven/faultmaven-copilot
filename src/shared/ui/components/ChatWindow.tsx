@@ -6,7 +6,6 @@ import {
   EvidenceRequest,
   InvestigationMode,
   CaseStatus,
-  CommandSuggestion,
   CommandValidation,
   ScopeAssessment,
   UserCaseStatus,
@@ -19,8 +18,7 @@ import {
   formatFileSize,
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
-import { SuggestedCommands } from "./SuggestedCommands";
-import { ClarifyingQuestions } from "./ClarifyingQuestions";
+import { SuggestionCard } from "./SuggestionCard";
 import { CommandValidationDisplay } from "./CommandValidationDisplay";
 import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
 import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
@@ -50,12 +48,7 @@ interface ConversationItem {
   investigationMode?: InvestigationMode;
   caseStatus?: CaseStatus;
 
-  // v3.0.0 fields (RE-ENABLED in v3.2.0)
   suggestedActions?: SuggestedAction[] | null;
-
-  // v3.2.0 OODA Response Format fields
-  clarifyingQuestions?: string[];
-  suggestedCommands?: CommandSuggestion[];
   commandValidation?: CommandValidation | null;
   problemDetected?: boolean;
   problemSummary?: string | null;
@@ -106,7 +99,6 @@ interface ChatWindowProps {
 
   // Action callbacks
   onQuerySubmit: (query: string, intent?: QueryIntent) => void;
-  // onDataUpload removed - handled by parent/UnifiedInputBar
   onDocumentView?: (documentId: string) => void;
   onGenerateReports?: () => void;  // FR-CM-006: Trigger report generation for resolved cases
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
@@ -134,6 +126,11 @@ const ChatWindowComponent = function ChatWindow({
   const [fullCaseData, setFullCaseData] = useState<CaseUIResponse | null>(null);
   const [caseLoading, setCaseLoading] = useState(false);
   const [caseError, setCaseError] = useState<string | null>(null);
+
+  // Determine the last assistant turn (only its suggestions are interactive)
+  const lastAssistantItemId = Array.isArray(conversation)
+    ? [...conversation].reverse().find(item => item.response)?.id ?? null
+    : null;
 
   // UI refs
   const conversationHistoryRef = useRef<HTMLDivElement>(null);
@@ -464,59 +461,23 @@ const ChatWindowComponent = function ChatWindow({
                       </div>
                     )}
 
-                    {/* Suggested Actions */}
+                    {/* Suggestions */}
                     {item.suggestedActions && item.suggestedActions.length > 0 && (
-                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-warning-border rounded-lg">
-                        <div className="text-finding-title text-fm-warning mb-2">⚡ Quick Actions</div>
-                        <div className="flex flex-wrap gap-2">
-                          {item.suggestedActions.map((action, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => {
-                                if (action.type === 'question_template' && canInteract && !loading) {
-                                  onQuerySubmit(action.payload);
-                                } else if (action.type === 'command') {
-                                  navigator.clipboard.writeText(action.payload);
-                                }
-                              }}
-                              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${action.type === 'question_template'
-                                ? 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
-                                : action.type === 'command'
-                                  ? 'bg-fm-success-bg text-fm-success hover:opacity-80'
-                                  : action.type === 'upload_data'
-                                    ? 'bg-fm-accent-soft text-fm-accent hover:opacity-80'
-                                    : 'bg-fm-elevated text-fm-text-primary hover:opacity-80'
-                                }`}
-                              disabled={!canInteract || loading}
-                            >
-                              <span className="flex items-center gap-1">
-                                {action.icon && <span>{action.icon}</span>}
-                                {action.label}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
+                      <div className="mt-3 space-y-0.5">
+                        {item.suggestedActions.map((action, idx) => (
+                          <SuggestionCard
+                            key={idx}
+                            action={action}
+                            isCurrentTurn={item.id === lastAssistantItemId}
+                            disabled={!canInteract}
+                            onCooperativeClick={(payload, cooperativeAction) => {
+                              if (cooperativeAction === 'query_submit') {
+                                onQuerySubmit(payload);
+                              }
+                            }}
+                          />
+                        ))}
                       </div>
-                    )}
-
-                    {item.clarifyingQuestions && item.clarifyingQuestions.length > 0 && (
-                      <ClarifyingQuestions
-                        questions={item.clarifyingQuestions}
-                        onQuestionClick={(question) => {
-                          if (canInteract && !loading) {
-                            onQuerySubmit(question);
-                          }
-                        }}
-                      />
-                    )}
-
-                    {item.suggestedCommands && item.suggestedCommands.length > 0 && (
-                      <SuggestedCommands
-                        commands={item.suggestedCommands}
-                        onCommandClick={(command) => {
-                          navigator.clipboard.writeText(command);
-                        }}
-                      />
                     )}
 
                     {item.commandValidation && (

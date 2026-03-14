@@ -378,20 +378,19 @@ export interface EvidenceProvided {
   confidence_impact?: number | null;
 }
 
+// Suggestion type system (intent-based classification)
+export type SuggestionType = 'COOPERATIVE' | 'EVIDENCE' | 'FREE_SPEECH';
+export type CooperativeAction = 'query_submit' | 'command_copy';
+
 export interface SuggestedAction {
   label: string;
-  type: 'question_template' | 'command' | 'upload_data' | 'transition' | 'create_runbook';
+  type: SuggestionType;
   payload: string;
+  body?: string | null;
+  cooperative_action?: CooperativeAction;
+  hints?: string[];
   icon?: string | null;
   metadata?: Record<string, any>;
-}
-
-export interface CommandSuggestion {
-  command: string;
-  description: string;
-  why: string;
-  safety: 'safe' | 'read_only' | 'caution';
-  expected_output?: string | null;
 }
 
 export interface CommandValidation {
@@ -445,9 +444,7 @@ export interface AgentResponse {
   evidence_requests: EvidenceRequest[];
   investigation_mode: InvestigationMode;
   case_status: CaseStatus;
-  clarifying_questions?: string[];
   suggested_actions?: SuggestedAction[];
-  suggested_commands?: CommandSuggestion[];
   command_validation?: CommandValidation | null;
   problem_detected?: boolean;
   problem_summary?: string | null;

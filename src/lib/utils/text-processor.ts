@@ -86,7 +86,7 @@ function removeStandaloneFootnotes(text: string): string {
 }
 
 /**
- * Formats diagnostic reasoning keywords (OBSERVATION, ANALYSIS, SUGGESTION, EXPECTED OUTCOME)
+ * Formats diagnostic reasoning keywords (OBSERVATION, ANALYSIS, CONCLUSION, EXPECTED OUTCOME)
  * so the keyword sits on its own line and the paragraph starts on the next line.
  * Handles both plain and bold-wrapped variants (e.g. **OBSERVATION:** or OBSERVATION:).
  */
@@ -94,7 +94,7 @@ function formatDiagnosticKeywords(text: string): string {
   // Match keyword at start of line, optionally bold-wrapped, followed by text on the same line.
   // [\*:]+ handles all colon/bold orderings: "KEYWORD:", "**KEYWORD:**", "**KEYWORD**:"
   return text.replace(
-    /^\*{0,2}(OBSERVATION|ANALYSIS|SUGGESTION|EXPECTED OUTCOME)[\*:]+[ \t]+(.+)$/gm,
+    /^\*{0,2}(OBSERVATION|ANALYSIS|CONCLUSION|EXPECTED OUTCOME)[\*:]+[ \t]+(.+)$/gm,
     (_, keyword, rest) => {
       return `**${keyword}:**\n${rest}`;
     }

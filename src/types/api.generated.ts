@@ -5304,11 +5304,6 @@ export interface components {
              */
             problem_statement_confirmed_at?: string | null;
             /**
-             * Quick Suggestions
-             * @description Quick fixes or guidance provided during inquiry
-             */
-            quick_suggestions?: string[];
-            /**
              * Decided To Investigate
              * @description Whether user committed to formal investigation
              * @default false

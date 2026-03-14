@@ -79,7 +79,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
             Welcome to FaultMaven Copilot
           </h1>
           <p className="text-lg text-fm-text-tertiary">
-            AI-powered troubleshooting assistant for SRE and DevOps teams
+            AI-powered troubleshooting assistant
           </p>
         </div>
 

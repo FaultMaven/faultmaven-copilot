@@ -208,8 +208,8 @@ export function ConversationItem({
                 )}
               </div>
               {isUnsavedNew && (
-                <span className="text-xs text-fm-warning bg-fm-warning-bg px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
-                  New
+                <span className="text-xs text-fm-text-tertiary bg-fm-elevated px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
+                  Draft
                 </span>
               )}
               {isPending && !isUnsavedNew && (
