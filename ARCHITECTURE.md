@@ -58,6 +58,7 @@ src/
 │   │   ├── store.ts          # Main store configuration
 │   │   └── slices/           # Individual state slices
 │   └── utils/                # Shared utilities (logger, messaging, retry)
+│       └── html-to-structured-text.ts  # Semantic DOM → markdown extraction
 ├── shared/                   # UI Components & Hooks
 │   ├── ui/
 │   │   ├── components/       # Reusable UI atoms/molecules
@@ -66,6 +67,38 @@ src/
 │   └── assets/               # Static assets
 └── config.ts                 # Environment configuration
 ```
+
+---
+
+## Page Capture Pipeline
+
+The copilot captures web page content (dashboards, alert pages, status pages) and converts it to structured markdown for the FaultMaven backend.
+
+### Two Capture Paths
+
+1. **Content script import** (primary): `page-content.content.ts` imports `htmlToStructuredText(document)` from `lib/utils/html-to-structured-text.ts`. Used when the content script is already injected on the page.
+2. **Programmatic injection** (fallback): `usePageContent.ts` uses `browser.scripting.executeScript()` with a fully inlined version of the extraction logic. Used when the content script isn't responding (e.g., page loaded before extension install). The function must be self-contained — `scripting.executeScript` serializes it, so no imports are allowed.
+
+### Extraction: `htmlToStructuredText`
+
+Converts live DOM to structured markdown. Key features:
+
+*   **Visibility-aware**: Uses `getComputedStyle()` on the live DOM to skip hidden elements (`display: none`, `visibility: hidden`, `opacity: 0`, `aria-hidden`)
+*   **`tryKeyValue` heuristic**: Detects label + value patterns in child elements (e.g., `<div><span>CPU Usage</span><span>92%</span></div>` → `CPU Usage: 92%`)
+*   **`tryStatValue` heuristic**: Detects large-font stat panels (fontSize >= 24px) with monitoring units (`%`, `ms`, `req/s`, `p99`, etc.) — catches Grafana stat panels, Datadog big number widgets
+*   **ARIA alert promotion**: Elements with `role="alert"` or `aria-live="assertive"` get wrapped in a `## Alert` heading so they're promoted by the priority pass
+*   **Error-first priority pass**: Splits output into sections on `##` headings, sorts sections containing error keywords (`firing`, `critical`, `error`, `down`, `failed`, `timeout`, etc.) to the top
+*   **Form value extraction**: Reads `.value` property directly from inputs/selects/textareas (not lost like with `outerHTML` or `textContent`)
+*   **Preamble**: `[captured_at: ISO timestamp]` and page title/meta description
+*   **Cap**: MAX_CHARS = 12,000
+
+### Permission Handling
+
+`activeTab` permission only activates on toolbar icon clicks, NOT side-panel button clicks. When capture is initiated from the side panel, `usePageContent.ts` requests host permission via `browser.permissions.request()` for the tab's origin before injecting the script.
+
+### Backend Integration
+
+Content is submitted as `pasted_content` with `source_metadata.source_type = "page_capture"` and filename `page-capture-{ts}.txt`. The backend passes it through without re-processing (see [Data Preprocessing v5.1](../faultmaven/docs/architecture/data-processing/data-preprocessing-design-specification.md)).
 
 ---
 
