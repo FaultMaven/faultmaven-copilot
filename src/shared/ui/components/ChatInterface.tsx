@@ -66,7 +66,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="flex items-center justify-center h-full bg-fm-surface">
         <div className="text-center max-w-md p-6">
           <div className="mb-4">
-            <img src="/icon/square-dark.svg" alt="FaultMaven" className="w-12 h-12 mx-auto rounded-lg opacity-60" />
+            <img src="/icon/square-transparent.svg" alt="FaultMaven" className="w-12 h-12 mx-auto rounded-lg opacity-60" />
           </div>
           <h2 className="text-base font-semibold text-fm-text-primary mb-2">Start a new case</h2>
           <p className="text-sm text-fm-text-tertiary mb-4">Select a case from the list or create a new one.</p>

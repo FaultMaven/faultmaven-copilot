@@ -383,7 +383,7 @@ const ChatWindowComponent = function ChatWindow({
               <div className="px-4 py-2.5">
                 {/* Avatar row */}
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <img src="/icon/square-dark.svg" alt="FM" className="w-4 h-4 rounded" />
+                  <img src="/icon/square-transparent.svg" alt="FM" className="w-4 h-4 rounded" />
                   <span className="text-meta font-semibold text-fm-text-primary">FaultMaven</span>
                   <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
                 </div>
@@ -571,7 +571,7 @@ const ChatWindowComponent = function ChatWindow({
         ))}
         {(!Array.isArray(conversation) || conversation.length === 0) && !loading && (
           <div className="h-full flex flex-col items-center justify-center text-center p-6">
-            <img src="/icon/square-dark.svg" alt="FaultMaven" className="w-10 h-10 rounded-lg opacity-50 mb-4" />
+            <img src="/icon/square-transparent.svg" alt="FaultMaven" className="w-10 h-10 rounded-lg opacity-50 mb-4" />
             <h2 className="text-base font-semibold text-fm-text-primary mb-2">
               Welcome to FaultMaven Copilot
             </h2>

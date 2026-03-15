@@ -124,7 +124,7 @@ export function CollapsibleNavigation({
         {/* Top: Logo + Toggle */}
         <div className="flex-shrink-0 flex flex-col items-center pt-3 pb-2 gap-1 border-b border-fm-border">
           <img
-            src="/icon/square-dark.svg"
+            src="/icon/square-transparent.svg"
             alt="FM"
             className="w-7 h-7"
           />
@@ -197,9 +197,9 @@ export function CollapsibleNavigation({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img
-              src="/icon/square-dark.svg"
+              src="/icon/design-transparent.svg"
               alt="FaultMaven"
-              className="w-7 h-7"
+              className="h-6 w-auto"
             />
           </div>
           <button

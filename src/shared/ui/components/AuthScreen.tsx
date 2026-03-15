@@ -120,16 +120,13 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       <div className="max-w-md mx-auto p-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div className="flex justify-center mb-4">
             <img
-              src="/icon/square-dark.svg"
-              alt="FaultMaven Logo"
-              className="h-16 w-auto"
+              src="/icon/design-transparent.svg"
+              alt="FaultMaven"
+              className="h-12 w-auto"
             />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">
-            FaultMaven Copilot
-          </h1>
           <p className="text-lg text-fm-text-tertiary">
             Sign in to get started
           </p>

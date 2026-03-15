@@ -316,7 +316,7 @@ function OptionsApp() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <img src="/icon/design-dark.svg" alt="FaultMaven" className="h-10 w-auto" />
+            <img src="/icon/design-transparent.svg" alt="FaultMaven" className="h-10 w-auto" />
             <h1 className="text-3xl font-bold text-fm-text-primary">FaultMaven Settings</h1>
           </div>
           <p className="text-fm-text-tertiary">Configure your FaultMaven Copilot extension</p>
