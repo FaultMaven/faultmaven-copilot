@@ -16,7 +16,7 @@ import { ChatInterface } from '../components/ChatInterface';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('ContentArea');
-import type { UserCase, UploadedData } from '../../../lib/api';
+import type { UserCase } from '../../../lib/api';
 import type { OptimisticConversationItem } from '../../../lib/optimistic';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 
@@ -32,9 +32,6 @@ export interface ContentAreaProps {
   submitting: boolean;
   sessionId: string | null;
   hasUnsavedNewChat: boolean;
-
-  // Evidence state (Phase 3 Week 7)
-  caseEvidence: Record<string, UploadedData[]>;
 
   // Failed operations for error display
   failedOperations: any[];
@@ -66,7 +63,6 @@ const ContentAreaComponent = ({
   submitting,
   sessionId,
   hasUnsavedNewChat,
-  caseEvidence,
   failedOperations,
   onQuerySubmit,
   onTurnSubmit,
@@ -142,7 +138,6 @@ const ContentAreaComponent = ({
             onRetryFailedOperation={onRetryFailedOperation}
             onDismissFailedOperation={onDismissFailedOperation}
             getErrorMessageForOperation={getErrorMessageForOperation}
-            caseEvidence={caseEvidence}
             onDocumentView={onDocumentView}
             onGenerateReports={onGenerateReports}
             onNewChat={onNewChat}
@@ -192,13 +187,6 @@ const arePropsEqual = (prevProps: ContentAreaProps, nextProps: ContentAreaProps)
 
   // Re-render on active case object changes (deep comparison by case_id)
   if (prevProps.activeCase?.case_id !== nextProps.activeCase?.case_id) return false;
-
-  // Phase 3 Week 7: Re-render on evidence changes for active case
-  if (prevProps.activeCaseId && nextProps.activeCaseId) {
-    const prevEvidence = prevProps.caseEvidence[prevProps.activeCaseId] || [];
-    const nextEvidence = nextProps.caseEvidence[nextProps.activeCaseId] || [];
-    if (prevEvidence.length !== nextEvidence.length) return false;
-  }
 
   // Ignore function reference changes (callbacks are stable from parent)
   return true;

@@ -660,7 +660,6 @@ function SidePanelAppContent() {
               submitting={submitting}
               sessionId={sessionId}
               hasUnsavedNewChat={hasUnsavedNewChat}
-              caseEvidence={caseEvidence}
               failedOperations={getFailedOperationsForUser()}
               onQuerySubmit={handleQuerySubmit}
               onTurnSubmit={handleTurnSubmit}

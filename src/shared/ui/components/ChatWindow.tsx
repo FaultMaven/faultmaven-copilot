@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from "react";
 import {
-  UploadedData,
   Source,
   SuggestedAction,
   EvidenceRequest,
@@ -22,8 +21,9 @@ import { SuggestionCard } from "./SuggestionCard";
 import { CommandValidationDisplay } from "./CommandValidationDisplay";
 import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
 import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
-import { EvidencePanel } from "./EvidencePanel";
-import { EvidenceAnalysisModal } from "./EvidenceAnalysisModal";
+// EvidencePanel and EvidenceAnalysisModal removed — the case header's
+// "Evidence" and "Files" sections now provide this functionality in a
+// compact, integrated format.  See InvestigatingDetails.tsx.
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { caseApi } from "../../../lib/api/case-service";
 import { createLogger } from "../../../lib/utils/logger";
@@ -94,9 +94,6 @@ interface ChatWindowProps {
   isNewUnsavedChat?: boolean;
   className?: string;
 
-  // Phase 3 Week 7: Evidence Management
-  evidence?: UploadedData[];
-
   // Action callbacks
   onQuerySubmit: (query: string, intent?: QueryIntent) => void;
   onDocumentView?: (documentId: string) => void;
@@ -112,15 +109,12 @@ const ChatWindowComponent = function ChatWindow({
   sessionId,
   isNewUnsavedChat = false,
   className = '',
-  evidence = [],
   onQuerySubmit,
   onDocumentView,
   onGenerateReports,
   setActiveCase
 }: ChatWindowProps) {
-  // Phase 3 Week 7: Evidence panel state
-  const [evidencePanelExpanded, setEvidencePanelExpanded] = useState(true);
-  const [viewingEvidence, setViewingEvidence] = useState<UploadedData | null>(null);
+  // Evidence panel state removed — case header handles evidence display.
 
   // Phase 5: Enhanced Case Header state
   const [fullCaseData, setFullCaseData] = useState<CaseUIResponse | null>(null);
@@ -232,9 +226,7 @@ const ChatWindowComponent = function ChatWindow({
     onQuerySubmit('No', intent);
   }, [onQuerySubmit]);
 
-  const handleViewAnalysis = (item: UploadedData) => {
-    setViewingEvidence(item);
-  };
+  // handleViewAnalysis removed — case header handles evidence display.
 
   const canInteract = Boolean(activeCase) || Boolean(isNewUnsavedChat);
 
@@ -307,16 +299,6 @@ const ChatWindowComponent = function ChatWindow({
           initialExpanded={false}
           onStatusChangeRequest={handleStatusChangeRequest}
           onScrollToTurn={scrollToTurn}
-        />
-      )}
-
-      {/* Evidence Panel */}
-      {activeCase?.status === 'investigating' && evidence && evidence.length > 0 && (
-        <EvidencePanel
-          evidence={evidence}
-          isExpanded={evidencePanelExpanded}
-          onToggleExpand={() => setEvidencePanelExpanded(!evidencePanelExpanded)}
-          onViewAnalysis={handleViewAnalysis}
         />
       )}
 
@@ -610,12 +592,6 @@ const ChatWindowComponent = function ChatWindow({
         <div className="h-6" />
         </div>{/* max-w-fm-content */}
       </div>
-
-      <EvidenceAnalysisModal
-        evidence={viewingEvidence}
-        isOpen={viewingEvidence !== null}
-        onClose={() => setViewingEvidence(null)}
-      />
 
     </div>
   );

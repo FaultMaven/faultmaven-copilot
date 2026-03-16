@@ -2,7 +2,7 @@ import React from 'react';
 import { ChatWindow } from './ChatWindow';
 import { UnifiedInputBar, TurnPayload } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
-import { UserCase, UploadedData } from '../../../lib/api';
+import { UserCase } from '../../../lib/api';
 import { usePageContent } from '../hooks/usePageContent';
 import { createLogger } from '~/lib/utils/logger';
 
@@ -21,7 +21,6 @@ interface ChatInterfaceProps {
   onRetryFailedOperation: (opId: string) => void;
   onDismissFailedOperation: (opId: string) => void;
   getErrorMessageForOperation: (op: PendingOperation) => { title: string; message: string; recoveryHint: string };
-  caseEvidence?: Record<string, UploadedData[]>;
   onDocumentView?: (docId: string) => void;
   onGenerateReports?: () => void;
   onNewChat?: () => void;
@@ -42,7 +41,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onRetryFailedOperation,
   onDismissFailedOperation,
   getErrorMessageForOperation,
-  caseEvidence,
   onDocumentView,
   onGenerateReports,
   onNewChat,
@@ -52,7 +50,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { handlePageInject } = usePageContent();
 
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
-  const currentEvidence = activeCaseId ? caseEvidence?.[activeCaseId] : undefined;
 
   // Check if interaction is allowed
   const canInteract = (!!activeCase &&
@@ -129,7 +126,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           activeCase={activeCase}
           loading={loading}
           sessionId={sessionId}
-          evidence={currentEvidence}
           onQuerySubmit={onQuerySubmit}
           onDocumentView={onDocumentView}
           onGenerateReports={onGenerateReports}
