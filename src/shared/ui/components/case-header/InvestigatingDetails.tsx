@@ -190,18 +190,28 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
                       <span className={`font-mono font-medium px-1 rounded-sm text-[10px] ${typeInfo.badgeClass}`}>
                         {typeInfo.shortLabel}
                       </span>
+                      {ev.source_filename && (
+                        <span className="text-fm-text-tertiary text-[10px] truncate max-w-[100px] flex-shrink-0" title={ev.source_filename}>
+                          {ev.source_filename}
+                        </span>
+                      )}
                       <span className="text-fm-text-primary truncate flex-1">{ev.summary}</span>
                       {categoryLabel && (
                         <span className="text-fm-text-tertiary text-[10px] flex-shrink-0">{categoryLabel}</span>
                       )}
-                      {onScrollToTurn && ev.collected_at_turn > 0 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onScrollToTurn(ev.collected_at_turn); }}
-                          className="text-fm-accent hover:text-fm-accent/80 flex-shrink-0"
-                          title={`Jump to turn ${ev.collected_at_turn}`}
-                        >
-                          → T{ev.collected_at_turn}
-                        </button>
+                      {/* Turn 0 = legacy data predating the collected_at_turn column */}
+                      {ev.collected_at_turn > 0 && (
+                        onScrollToTurn ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onScrollToTurn(ev.collected_at_turn); }}
+                            className="text-fm-accent hover:text-fm-accent/80 flex-shrink-0"
+                            title={`Jump to turn ${ev.collected_at_turn}`}
+                          >
+                            T{ev.collected_at_turn}
+                          </button>
+                        ) : (
+                          <span className="text-fm-text-tertiary flex-shrink-0">T{ev.collected_at_turn}</span>
+                        )
                       )}
                     </div>
                   );

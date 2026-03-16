@@ -335,8 +335,11 @@ const ChatWindowComponent = function ChatWindow({
                   style={{ borderRadius: '8px 8px 0px 8px' }}
                 >
                   <p className="break-words m-0 text-body">{item.question}</p>
-                  {/* Attachment indicator — one chip per attachment with source-aware icon */}
-                  {item.attachments && item.attachments.length > 0 && (
+                  {/* Attachment indicator — one chip per attachment with source-aware icon.
+                      Hidden on optimistic messages (while waiting for server) to reduce
+                      clutter; the case header's "Files" section tracks uploads. Shown
+                      once the server confirms with processed attachment data. */}
+                  {item.attachments && item.attachments.length > 0 && !item.optimistic && (
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1.5 border-t border-fm-border/50">
                       {item.attachments.map((att, idx) => {
                         const st = (att as any).source_type as string | undefined;
@@ -469,7 +472,7 @@ const ChatWindowComponent = function ChatWindow({
 
                     {/* Suggestions */}
                     {item.suggestedActions && item.suggestedActions.length > 0 && (
-                      <div className="mt-3 space-y-0.5">
+                      <div className="mt-2.5 pt-2 border-t border-fm-border/30 space-y-px">
                         {item.suggestedActions.map((action, idx) => (
                           <SuggestionCard
                             key={idx}

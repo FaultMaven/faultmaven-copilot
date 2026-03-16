@@ -53,7 +53,7 @@ export function SuggestionCard({
 
   return (
     <div
-      className={`flex items-baseline gap-2 py-0.5 ${
+      className={`flex items-baseline gap-1.5 py-px leading-snug ${
         isClickable
           ? 'cursor-pointer group'
           : action.type === 'COOPERATIVE' && !isCurrentTurn
@@ -66,9 +66,9 @@ export function SuggestionCard({
       tabIndex={isClickable ? 0 : undefined}
       aria-label={isClickable ? action.label : undefined}
     >
-      <span className="text-fm-xs text-fm-text-tertiary select-none flex-shrink-0">•</span>
+      <span className="text-fm-xs text-fm-text-tertiary select-none flex-shrink-0 leading-snug">•</span>
       <div className="flex-1 min-w-0">
-        <span className={`text-fm-xs font-medium ${
+        <span className={`text-fm-xs font-medium leading-snug ${
           isClickable
             ? 'text-fm-accent group-hover:underline'
             : 'text-fm-text-primary'
@@ -76,10 +76,10 @@ export function SuggestionCard({
           {action.label}
         </span>
         {suffix && (
-          <span className="text-fm-xs text-fm-text-tertiary"> — {suffix}</span>
+          <span className="text-fm-xs text-fm-text-tertiary leading-snug"> — {suffix}</span>
         )}
         {isCommand && isCurrentTurn && (
-          <span className="ml-1.5 text-fm-xs text-fm-text-tertiary">(copies command)</span>
+          <span className="ml-1.5 text-fm-xs text-fm-text-tertiary leading-snug">(copies command)</span>
         )}
       </div>
     </div>

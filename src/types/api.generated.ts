@@ -5012,6 +5012,11 @@ export interface components {
              * @default OTHER
              */
             category: string;
+            /**
+             * Source Filename
+             * @description Original filename of the source file, if evidence originated from an attachment.
+             */
+            source_filename?: string | null;
         };
         /**
          * GeneratedDocument
