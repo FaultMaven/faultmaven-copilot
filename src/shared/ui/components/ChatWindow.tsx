@@ -353,18 +353,42 @@ const ChatWindowComponent = function ChatWindow({
                   style={{ borderRadius: '8px 8px 0px 8px' }}
                 >
                   <p className="break-words m-0 text-body">{item.question}</p>
-                  {/* File attachment indicator */}
+                  {/* Attachment indicator — one chip per attachment with source-aware icon */}
                   {item.attachments && item.attachments.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1.5 border-t border-fm-border/50">
-                      <svg className="w-3.5 h-3.5 text-fm-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
-                      </svg>
-                      {item.attachments.map((att, idx) => (
-                        <span key={att.evidence_id || idx} className="text-fm-xs text-fm-text-tertiary">
-                          {att.filename}{att.file_size > 0 ? ` (${formatFileSize(att.file_size)})` : ''}
-                          {idx < item.attachments!.length - 1 ? ',' : ''}
-                        </span>
-                      ))}
+                      {item.attachments.map((att, idx) => {
+                        const st = (att as any).source_type as string | undefined;
+                        let icon: React.ReactNode;
+                        if (st === 'page_capture' || att.filename?.startsWith('page-capture-')) {
+                          // Globe icon for page captures
+                          icon = (
+                            <svg className="w-3.5 h-3.5 text-fm-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253" />
+                            </svg>
+                          );
+                        } else if (st === 'text_paste' || att.filename?.startsWith('pasted-content-')) {
+                          // Text/clipboard icon for pasted content
+                          icon = (
+                            <svg className="w-3.5 h-3.5 text-fm-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
+                            </svg>
+                          );
+                        } else {
+                          // Clip/paperclip icon for file uploads
+                          icon = (
+                            <svg className="w-3.5 h-3.5 text-fm-text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                            </svg>
+                          );
+                        }
+                        return (
+                          <span key={att.evidence_id || idx} className="inline-flex items-center gap-1 text-fm-xs text-fm-text-tertiary">
+                            {icon}
+                            <span>{att.filename}{att.file_size > 0 ? ` (${formatFileSize(att.file_size)})` : ''}</span>
+                            {idx < item.attachments!.length - 1 ? <span>,</span> : null}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="flex items-center justify-end gap-2 mt-1">

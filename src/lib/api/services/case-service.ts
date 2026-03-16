@@ -505,6 +505,8 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
   if (hasPasted) form.append('pasted_content', request.pastedContent!);
   if (request.intentType) form.append('intent_type', request.intentType);
   if (request.intentData) form.append('intent_data', JSON.stringify(request.intentData));
+  if (request.inputType) form.append('input_type', request.inputType);
+  if (request.sourceUrl) form.append('source_url', request.sourceUrl);
   for (const file of request.files || []) {
     form.append('files', file);
   }

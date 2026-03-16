@@ -145,6 +145,10 @@ export interface TurnRequest {
   pastedContent?: string;
   intentType?: string;
   intentData?: Record<string, unknown>;
+  /** Explicit input origin so the backend can set correct source_metadata without content inspection */
+  inputType?: 'file' | 'page_capture' | 'paste';
+  /** Source URL for page_capture inputs */
+  sourceUrl?: string;
 }
 
 /**
@@ -156,6 +160,10 @@ export interface AttachmentResult {
   data_type: string;
   file_size: number;
   processing_status: string;
+  /** ISO 8601 timestamp of when the attachment was processed */
+  uploaded_at?: string;
+  /** Input origin: file_upload | text_paste | page_capture */
+  source_type?: string;
 }
 
 /**

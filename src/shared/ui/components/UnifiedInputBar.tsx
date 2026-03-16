@@ -29,6 +29,10 @@ export interface TurnPayload {
   query?: string;
   pastedContent?: string;
   files?: File[];
+  /** Explicit input origin so the backend can set correct source_metadata */
+  inputType?: 'file' | 'page_capture' | 'paste';
+  /** Source URL for page_capture inputs */
+  sourceUrl?: string;
 }
 
 export interface UnifiedInputBarProps {
@@ -222,6 +226,7 @@ export function UnifiedInputBar({
     // Data mode (long text in textarea): treat textarea content as pasted data
     if (inputMode === 'data' && hasQuery && !hasAnyAttachment) {
       payload.pastedContent = query;
+      payload.inputType = 'paste';
       payload.query = generateAutoQuery({ hasFile: false, hasPage: false, hasPasted: true, selectedFile: null, capturedPageUrl: null });
     } else {
       // Normal: textarea text is the query
@@ -235,12 +240,16 @@ export function UnifiedInputBar({
       // Assemble pasted content (only one source active per turn)
       if (hasPasted) {
         payload.pastedContent = stagedPastedContent;
+        payload.inputType = 'paste';
       } else if (hasPage) {
         payload.pastedContent = `--- Page Content (${capturedPageUrl}) ---\n${capturedPageContent}`;
+        payload.inputType = 'page_capture';
+        payload.sourceUrl = capturedPageUrl ?? undefined;
       }
 
       if (hasFile) {
         payload.files = [selectedFile!];
+        payload.inputType = 'file';
       }
     }
 

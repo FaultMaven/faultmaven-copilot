@@ -141,20 +141,48 @@ export function useDataUpload({
         turnRequest.files = payload.files;
       }
 
+      if (payload.inputType) {
+        turnRequest.inputType = payload.inputType;
+      }
+
+      if (payload.sourceUrl) {
+        turnRequest.sourceUrl = payload.sourceUrl;
+      }
+
       // Step 3: Add optimistic messages immediately (instant "Thinking..." feedback)
       const userQuestion = payload.query?.trim() || 'Submitted data for analysis';
       const messageTimestamp = new Date().toISOString();
       const userMessageId = `upload-${Date.now()}`;
       const aiMessageId = `response-${Date.now()}`;
 
-      // Build local attachments list for immediate display
-      const localAttachments: AttachmentResult[] = (payload.files || []).map(f => ({
-        evidence_id: '',
-        filename: f.name,
-        data_type: '',
-        file_size: f.size,
-        processing_status: 'pending',
-      }));
+      // Build local attachments list for immediate display (optimistic, before server responds)
+      const localAttachments: AttachmentResult[] = [];
+
+      for (const f of payload.files || []) {
+        localAttachments.push({
+          evidence_id: '',
+          filename: f.name,
+          data_type: '',
+          file_size: f.size,
+          processing_status: 'pending',
+          source_type: 'file_upload',
+        });
+      }
+
+      if (payload.pastedContent?.trim()) {
+        // Mirror the filename pattern the backend will assign
+        const ts = new Date().toISOString()
+          .replace(/[-:]/g, '').replace('T', 'T').slice(0, 15);
+        const isPage = payload.inputType === 'page_capture';
+        localAttachments.push({
+          evidence_id: '',
+          filename: isPage ? `page-capture-${ts}.txt` : `pasted-content-${ts}.txt`,
+          data_type: '',
+          file_size: new TextEncoder().encode(payload.pastedContent).length,
+          processing_status: 'pending',
+          source_type: payload.inputType ?? 'text_paste',
+        });
+      }
 
       const existingMessages = conversations[targetCaseId!] || [];
       const highestTurn = existingMessages.reduce((max: number, msg: OptimisticConversationItem) =>
