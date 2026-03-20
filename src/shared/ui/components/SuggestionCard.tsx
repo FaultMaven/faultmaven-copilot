@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import type { SuggestedAction, CooperativeAction } from '~/lib/api/types';
 import { createLogger } from '~/lib/utils/logger';
 
@@ -23,6 +23,8 @@ export function SuggestionCard({
   onCooperativeClick,
 }: SuggestionCardProps) {
   const isClickable = action.type === 'COOPERATIVE' && isCurrentTurn && !disabled;
+  const isCommand = action.type === 'COOPERATIVE' && action.cooperative_action === 'command_copy';
+  const [copied, setCopied] = useState(false);
 
   const handleClick = useCallback(() => {
     if (!isClickable) return;
@@ -30,6 +32,8 @@ export function SuggestionCard({
 
     if (cooperativeAction === 'command_copy') {
       navigator.clipboard.writeText(action.payload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
 
     onCooperativeClick?.(action.payload, cooperativeAction);
@@ -41,8 +45,6 @@ export function SuggestionCard({
       handleClick();
     }
   }, [isClickable, handleClick]);
-
-  const isCommand = action.type === 'COOPERATIVE' && action.cooperative_action === 'command_copy';
 
   // Suffix text: body, payload description, or hints depending on type
   const suffix = action.type === 'FREE_SPEECH'
@@ -79,7 +81,9 @@ export function SuggestionCard({
           <span className="text-fm-xs text-fm-text-tertiary leading-snug"> — {suffix}</span>
         )}
         {isCommand && isCurrentTurn && (
-          <span className="ml-1.5 text-fm-xs text-fm-text-tertiary leading-snug">(copies command)</span>
+          <span className="ml-1.5 text-fm-xs text-fm-text-tertiary leading-snug">
+            {copied ? '✓ Copied — paste in terminal' : '(click to copy command)'}
+          </span>
         )}
       </div>
     </div>
