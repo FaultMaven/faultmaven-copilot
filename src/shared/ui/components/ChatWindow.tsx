@@ -25,7 +25,10 @@ import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
 // "Evidence" and "Files" sections now provide this functionality in a
 // compact, integrated format.  See InvestigatingDetails.tsx.
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
+import { ResolutionActionsCard } from "./ResolutionActionsCard";
 import { caseApi } from "../../../lib/api/case-service";
+import { generateReports } from "../../../lib/api/services/report-service";
+import { getDashboardUrl } from "../../../config";
 import { createLogger } from "../../../lib/utils/logger";
 import type { CaseUIResponse, UserCase } from "../../../types/case";
 
@@ -120,6 +123,18 @@ const ChatWindowComponent = function ChatWindow({
   const [fullCaseData, setFullCaseData] = useState<CaseUIResponse | null>(null);
   const [caseLoading, setCaseLoading] = useState(false);
   const [caseError, setCaseError] = useState<string | null>(null);
+
+  // Dashboard URL for post-terminal actions
+  const [dashboardUrl, setDashboardUrl] = useState('https://app.faultmaven.ai');
+  useEffect(() => {
+    getDashboardUrl().then(setDashboardUrl).catch(() => {});
+  }, []);
+
+  // Report generation handler for ResolutionActionsCard
+  const handleGenerateReport = useCallback(async (reportType: 'incident_report' | 'post_mortem') => {
+    if (!activeCase?.case_id) return;
+    await generateReports(activeCase.case_id, { report_types: [reportType] });
+  }, [activeCase?.case_id]);
 
   // Determine the last assistant turn (only its suggestions are interactive)
   const lastAssistantItemId = Array.isArray(conversation)
@@ -302,22 +317,14 @@ const ChatWindowComponent = function ChatWindow({
         />
       )}
 
-      {/* Report Generation Button — dark themed */}
-      {activeCase && activeCase.status === 'resolved' && onGenerateReports && (
-        <div className="px-4 py-2 bg-fm-success-bg border border-fm-success-border rounded-md mx-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-fm-success">Case Resolved</p>
-              <p className="text-xs text-fm-text-tertiary">Generate documentation reports for this case</p>
-            </div>
-            <button
-              onClick={onGenerateReports}
-              className="px-3 py-1.5 bg-fm-success text-fm-base text-xs font-semibold rounded-md hover:opacity-90 transition-colors"
-            >
-              Generate Reports
-            </button>
-          </div>
-        </div>
+      {/* Post-Terminal Actions */}
+      {activeCase && (activeCase.status === 'resolved' || activeCase.status === 'closed') && (
+        <ResolutionActionsCard
+          activeCase={activeCase}
+          caseData={fullCaseData}
+          onGenerateReport={handleGenerateReport}
+          dashboardUrl={dashboardUrl}
+        />
       )}
 
       {/* Conversation History — dark themed */}

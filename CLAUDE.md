@@ -153,6 +153,7 @@ src/
 │   ├── SidePanelApp.tsx                 # Main app component
 │   ├── components/                      # React components
 │   │   ├── ChatWindow.tsx               # Conversation display
+│   │   ├── ResolutionActionsCard.tsx    # Post-terminal actions (report gen + knowledge nudge)
 │   │   ├── ConversationsList.tsx        # Case list sidebar
 │   │   ├── AuthScreen.tsx               # Login screen
 │   │   ├── LocalLoginForm.tsx           # Local auth form
@@ -466,6 +467,31 @@ const transitions = getValidTransitions('inquiry'); // ['investigating', 'closed
 const msg = getStatusChangeMessage('inquiry', 'investigating');
 // "I want to start a formal investigation to find the root cause."
 ```
+
+### Post-Terminal Actions (ResolutionActionsCard)
+
+When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` replaces the old green banner in `ChatWindow.tsx`. It provides:
+
+**Resolved cases:**
+
+- Root cause summary, duration/turn/evidence stats
+- Two report generation buttons: Incident Report, Post-Mortem
+- Knowledge extraction nudge linking to Dashboard (`?tab=knowledge`)
+
+**Closed cases:**
+
+- Closure reason label, findings summary
+- One report button: Investigation Notes
+- Knowledge nudge only for `closure_reason === 'mitigation_sufficient'`
+
+**Report button states:** `idle` → `generating` (pulse) → `done` (checkmark, 2s) → `view` (Dashboard link)
+
+**Cross-frontend linking:** Opens `${dashboardUrl}/cases/${caseId}?tab=report` or `?tab=knowledge` in a new tab. Dashboard URL resolved via `getDashboardUrl()` from `config.ts`.
+
+**Key files:**
+
+- `src/shared/ui/components/ResolutionActionsCard.tsx` — Post-terminal card component
+- `src/lib/api/services/report-service.ts` — Report generation API (`generateReports`, `getCaseReports`, `getReportRecommendations`)
 
 ### API Response Polling
 
