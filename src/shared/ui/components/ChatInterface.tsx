@@ -22,7 +22,6 @@ interface ChatInterfaceProps {
   onDismissFailedOperation: (opId: string) => void;
   getErrorMessageForOperation: (op: PendingOperation) => { title: string; message: string; recoveryHint: string };
   onDocumentView?: (docId: string) => void;
-  onGenerateReports?: () => void;
   onNewChat?: () => void;
   hasUnsavedNewChat?: boolean;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;
@@ -42,7 +41,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onDismissFailedOperation,
   getErrorMessageForOperation,
   onDocumentView,
-  onGenerateReports,
   onNewChat,
   hasUnsavedNewChat,
   setActiveCase
@@ -128,7 +126,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           sessionId={sessionId}
           onQuerySubmit={onQuerySubmit}
           onDocumentView={onDocumentView}
-          onGenerateReports={onGenerateReports}
           setActiveCase={setActiveCase}
         />
       </div>

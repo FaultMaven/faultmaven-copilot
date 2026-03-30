@@ -16,7 +16,6 @@ import { PersistenceManager } from "../../lib/utils/persistence-manager";
 
 const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
-import { ReportGenerationDialog } from "./components/ReportGenerationDialog";
 import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation } from "../../lib/api";
 import { isOptimisticId, isRealId } from "../../lib/utils/data-integrity";
 import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
@@ -503,8 +502,6 @@ function SidePanelAppContent() {
   // Modals state
   const [viewingDocument, setViewingDocument] = useState<any | null>(null);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
-  const [showReportDialog, setShowReportDialog] = useState(false);
-
   const handleDocumentView = async (documentId: string) => {
     try {
       const document = await getKnowledgeDocument(documentId);
@@ -664,7 +661,6 @@ function SidePanelAppContent() {
               onQuerySubmit={handleQuerySubmit}
               onTurnSubmit={handleTurnSubmit}
               onDocumentView={handleDocumentView}
-              onGenerateReports={() => setShowReportDialog(true)}
               onNewChat={handleNewChatFromNav}
               onRetryFailedOperation={handleUserRetry}
               onDismissFailedOperation={handleDismissFailedOperation}
@@ -722,15 +718,6 @@ function SidePanelAppContent() {
           }}
         />
 
-        {showReportDialog && activeCaseId && (
-          <ReportGenerationDialog
-            caseId={activeCaseId}
-            caseTitle={activeCase?.title || 'Untitled Case'}
-            isOpen={showReportDialog}
-            onClose={() => setShowReportDialog(false)}
-            onReportsGenerated={() => setShowReportDialog(false)}
-          />
-        )}
       </ErrorBoundary>
     </ErrorBoundary>
   );

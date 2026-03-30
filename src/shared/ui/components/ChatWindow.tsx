@@ -27,7 +27,6 @@ import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { ResolutionActionsCard } from "./ResolutionActionsCard";
 import { caseApi } from "../../../lib/api/case-service";
-import { generateReports } from "../../../lib/api/services/report-service";
 import { getDashboardUrl } from "../../../config";
 import { createLogger } from "../../../lib/utils/logger";
 import type { CaseUIResponse, UserCase } from "../../../types/case";
@@ -100,7 +99,6 @@ interface ChatWindowProps {
   // Action callbacks
   onQuerySubmit: (query: string, intent?: QueryIntent) => void;
   onDocumentView?: (documentId: string) => void;
-  onGenerateReports?: () => void;  // FR-CM-006: Trigger report generation for resolved cases
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
 }
 
@@ -114,7 +112,6 @@ const ChatWindowComponent = function ChatWindow({
   className = '',
   onQuerySubmit,
   onDocumentView,
-  onGenerateReports,
   setActiveCase
 }: ChatWindowProps) {
   // Evidence panel state removed — case header handles evidence display.
@@ -129,12 +126,6 @@ const ChatWindowComponent = function ChatWindow({
   useEffect(() => {
     getDashboardUrl().then(setDashboardUrl).catch(() => {});
   }, []);
-
-  // Report generation handler for ResolutionActionsCard
-  const handleGenerateReport = useCallback(async (reportType: 'incident_report' | 'post_mortem') => {
-    if (!activeCase?.case_id) return;
-    await generateReports(activeCase.case_id, { report_types: [reportType] });
-  }, [activeCase?.case_id]);
 
   // Determine the last assistant turn (only its suggestions are interactive)
   const lastAssistantItemId = Array.isArray(conversation)
@@ -322,7 +313,6 @@ const ChatWindowComponent = function ChatWindow({
         <ResolutionActionsCard
           activeCase={activeCase}
           caseData={fullCaseData}
-          onGenerateReport={handleGenerateReport}
           dashboardUrl={dashboardUrl}
         />
       )}

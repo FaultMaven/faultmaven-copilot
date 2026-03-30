@@ -490,8 +490,8 @@ export interface UploadedData {
 }
 
 
-// Reports
-export type ReportType = "incident_report" | "runbook" | "post_mortem";
+// Reports — must match backend ReportType enum (owned_models/report.py)
+export type ReportType = "resolution_summary" | "closure_summary" | "runbook";
 export type ReportStatus = "generating" | "completed" | "failed";
 export type RunbookSource = "incident_driven" | "document_driven";
 

@@ -40,7 +40,6 @@ export interface ContentAreaProps {
   onQuerySubmit: (query: string) => Promise<void>;
   onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
   onDocumentView?: (documentId: string) => void;
-  onGenerateReports?: () => void;
   onNewChat: () => void;
   onRetryFailedOperation: (operationId: string) => void;
   onDismissFailedOperation: (operationId: string) => void;
@@ -67,7 +66,6 @@ const ContentAreaComponent = ({
   onQuerySubmit,
   onTurnSubmit,
   onDocumentView,
-  onGenerateReports,
   onNewChat,
   onRetryFailedOperation,
   onDismissFailedOperation,
@@ -139,7 +137,6 @@ const ContentAreaComponent = ({
             onDismissFailedOperation={onDismissFailedOperation}
             getErrorMessageForOperation={getErrorMessageForOperation}
             onDocumentView={onDocumentView}
-            onGenerateReports={onGenerateReports}
             onNewChat={onNewChat}
             hasUnsavedNewChat={hasUnsavedNewChat}
             setActiveCase={setActiveCase}

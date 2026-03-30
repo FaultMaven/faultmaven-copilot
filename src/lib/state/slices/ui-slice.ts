@@ -11,9 +11,6 @@ export interface UISlice {
   isDocumentModalOpen: boolean;
   viewingDocument: any | null;
   
-  // Report Dialog State
-  showReportDialog: boolean;
-  
   // Conflict Resolution State
   conflictResolution: {
     isOpen: boolean;
@@ -34,9 +31,6 @@ export interface UISlice {
   openDocumentModal: (document: any) => void;
   closeDocumentModal: () => void;
   
-  openReportDialog: () => void;
-  closeReportDialog: () => void;
-  
   // Conflict Resolution Actions
   openConflictResolution: (data: Omit<UISlice['conflictResolution'], 'isOpen'>) => void;
   closeConflictResolution: () => void;
@@ -51,8 +45,6 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   
   isDocumentModalOpen: false,
   viewingDocument: null,
-  
-  showReportDialog: false,
   
   conflictResolution: {
     isOpen: false,
@@ -79,10 +71,6 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
     isDocumentModalOpen: false, 
     viewingDocument: null 
   }),
-  
-  openReportDialog: () => set({ showReportDialog: true }),
-  
-  closeReportDialog: () => set({ showReportDialog: false }),
   
   openConflictResolution: (data) => set({
     conflictResolution: {
