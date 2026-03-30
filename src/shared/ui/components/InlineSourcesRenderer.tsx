@@ -347,7 +347,7 @@ function createMarkdownComponents(): Partial<Components> {
 
       return (
         <pre className="bg-fm-codeblock text-fm-codeblock-text p-3 rounded-md overflow-x-auto my-2 border border-fm-codeblock-border">
-          <code className={`language-${match[1]} text-sm font-mono`} {...props}>
+          <code className={`language-${match[1]} text-xs font-mono`} {...props}>
             {children}
           </code>
         </pre>
