@@ -38,6 +38,18 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   onToggle,
   onStatusChangeRequest,
 }) => {
+  const caseId = activeCase?.case_id || (caseData as any).case_id || null;
+  const shortId = caseId ? caseId.slice(0, 8) : null;
+  const [idCopied, setIdCopied] = useState(false);
+
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!caseId) return;
+    navigator.clipboard.writeText(caseId).then(() => {
+      setIdCopied(true);
+      setTimeout(() => setIdCopied(false), 1500);
+    });
+  };
   // Status label — shows substage for INVESTIGATING, closure reason for CLOSED
   const getStatusLabel = (status: string): string => {
     if (status === caseData.status) {
@@ -121,11 +133,21 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
   return (
     <div className="p-3 cursor-pointer hover:bg-fm-elevated/40 transition-colors" onClick={onToggle}>
-      {/* Line 1: Title + Severity */}
+      {/* Line 1: Title + Short ID + Severity */}
       <div className="flex items-center justify-between gap-2 mb-1">
         <h2 className="font-semibold text-white text-fm-title truncate flex-1 min-w-0">
           {caseData.title}
         </h2>
+        {shortId && (
+          <button
+            type="button"
+            onClick={handleCopyId}
+            className="font-mono text-fm-xs text-fm-text-tertiary hover:text-fm-accent transition-colors flex-shrink-0 cursor-pointer"
+            title={idCopied ? 'Copied!' : `Copy full ID: ${caseId}`}
+          >
+            {idCopied ? '✓' : `#${shortId}`}
+          </button>
+        )}
         <SeverityChip severity={severity} />
       </div>
 
