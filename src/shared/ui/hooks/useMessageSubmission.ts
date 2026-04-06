@@ -183,8 +183,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       });
 
       // SUCCESS HANDLER
-      const currentConversation = props.conversations[caseId] || [];
-
       // Update conversations: replace optimistic messages with real data
       props.setConversations(prev => {
            const conv = prev[caseId] || [];
@@ -224,19 +222,19 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
          pendingOpsManager.complete(aiMessageId);
          log.info('Message submission completed and UI updated');
 
-         // Auto-generate smart title when message count first reaches threshold
-         // Each conversation item represents one message (user or AI), so divide by 2 for exchanges
-         // After this submission, we have the user message + AI response = 2 new items
-         const currentMessageCount = Math.ceil(currentConversation.length / 2);
+         // Auto-generate smart title when turn count reaches threshold.
+         // Use response.turn_number (backend-authoritative) instead of counting
+         // conversation items — props.conversations is a stale closure that
+         // doesn't include the optimistic items added in this submission.
+         const currentTurn = response.turn_number ?? 0;
          const titleSource = props.titleSources[caseId];
-         const isUserRenamed = titleSource === 'user';
          const shouldAutoGenerateTitle =
-           currentMessageCount === TITLE_GENERATION_THRESHOLD && !isUserRenamed;
+           currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSource;
 
          if (shouldAutoGenerateTitle) {
-           log.info('Message threshold reached, auto-generating smart title', {
+           log.info('Turn threshold reached, auto-generating smart title', {
              caseId,
-             messageCount: currentMessageCount,
+             turn: currentTurn,
              threshold: TITLE_GENERATION_THRESHOLD
            });
            try {
@@ -256,8 +254,8 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
              log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
              // Non-critical - silently ignore, user can manually request later
            }
-         } else if (currentMessageCount > TITLE_GENERATION_THRESHOLD) {
-           log.debug('Past auto-generation threshold, skipping', { messageCount: currentMessageCount });
+         } else if (currentTurn >= TITLE_GENERATION_THRESHOLD && titleSource) {
+           log.debug('Title already set, skipping auto-generation', { turn: currentTurn, titleSource });
          }
 
     } catch (error) {
