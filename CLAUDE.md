@@ -474,19 +474,21 @@ When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` re
 
 **Resolved cases:**
 
-- Root cause summary, duration/turn/evidence stats
-- Two report generation buttons: Incident Report, Post-Mortem
-- Knowledge extraction nudge linking to Dashboard (`?tab=knowledge`)
+- Root cause summary (if available), duration/turn stats
+- Mentions runbook generation availability (triggered via chat COOPERATIVE suggestion, not a button)
+- Link to auto-generated Resolution Summary in Dashboard (`?tab=report`)
 
 **Closed cases:**
 
-- Closure reason label, findings summary
-- One report button: Investigation Notes
-- Knowledge nudge only for `closure_reason === 'mitigation_sufficient'`
+- Closure reason label (Abandoned, Escalated, Mitigated, Inquiry Only)
+- `closure_reason === 'mitigation_sufficient'`: Distinct warm styling (warning-tinted border/background), mentions runbook generation availability (triggered via chat COOPERATIVE suggestion). Link to auto-generated Closure Summary in Dashboard.
+- Other closure reasons: Neutral styling, link to Closure Summary.
 
-**Report button states:** `idle` → `generating` (pulse) → `done` (checkmark, 2s) → `view` (Dashboard link)
+**Auto-generated summaries vs runbooks:**
+- **Summaries** (Resolution Summary, Closure Summary) are auto-generated at terminal transition. The card links to these.
+- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or CLOSED(mitigation_sufficient) cases. The agent offers them as COOPERATIVE suggestions in chat; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
 
-**Cross-frontend linking:** Opens `${dashboardUrl}/cases/${caseId}?tab=report` or `?tab=knowledge` in a new tab. Dashboard URL resolved via `getDashboardUrl()` from `config.ts`.
+**Cross-frontend linking:** Opens `${dashboardUrl}/cases/${caseId}?tab=report` in a new tab. Dashboard URL resolved via `getDashboardUrl()` from `config.ts`.
 
 **Key files:**
 

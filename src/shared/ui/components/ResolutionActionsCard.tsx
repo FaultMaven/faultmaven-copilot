@@ -66,14 +66,14 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
           )}
           <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
             {statsParts.length > 0 && <>{statsParts.join(' \u00B7 ')} \u00B7 </>}
-            You can ask questions or{' '}
+            Ask questions, request a runbook, or{' '}
             <a
               href={`${dashboardUrl}/cases/${activeCase.case_id}?tab=report`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-fm-accent hover:underline"
             >
-              view reports in Dashboard
+              view summary in Dashboard
             </a>
           </p>
         </div>
@@ -82,23 +82,34 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
   }
 
   // CLOSED case
+  const isMitigated = closureReason === 'mitigation_sufficient';
+
   return (
-    <div className="flex items-start gap-2 bg-fm-surface border border-fm-border rounded-fm-card px-3 py-2 mx-4 mb-2">
-      <LockClosedIcon className="w-4 h-4 text-fm-text-tertiary mt-0.5 shrink-0" />
+    <div className={`flex items-start gap-2 ${
+      isMitigated
+        ? 'bg-fm-warning-bg/30 border border-fm-warning-border/40'
+        : 'bg-fm-surface border border-fm-border'
+    } rounded-fm-card px-3 py-2 mx-4 mb-2`}>
+      <LockClosedIcon className={`w-4 h-4 mt-0.5 shrink-0 ${
+        isMitigated ? 'text-fm-warning' : 'text-fm-text-tertiary'
+      }`} />
       <div className="min-w-0">
         <span className="text-fm-xs font-semibold text-fm-text-primary">
           Case Closed{closureLabel ? ` \u00B7 ${closureLabel}` : ''}
         </span>
         <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
           {statsParts.length > 0 && <>{statsParts.join(' \u00B7 ')} \u00B7 </>}
-          You can ask questions or{' '}
+          {isMitigated
+            ? <>Ask questions, request a runbook, or{' '}</>
+            : <>Ask questions or{' '}</>
+          }
           <a
             href={`${dashboardUrl}/cases/${activeCase.case_id}?tab=report`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-fm-accent hover:underline"
           >
-            view reports in Dashboard
+            view summary in Dashboard
           </a>
         </p>
       </div>
