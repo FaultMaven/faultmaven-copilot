@@ -230,9 +230,13 @@ export function ConversationsList({
       // ✅ SENTRY BREADCRUMB: This info log will be attached to error reports
       log.info('Smart title generated', { caseId, source });
 
-      // Update local state only - backend already persisted the title
+      // Update local state — backend already persisted the title
       updateCaseTitle(caseId, newTitle);
-      // Note: No need to call onCaseTitleChange() since backend already persisted the title
+      // Mark title source so auto-generation doesn't overwrite it.
+      // Pass through onCaseTitleChange which updates titleSources in parent.
+      // The redundant PUT is harmless (idempotent, same title) and keeps the
+      // parent's state consistent.
+      onCaseTitleChange?.(caseId, newTitle);
 
       // Show different messages based on whether title was newly generated or already existed
       if (source === 'existing') {

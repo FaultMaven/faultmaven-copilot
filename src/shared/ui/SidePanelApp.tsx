@@ -268,6 +268,7 @@ function SidePanelAppContent() {
     sessionId,
     activeCaseId: activeCaseId || undefined,
     conversations,
+    titleSources,
     setActiveCaseId,
     setHasUnsavedNewChat,
     setActiveCase,

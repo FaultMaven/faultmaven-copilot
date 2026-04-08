@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import {
   createCase,
   submitTurn,
+  generateCaseTitle,
   TurnRequest,
   TurnResponse,
   AttachmentResult,
@@ -14,6 +15,7 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { classifyError, formatErrorForAlert } from '../../../lib/utils/api-error-handler';
 import { createLogger } from '../../../lib/utils/logger';
 import type { TurnPayload } from '../components/UnifiedInputBar';
+import { TITLE_GENERATION_THRESHOLD } from './useMessageSubmission';
 
 const log = createLogger('useDataUpload');
 
@@ -21,6 +23,7 @@ interface UseDataUploadProps {
   sessionId: string | null;
   activeCaseId: string | undefined;
   conversations: Record<string, OptimisticConversationItem[]>;
+  titleSources: Record<string, 'user' | 'backend' | 'system'>;
   setActiveCaseId: (id: string) => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
   setActiveCase: (caseData: any) => void;
@@ -35,6 +38,7 @@ export function useDataUpload({
   sessionId,
   activeCaseId,
   conversations,
+  titleSources,
   setActiveCaseId,
   setHasUnsavedNewChat,
   setActiveCase,
@@ -247,7 +251,21 @@ export function useDataUpload({
         throw error;
       }
 
-      log.info('Turn submitted successfully:', targetCaseId);
+      log.info('Turn submitted successfully', { caseId: targetCaseId, turnNumber: turnResponse.turn_number });
+
+      // Update active case status from TurnResponse (e.g. INQUIRY → INVESTIGATING)
+      if (turnResponse.case_status) {
+        setActiveCase((prev: any) => {
+          if (prev && prev.status !== turnResponse.case_status) {
+            log.info('Updating active case status from backend', {
+              oldStatus: prev.status,
+              newStatus: turnResponse.case_status
+            });
+            return { ...prev, status: turnResponse.case_status };
+          }
+          return prev;
+        });
+      }
 
       // Step 5: Update optimistic messages with real response data
       // Prefer backend-processed attachments over local file info
@@ -264,6 +282,7 @@ export function useDataUpload({
               attachments: attachments.length > 0 ? attachments : undefined,
               turn_number: turnResponse.turn_number,
               optimistic: false,
+              originalId: userMessageId,
             } as OptimisticConversationItem;
           }
           if (item.id === aiMessageId) {
@@ -275,6 +294,12 @@ export function useDataUpload({
               suggestedActions: turnResponse.suggested_actions ?? null,
               optimistic: false,
               loading: false,
+              originalId: aiMessageId,
+              metadata: {
+                milestones_completed: turnResponse.milestones_completed,
+                progress_made: turnResponse.progress_made,
+                attachments_processed: turnResponse.attachments_processed,
+              },
             } as OptimisticConversationItem;
           }
           return item;
@@ -293,6 +318,26 @@ export function useDataUpload({
       }
 
       setActiveCaseId(targetCaseId);
+
+      // Auto-generate smart title when turn count reaches threshold
+      const currentTurn = turnResponse.turn_number ?? 0;
+      if (currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSources[targetCaseId]) {
+        log.info('Turn threshold reached, auto-generating smart title', {
+          caseId: targetCaseId,
+          turn: currentTurn,
+          threshold: TITLE_GENERATION_THRESHOLD
+        });
+        try {
+          const titleResult = await generateCaseTitle(targetCaseId, { max_words: 6 });
+          if (titleResult.title) {
+            setConversationTitles(prev => ({ ...prev, [targetCaseId!]: titleResult.title }));
+            setTitleSources(prev => ({ ...prev, [targetCaseId!]: 'backend' }));
+            log.info('Smart title auto-generated', { caseId: targetCaseId, title: titleResult.title });
+          }
+        } catch (error) {
+          log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
+        }
+      }
 
       return { success: true, message: "" };
 
