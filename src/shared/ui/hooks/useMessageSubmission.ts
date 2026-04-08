@@ -208,7 +208,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                    metadata: {
                      milestones_completed: response.milestones_completed,
                      progress_made: response.progress_made,
-                     is_stuck: response.is_stuck,
                      attachments_processed: response.attachments_processed,
                    }
                  } as OptimisticConversationItem;

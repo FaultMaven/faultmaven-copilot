@@ -175,9 +175,14 @@ export interface TurnResponse {
   milestones_completed: string[];
   case_status: CaseStatus;
   progress_made: boolean;
-  is_stuck: boolean;
   attachments_processed: AttachmentResult[];
   suggested_actions?: SuggestedAction[];
+  progress_transparency?: {
+    active: boolean;
+    pending_milestone?: string | null;
+    milestone_description?: string | null;
+    repair_type?: string | null;
+  } | null;
 }
 
 export interface Case {
