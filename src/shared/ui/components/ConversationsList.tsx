@@ -171,10 +171,16 @@ export function ConversationsList({
   };
 
   const getCaseTitle = (c: UserCase): string => {
-    const t = caseTitles[c.case_id] || (conversationTitles && conversationTitles[c.case_id]) || c.title;
+    // Priority: parent prop (always current) > local state > backend case object.
+    // conversationTitles (parent) is checked first because caseTitles (local)
+    // syncs via useEffect which can be one render behind during batched updates.
+    // This prevents title reversion when renaming one case while another case
+    // has a recently auto-generated title.
+    const t = (conversationTitles && conversationTitles[c.case_id])
+      || caseTitles[c.case_id]
+      || c.title;
     if (t && t.trim()) return t;
 
-    // Fallback to original title if it exists and looks like Case-MMDD-N format
     return c.title || 'Untitled Case';
   };
 
