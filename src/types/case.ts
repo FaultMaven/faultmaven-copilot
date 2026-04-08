@@ -47,8 +47,23 @@ export interface UserCase {
 export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'];
 export type InquiryData = components['schemas']['InquiryResponseData'];
 
+// Progress Transparency (added ahead of OpenAPI regeneration)
+export interface ProgressTransparencyInfo {
+  /** Whether transparent mode is active this turn */
+  active: boolean;
+  /** Milestone that progress is stalled on (e.g., 'root_cause_identified') */
+  pending_milestone?: string | null;
+  /** Human-readable description of what the pending milestone requires */
+  milestone_description?: string | null;
+  /** Agent state repair pattern detected, if any */
+  repair_type?: string | null;
+}
+
 // Investigating Phase Types
-export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'];
+export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'] & {
+  /** Progress transparency state. Present when investigation has stalled. */
+  progress_transparency?: ProgressTransparencyInfo | null;
+};
 export type InvestigationProgress = components['schemas']['InvestigationProgressSummary'];
 export type ProblemVerification = components['schemas']['ProblemVerificationData'];
 export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'];

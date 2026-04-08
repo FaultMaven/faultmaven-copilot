@@ -205,6 +205,13 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
             <span className="text-fm-text-secondary">{investigatingContext.stageLabel}</span>
             <span className="text-fm-text-tertiary">·</span>
             <span className="text-fm-text-secondary">{investigatingContext.completed}/{investigatingContext.total}</span>
+            {'progress_transparency' in caseData
+              && (caseData as any).progress_transparency?.active && (
+              <>
+                <span className="text-fm-text-tertiary">·</span>
+                <span className="text-fm-warning text-[11px]">Needs data</span>
+              </>
+            )}
           </>
         )}
 

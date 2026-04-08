@@ -136,9 +136,15 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
         <span className="inline-flex items-center gap-1.5">
           {MILESTONE_KEYS.map((m) => {
             const done = completedIndicators.has(m.key);
+            const isPending = data.progress_transparency?.active
+              && data.progress_transparency.pending_milestone === m.key;
             return done ? (
               <span key={m.key} title={`${m.label} ✓`}>
                 <FilledCircleIcon className="w-2 h-2 text-fm-success" />
+              </span>
+            ) : isPending ? (
+              <span key={m.key} title={`${m.label} — needs attention`}>
+                <EmptyCircleIcon className="w-2 h-2 text-fm-warning animate-pulse" />
               </span>
             ) : (
               <span key={m.key} title={m.label}>
@@ -148,6 +154,14 @@ export const InvestigatingDetails: React.FC<InvestigatingDetailsProps> = ({
           })}
         </span>
       </DetailRow>
+      {/* Progress transparency — pending milestone description */}
+      {data.progress_transparency?.active && data.progress_transparency.milestone_description && (
+        <DetailRow label="Needs">
+          <span className="text-fm-warning text-[11px]">
+            {data.progress_transparency.milestone_description}
+          </span>
+        </DetailRow>
+      )}
 
       {/* Stage + approach hint */}
       <DetailRow label="Stage">
