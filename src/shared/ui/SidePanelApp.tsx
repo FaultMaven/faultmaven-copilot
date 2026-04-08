@@ -209,14 +209,18 @@ function SidePanelAppContent() {
           return updated;
         });
 
-        // Update title sources
+        // Update title sources — only carry over if user explicitly set the title.
+        // Don't set 'backend' for the default auto-format title (Case-MMDD-N),
+        // as that would block smart title auto-generation at turn threshold.
         setTitleSources(prev => {
           const optimisticSource = prev[optimisticId];
           if (!optimisticSource) return prev;
 
           const updated = { ...prev };
           delete updated[optimisticId];
-          updated[realCaseId] = 'backend';
+          if (optimisticSource === 'user') {
+            updated[realCaseId] = optimisticSource;
+          }
           return updated;
         });
 

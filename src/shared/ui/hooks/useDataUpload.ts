@@ -106,7 +106,9 @@ export function useDataUpload({
 
           if (caseData.title) {
             setConversationTitles(prev => ({ ...prev, [newCaseId]: caseData.title }));
-            setTitleSources(prev => ({ ...prev, [newCaseId]: 'backend' }));
+            // Don't set titleSources here — the initial title is the auto-format
+            // Case-MMDD-N pattern, not a smart title. Setting 'backend' would block
+            // smart title auto-generation when the turn threshold is reached.
           }
 
           await browser.storage.local.set({ faultmaven_current_case: targetCaseId });
