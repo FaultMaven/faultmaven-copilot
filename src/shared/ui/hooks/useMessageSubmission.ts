@@ -248,13 +248,21 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                  [caseId]: 'backend'
                }));
                log.info('Smart title auto-generated', { caseId, title: titleResult.title });
+             } else {
+               log.warn('Smart title generation returned empty title', { caseId });
              }
            } catch (error) {
-             log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
-             // Non-critical - silently ignore, user can manually request later
+             // Log at warn level so failures are visible in dev tools
+             log.warn('Smart title generation failed', { caseId, error: error instanceof Error ? error.message : error });
            }
-         } else if (currentTurn >= TITLE_GENERATION_THRESHOLD && titleSource) {
-           log.debug('Title already set, skipping auto-generation', { turn: currentTurn, titleSource });
+         } else {
+           log.info('Smart title auto-generation skipped', {
+             caseId,
+             turn: currentTurn,
+             threshold: TITLE_GENERATION_THRESHOLD,
+             titleSource: titleSource || 'none',
+             reason: currentTurn < TITLE_GENERATION_THRESHOLD ? 'below_threshold' : 'title_already_set',
+           });
          }
 
     } catch (error) {

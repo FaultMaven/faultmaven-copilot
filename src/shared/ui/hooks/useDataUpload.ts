@@ -333,10 +333,20 @@ export function useDataUpload({
             setConversationTitles(prev => ({ ...prev, [targetCaseId!]: titleResult.title }));
             setTitleSources(prev => ({ ...prev, [targetCaseId!]: 'backend' }));
             log.info('Smart title auto-generated', { caseId: targetCaseId, title: titleResult.title });
+          } else {
+            log.warn('Smart title generation returned empty title', { caseId: targetCaseId });
           }
         } catch (error) {
-          log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
+          log.warn('Smart title generation failed', { caseId: targetCaseId, error: error instanceof Error ? error.message : error });
         }
+      } else {
+        log.info('Smart title auto-generation skipped', {
+          caseId: targetCaseId,
+          turn: currentTurn,
+          threshold: TITLE_GENERATION_THRESHOLD,
+          titleSource: titleSources[targetCaseId] || 'none',
+          reason: currentTurn < TITLE_GENERATION_THRESHOLD ? 'below_threshold' : 'title_already_set',
+        });
       }
 
       return { success: true, message: "" };
