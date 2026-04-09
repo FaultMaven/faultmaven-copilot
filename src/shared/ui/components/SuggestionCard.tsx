@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import type { SuggestedAction, CooperativeAction } from '~/lib/api/types';
+import type { SuggestedAction, CooperativeAction, QueryIntent } from '~/lib/api/types';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('SuggestionCard');
@@ -13,7 +13,7 @@ export interface SuggestionCardProps {
   /** Whether this suggestion belongs to the current (latest) turn */
   isCurrentTurn?: boolean;
   disabled?: boolean;
-  onCooperativeClick?: (payload: string, cooperativeAction: CooperativeAction) => void;
+  onCooperativeClick?: (payload: string, cooperativeAction: CooperativeAction, intent?: QueryIntent) => void;
 }
 
 export function SuggestionCard({
@@ -36,8 +36,8 @@ export function SuggestionCard({
       setTimeout(() => setCopied(false), 2000);
     }
 
-    onCooperativeClick?.(action.payload, cooperativeAction);
-  }, [isClickable, action.payload, action.cooperative_action, onCooperativeClick]);
+    onCooperativeClick?.(action.payload, cooperativeAction, action.intent);
+  }, [isClickable, action.payload, action.cooperative_action, action.intent, onCooperativeClick]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && isClickable) {

@@ -487,9 +487,9 @@ const ChatWindowComponent = function ChatWindow({
                             action={action}
                             isCurrentTurn={item.id === lastAssistantItemId}
                             disabled={!canInteract}
-                            onCooperativeClick={(payload, cooperativeAction) => {
+                            onCooperativeClick={(payload, cooperativeAction, intent) => {
                               if (cooperativeAction === 'query_submit') {
-                                onQuerySubmit(payload);
+                                onQuerySubmit(payload, intent);
                               }
                             }}
                           />

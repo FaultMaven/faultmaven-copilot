@@ -404,6 +404,10 @@ export interface SuggestedAction {
   hints?: string[];
   icon?: string | null;
   metadata?: Record<string, any>;
+  /** Optional intent metadata — when present, frontend sends this as QueryIntent
+   *  alongside the payload. Bridges COOPERATIVE suggestions with deterministic
+   *  intent routing (e.g., transition confirmations use IntentType.CONFIRMATION). */
+  intent?: QueryIntent;
 }
 
 export interface CommandValidation {
