@@ -80,9 +80,9 @@ export function CollapsibleNavigation({
     </svg>
   );
 
-  const KBIcon = () => (
+  const DashboardIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
     </svg>
   );
 
@@ -139,14 +139,14 @@ export function CollapsibleNavigation({
 
         {/* Middle: Action icons */}
         <div className="flex-1 flex flex-col items-center pt-3 gap-2">
-          {/* KB Dashboard */}
+          {/* Dashboard */}
           {dashboardUrl && onOpenDashboard && (
             <button
               onClick={onOpenDashboard}
-              className={`${collapsedBtnClass} text-fm-text-secondary hover:text-fm-text-primary hover:bg-white/5 border border-fm-border-subtle`}
-              title="KB Dashboard"
+              className={`${collapsedBtnClass} text-fm-text-secondary hover:text-fm-accent hover:bg-fm-accent/10 border border-fm-border-subtle`}
+              title="Open Dashboard"
             >
-              <KBIcon />
+              <DashboardIcon />
             </button>
           )}
 
@@ -215,35 +215,36 @@ export function CollapsibleNavigation({
       </div>
 
       {/* Action buttons */}
-      <div className="flex-shrink-0 px-4 space-y-2 mb-3">
-        {/* KB Dashboard */}
+      <div className="flex-shrink-0 px-4 space-y-1.5 mb-3">
+        {/* New Case — primary CTA */}
+        <button
+          onClick={onNewChat}
+          disabled={hasUnsavedNewChat}
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg transition-colors bg-fm-accent text-white hover:bg-fm-accent-strong font-semibold disabled:opacity-50 shadow-sm"
+          title="Start new case"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          <span className="text-[13px]">New Case</span>
+        </button>
+
+        {/* Open Dashboard — secondary */}
         {dashboardUrl && onOpenDashboard && (
           <button
             onClick={onOpenDashboard}
-            className="w-full flex items-center justify-between py-2 px-3 rounded-md transition-colors text-fm-accent bg-fm-accent-soft border border-fm-accent-border hover:bg-fm-accent-hover group"
-            title="Open Knowledge Base Dashboard"
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors text-fm-text-secondary hover:text-fm-accent hover:bg-fm-accent/10 group"
+            title="Open Dashboard"
           >
-            <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              <span className="text-[13px] font-medium">Knowledge Base</span>
-            </div>
-            <svg className="w-3 h-3 text-fm-accent/50 group-hover:text-fm-accent transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+            </svg>
+            <span className="text-[12px] font-medium">Open Dashboard</span>
+            <svg className="w-2.5 h-2.5 flex-shrink-0 opacity-40 group-hover:opacity-70 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
           </button>
         )}
-
-        {/* New Case */}
-        <button
-          onClick={onNewChat}
-          disabled={hasUnsavedNewChat}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-colors bg-[#6366F1] text-white hover:bg-[#4F46E5] font-semibold disabled:opacity-50"
-          title="Start new case"
-        >
-          <span className="text-[13px]">+ New Case</span>
-        </button>
       </div>
 
       {/* Case list */}
