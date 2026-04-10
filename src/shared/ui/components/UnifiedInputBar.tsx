@@ -38,6 +38,7 @@ export interface TurnPayload {
 export interface UnifiedInputBarProps {
   // State
   disabled?: boolean;
+  disableAttachments?: boolean;
   loading?: boolean;
   submitting?: boolean;
 
@@ -102,6 +103,7 @@ function generateAutoQuery(context: {
 
 export function UnifiedInputBar({
   disabled = false,
+  disableAttachments = false,
   loading = false,
   submitting = false,
   onQuerySubmit,
@@ -605,7 +607,7 @@ export function UnifiedInputBar({
             <button
               type="button"
               onClick={handlePageInjectClick}
-              disabled={isProcessing || !onPageInject}
+              disabled={isProcessing || !onPageInject || disableAttachments}
               className={`p-1.5 rounded transition-colors disabled:opacity-50 ${capturedPageUrl
                 ? 'text-fm-accent bg-fm-accent-soft'
                 : 'text-fm-text-tertiary hover:text-fm-text-primary'
@@ -623,7 +625,7 @@ export function UnifiedInputBar({
           <button
             type="button"
             onClick={handleFileButtonClick}
-            disabled={isProcessing}
+            disabled={isProcessing || disableAttachments}
             className={`p-1.5 rounded transition-colors disabled:opacity-50 ${selectedFile
               ? 'text-fm-success bg-fm-success-bg'
               : 'text-fm-text-tertiary hover:text-fm-text-primary'
@@ -640,7 +642,7 @@ export function UnifiedInputBar({
           <button
             type="button"
             onClick={() => setShowPasteScratchpad(!showPasteScratchpad)}
-            disabled={isProcessing}
+            disabled={isProcessing || disableAttachments}
             className={`p-1.5 rounded transition-colors disabled:opacity-50 ${showPasteScratchpad || stagedPastedContent
               ? 'text-fm-accent bg-fm-accent-soft'
               : 'text-fm-text-tertiary hover:text-fm-text-primary'

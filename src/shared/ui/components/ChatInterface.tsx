@@ -49,10 +49,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
 
-  // Check if interaction is allowed
-  const canInteract = (!!activeCase &&
-    activeCase.status !== 'resolved' &&
-    activeCase.status !== 'closed') || hasUnsavedNewChat;
+  // Check if interaction is allowed — terminal cases allow text Q&A but not evidence
+  const isTerminal = !!activeCase && (activeCase.status === 'resolved' || activeCase.status === 'closed');
+  const canInteract = (!!activeCase || hasUnsavedNewChat);
 
   // Empty state — dark themed
   if (!activeCaseId && !hasUnsavedNewChat) {
@@ -138,11 +137,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         loading={loading}
         submitting={submitting}
         disabled={!canInteract}
+        disableAttachments={isTerminal}
         placeholder={
           !activeCase
             ? "Select a case to start chatting..."
-            : !canInteract
-              ? "This case is closed. Reopen to continue."
+            : isTerminal
+              ? "Ask about this case, or request a report..."
               : "Ask FaultMaven..."
         }
       />
