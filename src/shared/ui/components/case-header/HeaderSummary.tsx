@@ -216,6 +216,8 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
         )}
 
         <span className="text-fm-text-tertiary">·</span>
+        <span className="text-fm-text-secondary">T{caseData.current_turn}</span>
+        <span className="text-fm-text-tertiary">·</span>
         <span>{formatTimeAgo(caseData.updated_at)}</span>
 
         {/* Spacer + expand chevron */}

@@ -590,7 +590,21 @@ function SidePanelAppContent() {
             refreshTrigger={refreshSessions}
             dashboardUrl={capabilities?.dashboardUrl}
             onTabChange={setActiveTab}
-            onOpenDashboard={() => capabilities?.dashboardUrl && window.open(capabilities.dashboardUrl, '_blank')}
+            onOpenDashboard={async () => {
+              const baseUrl = capabilities?.dashboardUrl;
+              if (!baseUrl) return;
+              const targetUrl = `${baseUrl}/cases`;
+              try {
+                const tabs = await browser.tabs.query({ url: `${baseUrl}/*` });
+                if (tabs.length > 0 && tabs[0].id != null) {
+                  await browser.tabs.update(tabs[0].id, { active: true });
+                } else {
+                  await browser.tabs.create({ url: targetUrl });
+                }
+              } catch {
+                window.open(targetUrl, '_blank');
+              }
+            }}
             onCaseSelect={handleCaseSelect}
             onNewChat={handleNewChatFromNav}
             onLogout={handleLogout}

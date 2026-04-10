@@ -163,7 +163,7 @@ export function ConversationItem({
     <div
       ref={itemRef}
       onClick={handleSelect}
-      className={`group relative mx-3 px-3 py-1.5 rounded-lg cursor-pointer transition-all duration-200 flex items-center gap-2.5 ${isActive
+      className={`group relative mx-3 px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 flex items-center gap-2.5 ${isActive
         ? 'bg-fm-surface/50 text-fm-text-primary font-medium'
         : 'text-fm-text-secondary hover:bg-white/5 hover:text-fm-text-primary font-normal'
         }`}

@@ -363,8 +363,7 @@ export function ConversationsList({
     const groups = {
       pinned: [] as UserCase[],
       active: [] as UserCase[],
-      resolved: [] as UserCase[],
-      closed: [] as UserCase[],
+      completed: [] as UserCase[],
     };
 
     const sortByRecent = (a: UserCase, b: UserCase) =>
@@ -378,16 +377,14 @@ export function ConversationsList({
       }
 
       const status = c.status || 'inquiry';
-      if (status === 'resolved') groups.resolved.push(c);
-      else if (status === 'closed') groups.closed.push(c);
+      if (status === 'resolved' || status === 'closed') groups.completed.push(c);
       else groups.active.push(c); // inquiry + investigating
     });
 
     // Sort each group by most recent first
     groups.pinned.sort(sortByRecent);
     groups.active.sort(sortByRecent);
-    groups.resolved.sort(sortByRecent);
-    groups.closed.sort(sortByRecent);
+    groups.completed.sort(sortByRecent);
 
     return groups;
   };
@@ -415,9 +412,9 @@ export function ConversationsList({
   const renderCaseGroup = (title: string, items: UserCase[]) => {
     if (items.length === 0) return null;
     return (
-      <div key={title} className="space-y-1">
-        <h3 className="text-xs font-semibold text-fm-text-tertiary px-3 py-2 uppercase tracking-wider">{title}</h3>
-        <div className="space-y-1">
+      <div key={title}>
+        <h3 className="text-xs font-semibold text-fm-text-tertiary px-3 py-1 uppercase tracking-wider">{title}</h3>
+        <div>
           {items.map((c) => (
             <ConversationItem
               key={c.case_id}
@@ -511,11 +508,10 @@ export function ConversationsList({
             <p className="text-xs text-fm-text-secondary">Click "New Case" to start your first case</p>
           </div>
         ) : (
-          <div className="space-y-4 pb-4">
+          <div className="space-y-3 pb-3">
             {renderCaseGroup('Pinned', caseGroups.pinned)}
             {renderCaseGroup('Active', caseGroups.active)}
-            {renderCaseGroup('Resolved', caseGroups.resolved)}
-            {renderCaseGroup('Closed', caseGroups.closed)}
+            {renderCaseGroup('Completed', caseGroups.completed)}
           </div>
         )}
       </div>
