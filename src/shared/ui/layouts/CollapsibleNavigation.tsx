@@ -216,11 +216,28 @@ export function CollapsibleNavigation({
 
       {/* Action buttons */}
       <div className="flex-shrink-0 px-4 space-y-1.5 mb-3">
+        {/* Open Dashboard — outlined secondary, sits above the primary CTA */}
+        {dashboardUrl && onOpenDashboard && (
+          <button
+            onClick={onOpenDashboard}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-fm-border-subtle text-fm-text-secondary hover:text-fm-text-primary hover:border-fm-border hover:bg-white/5 transition-colors group"
+            title="Open Dashboard"
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+            </svg>
+            <span className="text-[12px] font-medium">Open Dashboard</span>
+            <svg className="w-2.5 h-2.5 flex-shrink-0 opacity-50 group-hover:opacity-80 transition-opacity ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
+        )}
+
         {/* New Case — primary CTA */}
         <button
           onClick={onNewChat}
           disabled={hasUnsavedNewChat}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg transition-colors bg-fm-accent text-white hover:bg-fm-accent-strong font-semibold disabled:opacity-50 shadow-sm"
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-fm-accent text-white hover:bg-fm-accent-strong font-semibold disabled:opacity-50 shadow-sm transition-colors"
           title="Start new case"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -228,23 +245,6 @@ export function CollapsibleNavigation({
           </svg>
           <span className="text-[13px]">New Case</span>
         </button>
-
-        {/* Open Dashboard — secondary */}
-        {dashboardUrl && onOpenDashboard && (
-          <button
-            onClick={onOpenDashboard}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg transition-colors text-fm-text-secondary hover:text-fm-accent hover:bg-fm-accent/10 group"
-            title="Open Dashboard"
-          >
-            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-            </svg>
-            <span className="text-[12px] font-medium">Open Dashboard</span>
-            <svg className="w-2.5 h-2.5 flex-shrink-0 opacity-40 group-hover:opacity-70 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </button>
-        )}
       </div>
 
       {/* Case list */}
