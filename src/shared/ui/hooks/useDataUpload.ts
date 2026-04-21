@@ -12,8 +12,8 @@ import {
   OptimisticConversationItem,
 } from '../../../lib/optimistic';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
-import { classifyError, formatErrorForAlert } from '../../../lib/utils/api-error-handler';
 import { createLogger } from '../../../lib/utils/logger';
+import type { ErrorContext } from '../../../lib/errors/types';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { TITLE_GENERATION_THRESHOLD } from './useMessageSubmission';
 
@@ -32,6 +32,9 @@ interface UseDataUploadProps {
   setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
   setCaseEvidence: React.Dispatch<React.SetStateAction<Record<string, AttachmentResult[]>>>;
   setRefreshSessions: React.Dispatch<React.SetStateAction<number>>;
+  /** Global error surface (from useError()). Injected so this hook stays
+   *  context-agnostic and mirrors the shape of useMessageSubmission. */
+  showError: (error: unknown, context?: ErrorContext) => string;
 }
 
 export function useDataUpload({
@@ -46,7 +49,8 @@ export function useDataUpload({
   setConversationTitles,
   setTitleSources,
   setCaseEvidence,
-  setRefreshSessions
+  setRefreshSessions,
+  showError
 }: UseDataUploadProps) {
   const [loading, setLoading] = useState(false);
 
@@ -344,12 +348,16 @@ export function useDataUpload({
     } catch (error) {
       log.error('Turn submission error:', error);
 
-      const errorInfo = classifyError(error, 'turn_submit');
-      const friendlyMessage = formatErrorForAlert(errorInfo);
+      // Single classification path: showError → ErrorClassifier produces
+      // the user-facing title/message/action. No parallel classification
+      // here to avoid wording drift. UnifiedInputBar preserves staged
+      // query + attachments on failure, so re-clicking Send retries
+      // naturally — no separate retry button needed here.
+      showError(error, { operation: 'turn_submit' });
 
       return {
         success: false,
-        message: friendlyMessage
+        message: error instanceof Error ? error.message : 'Turn submission failed'
       };
     } finally {
       setLoading(false);

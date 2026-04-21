@@ -276,7 +276,8 @@ function SidePanelAppContent() {
     setConversationTitles,
     setTitleSources,
     setCaseEvidence,
-    setRefreshSessions
+    setRefreshSessions,
+    showError
   });
 
   // --- UI Handlers ---
@@ -514,6 +515,7 @@ function SidePanelAppContent() {
       setIsDocumentModalOpen(true);
     } catch (error) {
       log.error('Failed to load document', { documentId, error });
+      showError(error, { operation: 'kb_document_view', metadata: { documentId } });
     }
   };
 
