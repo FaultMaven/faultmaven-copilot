@@ -393,7 +393,7 @@ export class PersistenceManager {
 
       // Test the enhanced API with debug enabled
       log.info(' 🔍 Testing enhanced /messages API...');
-      const response = await getCaseConversation(caseId, true);
+      const response = await getCaseConversation(caseId, { includeDebug: true });
 
       log.info(' 📊 Enhanced API Test Results:', {
         caseId,

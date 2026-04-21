@@ -71,7 +71,6 @@ function SidePanelAppContent() {
   const [pendingOperations, setPendingOperations] = useState<Record<string, PendingOperation>>({});
   const [optimisticCases, setOptimisticCases] = useState<OptimisticUserCase[]>([]);
   const [pinnedCases, setPinnedCases] = useState<Set<string>>(new Set());
-  const [loadedConversationIds, setLoadedConversationIds] = useState<Set<string>>(new Set());
   const [activeCase, setActiveCase] = useState<any | null>(null); // Should be UserCase
   const [caseEvidence, setCaseEvidence] = useState<Record<string, any[]>>({}); // Should be UploadedData[]
 
@@ -362,7 +361,6 @@ function SidePanelAppContent() {
     setPendingOperations({});
     setOptimisticCases([]);
     setPinnedCases(new Set());
-    setLoadedConversationIds(new Set());
     setCaseEvidence({});
 
     // 4. Reset Active State
@@ -380,16 +378,14 @@ function SidePanelAppContent() {
     log.debug('New chat state updated', { activeTab: 'copilot', activeCaseId: null, hasUnsavedNewChat: true });
   };
 
-  const handleCaseSelect = async (caseId: string) => {
-    // Set UI state immediately
+  const handleCaseSelect = (caseId: string) => {
+    // Set UI state immediately so the chat input unlocks without waiting for the fetch.
     setActiveCaseId(caseId);
     setHasUnsavedNewChat(false);
     setActiveTab('copilot');
 
-    // Set activeCase immediately to enable chat interaction (canInteract depends on !!activeCase)
     const optimisticCase = optimisticCases.find(c => c.case_id === caseId);
     if (optimisticCase) {
-      // Use optimistic case data
       setActiveCase({
         case_id: optimisticCase.case_id,
         title: optimisticCase.title || conversationTitles[caseId] || 'New Case',
@@ -400,16 +396,13 @@ function SidePanelAppContent() {
         message_count: conversations[caseId]?.length || 0
       });
     } else {
-      // Derive last known status from conversation messages instead of hardcoding 'inquiry'
+      // Derive status from local messages; ChatWindow loads authoritative case data.
       const caseMessages = conversations[caseId] || [];
       const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_status);
-      const lastKnownStatus = lastStatusMessage?.case_status || 'inquiry';
-
-      // Set minimal case data - ChatWindow will load full data
       setActiveCase({
         case_id: caseId,
         title: conversationTitles[caseId] || 'Loading...',
-        status: lastKnownStatus,
+        status: lastStatusMessage?.case_status || 'inquiry',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         owner_id: '',
@@ -417,92 +410,47 @@ function SidePanelAppContent() {
       });
     }
 
-    // Resolve optimistic IDs to real IDs
+    // Resolve optimistic IDs before fetching.
     const resolvedCaseId = isOptimisticId(caseId)
       ? idMappingManager.getRealId(caseId) || caseId
       : caseId;
 
-    // Check if we have already loaded this conversation
-    const alreadyLoaded = loadedConversationIds.has(resolvedCaseId);
-    const hasLocalData = (conversations[caseId]?.length > 0) || (conversations[resolvedCaseId]?.length > 0);
-
-    if (alreadyLoaded || hasLocalData) {
-      log.debug('Case already loaded, skipping fetch', { caseId, resolvedCaseId, alreadyLoaded, hasLocalData });
-      // Background status reconciliation (non-blocking, bypasses caseCacheManager)
-      // ChatWindow's getCaseUI() also syncs, but this pre-sync reduces the stale status window
-      if (isRealId(resolvedCaseId)) {
-        getCaseConversation(resolvedCaseId).then(data => {
-          const messages = data.messages || [];
-          const latestStatus = [...messages].reverse().find((m: any) => m.case_status)?.case_status;
-          if (latestStatus) {
-            setActiveCase((prev: any) => prev && prev.case_id === caseId && prev.status !== latestStatus
-              ? { ...prev, status: latestStatus }
-              : prev
-            );
-          }
-        }).catch(err => log.warn('Background status sync failed', err));
-      }
+    // Unreconciled optimistic cases exist only in local state — nothing to fetch yet.
+    if (isOptimisticId(resolvedCaseId)) {
+      log.debug('Optimistic case not yet reconciled, using local data', { caseId });
       return;
     }
 
-    // If optimistic and unreconciled, use local data (don't fetch from backend)
-    if (isOptimisticId(caseId) && !idMappingManager.getRealId(caseId)) {
-      log.debug('Optimistic case not yet reconciled, skipping fetch', { caseId });
-      return;
-    }
-
-    // Lazy-load conversation from backend
-    try {
-      log.info('Lazy-loading conversation for case', { caseId, resolvedCaseId });
-      const conversationData = await getCaseConversation(resolvedCaseId);
-      const messages = conversationData.messages || [];
-
-      // Transform backend messages to OptimisticConversationItem format
-      const backendMessages: OptimisticConversationItem[] = messages.map((msg: any) => ({
-        id: msg.message_id,
-        timestamp: msg.created_at,
-        turn_number: msg.turn_number,
-        optimistic: false,
-        originalId: msg.message_id,
-        question: msg.role === 'user' ? msg.content : undefined,
-        response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
-        case_status: msg.case_status,
-        closure_reason: msg.closure_reason ?? null,
-        closed_at: msg.closed_at ?? null
-      }));
-
-      // Merge with existing local messages (if any)
-      setConversations(prev => {
-        const existing = prev[caseId] || [];
-        const backendMap = new Map(backendMessages.map(m => [m.id, m]));
-
-        // Preserve local messages, update with backend data if available
-        const merged = existing.map(local => {
-          const backend = backendMap.get(local.id);
-          return backend || local;
-        });
-
-        // Add new messages from backend that aren't in local
-        const newMessages = backendMessages.filter(m => !existing.some(e => e.id === m.id));
-
-        return {
-          ...prev,
-          [caseId]: [...merged, ...newMessages]
-        };
-      });
-
-      // Mark this case as loaded to prevent refetching
-      setLoadedConversationIds(prev => {
-        const newSet = new Set(prev);
-        newSet.add(resolvedCaseId);
-        return newSet;
-      });
-
-      log.debug('Conversation loaded successfully', { caseId, messageCount: backendMessages.length });
-    } catch (error) {
-      log.error('Failed to load conversation', { caseId, resolvedCaseId, error });
-      // Don't show error to user for load failures - they can still type new messages
-    }
+    // Delta-fetch: send the current local message count as the offset so the backend
+    // returns only messages we don't have yet. For append-only conversations this is
+    // always correct:
+    //   offset=0  → first open, fetches full history
+    //   offset=N  → subsequent opens, fetches only turns added after the last fetch
+    //   offset=total_count → nothing new, backend returns an empty list, state unchanged
+    const offset = conversations[caseId]?.length ?? 0;
+    getCaseConversation(resolvedCaseId, { offset })
+      .then(data => {
+        const incoming: OptimisticConversationItem[] = (data.messages || []).map((msg: any) => ({
+          id: msg.message_id,
+          timestamp: msg.created_at,
+          turn_number: msg.turn_number,
+          optimistic: false,
+          originalId: msg.message_id,
+          question: msg.role === 'user' ? msg.content : undefined,
+          response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
+          case_status: msg.case_status,
+          closure_reason: msg.closure_reason ?? null,
+          closed_at: msg.closed_at ?? null
+        }));
+        if (incoming.length > 0) {
+          setConversations(prev => ({
+            ...prev,
+            [caseId]: [...(prev[caseId] || []), ...incoming]
+          }));
+          log.info('Conversation delta applied', { caseId, added: incoming.length, offset });
+        }
+      })
+      .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }));
   };
 
   // Modals state

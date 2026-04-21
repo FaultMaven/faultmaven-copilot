@@ -431,11 +431,14 @@ export async function updateCaseStatus(
   }
 }
 
-export async function getCaseConversation(caseId: string, includeDebug: boolean = false): Promise<any> {
+export async function getCaseConversation(
+  caseId: string,
+  options: { offset?: number; includeDebug?: boolean } = {}
+): Promise<any> {
+  const { offset = 0, includeDebug = false } = options;
   const url = new URL(`${await getApiUrl()}/api/v1/cases/${caseId}/messages`);
-  if (includeDebug) {
-    url.searchParams.set('include_debug', 'true');
-  }
+  if (offset > 0) url.searchParams.set('offset', String(offset));
+  if (includeDebug) url.searchParams.set('include_debug', 'true');
 
   const response = await authenticatedFetchWithRetry(url.toString(), {
     method: 'GET',
@@ -449,7 +452,9 @@ export async function getCaseConversation(caseId: string, includeDebug: boolean 
 
   const data = await response.json();
 
-  if (data.total_count > 0 && data.retrieved_count === 0) {
+  // An empty result is only unexpected on a full fetch (offset=0). When fetching
+  // a delta (offset>0), retrieved_count=0 simply means nothing new arrived.
+  if (offset === 0 && data.total_count > 0 && data.retrieved_count === 0) {
     log.error('Message retrieval failure detected', {
       caseId,
       totalCount: data.total_count,
