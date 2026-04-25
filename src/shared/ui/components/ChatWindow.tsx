@@ -184,8 +184,13 @@ const ChatWindowComponent = function ChatWindow({
       return;
     }
 
-    // Use activeCase.status (updated from backend via view_state.active_case)
-    const currentStatus = activeCase.status;
+    // Prefer fullCaseData.status (backend-confirmed) over activeCase.status.
+    // activeCase.status can still hold the stale default 'inquiry' while
+    // fullCaseData has already been updated from getCaseUI() — the two states
+    // are updated independently (one in the parent, one locally) and a narrow
+    // race window exists between them. The header that renders the dropdown
+    // already requires fullCaseData to be non-null, so this is always safe.
+    const currentStatus = (fullCaseData?.status ?? activeCase.status) as UserCaseStatus;
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
     log.debug('getStatusChangeMessage result', {
@@ -212,7 +217,7 @@ const ChatWindowComponent = function ChatWindow({
 
     log.debug('Calling onQuerySubmit', { message, intent });
     onQuerySubmit(message, intent);
-  }, [activeCase, onQuerySubmit]);
+  }, [activeCase, fullCaseData, onQuerySubmit]);
 
   const handleConfirmationYes = useCallback(() => {
     log.info('User confirmed with Yes');
