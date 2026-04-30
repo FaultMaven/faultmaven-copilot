@@ -7,7 +7,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **FaultMaven Copilot** is the browser-based interface for the [FaultMaven Platform](https://github.com/FaultMaven/faultmaven). It overlays AI troubleshooting intelligence directly onto your existing tools (AWS Console, Datadog, Grafana, or localhost).
+> **FaultMaven Copilot** is the browser-based interface for [FaultMaven](https://github.com/FaultMaven/faultmaven). It overlays AI troubleshooting intelligence directly onto your existing tools (AWS Console, Datadog, Grafana, or localhost).
 
 ---
 
