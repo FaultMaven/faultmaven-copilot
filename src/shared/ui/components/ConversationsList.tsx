@@ -480,7 +480,7 @@ export function ConversationsList({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {hasUnsavedNewChat && (() => {
           const now = new Date();
           const yy = String(now.getFullYear()).slice(2);
@@ -508,7 +508,7 @@ export function ConversationsList({
             <p className="text-xs text-fm-text-secondary">Click "New Case" to start your first case</p>
           </div>
         ) : (
-          <div className="space-y-3 pb-3">
+          <div className="space-y-3 pb-6">
             {renderCaseGroup('Pinned', caseGroups.pinned)}
             {renderCaseGroup('Active', caseGroups.active)}
             {renderCaseGroup('Completed', caseGroups.completed)}

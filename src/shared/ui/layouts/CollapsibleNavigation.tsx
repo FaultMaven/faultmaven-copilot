@@ -248,7 +248,7 @@ export function CollapsibleNavigation({
       </div>
 
       {/* Case list */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <ErrorBoundary
           fallback={
             <div className="p-3 bg-fm-critical-bg border border-fm-critical-border rounded-lg m-3">
