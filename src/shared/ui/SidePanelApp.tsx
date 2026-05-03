@@ -351,16 +351,19 @@ function SidePanelAppContent() {
     await logout();
     await clearSession();
 
-    // 2. Clear persistent storage immediately
-    await PersistenceManager.clearAllPersistenceData();
+    // 2. Clear persistent storage immediately (keep pin preferences across re-login)
+    await PersistenceManager.clearAllPersistenceData({ preservePinnedCases: true });
 
-    // 3. Reset local UI state
+    // 3. Reset local UI state.
+    //    pinnedCases is intentionally NOT reset: useBatchedPersistence flushes the
+    //    local Set to storage on the unmount triggered by the post-login reload, so
+    //    resetting here would overwrite the value preserved in step 2. The Set is
+    //    invisible during AuthScreen and rehydrated by useDataRecovery on next mount.
     setConversationTitles({});
     setTitleSources({});
     setConversations({});
     setPendingOperations({});
     setOptimisticCases([]);
-    setPinnedCases(new Set());
     setCaseEvidence({});
 
     // 4. Reset Active State

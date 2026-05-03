@@ -338,10 +338,11 @@ describe('PersistenceManager', () => {
   });
 
   describe('clearAllPersistenceData', () => {
-    it('should remove all persistence-related storage keys', async () => {
+    it('should remove all persistence-related storage keys by default', async () => {
       await PersistenceManager.clearAllPersistenceData();
 
-      expect(mockBrowser.storage.local.remove).toHaveBeenCalledWith([
+      const removedKeys = (mockBrowser.storage.local.remove as any).mock.calls[0][0];
+      expect(removedKeys).toEqual(expect.arrayContaining([
         'conversationTitles',
         'titleSources',
         'conversations',
@@ -354,7 +355,19 @@ describe('PersistenceManager', () => {
         'faultmaven_recovery_in_progress',
         'faultmaven_reload_detected',
         'faultmaven_session_id'
-      ]);
+      ]));
+    });
+
+    it('should preserve pinnedCases when preservePinnedCases option is set', async () => {
+      await PersistenceManager.clearAllPersistenceData({ preservePinnedCases: true });
+
+      const removedKeys = (mockBrowser.storage.local.remove as any).mock.calls[0][0];
+      expect(removedKeys).not.toContain('pinnedCases');
+      expect(removedKeys).toEqual(expect.arrayContaining([
+        'conversationTitles',
+        'conversations',
+        'idMappings'
+      ]));
     });
   });
 });

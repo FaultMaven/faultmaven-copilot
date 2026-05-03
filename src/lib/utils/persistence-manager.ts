@@ -427,25 +427,33 @@ export class PersistenceManager {
 
 
   /**
-   * Clears all persistence data (for debugging/reset purposes)
+   * Clears persistence data (for debugging/reset and logout flows).
+   *
+   * `preservePinnedCases` keeps the user's pin preferences in storage so they
+   * survive a logout/login cycle. Pin entries are case-id keyed; case ids are
+   * unique UUIDs scoped to the owning user, so stale entries left behind on a
+   * shared browser are no-ops in the UI rather than a privacy leak.
    */
-  static async clearAllPersistenceData(): Promise<void> {
+  static async clearAllPersistenceData(
+    options: { preservePinnedCases?: boolean } = {}
+  ): Promise<void> {
     try {
-      await browser.storage.local.remove([
+      const keys: string[] = [
         'conversationTitles',
         'titleSources',
         'conversations',
         'pendingOperations',
         'optimisticCases',
-        'pinnedCases',
         'idMappings',
         PersistenceManager.SYNC_TIMESTAMP_KEY,
         PersistenceManager.VERSION_KEY,
         PersistenceManager.RECOVERY_FLAG_KEY,
         PersistenceManager.RELOAD_FLAG_KEY,
         PersistenceManager.SESSION_ID_KEY
-      ]);
-      log.info('All persistence data cleared');
+      ];
+      if (!options.preservePinnedCases) keys.push('pinnedCases');
+      await browser.storage.local.remove(keys);
+      log.info('Persistence data cleared', { preservePinnedCases: !!options.preservePinnedCases });
     } catch (error) {
       log.warn('Failed to clear persistence data:', error);
     }
