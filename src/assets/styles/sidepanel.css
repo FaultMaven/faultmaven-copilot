@@ -1,0 +1,20 @@
+/*
+ * Sidepanel-only layout rules.
+ *
+ * The sidepanel app fills the panel viewport exactly and never scrolls at the
+ * body level — scroll regions live inside the React tree (case list, chat,
+ * etc.). For nested flex `min-h-0` chains to bottom out at a real height,
+ * html / body / #root must form an explicit 100% height chain.
+ *
+ * Kept out of globals.css because the options page mounts at #app and is
+ * intentionally body-scrollable for long settings forms.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}

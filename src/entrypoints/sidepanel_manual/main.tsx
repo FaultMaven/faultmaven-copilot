@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../lib/api/query-client';
 import SidePanelApp from '../../shared/ui/SidePanelApp'; // Path to your main React app
 import '../../assets/styles/globals.css';      // Path to your global Tailwind styles
+import '../../assets/styles/sidepanel.css';    // Sidepanel-only height/overflow chain
 import { createLogger } from '../../lib/utils/logger';
 
 const log = createLogger('SidePanelManual');

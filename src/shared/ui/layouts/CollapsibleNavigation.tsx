@@ -274,7 +274,7 @@ export function CollapsibleNavigation({
             conversationTitles={conversationTitles}
             hasUnsavedNewChat={hasUnsavedNewChat}
             refreshTrigger={refreshTrigger}
-            className="h-full"
+            className="flex-1"
             collapsed={false}
             onFirstCaseDetected={() => { }}
             onAfterDelete={onAfterDelete}

@@ -510,7 +510,7 @@ function SidePanelAppContent() {
   return (
     <ErrorBoundary>
       {/* ADR 003: Dark Theme root layout */}
-      <div className="flex h-screen bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
+      <div className="flex h-full bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
         {/* Navigation — isolated boundary (keeps sidebar functional when content crashes) */}
         <ErrorBoundary
           fallback={

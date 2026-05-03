@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { UserCase, getUserCases, deleteCase as deleteCaseApi, generateCaseTitle, updateCaseTitle as apiUpdateCaseTitle } from '../../../lib/api';
 import { OptimisticUserCase } from '../../../lib/optimistic/types';
 import { ConversationItem } from './ConversationItem';
@@ -18,6 +18,26 @@ import { idMappingManager } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('ConversationsList');
+
+const COLLAPSED_GROUPS_STORAGE_KEY = 'fm-copilot:collapsedCaseGroups';
+
+const CASE_GROUP_KEYS = ['pinned', 'active', 'completed'] as const;
+type CaseGroupKey = typeof CASE_GROUP_KEYS[number];
+
+const isCaseGroupKey = (value: unknown): value is CaseGroupKey =>
+  typeof value === 'string' && (CASE_GROUP_KEYS as readonly string[]).includes(value);
+
+function loadCollapsedGroups(): Set<CaseGroupKey> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_GROUPS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter(isCaseGroupKey));
+  } catch {
+    return new Set();
+  }
+}
 
 interface ConversationsListProps {
   activeSessionId?: string; // kept for compatibility
@@ -66,6 +86,21 @@ export function ConversationsList({
 
   // Track recently deleted cases to prevent them from reappearing due to backend issues
   const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
+
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<CaseGroupKey>>(loadCollapsedGroups);
+
+  const toggleGroupCollapsed = useCallback((groupKey: CaseGroupKey) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey);
+      try {
+        localStorage.setItem(COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify([...next]));
+      } catch {
+        // localStorage unavailable (e.g. private mode) — preference stays in-memory only
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => { loadCases(); }, []);
   useEffect(() => { if (refreshTrigger > 0) loadCases(); }, [refreshTrigger]);
@@ -409,30 +444,59 @@ export function ConversationsList({
     onPinToggle?.(caseId);
   };
 
-  const renderCaseGroup = (title: string, items: UserCase[]) => {
+  const renderCaseGroup = (groupKey: CaseGroupKey, title: string, items: UserCase[]) => {
     if (items.length === 0) return null;
+    const isCollapsed = collapsedGroups.has(groupKey);
+    const panelId = `case-group-${groupKey}`;
+    const headerId = `case-group-${groupKey}-header`;
     return (
-      <div key={title}>
-        <h3 className="text-xs font-semibold text-fm-text-tertiary px-3 py-1 uppercase tracking-wider">{title}</h3>
-        <div>
-          {items.map((c) => (
-            <ConversationItem
-              key={c.case_id}
-              session={{ session_id: c.case_id, created_at: c.created_at || '', status: 'active', last_activity: c.updated_at || '', metadata: {} } as any}
-              title={pendingIdSet.has(c.case_id) ? `${getCaseTitle(c)} (pending)` : getCaseTitle(c)}
-              isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
-              isUnsavedNew={false}
-              isPinned={pinnedCases.has(c.case_id)}
-              isPending={pendingIdSet.has(c.case_id)}
-              messageCount={c.message_count || 0}
-              onSelect={(id) => onCaseSelect && onCaseSelect(id)}
-              onDelete={(id) => handleDeleteCase(id)}
-              onRename={(id, t) => handleRenameCase(id, t)}
-              onGenerateTitle={(id) => handleGenerateTitle(id, (c as any).session_id || activeSessionId)}
-              onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
-            />
-          ))}
-        </div>
+      <div key={groupKey}>
+        <h3 id={headerId} className="m-0">
+          <button
+            type="button"
+            onClick={() => toggleGroupCollapsed(groupKey)}
+            aria-expanded={!isCollapsed}
+            aria-controls={panelId}
+            className="w-full flex items-center justify-between gap-2 px-3 py-1 text-xs font-semibold text-fm-text-tertiary uppercase tracking-wider hover:text-fm-text-primary transition-colors select-none"
+          >
+            <span className="flex items-center gap-1.5 min-w-0">
+              <svg
+                className={`w-3 h-3 flex-shrink-0 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+              <span className="truncate">{title}</span>
+            </span>
+            <span className="text-[10px] font-medium text-fm-text-tertiary/70 normal-case tracking-normal flex-shrink-0">
+              {items.length}
+            </span>
+          </button>
+        </h3>
+        {!isCollapsed && (
+          <div id={panelId} role="region" aria-labelledby={headerId}>
+            {items.map((c) => (
+              <ConversationItem
+                key={c.case_id}
+                session={{ session_id: c.case_id, created_at: c.created_at || '', status: 'active', last_activity: c.updated_at || '', metadata: {} } as any}
+                title={pendingIdSet.has(c.case_id) ? `${getCaseTitle(c)} (pending)` : getCaseTitle(c)}
+                isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
+                isUnsavedNew={false}
+                isPinned={pinnedCases.has(c.case_id)}
+                isPending={pendingIdSet.has(c.case_id)}
+                messageCount={c.message_count || 0}
+                onSelect={(id) => onCaseSelect && onCaseSelect(id)}
+                onDelete={(id) => handleDeleteCase(id)}
+                onRename={(id, t) => handleRenameCase(id, t)}
+                onGenerateTitle={(id) => handleGenerateTitle(id, (c as any).session_id || activeSessionId)}
+                onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -449,7 +513,7 @@ export function ConversationsList({
 
   if (loading && mergedCases.length === 0) {
     return (
-      <div className={`flex flex-col h-full ${className}`}>
+      <div className={`flex flex-col min-h-0 ${className}`}>
         <div className="flex-1 flex items-center justify-center">
           <LoadingSpinner size="sm" />
         </div>
@@ -460,7 +524,7 @@ export function ConversationsList({
   const caseGroups = groupCasesByState(mergedCases);
 
   return (
-    <div className={`flex flex-col h-full ${className}`}>
+    <div className={`flex flex-col min-h-0 ${className}`}>
       {error && !error.includes('Failed to fetch') && (
         <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
           <p className="text-xs text-fm-critical">{error}</p>
@@ -509,9 +573,9 @@ export function ConversationsList({
           </div>
         ) : (
           <div className="space-y-3 pb-6">
-            {renderCaseGroup('Pinned', caseGroups.pinned)}
-            {renderCaseGroup('Active', caseGroups.active)}
-            {renderCaseGroup('Completed', caseGroups.completed)}
+            {renderCaseGroup('pinned', 'Pinned', caseGroups.pinned)}
+            {renderCaseGroup('active', 'Active', caseGroups.active)}
+            {renderCaseGroup('completed', 'Completed', caseGroups.completed)}
           </div>
         )}
       </div>
