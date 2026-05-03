@@ -163,7 +163,7 @@ export function ConversationItem({
     <div
       ref={itemRef}
       onClick={handleSelect}
-      className={`group relative mx-3 px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 flex items-center gap-2.5 ${isActive
+      className={`group relative mx-3 px-3 py-0.5 rounded-lg cursor-pointer transition-all duration-200 flex items-center gap-2 ${isActive
         ? 'bg-fm-surface/50 text-fm-text-primary font-medium'
         : 'text-fm-text-secondary hover:bg-white/5 hover:text-fm-text-primary font-normal'
         }`}
@@ -179,7 +179,7 @@ export function ConversationItem({
       aria-label={`Select conversation: ${displayTitle}`}
     >
       <div className="flex items-center justify-between w-full">
-        <div className="flex-1 min-w-0 flex items-center gap-2.5">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           {/* Mockup status dot equivalent */}
           <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isActive ? 'bg-fm-accent shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 'bg-fm-border-strong'}`} />
           {isRenaming ? (
@@ -224,9 +224,9 @@ export function ConversationItem({
         </div>
 
         {!isUnsavedNew && (
-          <div className="relative ml-2 flex-shrink-0" ref={menuRef}>
+          <div className="relative ml-2 flex-shrink-0 flex items-center" ref={menuRef}>
             {isPinned && (
-              <svg className="w-3 h-3 text-fm-accent mr-1" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 text-fm-accent mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M16 12V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
               </svg>
             )}

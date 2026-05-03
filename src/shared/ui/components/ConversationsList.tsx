@@ -457,7 +457,7 @@ export function ConversationsList({
             onClick={() => toggleGroupCollapsed(groupKey)}
             aria-expanded={!isCollapsed}
             aria-controls={panelId}
-            className="w-full flex items-center justify-between gap-2 px-3 py-1 text-xs font-semibold text-fm-text-tertiary uppercase tracking-wider hover:text-fm-text-primary transition-colors select-none"
+            className="w-full flex items-center justify-between gap-2 px-3 py-0.5 text-xs font-semibold text-fm-text-tertiary uppercase tracking-wider hover:text-fm-text-primary transition-colors select-none"
           >
             <span className="flex items-center gap-1.5 min-w-0">
               <svg
