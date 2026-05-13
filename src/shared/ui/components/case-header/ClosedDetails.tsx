@@ -22,16 +22,18 @@ export const ClosedDetails: React.FC<ClosedDetailsProps> = ({
   data,
   closureReason,
 }) => {
-  const reasonInfo = closureReason ? CLOSURE_DISPLAY_INFO[closureReason] : null;
+  // Defensive default: when closure_reason is null/missing/unrecognized,
+  // fall back to the 'other' enum entry. Keeps the row structurally
+  // consistent (label + description) regardless of upstream data quality.
+  const reasonInfo =
+    (closureReason && CLOSURE_DISPLAY_INFO[closureReason]) ||
+    CLOSURE_DISPLAY_INFO.other;
 
   return (
     <div className="px-4 pb-2 pt-1.5 space-y-0">
       {/* Reason */}
       <DetailRow label="Reason">
-        {reasonInfo
-          ? `${reasonInfo.label} — ${reasonInfo.description}`
-          : 'Closed'
-        }
+        {`${reasonInfo.label} — ${reasonInfo.description}`}
       </DetailRow>
 
       {/* Problem */}

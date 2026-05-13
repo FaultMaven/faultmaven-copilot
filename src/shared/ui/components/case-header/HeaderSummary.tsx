@@ -50,15 +50,15 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
       setTimeout(() => setIdCopied(false), 1500);
     });
   };
-  // Status label — shows substage for INVESTIGATING, closure reason for CLOSED
+  // Status label — shows substage for INVESTIGATING, closure reason for CLOSED.
+  // Defensive default: when closure_reason is null/missing/unrecognized,
+  // fall back to the 'other' enum entry rather than the bare literal "Closed".
   const getStatusLabel = (status: string): string => {
     if (status === caseData.status) {
       if (status === 'closed') {
         const reason = activeCase?.closure_reason;
-        if (reason && CLOSURE_DISPLAY_INFO[reason]) {
-          return `Closed - ${CLOSURE_DISPLAY_INFO[reason].label}`;
-        }
-        return 'Closed';
+        const info = (reason && CLOSURE_DISPLAY_INFO[reason]) || CLOSURE_DISPLAY_INFO.other;
+        return `Closed - ${info.label}`;
       }
     }
     return STATUS_LABELS[status as UserCaseStatus] || status.charAt(0).toUpperCase() + status.slice(1);

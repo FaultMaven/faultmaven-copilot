@@ -69,33 +69,29 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
 
 /**
  * Closure reason display info for CLOSED status pill and ClosedDetails banner.
+ *
+ * Three engine-derived values, kept in sync with VALID_CLOSURE_REASONS in
+ * faultmaven/modules/case/domain/models.py. The 'other' fallback is retained
+ * as a defensive default for cases where closure_reason is null/unrecognized
+ * (used by HeaderSummary and ClosedDetails fallback paths).
  */
 export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: string; description: string }> = {
-  mitigation_sufficient: {
-    label: 'Mitigated',
-    bannerClass: 'bg-fm-warning-bg border border-fm-warning-border text-fm-warning',
-    description: 'Temporary mitigation applied; root cause investigation deferred.',
-  },
-  abandoned: {
-    label: 'Abandoned',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
-    description: 'Investigation stopped without reaching a conclusion.',
-  },
-  escalated: {
-    label: 'Escalated',
-    bannerClass: 'bg-fm-info-bg border border-fm-info-border text-fm-info',
-    description: 'Case escalated to another team or external support.',
-  },
   inquiry_only: {
     label: 'Inquiry Only',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Q&A session completed, no investigation needed.',
   },
-  duplicate: {
-    label: 'Duplicate',
+  closed_after_investigation: {
+    label: 'Closed after investigation',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
-    description: 'Duplicate of another case.',
+    description: 'Investigation occurred but no resolution was reached.',
   },
+  mitigation_sufficient: {
+    label: 'Mitigated',
+    bannerClass: 'bg-fm-warning-bg border border-fm-warning-border text-fm-warning',
+    description: 'Temporary mitigation applied; root cause investigation deferred.',
+  },
+  // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
     label: 'Other',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
