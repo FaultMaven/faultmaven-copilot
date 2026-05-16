@@ -470,25 +470,25 @@ const msg = getStatusChangeMessage('inquiry', 'investigating');
 
 ### Post-Terminal Actions (ResolutionActionsCard)
 
-When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` replaces the old green banner in `ChatWindow.tsx`. It provides:
+When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is rendered above the chat history. It's a small status banner — not a navigation surface. It shows:
 
 **Resolved cases:**
 
-- Root cause summary (if available), duration/turn stats
-- Mentions runbook generation availability (triggered via chat COOPERATIVE suggestion, not a button)
-- Link to auto-generated Resolution Summary in Dashboard (`?tab=report`)
+- "Case Resolved" label, root cause summary (if available), duration / turn stats
+- One-line affordance hint: *"Ask questions or request a runbook from this case."*
 
 **Closed cases:**
 
-- Closure reason label (Abandoned, Escalated, Mitigated, Inquiry Only)
-- `closure_reason === 'mitigation_sufficient'`: Distinct warm styling (warning-tinted border/background), mentions runbook generation availability (triggered via chat COOPERATIVE suggestion). Link to auto-generated Closure Summary in Dashboard.
-- Other closure reasons: Neutral styling, link to Closure Summary.
+- "Case Closed" + closure reason label (Abandoned, Escalated, Mitigated, Inquiry Only)
+- `mitigation_sufficient` uses distinct warm styling (warning-tinted background) and the affordance line mentions runbook generation; other closure reasons use neutral styling and a simpler "Ask questions about this case." line
+- Duration / turn stats on their own line
+
+**No Dashboard link.** The card deliberately does not link to the Dashboard's Report tab. Closure summaries are rendered inline in the chat reply at the moment of generation (a backend-side design decision: the chat is now the primary surface for the summary; the Dashboard is the persistent view). A chat-side card linking to the Dashboard for a summary the user can already see in chat above would be redundant noise.
 
 **Auto-generated summaries vs runbooks:**
-- **Summaries** (Resolution Summary, Closure Summary) are auto-generated at terminal transition. The card links to these.
-- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or CLOSED(mitigation_sufficient) cases. The agent offers them as COOPERATIVE suggestions in chat; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
 
-**Cross-frontend linking:** Opens `${dashboardUrl}/cases/${caseId}?tab=report` in a new tab. Dashboard URL resolved via `getDashboardUrl()` from `config.ts`.
+- **Summaries** (Resolution Summary, Closure Summary) are auto-generated synchronously at terminal transition and embedded directly into the closure-turn chat reply.
+- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or CLOSED(mitigation_sufficient) cases. The agent offers them as COOPERATIVE suggestions in chat on terminal Q&A turns; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
 
 **Key files:**
 

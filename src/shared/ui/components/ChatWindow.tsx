@@ -27,7 +27,6 @@ import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { ResolutionActionsCard } from "./ResolutionActionsCard";
 import { caseApi } from "../../../lib/api/case-service";
-import { getDashboardUrl } from "../../../config";
 import { createLogger } from "../../../lib/utils/logger";
 import type { CaseUIResponse, UserCase } from "../../../types/case";
 
@@ -120,12 +119,6 @@ const ChatWindowComponent = function ChatWindow({
   const [fullCaseData, setFullCaseData] = useState<CaseUIResponse | null>(null);
   const [caseLoading, setCaseLoading] = useState(false);
   const [caseError, setCaseError] = useState<string | null>(null);
-
-  // Dashboard URL for post-terminal actions
-  const [dashboardUrl, setDashboardUrl] = useState('https://app.faultmaven.ai');
-  useEffect(() => {
-    getDashboardUrl().then(setDashboardUrl).catch(() => {});
-  }, []);
 
   // Determine the last assistant turn (only its suggestions are interactive)
   const lastAssistantItemId = Array.isArray(conversation)
@@ -318,7 +311,6 @@ const ChatWindowComponent = function ChatWindow({
         <ResolutionActionsCard
           activeCase={activeCase}
           caseData={fullCaseData}
-          dashboardUrl={dashboardUrl}
         />
       )}
 

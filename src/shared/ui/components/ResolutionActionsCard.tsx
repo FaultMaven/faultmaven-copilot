@@ -6,7 +6,6 @@ import type { CaseUIResponse } from '../../../types/case';
 interface ResolutionActionsCardProps {
   activeCase: UserCase;
   caseData: CaseUIResponse | null;
-  dashboardUrl: string;
 }
 
 const CLOSURE_REASON_LABELS: Record<string, string> = {
@@ -20,7 +19,6 @@ const CLOSURE_REASON_LABELS: Record<string, string> = {
 const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
   activeCase,
   caseData,
-  dashboardUrl,
 }) => {
   const isResolved = activeCase.status === 'resolved';
   const isClosed = activeCase.status === 'closed';
@@ -64,17 +62,13 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
               {rootCauseDescription}
             </p>
           )}
+          {statsParts.length > 0 && (
+            <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
+              {statsParts.join(' \u00B7 ')}
+            </p>
+          )}
           <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
-            {statsParts.length > 0 && <>{statsParts.join(' \u00B7 ')} \u00B7 </>}
-            Ask questions, request a runbook, or{' '}
-            <a
-              href={`${dashboardUrl}/cases/${activeCase.case_id}?tab=report`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-fm-accent hover:underline"
-            >
-              view summary in Dashboard
-            </a>
+            Ask questions or request a runbook from this case.
           </p>
         </div>
       </div>
@@ -97,20 +91,16 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
         <span className="text-fm-xs font-semibold text-fm-text-primary">
           Case Closed{closureLabel ? ` \u00B7 ${closureLabel}` : ''}
         </span>
+        {statsParts.length > 0 && (
+          <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
+            {statsParts.join(' \u00B7 ')}
+          </p>
+        )}
         <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
-          {statsParts.length > 0 && <>{statsParts.join(' \u00B7 ')} \u00B7 </>}
           {isMitigated
-            ? <>Ask questions, request a runbook, or{' '}</>
-            : <>Ask questions or{' '}</>
+            ? 'Ask questions or request a runbook from this case.'
+            : 'Ask questions about this case.'
           }
-          <a
-            href={`${dashboardUrl}/cases/${activeCase.case_id}?tab=report`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-fm-accent hover:underline"
-          >
-            view summary in Dashboard
-          </a>
         </p>
       </div>
     </div>
