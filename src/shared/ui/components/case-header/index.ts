@@ -1,12 +1,10 @@
 /**
  * Case Header Components
  *
- * Enhanced case header with phase-adaptive display
+ * Two-row collapsed summary (HeaderSummary) + unified expandable details
+ * (CaseDetails) that renders the same row set across every case phase.
  */
 
 export { EnhancedCaseHeader } from './EnhancedCaseHeader';
 export { HeaderSummary } from './HeaderSummary';
-export { InquiryDetails } from './InquiryDetails';
-export { InvestigatingDetails } from './InvestigatingDetails';
-export { ResolvedDetails } from './ResolvedDetails';
-export { ClosedDetails } from './ClosedDetails';
+export { CaseDetails } from './CaseDetails';

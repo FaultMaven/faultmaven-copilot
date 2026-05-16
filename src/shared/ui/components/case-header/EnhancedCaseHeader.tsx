@@ -1,20 +1,17 @@
 /**
  * EnhancedCaseHeader Component
  *
- * Main wrapper for case header with expand/collapse functionality.
- * Routes to phase-specific detail components based on case status.
- * Manages drill-down section state (accordion — one section at a time).
+ * Main wrapper for the case header. Composes the always-visible two-row
+ * summary (HeaderSummary) with the expandable unified detail view
+ * (CaseDetails) and the status-change confirmation modal. Manages
+ * drill-down section state (accordion — one open section at a time).
  */
 
 import React, { useState } from 'react';
 import type { CaseUIResponse, UserCase } from '../../../../types/case';
-import { isCaseInquiry, isCaseInvestigating, isCaseResolved, isCaseClosed } from '../../../../types/case';
 import type { UserCaseStatus } from '../../../../lib/api';
 import { HeaderSummary } from './HeaderSummary';
-import { InquiryDetails } from './InquiryDetails';
-import { InvestigatingDetails } from './InvestigatingDetails';
-import { ResolvedDetails } from './ResolvedDetails';
-import { ClosedDetails } from './ClosedDetails';
+import { CaseDetails } from './CaseDetails';
 import { StatusChangeRequestModal } from './StatusChangeRequestModal';
 import { getSeverity } from './shared';
 import { createLogger } from '~/lib/utils/logger';
@@ -148,16 +145,16 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
           onStatusChangeRequest={handleStatusChangeRequest}
         />
 
-        {/* Expanded Details (phase-specific) */}
+        {/* Expanded Details — unified across all phases */}
         {expanded && (
           <div className="border-t border-fm-border">
-            {renderDetails(
-              caseData,
-              activeCase ?? null,
-              expandedSection,
-              handleToggleSection,
-              handleScrollToTurn,
-            )}
+            <CaseDetails
+              caseData={caseData}
+              activeCase={activeCase ?? null}
+              expandedSection={expandedSection}
+              onToggleSection={handleToggleSection}
+              onScrollToTurn={handleScrollToTurn}
+            />
           </div>
         )}
       </div>
@@ -175,60 +172,3 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
     </>
   );
 };
-
-function renderDetails(
-  caseData: CaseUIResponse,
-  activeCase: UserCase | null,
-  expandedSection: string | null,
-  onToggleSection: (section: string) => void,
-  onScrollToTurn?: (turnNumber: number) => void,
-): React.ReactNode {
-  if (isCaseInquiry(caseData)) {
-    return (
-      <InquiryDetails
-        data={caseData.inquiry}
-        caseId={caseData.case_id}
-        uploadedFilesCount={'uploaded_files_count' in caseData ? caseData.uploaded_files_count : 0}
-        expandedSection={expandedSection}
-        onToggleSection={onToggleSection}
-        onScrollToTurn={onScrollToTurn}
-      />
-    );
-  }
-
-  if (isCaseInvestigating(caseData)) {
-    return (
-      <InvestigatingDetails
-        data={caseData}
-        caseId={caseData.case_id}
-        expandedSection={expandedSection}
-        onToggleSection={onToggleSection}
-        onScrollToTurn={onScrollToTurn}
-      />
-    );
-  }
-
-  if (isCaseResolved(caseData) || isCaseClosed(caseData)) {
-    if (caseData.status === 'closed') {
-      return (
-        <ClosedDetails
-          data={caseData}
-          caseId={caseData.case_id}
-          closureReason={activeCase?.closure_reason ?? null}
-          expandedSection={expandedSection}
-          onToggleSection={onToggleSection}
-        />
-      );
-    }
-    return (
-      <ResolvedDetails
-        data={caseData}
-        caseId={caseData.case_id}
-        expandedSection={expandedSection}
-        onToggleSection={onToggleSection}
-      />
-    );
-  }
-
-  return null;
-}
