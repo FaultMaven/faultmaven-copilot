@@ -16,10 +16,15 @@ import {
   TurnRequest,
   QueryIntent,
   authManager,
-  generateCaseTitle
+  generateCaseTitle,
+  getCaseConversation
 } from '../../../lib/api';
 import type { UserCase } from '../../../types/case';
-import { AuthenticationError } from '../../../lib/errors/types';
+import {
+  AuthenticationError,
+  CaseVersionConflictError
+} from '../../../lib/errors/types';
+import { ErrorClassifier } from '../../../lib/errors/classifier';
 import {
   OptimisticIdGenerator,
   IdUtils,
@@ -127,7 +132,53 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
         },
         onFailure: (error) => {
           log.error('All submission attempts failed', error);
-          
+
+          // 409: case version conflict. ErrorClassifier maps the
+          // upstream HttpError(409) → CaseVersionConflictError; recovery
+          // is manual_retry so resilientOperation already did NOT
+          // auto-retry. Two extra steps here:
+          //   1) Telemetry — record the version drift for debugging.
+          //   2) Background refresh — refetch the case conversation so
+          //      the user sees the latest state on retry without
+          //      having to switch cases. We fire-and-forget so the
+          //      error UI stays responsive.
+          const classified = ErrorClassifier.classify(error);
+          if (classified instanceof CaseVersionConflictError) {
+            log.warn('Case version conflict on turn submission', {
+              caseId,
+              expectedVersion: classified.expectedVersion,
+              actualVersion: classified.actualVersion,
+            });
+            getCaseConversation(caseId)
+              .then(data => {
+                const fresh = (data?.messages ?? []) as Array<{
+                  message_id: string;
+                  case_status?: string;
+                  closure_reason?: string | null;
+                  closed_at?: string | null;
+                }>;
+                // Sync activeCase status from the latest message's snapshot.
+                const last = fresh[fresh.length - 1];
+                if (last?.case_status) {
+                  props.setActiveCase((prev: UserCase | null) => {
+                    if (prev && prev.status !== last.case_status) {
+                      log.info('activeCase status refreshed after 409', {
+                        oldStatus: prev.status,
+                        newStatus: last.case_status,
+                      });
+                      return { ...prev, status: last.case_status as any };
+                    }
+                    return prev;
+                  });
+                }
+              })
+              .catch(refreshErr => {
+                // Non-critical — the retry button still works without
+                // a fresh state snapshot.
+                log.debug('Post-409 case refresh failed', refreshErr);
+              });
+          }
+
           // Mark operation as failed in pendingOpsManager
           pendingOpsManager.fail(aiMessageId, error.message);
 

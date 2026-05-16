@@ -188,6 +188,46 @@ describe('API Functions', () => {
         'Turn must include at least one of: query, files, or pastedContent'
       );
     });
+
+    it('surfaces 409 as CaseVersionConflictError via the classifier', async () => {
+      // Backend OCC returns 409 when a status change (or any versioned
+      // case write) lands while the turn is in flight. The fetch
+      // client (authenticatedFetchWithRetry) enriches non-OK responses
+      // with `status` so the ErrorClassifier can route them. We verify
+      // the end-to-end: 409 fetch → caught error → classifier output =
+      // CaseVersionConflictError with manual_retry recovery.
+      const { CaseVersionConflictError } = await import('../../lib/errors/types');
+      const { ErrorClassifier } = await import('../../lib/errors/classifier');
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        headers: new Map(),
+        json: () => Promise.resolve({
+          detail:
+            'Case state changed while processing this turn. ' +
+            'Reload the case and resubmit if still applicable.',
+        }),
+      });
+
+      let caught: unknown;
+      try {
+        await submitTurn('case-123', { query: 'test query' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeDefined();
+      expect((caught as any).status).toBe(409);
+
+      // ErrorClassifier upgrades the 409 to CaseVersionConflictError so
+      // the hook layer can route to the soft-retry path (manual_retry,
+      // no auto-retry — replaying would just re-hit the same conflict).
+      const classified = ErrorClassifier.classify(caught);
+      expect(classified).toBeInstanceOf(CaseVersionConflictError);
+      expect(classified.recovery).toBe('manual_retry');
+      expect(classified.userMessage).toMatch(/case state changed/i);
+    });
   });
 
   describe('Response Types', () => {
