@@ -68,12 +68,12 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
 };
 
 /**
- * Closure reason display info for CLOSED status pill and ClosedDetails banner.
+ * Closure reason display info for CLOSED status pill and CaseDetails closure row.
  *
  * Three engine-derived values, kept in sync with VALID_CLOSURE_REASONS in
  * faultmaven/modules/case/domain/models.py. The 'other' fallback is retained
  * as a defensive default for cases where closure_reason is null/unrecognized
- * (used by HeaderSummary and ClosedDetails fallback paths).
+ * (used by HeaderSummary; CaseDetails suppresses the closure row in that case).
  */
 export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: string; description: string }> = {
   inquiry_only: {
