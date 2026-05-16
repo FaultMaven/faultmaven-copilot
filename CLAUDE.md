@@ -160,12 +160,9 @@ src/
 │   │   ├── HypothesisTracker.tsx        # Hypothesis tracking display
 │   │   ├── case-header/                 # Case header components
 │   │   │   ├── shared.tsx               # SVG icons, DetailRow, SeverityChip, helpers
-│   │   │   ├── EnhancedCaseHeader.tsx   # Phase-adaptive header wrapper
+│   │   │   ├── EnhancedCaseHeader.tsx   # Wrapper: HeaderSummary + CaseDetails + modal
 │   │   │   ├── HeaderSummary.tsx        # Collapsed 2-line status bar
-│   │   │   ├── InquiryDetails.tsx       # Inquiry phase compact rows
-│   │   │   ├── InvestigatingDetails.tsx # Investigation compact rows + drill-down
-│   │   │   ├── ResolvedDetails.tsx      # Resolved case compact rows
-│   │   │   ├── ClosedDetails.tsx        # Closed case compact rows
+│   │   │   ├── CaseDetails.tsx          # Unified expandable rows (all phases)
 │   │   │   ├── EvidenceDetailsModal.tsx # Evidence detail modal
 │   │   │   └── StatusChangeRequestModal.tsx # Status change confirmation
 │   │   └── ...                          # Many more components

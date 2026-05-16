@@ -23,7 +23,7 @@ import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
 import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
 // EvidencePanel and EvidenceAnalysisModal removed — the case header's
 // "Evidence" and "Files" sections now provide this functionality in a
-// compact, integrated format.  See InvestigatingDetails.tsx.
+// compact, integrated format.  See case-header/CaseDetails.tsx.
 import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { ResolutionActionsCard } from "./ResolutionActionsCard";
 import { caseApi } from "../../../lib/api/case-service";
