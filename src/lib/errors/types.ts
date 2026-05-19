@@ -311,6 +311,56 @@ export class RateLimitError extends UserFacingError {
 }
 
 /**
+ * Case version conflict (409) — another writer updated the case state
+ * while this turn was in flight. Backend's optimistic concurrency
+ * control on `cases.version` rejected the save. The user should review
+ * the (now-updated) case state and resubmit if still applicable.
+ *
+ * Surfaces with `manual_retry` recovery — no auto-retry, since the same
+ * conflict will recur until the local state catches up.
+ */
+export class CaseVersionConflictError extends UserFacingError {
+  readonly userTitle = 'Case Was Updated';
+  readonly userMessage =
+    'The case state changed while we were processing your message. ' +
+    'Review the case and resubmit if still applicable.';
+  readonly userAction = 'Tap retry to resubmit.';
+  readonly category: ErrorCategory = 'validation';
+  readonly recovery: RecoveryStrategy = 'manual_retry';
+
+  /** Version the client/turn handler held in memory. */
+  readonly expectedVersion?: number;
+  /** Version actually in the database when the save was attempted. */
+  readonly actualVersion?: number;
+
+  constructor(
+    message: string,
+    expectedVersion?: number,
+    actualVersion?: number,
+    originalError?: Error,
+    context?: ErrorContext
+  ) {
+    super(message, originalError, context);
+    this.expectedVersion = expectedVersion;
+    this.actualVersion = actualVersion;
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'inline',
+      dismissible: true,
+      icon: 'warning',
+      actions: [{
+        label: 'Retry',
+        onClick: async () => {
+          // Will be set by error handler
+        }
+      }]
+    };
+  }
+}
+
+/**
  * Optimistic update rollback error
  */
 export class OptimisticUpdateError extends UserFacingError {

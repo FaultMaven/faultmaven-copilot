@@ -31,22 +31,40 @@ export class HttpError extends Error {
    */
   public readonly apiError?: APIError;
 
+  /**
+   * Optional response headers carried along with the error.
+   * Lets callers read protocol-level signals like x-error-code,
+   * x-expected-version, etc. without re-parsing the Response.
+   */
+  public readonly headers?: Record<string, string>;
+
   constructor(
     statusCode: number,
     message: string,
     detail?: string,
-    apiError?: APIError
+    apiError?: APIError,
+    headers?: Record<string, string>
   ) {
     super(message);
     this.name = 'HttpError';
     this.statusCode = statusCode;
     this.detail = detail;
     this.apiError = apiError;
+    this.headers = headers;
 
     // Maintains proper stack trace for where error was thrown (V8 only)
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, HttpError);
     }
+  }
+
+  /**
+   * Alias for statusCode. The ErrorClassifier's HTTP-error detection
+   * looks for a `status` property; keep the alias so HttpError flows
+   * through the classifier path without a special case.
+   */
+  get status(): number {
+    return this.statusCode;
   }
 
   /**
@@ -168,10 +186,23 @@ export async function createHttpErrorFromResponse(response: Response): Promise<H
 
   const message = detail || `HTTP ${response.status}: ${response.statusText}`;
 
+  // Snapshot relevant signal headers so callers don't need the live
+  // Response object after this point. The backend uses lowercase
+  // names (x-error-code, x-expected-version, x-actual-version).
+  // Guard against test mocks that omit `headers` entirely.
+  const headers: Record<string, string> = {};
+  if (response.headers && typeof response.headers.get === 'function') {
+    for (const name of ['x-error-code', 'x-expected-version', 'x-actual-version']) {
+      const value = response.headers.get(name);
+      if (value !== null) headers[name] = value;
+    }
+  }
+
   return new HttpError(
     response.status,
     message,
     detail,
-    apiError
+    apiError,
+    Object.keys(headers).length > 0 ? headers : undefined
   );
 }

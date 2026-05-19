@@ -68,12 +68,12 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
 };
 
 /**
- * Closure reason display info for CLOSED status pill and ClosedDetails banner.
+ * Closure reason display info for CLOSED status pill and CaseDetails closure row.
  *
  * Three engine-derived values, kept in sync with VALID_CLOSURE_REASONS in
  * faultmaven/modules/case/domain/models.py. The 'other' fallback is retained
  * as a defensive default for cases where closure_reason is null/unrecognized
- * (used by HeaderSummary and ClosedDetails fallback paths).
+ * (used by HeaderSummary; CaseDetails suppresses the closure row in that case).
  */
 export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: string; description: string }> = {
   inquiry_only: {
@@ -421,6 +421,12 @@ export async function updateCaseStatus(
     throw new Error(`Validation failed: ${errorData.detail || 'Invalid status transition'}`);
   }
 
+  if (response.status === 409) {
+    // OCC conflict on the case row — surfaced as HttpError so callers
+    // can route to CaseVersionConflictError via the ErrorClassifier.
+    throw await createHttpErrorFromResponse(response);
+  }
+
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || `Failed to update case status: ${response.status}`);
@@ -527,6 +533,23 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
       else detail = JSON.stringify(inner);
     } catch { }
     throw new Error(`422 Unprocessable Entity: ${detail}`);
+  }
+
+  if (response.status === 409) {
+    // Backend OCC conflict — another writer (typically a status change
+    // from another surface) updated the case while this turn was being
+    // processed. Throw typed HttpError so the hook layer can detect it
+    // via the ErrorClassifier → CaseVersionConflictError path and
+    // surface a soft "Case was updated; retry" message instead of a
+    // generic error. Auto-retry would loop on the same conflict, so
+    // CaseVersionConflictError uses manual_retry recovery.
+    //
+    // Note: in production, authenticatedFetchWithRetry typically throws
+    // its own enriched Error for non-OK responses (see client.ts), so
+    // this branch is defensive. The classifier handles both shapes via
+    // the `status` property, but this branch ensures direct callers
+    // that bypass the client wrapper still get a typed HttpError.
+    throw await createHttpErrorFromResponse(response);
   }
 
   const POLL_INITIAL_MS = Number((import.meta as any).env?.VITE_POLL_INITIAL_MS ?? 1500);

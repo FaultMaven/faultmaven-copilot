@@ -8,10 +8,12 @@ import {
   ServerError,
   ValidationError,
   RateLimitError,
+  CaseVersionConflictError,
   OptimisticUpdateError,
   UnknownError,
   ErrorContext
 } from './types';
+import { HttpError } from './http-error';
 // import { AuthenticationError as ApiAuthError } from '../api';
 
 /**
@@ -89,6 +91,28 @@ export class ErrorClassifier {
       case 400:
       case 422:
         return new ValidationError(error.message, {}, error, context);
+
+      case 409: {
+        // Case version conflict — backend OCC rejected the save because
+        // another writer updated the case while this turn was in flight.
+        // The response carries x-expected-version / x-actual-version
+        // headers on HttpError so we can surface the version drift if
+        // we ever want to (currently just used for telemetry).
+        const headers = (error as HttpError).headers || {};
+        const expected = headers['x-expected-version']
+          ? Number(headers['x-expected-version'])
+          : undefined;
+        const actual = headers['x-actual-version']
+          ? Number(headers['x-actual-version'])
+          : undefined;
+        return new CaseVersionConflictError(
+          error.message,
+          Number.isFinite(expected as number) ? expected : undefined,
+          Number.isFinite(actual as number) ? actual : undefined,
+          error,
+          context
+        );
+      }
 
       case 429:
         // Try to extract Retry-After header value
