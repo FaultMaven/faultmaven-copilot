@@ -99,7 +99,13 @@ export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse
 export type InvestigationProgress = components['schemas']['InvestigationProgressSummary'];
 export type ProblemVerification = components['schemas']['ProblemVerificationData'];
 export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'];
-export type InvestigationStrategy = components['schemas']['InvestigationStrategyData'];
+// `InvestigationStrategy` alias removed — it pointed at
+// `InvestigationStrategyData`, the descriptive-string response model that
+// fed the old `getApproachHint` regex. Both the regex (slice 4 frontend)
+// and the backing field (faultmaven PR #320) are gone; the alias had no
+// production consumer. Path information now lives on `PathSelection`,
+// already exported above. After the next OpenAPI regen there will be no
+// matching `components['schemas']['InvestigationStrategyData']` to point at.
 
 // Resolved Disposition Types
 export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'] & {
