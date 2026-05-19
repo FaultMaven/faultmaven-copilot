@@ -43,8 +43,36 @@ export interface UserCase {
   valid_next_states?: string[]; // Server-provided list of allowed case actions (empty for dispositions)
 }
 
+// Investigation path enum (added ahead of OpenAPI regen — slice 1 of
+// investigation-gates redesign collapsed this to binary; the generated
+// types may still list a third value until regenerated, which would
+// silently widen the union).
+export type InvestigationPath = 'mitigation_first' | 'root_cause';
+
+// PathSelection — the structured Gate-2/Gate-3 state surfaced on every
+// CaseUIResponse variant. Added ahead of OpenAPI regen by the backend
+// commit that exposes path_selection on the UI response.
+export interface PathSelection {
+  path: InvestigationPath;
+  auto_selected: boolean;
+  rationale: string;
+  alternate_path?: InvestigationPath | null;
+
+  // Gate 2 (slice 2)
+  user_confirmed: boolean;
+  user_confirmed_at_turn?: number | null;
+
+  // Gate 3 (slice 3) — meaningful only when path === 'mitigation_first'
+  rca_after_mitigation_confirmed: boolean;
+  rca_after_mitigation_confirmed_at_turn?: number | null;
+  mitigation_completed_at_turn?: number | null;
+}
+
 // Inquiry Phase Types
-export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'];
+export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'] & {
+  /** Path recommendation + Gate-2 state (slice 2). Present once Gate 1 closes. */
+  path_selection?: PathSelection | null;
+};
 export type InquiryData = components['schemas']['InquiryResponseData'];
 
 // Progress Transparency (added ahead of OpenAPI regeneration)
@@ -63,6 +91,10 @@ export interface ProgressTransparencyInfo {
 export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'] & {
   /** Progress transparency state. Present when investigation has stalled. */
   progress_transparency?: ProgressTransparencyInfo | null;
+  /** Path commitment + Gate-3 state (slices 2 + 3). Always present on INVESTIGATING. */
+  path_selection?: PathSelection | null;
+  /** Confirmed problem statement (sourced from case.description). */
+  problem_statement?: string | null;
 };
 export type InvestigationProgress = components['schemas']['InvestigationProgressSummary'];
 export type ProblemVerification = components['schemas']['ProblemVerificationData'];
@@ -70,7 +102,12 @@ export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'
 export type InvestigationStrategy = components['schemas']['InvestigationStrategyData'];
 
 // Resolved Disposition Types
-export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'];
+export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'] & {
+  /** Path that was followed; lets terminal UI show mitigation-first retrospectively. */
+  path_selection?: PathSelection | null;
+  /** Confirmed problem statement (sourced from case.description). */
+  problem_statement?: string | null;
+};
 export type RootCause = components['schemas']['RootCauseSummary'];
 export type Solution = components['schemas']['SolutionSummary'];
 

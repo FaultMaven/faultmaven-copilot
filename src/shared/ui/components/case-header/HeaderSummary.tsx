@@ -205,13 +205,64 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
             <span className="text-fm-text-secondary">{investigatingContext.stageLabel}</span>
             <span className="text-fm-text-tertiary">·</span>
             <span className="text-fm-text-secondary">{investigatingContext.completed}/{investigatingContext.total}</span>
+            {/* Path chip — surfaces non-default path commitment. RCA is the
+                default; no chip needed for that case. Only renders when the
+                user has confirmed the path (path_selection.user_confirmed). */}
+            {'path_selection' in caseData
+              && (caseData as any).path_selection?.user_confirmed
+              && (caseData as any).path_selection.path === 'mitigation_first' && (
+              <>
+                <span className="text-fm-text-tertiary">·</span>
+                <span
+                  className="text-fm-accent text-[11px] font-medium"
+                  title="Mitigation-first path: quick stabilization, then RCA"
+                >
+                  Mitigation-first
+                </span>
+              </>
+            )}
+            {/* Gate 3 pending chip — case is awaiting the user's decision
+                whether to continue with RCA or close as mitigation-sufficient. */}
+            {'path_selection' in caseData
+              && (caseData as any).path_selection?.path === 'mitigation_first'
+              && (caseData as any).path_selection?.mitigation_completed_at_turn != null
+              && !(caseData as any).path_selection.rca_after_mitigation_confirmed && (
+              <>
+                <span className="text-fm-text-tertiary">·</span>
+                <span
+                  className="text-fm-warning text-[11px] font-medium"
+                  title="Mitigation verified — choose to continue with RCA or close"
+                >
+                  RCA or close?
+                </span>
+              </>
+            )}
+            {/* Progress transparency fallback — only shows when no path-
+                selection chip already covers the pending state. */}
             {'progress_transparency' in caseData
-              && (caseData as any).progress_transparency?.active && (
+              && (caseData as any).progress_transparency?.active
+              && !(caseData as any).path_selection?.mitigation_completed_at_turn && (
               <>
                 <span className="text-fm-text-tertiary">·</span>
                 <span className="text-fm-warning text-[11px]">Needs data</span>
               </>
             )}
+          </>
+        )}
+
+        {/* Gate 2 pending chip — visible during INQUIRY when Gate 1 has
+            passed but the user has not yet committed to a path. */}
+        {caseData.status === 'inquiry'
+          && (caseData as any).path_selection
+          && !(caseData as any).path_selection.user_confirmed && (
+          <>
+            <span className="text-fm-text-tertiary">·</span>
+            <span
+              className="text-fm-warning text-[11px] font-medium"
+              title="Confirm investigation path to start"
+            >
+              Awaiting path
+            </span>
           </>
         )}
 
