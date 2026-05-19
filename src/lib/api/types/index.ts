@@ -97,7 +97,12 @@ export enum IntentType {
   /** Validate/refute/retire hypothesis */
   HypothesisAction = 'hypothesis_action',
   /** Request specific evidence */
-  EvidenceRequest = 'evidence_request'
+  EvidenceRequest = 'evidence_request',
+  /** Gate 2 — user commits to mitigation-first or root-cause path */
+  PathSelection = 'path_selection',
+  /** Gate 3 — continue with RCA after mitigation
+      (the close branch reuses StatusTransition with closure_reason=mitigation_sufficient) */
+  PostMitigationChoice = 'post_mitigation_choice',
 }
 
 /**
@@ -128,6 +133,18 @@ export interface QueryIntent {
 
   /** For evidence_request: target evidence ID */
   evidence_id?: string;
+
+  /** For path_selection: the chosen investigation path ('mitigation_first' or 'root_cause') */
+  investigation_path?: 'mitigation_first' | 'root_cause';
+
+  /** For post_mitigation_choice: True to continue with RCA after mitigation.
+   *  (The close branch uses StatusTransition with closure_reason='mitigation_sufficient'.) */
+  continue_to_rca?: boolean;
+
+  /** For status_transition: closure reason — used by the Gate 3 close-as-
+   *  mitigation-sufficient suggestion and any other closure intent that
+   *  needs to specify the reason at click time. */
+  closure_reason?: string;
 }
 
 // ============================================================

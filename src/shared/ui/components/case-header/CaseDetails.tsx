@@ -1,25 +1,30 @@
 /**
  * CaseDetails Component — unified expanded view across all case phases.
  *
- * Replaces the prior 4-way split (InquiryDetails / InvestigatingDetails /
- * ResolvedDetails / ClosedDetails). Renders the same row set conditionally;
- * rows are hidden when their data is empty or detectably-placeholder.
+ * Renders the same row set conditionally per the hardened slice-4 matrix:
  *
- * Row order (consistent across every phase):
- *   1. Problem            — proposed (inquiry) or confirmed (post-inquiry)
- *   2. Progress           — milestone map (Option C: dots + inline labels) — investigating only
- *   3. Working Theory /   — phase-adaptive label
- *      Root Cause
- *   4. Solution           — resolved only
- *   5. Closure            — closed only, hidden when fallback "other"
- *   6. Needs              — conditional (when progress_transparency.active)
- *   7. Artifacts strip    — "N evidence · M hypotheses · K files · D duration"
- *   8. Files              — drill-down, lazy-fetched
- *   9. Reports            — drill-down, terminal cases only
+ *   Row              | inquiry | investigating | resolved        | closed
+ *   ─────────────────┼─────────┼───────────────┼─────────────────┼────────────────────────────
+ *   Problem          |    —    |       ✓       |       ✓         |       ✓
+ *   Progress         |    —    |       ✓       |       —         |       —
+ *   Leading Hyp.     |    —    |       ✓       |       —         |       —
+ *   Root Cause       |    —    |       —       |       ✓         |       ✓ (if known)
+ *   Solution         |    —    |       —       | only if no rpt  |       —
+ *   Closure          |    —    |       —       |       —         | only if rpt skipped
+ *   Artifacts        |    —    |       ✓       |       ✓         |       ✓
+ *   Files            |    ✓    |       ✓       |       ✓         |       ✓
  *
- * The "Progress" row uses Option C: dots + inline labels in one row (wraps
- * when needed). The 6 indicators complete opportunistically per the investigation
- * engine, so the layout is informational, not sequential.
+ * Inquiry collapses to a single visible row (Files) — inquiry is conversational,
+ * the chat is the surface. Gate 2 (path selection) and Gate 3 (post-mitigation)
+ * are surfaced as inline COOPERATIVE suggestions in chat; the header chips in
+ * HeaderSummary indicate the gate state at a glance.
+ *
+ * Progress row uses Option C: dots + inline labels in one wrapping row. On the
+ * mitigation-first path the row gains two diamond-outline mitigation gates
+ * (mitigation_accepted, mitigation_verified) inserted between Changes and
+ * Root Cause. The pending milestone gets a tooltip with the
+ * progress_transparency.milestone_description so the user can read what's
+ * blocking without a separate "Needs" row.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -28,6 +33,7 @@ import type {
   UploadedFileMetadata,
   UploadedFileDetailsResponse,
   UserCase,
+  PathSelection,
 } from '../../../../types/case';
 import {
   isCaseInquiry,
@@ -42,6 +48,8 @@ import {
   DetailRow,
   FilledCircleIcon,
   EmptyCircleIcon,
+  FilledDiamondIcon,
+  EmptyDiamondIcon,
   CheckCircleIcon,
   formatDuration,
   formatFileSize,
@@ -52,15 +60,40 @@ const log = createLogger('CaseDetails');
 
 // ==================== Constants ====================
 
-/** The 6 opportunistic progress indicators (no fixed order — completed when data is available). */
-const PROGRESS_MILESTONES: { key: string; label: string }[] = [
-  { key: 'symptom_verified', label: 'Symptoms' },
-  { key: 'scope_assessed', label: 'Scope' },
-  { key: 'timeline_established', label: 'Timeline' },
-  { key: 'changes_identified', label: 'Changes' },
-  { key: 'root_cause_identified', label: 'Root Cause' },
-  { key: 'solution_proposed', label: 'Solution' },
+interface MilestoneSpec {
+  key: string;
+  label: string;
+  kind: 'indicator' | 'mitigation_gate';
+}
+
+/** The 6 universal progress indicators (no fixed order — completed opportunistically). */
+const BASE_MILESTONES: MilestoneSpec[] = [
+  { key: 'symptom_verified', label: 'Symptoms', kind: 'indicator' },
+  { key: 'scope_assessed', label: 'Scope', kind: 'indicator' },
+  { key: 'timeline_established', label: 'Timeline', kind: 'indicator' },
+  { key: 'changes_identified', label: 'Changes', kind: 'indicator' },
+  { key: 'root_cause_identified', label: 'Root Cause', kind: 'indicator' },
+  { key: 'solution_proposed', label: 'Solution', kind: 'indicator' },
 ];
+
+/**
+ * Mitigation-first path inserts the two stage-gate milestones between Changes
+ * and Root Cause, rendered as diamonds to signal "detour" (per slice 4 design).
+ * RCA-only path uses BASE_MILESTONES unchanged.
+ */
+function buildMilestoneList(pathSelection: PathSelection | null | undefined): MilestoneSpec[] {
+  if (pathSelection?.path !== 'mitigation_first') {
+    return BASE_MILESTONES;
+  }
+  const before = BASE_MILESTONES.slice(0, 4); // up through Changes
+  const after = BASE_MILESTONES.slice(4); // Root Cause, Solution
+  return [
+    ...before,
+    { key: 'mitigation_accepted', label: 'Mit. Accepted', kind: 'mitigation_gate' },
+    { key: 'mitigation_verified', label: 'Mit. Verified', kind: 'mitigation_gate' },
+    ...after,
+  ];
+}
 
 /**
  * Strings the backend sometimes leaks into description fields when the LLM
@@ -82,22 +115,11 @@ const PLACEHOLDER_VALUES = new Set([
   'changes',
 ]);
 
-// ==================== Helpers ====================
-
-/** Returns true when the string is empty, whitespace-only, or a known milestone-label placeholder. */
 function isPlaceholderValue(text: string | null | undefined): boolean {
   if (!text) return true;
   const normalized = text.trim().toLowerCase();
   if (!normalized) return true;
   return PLACEHOLDER_VALUES.has(normalized);
-}
-
-/** Infer the agent's high-level approach (mitigation-first vs root-cause-first) from strategy text. */
-function getApproachHint(approach: string | null | undefined): string | null {
-  const text = approach?.toLowerCase() ?? '';
-  if (/mitigat|quick fix|workaround|speed|urgent/.test(text)) return 'mitigation first';
-  if (/root cause|analysis|diagnos|systematic/.test(text)) return 'root cause analysis';
-  return null;
 }
 
 interface UploadedFileWithEvidence extends UploadedFileMetadata {
@@ -107,43 +129,66 @@ interface UploadedFileWithEvidence extends UploadedFileMetadata {
 // ==================== Sub-components ====================
 
 interface MilestoneMapProps {
-  completedIndicators: Set<string>;
+  milestones: MilestoneSpec[];
+  completedKeys: Set<string>;
   pendingMilestone: string | null;
+  pendingDescription: string | null;
 }
 
 /**
- * Option C milestone visualization — icons + inline labels in one line.
+ * Milestone visualization — icons + inline labels in one wrapping row.
  *
- * No connecting line, no implied progression. Each milestone is rendered as
- * its own pill (icon + label), all visible at once. Wraps onto a second line
- * if the row is too narrow; existing icons (FilledCircleIcon, EmptyCircleIcon)
- * are reused.
+ * Indicators use circles, mitigation gates use diamonds. The pending milestone
+ * (from progress_transparency, when active) pulses in warning color and carries
+ * the milestone_description in its tooltip — the user can hover to read what's
+ * blocking, replacing the standalone "Needs" row.
  */
-const MilestoneMap: React.FC<MilestoneMapProps> = ({ completedIndicators, pendingMilestone }) => (
+const MilestoneMap: React.FC<MilestoneMapProps> = ({
+  milestones,
+  completedKeys,
+  pendingMilestone,
+  pendingDescription,
+}) => (
   <div className="flex items-start gap-2 py-1 text-fm-sm">
     <span className="text-fm-text-tertiary w-[76px] flex-shrink-0 text-fm-sm font-medium">
       Progress
     </span>
     <span className="flex-1 min-w-0 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      {PROGRESS_MILESTONES.map((m) => {
-        const done = completedIndicators.has(m.key);
+      {milestones.map((m) => {
+        const done = completedKeys.has(m.key);
         const isPending = pendingMilestone === m.key;
         const colorClass = done
           ? 'text-fm-success'
           : isPending
             ? 'text-fm-warning'
             : 'text-fm-text-tertiary';
+
+        // Tooltip: pending milestone shows the description from progress
+        // transparency when available, falling back to label-only.
+        let title = m.label;
+        if (done) title = `${m.label} ✓`;
+        else if (isPending) {
+          title = pendingDescription
+            ? `${m.label} — ${pendingDescription}`
+            : `${m.label} — needs attention`;
+        }
+
+        const Icon =
+          m.kind === 'mitigation_gate'
+            ? done
+              ? FilledDiamondIcon
+              : EmptyDiamondIcon
+            : done
+              ? FilledCircleIcon
+              : EmptyCircleIcon;
+
         return (
           <span
             key={m.key}
             className={`inline-flex items-center gap-1 text-fm-xs ${colorClass}`}
-            title={done ? `${m.label} ✓` : isPending ? `${m.label} — needs attention` : m.label}
+            title={title}
           >
-            {done ? (
-              <FilledCircleIcon className="w-2 h-2" />
-            ) : (
-              <EmptyCircleIcon className={`w-2 h-2 ${isPending ? 'animate-pulse' : ''}`} />
-            )}
+            <Icon className={`w-2 h-2 ${isPending ? 'animate-pulse' : ''}`} />
             <span>{m.label}</span>
           </span>
         );
@@ -178,7 +223,6 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   const filesExpanded = expandedSection === 'files';
-  const reportsExpanded = expandedSection === 'reports';
 
   const caseId = caseData.case_id;
 
@@ -219,63 +263,60 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
 
   // ----- Row builders (each returns a React node or null) -----
 
-  // 1. Problem
+  // 1. Problem — hidden on inquiry (proposed statement is in chat, not committed).
+  // Post-inquiry: sourced from caseData.problem_statement first, falling back
+  // to activeCase.description for backwards compatibility while the field
+  // rolls out across deployments.
   let problemRow: React.ReactNode = null;
-  if (isCaseInquiry(caseData)) {
-    const proposed = caseData.inquiry?.proposed_problem_statement?.trim();
-    if (proposed) {
-      problemRow = (
-        <DetailRow label="Problem">
-          <span className="italic">&ldquo;{proposed}&rdquo;</span>
-        </DetailRow>
-      );
-    }
-  } else {
-    const confirmed = activeCase?.description?.trim();
+  if (!isCaseInquiry(caseData)) {
+    const fromCaseData =
+      (isCaseInvestigating(caseData) || isCaseResolved(caseData) || isCaseClosed(caseData))
+        ? caseData.problem_statement?.trim()
+        : undefined;
+    const confirmed = fromCaseData || activeCase?.description?.trim();
     if (confirmed) {
       problemRow = <DetailRow label="Problem">{confirmed}</DetailRow>;
     }
   }
 
   // 2. Progress (milestone map) — INVESTIGATING only.
-  // Resolved/Closed responses don't expose `completed_indicators`; backend
-  // gap noted, artifacts strip below covers retrospective depth instead.
+  // Path-aware: includes mitigation gates as diamonds when on mitigation-first.
   let progressRow: React.ReactNode = null;
-  let needsRow: React.ReactNode = null;
   if (isCaseInvestigating(caseData)) {
     const completedIndicators = new Set(caseData.progress.completed_indicators ?? []);
+    // Include completed stage-gate milestones in the same set so mitigation
+    // diamonds light up when the user reports compliance.
+    for (const gate of caseData.progress.completed_stage_gates ?? []) {
+      completedIndicators.add(gate);
+    }
     const pendingMilestone = caseData.progress_transparency?.active
       ? caseData.progress_transparency.pending_milestone ?? null
       : null;
+    const pendingDescription = caseData.progress_transparency?.active
+      ? caseData.progress_transparency.milestone_description ?? null
+      : null;
+    const milestones = buildMilestoneList(caseData.path_selection ?? null);
     progressRow = (
       <MilestoneMap
-        completedIndicators={completedIndicators}
+        milestones={milestones}
+        completedKeys={completedIndicators}
         pendingMilestone={pendingMilestone}
+        pendingDescription={pendingDescription}
       />
     );
-
-    // 6. Needs — paired with Progress when transparency is active
-    if (caseData.progress_transparency?.active && caseData.progress_transparency.milestone_description) {
-      needsRow = (
-        <DetailRow label="Needs">
-          <span className="text-fm-warning text-[11px]">
-            {caseData.progress_transparency.milestone_description}
-          </span>
-        </DetailRow>
-      );
-    }
   }
 
-  // 3. Working Theory / Root Cause
+  // 3. Leading Hypothesis (INVESTIGATING) / Root Cause (terminal).
+  // Label changed from "Working Theory (mitigation first)" to "Leading
+  // Hypothesis" — the path is now its own chip in HeaderSummary, no
+  // parenthetical needed. getApproachHint regex removed.
   let understandingRow: React.ReactNode = null;
   if (isCaseInvestigating(caseData)) {
     const wc = caseData.working_conclusion;
     if (wc?.summary && !isPlaceholderValue(wc.summary)) {
-      const approach = getApproachHint(caseData.investigation_strategy?.approach);
-      const label = approach ? `Working Theory (${approach})` : 'Working Theory';
       const confidence = Math.round((wc.confidence ?? 0) * 100);
       understandingRow = (
-        <DetailRow label={label}>
+        <DetailRow label="Leading Hypothesis">
           <span>
             {wc.summary} · {confidence}%
           </span>
@@ -300,37 +341,49 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     }
   }
 
-  // 4. Solution — RESOLVED only
+  // 4. Solution — RESOLVED only, hidden when an auto-generated resolution
+  // summary report exists (the report's narrative covers it; the inline row
+  // is redundant. The chat's inline closure summary is the primary surface.)
   let solutionRow: React.ReactNode = null;
   if (isCaseResolved(caseData)) {
-    const solText = caseData.solution_applied?.description?.trim();
-    if (solText && !isPlaceholderValue(solText)) {
-      solutionRow = <DetailRow label="Solution">{solText}</DetailRow>;
+    const hasResolutionSummary = (caseData.reports_available ?? []).some(
+      (r) => r.report_type === 'resolution_summary' && r.status === 'auto_generated',
+    );
+    if (!hasResolutionSummary) {
+      const solText = caseData.solution_applied?.description?.trim();
+      if (solText && !isPlaceholderValue(solText)) {
+        solutionRow = <DetailRow label="Solution">{solText}</DetailRow>;
+      }
     }
   }
 
-  // 5. Closure — CLOSED only, hidden when reason is missing/unrecognized/fallback "other"
+  // 5. Closure — CLOSED only, kept ONLY when the closure summary was skipped
+  // (substance gate failed — no report to point at, so the closure-reason
+  // label is the user's only signal of why the case closed).
   let closureRow: React.ReactNode = null;
   if (isCaseClosed(caseData)) {
-    const reason = activeCase?.closure_reason;
-    if (reason && reason !== 'other' && CLOSURE_DISPLAY_INFO[reason]) {
-      const info = CLOSURE_DISPLAY_INFO[reason];
-      closureRow = (
-        <DetailRow label="Closure">
-          {info.label} — {info.description}
-        </DetailRow>
-      );
-    } else if (reason === 'other' || (reason && !CLOSURE_DISPLAY_INFO[reason])) {
-      log.debug('Suppressed fallback/unrecognized closure_reason', { caseId, reason });
+    const closureSummary = (caseData.reports_available ?? []).find(
+      (r) => r.report_type === 'closure_summary',
+    );
+    const closureSkipped = closureSummary?.status === 'skipped';
+    if (closureSkipped) {
+      const reason = activeCase?.closure_reason;
+      if (reason && reason !== 'other' && CLOSURE_DISPLAY_INFO[reason]) {
+        const info = CLOSURE_DISPLAY_INFO[reason];
+        closureRow = (
+          <DetailRow label="Closure">
+            {info.label} — {info.description}
+          </DetailRow>
+        );
+      }
     }
   }
 
-  // File count is on every CaseUIResponse variant — derived once, used by
-  // both the artifacts strip (row 7) and the Files drill-down (row 8).
+  // File count is on every CaseUIResponse variant.
   const headerFileCount = caseData.uploaded_files_count ?? 0;
 
-  // 7. Artifacts strip — counts + duration, phase-aware sources for
-  // evidence/hypotheses/duration; file count comes from the shared derivation above.
+  // 6. Artifacts strip — investigation depth: evidence + hypotheses + duration.
+  // Files are excluded — the Files row below is their canonical surface.
   let artifactsRow: React.ReactNode = null;
   {
     let evidence = 0;
@@ -340,19 +393,16 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     if (isCaseInvestigating(caseData)) {
       evidence = caseData.progress.total_evidence ?? 0;
       hypotheses = caseData.active_hypotheses?.length ?? 0;
-      // duration omitted for active investigations — collapsed-row "time ago" already covers age
     } else if (isCaseResolved(caseData) || isCaseClosed(caseData)) {
       const rs = caseData.resolution_summary;
       evidence = rs?.evidence_collected ?? 0;
       hypotheses = rs?.hypotheses_tested ?? 0;
       durationMin = rs?.total_duration_minutes ?? 0;
     }
-    // Inquiry contributes only the file count.
 
     const parts: string[] = [];
     if (evidence > 0) parts.push(`${evidence} evidence`);
     if (hypotheses > 0) parts.push(`${hypotheses} hypothes${hypotheses === 1 ? 'is' : 'es'}`);
-    if (headerFileCount > 0) parts.push(`${headerFileCount} file${headerFileCount === 1 ? '' : 's'}`);
     if (durationMin > 0) parts.push(formatDuration(durationMin));
 
     if (parts.length > 0) {
@@ -364,15 +414,13 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     }
   }
 
-  // 8. Files — drill-down (visible if any files reported by header or already fetched).
+  // 7. Files — drill-down (visible if any files reported by header or already fetched).
   const showFilesRow = headerFileCount > 0 || files.length > 0;
 
-  // 9. Reports — RESOLVED/CLOSED only, drill-down when reports_available
-  const reportsAvailable =
-    (isCaseResolved(caseData) || isCaseClosed(caseData))
-      ? caseData.reports_available
-      : undefined;
-  const showReportsRow = reportsAvailable && reportsAvailable.length > 0;
+  // Reports row is intentionally dropped — the closure summary is rendered
+  // inline in chat at the moment of generation (per the no-Dashboard-link
+  // policy in CLAUDE.md). A header drill-down listing reports without a
+  // working link to view them was noise.
 
   // Track which sub-rows we have so the wrapper renders an empty-state when none
   const anyRow =
@@ -381,10 +429,8 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     understandingRow ||
     solutionRow ||
     closureRow ||
-    needsRow ||
     artifactsRow ||
-    showFilesRow ||
-    showReportsRow;
+    showFilesRow;
 
   if (!anyRow) {
     return (
@@ -394,18 +440,10 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     );
   }
 
-  const formatReportName = (reportType: string): string =>
-    reportType
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-
   return (
     <div className="px-4 pb-2 pt-1.5 space-y-0">
       {problemRow}
       {progressRow}
-      {needsRow}
       {understandingRow}
       {solutionRow}
       {closureRow}
@@ -470,46 +508,6 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
               {!filesLoading && filesFetched && files.length === 0 && (
                 <p className="text-fm-xs text-fm-text-tertiary italic py-0.5">No files uploaded</p>
               )}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Reports drill-down */}
-      {showReportsRow && reportsAvailable && (
-        <>
-          <DetailRow
-            label="Reports"
-            expandable
-            expanded={reportsExpanded}
-            onToggle={() => onToggleSection('reports')}
-          >
-            {reportsAvailable.map((r) => formatReportName(r.report_type)).join(', ')}
-          </DetailRow>
-
-          {reportsExpanded && (
-            <div className="pl-[84px] pb-0.5">
-              <div className="space-y-1.5">
-                {reportsAvailable.map((report, idx) => {
-                  const isLast = idx === reportsAvailable.length - 1;
-                  return (
-                    <div
-                      key={report.report_type}
-                      className="flex items-start gap-2 text-fm-xs"
-                    >
-                      <span className="text-fm-text-tertiary">{isLast ? '└' : '├'}</span>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-fm-text-primary font-medium">
-                          {formatReportName(report.report_type)}
-                        </span>
-                        <button className="text-fm-accent hover:text-fm-accent/80 ml-2 text-fm-xs">
-                          View
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           )}
         </>

@@ -91,6 +91,20 @@ export const EmptyCircleIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) 
   </svg>
 );
 
+/** Small filled diamond for completed mitigation gates (detour milestones). */
+export const FilledDiamondIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) => (
+  <svg className={className} viewBox="0 0 8 8" fill="currentColor">
+    <polygon points="4,0 8,4 4,8 0,4" />
+  </svg>
+);
+
+/** Small outline diamond for incomplete mitigation gates. */
+export const EmptyDiamondIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) => (
+  <svg className={className} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <polygon points="4,1 7,4 4,7 1,4" />
+  </svg>
+);
+
 // ==================== Phase Icon Lookup ====================
 
 const PHASE_ICONS: Record<string, React.FC<IconProps>> = {
