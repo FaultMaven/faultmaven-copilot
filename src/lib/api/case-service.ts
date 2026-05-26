@@ -8,8 +8,15 @@ import { getAuthHeaders } from './fetch-utils';
 
 /**
  * Fetch UI-optimized case data
+ *
+ * Pass `signal` (e.g. from TanStack Query's queryFn context) to allow the
+ * fetch to be aborted when the consumer switches cases mid-flight.
  */
-async function getCaseUI(caseId: string, sessionId: string): Promise<CaseUIResponse> {
+async function getCaseUI(
+  caseId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<CaseUIResponse> {
   const headers = await getAuthHeaders();
   const apiUrl = await getApiUrl();
 
@@ -17,6 +24,7 @@ async function getCaseUI(caseId: string, sessionId: string): Promise<CaseUIRespo
     method: 'GET',
     headers,
     credentials: 'include',
+    signal,
   });
 
   if (!response.ok) {
