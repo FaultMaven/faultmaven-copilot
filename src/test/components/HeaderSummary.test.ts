@@ -2,16 +2,24 @@
  * Unit tests for ``getCaseActionOptions`` — the pure function that
  * drives the case-action dropdown render in HeaderSummary.
  *
- * Matrix coverage (backend PR #373 — see derive_disposition_eligibility):
+ * Design rule the tests pin: the dropdown surfaces *only* ``ready``
+ * disposition verdicts. ``needs_info``, ``suggests_alternative``, and
+ * ``not_eligible`` are all hidden — the engine's action-time path
+ * (both dropdown and natural language) either asks for missing info
+ * or pivots to the other disposition, so a clickable menu entry for
+ * those verdicts would be a dead-end. See HeaderSummary JSDoc and
+ * the docstring on ``DispositionEligibility`` in src/types/case.ts.
  *
- * | Case state                                | resolved              | closed                |
- * |-------------------------------------------|-----------------------|-----------------------|
- * | INQUIRY                                   | not_eligible          | ready                 |
- * | INVESTIGATING + too thin (SUGGEST_CLOSE)  | not_eligible          | ready                 |
- * | INVESTIGATING + partial (NEEDS_INFO)      | needs_info            | ready                 |
- * | INVESTIGATING + root cause + solution     | ready                 | suggests_alternative  |
- * | INVESTIGATING + ready                     | ready                 | ready                 |
- * | Terminal (RESOLVED / CLOSED)              | not_eligible          | not_eligible          |
+ * Matrix coverage (backend emits per derive_disposition_eligibility):
+ *
+ * | Case state                                | resolved              | closed                | Dropdown shows           |
+ * |-------------------------------------------|-----------------------|-----------------------|--------------------------|
+ * | INQUIRY                                   | not_eligible          | ready                 | Investigating + Closed   |
+ * | INVESTIGATING + too thin (SUGGEST_CLOSE)  | not_eligible          | ready                 | Closed only              |
+ * | INVESTIGATING + partial (NEEDS_INFO)      | needs_info            | ready                 | Closed only              |
+ * | INVESTIGATING + resolution-grade          | ready                 | suggests_alternative  | Resolved only            |
+ * | INVESTIGATING + both ready (hypothetical) | ready                 | ready                 | Resolved + Closed        |
+ * | Terminal (RESOLVED / CLOSED)              | not_eligible          | not_eligible          | (none)                   |
  *
  * Plus the legacy fallback path (no ``disposition_eligibility`` on the
  * response) which must remain non-breaking for older cases.
@@ -80,7 +88,7 @@ describe('getCaseActionOptions', () => {
   });
 
   describe('INVESTIGATING — every verdict combination', () => {
-    it('thin case (resolved:not_eligible, closed:ready) hides Resolve, shows Close', () => {
+    it('thin case (resolved:not_eligible, closed:ready) shows Close only', () => {
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
@@ -89,19 +97,24 @@ describe('getCaseActionOptions', () => {
       expect(opts).toEqual([{ status: 'closed', eligibility: 'ready' }]);
     });
 
-    it('partial case (resolved:needs_info, closed:ready) shows both with needs_info on Resolve', () => {
+    it('partial case (resolved:needs_info, closed:ready) hides Resolve — only Close shows', () => {
+      // ``needs_info`` is hidden: clicking Resolve here would dead-end on a
+      // readiness prompt asking for missing info. The agent surfaces what's
+      // missing through the conversation; the dropdown shouldn't offer a
+      // dead-end click.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: { resolved: 'needs_info', closed: 'ready' },
         }),
       );
-      expect(opts).toEqual([
-        { status: 'resolved', eligibility: 'needs_info' },
-        { status: 'closed', eligibility: 'ready' },
-      ]);
+      expect(opts).toEqual([{ status: 'closed', eligibility: 'ready' }]);
     });
 
-    it('resolution-grade case (resolved:ready, closed:suggests_alternative) shows both with the alt warning on Close', () => {
+    it('resolution-grade case (resolved:ready, closed:suggests_alternative) hides Close — only Resolve shows', () => {
+      // ``suggests_alternative`` is hidden: clicking Close here would pivot
+      // to RESOLVED at confirmation time (the engine's SUGGEST_RESOLVE
+      // behaviour). Don't waste the user's click — show Resolve directly,
+      // which is the engine's intended outcome for a resolution-grade case.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: {
@@ -110,13 +123,12 @@ describe('getCaseActionOptions', () => {
           },
         }),
       );
-      expect(opts).toEqual([
-        { status: 'resolved', eligibility: 'ready' },
-        { status: 'closed', eligibility: 'suggests_alternative' },
-      ]);
+      expect(opts).toEqual([{ status: 'resolved', eligibility: 'ready' }]);
     });
 
-    it('fully ready case (resolved:ready, closed:ready) shows both unadorned', () => {
+    it('both ready (hypothetical — backend never co-emits this today) shows both', () => {
+      // Defensive: if backend ever decouples the readiness conditions and
+      // emits ``{resolved: ready, closed: ready}``, both options surface.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: { resolved: 'ready', closed: 'ready' },
@@ -126,6 +138,21 @@ describe('getCaseActionOptions', () => {
         { status: 'resolved', eligibility: 'ready' },
         { status: 'closed', eligibility: 'ready' },
       ]);
+    });
+
+    it('hides both when each side is non-ready (hypothetical — degenerate state)', () => {
+      // Pin the rule explicitly: only ``ready`` items render. If the backend
+      // ever produced this combination, the dropdown would be empty rather
+      // than offer dead-end clicks.
+      const opts = getCaseActionOptions(
+        investigating({
+          disposition_eligibility: {
+            resolved: 'needs_info',
+            closed: 'suggests_alternative',
+          },
+        }),
+      );
+      expect(opts).toEqual([]);
     });
   });
 
@@ -164,7 +191,9 @@ describe('getCaseActionOptions', () => {
           valid_next_states: ['resolved', 'closed'],
         } as unknown as Partial<CaseUIResponse>),
       );
-      // All eligibility null on the fallback path — no per-verdict UX.
+      // All eligibility null on the fallback path — no verdict info available.
+      // We surface what the action graph allows so the dropdown isn't empty
+      // for cases that pre-date the disposition_eligibility column.
       expect(opts).toEqual([
         { status: 'resolved', eligibility: null },
         { status: 'closed', eligibility: null },
