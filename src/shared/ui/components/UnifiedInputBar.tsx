@@ -665,9 +665,11 @@ export function UnifiedInputBar({
           placeholder={
             submitting || isUploadingData
               ? 'Processing...'
-              : hasAnyAttachment
-                ? 'Ask about the data...'
-                : placeholder || 'Ask FaultMaven...'
+              : loading
+                ? 'Loading conversation...'
+                : hasAnyAttachment
+                  ? 'Ask about the data...'
+                  : placeholder || 'Ask FaultMaven...'
           }
           rows={calculateRows()}
           maxLength={maxLength}
