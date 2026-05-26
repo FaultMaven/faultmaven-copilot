@@ -68,10 +68,43 @@ export interface PathSelection {
   mitigation_completed_at_turn?: number | null;
 }
 
+// Disposition eligibility — content-readiness gate for terminal actions
+// (resolve/close), added ahead of OpenAPI regen by backend PR #373.
+//
+// Per-verdict semantics (each value drives a distinct UX, see
+// HeaderSummary's dropdown render):
+//   - ``ready``: action is appropriate; case content supports it.
+//   - ``needs_info``: action is allowed but case is partial; the user
+//     must add information (root cause / solution) before transitioning.
+//   - ``suggests_alternative``: action is allowed but the system
+//     recommends the other action for this case (e.g., closing a
+//     resolution-grade case would discard attribution). Only fires on
+//     the ``closed`` side in the current backend implementation
+//     (resolve side never emits this — too-thin cases land on
+//     ``not_eligible`` instead since resolve has no path to success
+//     without a root cause).
+//   - ``not_eligible``: action is not available; the menu item is
+//     hidden rather than rendered disabled.
+//
+// Backend reference: ``derive_disposition_eligibility`` in
+// faultmaven/core/investigation/terminal_transitions.py.
+export type DispositionEligibility =
+  | 'ready'
+  | 'needs_info'
+  | 'suggests_alternative'
+  | 'not_eligible';
+
+export interface DispositionEligibilityMap {
+  resolved: DispositionEligibility;
+  closed: DispositionEligibility;
+}
+
 // Inquiry Phase Types
 export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'] & {
   /** Path recommendation + Gate-2 state (slice 2). Present once Gate 1 closes. */
   path_selection?: PathSelection | null;
+  /** Per-disposition readiness verdicts (PR #373). Drives menu gating. */
+  disposition_eligibility?: DispositionEligibilityMap | null;
 };
 export type InquiryData = components['schemas']['InquiryResponseData'];
 
@@ -95,6 +128,8 @@ export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse
   path_selection?: PathSelection | null;
   /** Confirmed problem statement (sourced from case.description). */
   problem_statement?: string | null;
+  /** Per-disposition readiness verdicts (PR #373). Drives menu gating. */
+  disposition_eligibility?: DispositionEligibilityMap | null;
 };
 export type InvestigationProgress = components['schemas']['InvestigationProgressSummary'];
 export type ProblemVerification = components['schemas']['ProblemVerificationData'];
@@ -113,6 +148,8 @@ export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Reso
   path_selection?: PathSelection | null;
   /** Confirmed problem statement (sourced from case.description). */
   problem_statement?: string | null;
+  /** Per-disposition readiness verdicts (PR #373). All ``not_eligible`` on terminal cases. */
+  disposition_eligibility?: DispositionEligibilityMap | null;
 };
 export type RootCause = components['schemas']['RootCauseSummary'];
 export type Solution = components['schemas']['SolutionSummary'];
