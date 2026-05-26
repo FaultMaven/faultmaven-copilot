@@ -68,23 +68,32 @@ export interface PathSelection {
   mitigation_completed_at_turn?: number | null;
 }
 
-// Disposition eligibility — content-readiness gate for terminal actions
-// (resolve/close), added ahead of OpenAPI regen by backend PR #373.
+// Disposition eligibility — content-readiness verdicts for the
+// terminal actions (resolve/close), added ahead of OpenAPI regen by
+// backend PR #373.
 //
-// Per-verdict semantics (each value drives a distinct UX, see
-// HeaderSummary's dropdown render):
+// Per-verdict semantics:
 //   - ``ready``: action is appropriate; case content supports it.
-//   - ``needs_info``: action is allowed but case is partial; the user
-//     must add information (root cause / solution) before transitioning.
-//   - ``suggests_alternative``: action is allowed but the system
-//     recommends the other action for this case (e.g., closing a
-//     resolution-grade case would discard attribution). Only fires on
-//     the ``closed`` side in the current backend implementation
-//     (resolve side never emits this — too-thin cases land on
-//     ``not_eligible`` instead since resolve has no path to success
-//     without a root cause).
-//   - ``not_eligible``: action is not available; the menu item is
-//     hidden rather than rendered disabled.
+//     This is the *only* verdict the case-action dropdown currently
+//     renders as a clickable option — see HeaderSummary's
+//     ``getCaseActionOptions``.
+//   - ``needs_info``: action is allowed in principle but case is
+//     partial. The engine's action-time path (both dropdown and
+//     natural-language) asks the user for what's missing rather than
+//     proceeding, so the dropdown hides this verdict to keep the
+//     menu honest (no dead-end clicks).
+//   - ``suggests_alternative``: action is allowed but the engine will
+//     pivot to the other disposition at confirmation time. Today
+//     this fires only on the close-side for resolution-grade cases:
+//     ``Close`` would terminate as RESOLVED instead, discarding the
+//     close intent. The dropdown hides this verdict and the user
+//     sees the *resolved* option directly (which is the only useful
+//     terminal action for the case as-is).
+//   - ``not_eligible``: action is not available — menu item hidden.
+//
+// Net dropdown rule: render only ``ready``. The other verdicts are
+// still meaningful as server-side signals (analytics, future use)
+// but not user-clickable actions.
 //
 // Backend reference: ``derive_disposition_eligibility`` in
 // faultmaven/core/investigation/terminal_transitions.py.

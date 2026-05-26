@@ -23,11 +23,14 @@ const log = createLogger('HeaderSummary');
  * One entry in the case-action dropdown.
  *
  * ``status`` is the action to take when the user clicks. ``eligibility``
- * is the per-disposition readiness verdict from backend PR #373, used
- * to drive the per-value UX (label hint, tooltip, styling). It is null
- * on the legacy fallback path (case has no ``disposition_eligibility``
- * yet) and on phase-change transitions like ``inquiry → investigating``
- * which are not gated by disposition_eligibility.
+ * is the per-disposition readiness verdict from backend PR #373,
+ * retained for analytics / future use even though the dropdown
+ * currently surfaces only ``ready`` items (everything else is hidden
+ * so the menu shows just what the engine will actually let through).
+ * It is null on the legacy fallback path (case has no
+ * ``disposition_eligibility`` yet) and on phase-change transitions
+ * like ``inquiry → investigating`` which are not gated by
+ * disposition_eligibility.
  */
 export interface CaseActionOption {
   status: UserCaseStatus;
@@ -38,14 +41,34 @@ export interface CaseActionOption {
  * Derive the dropdown options for the case-action menu from the
  * server-provided readiness verdicts.
  *
+ * **Design rule:** the dropdown surfaces *only* options the engine
+ * will accept as the user's terminal disposition for the case as-is.
+ * That means we show only ``ready`` verdicts; ``needs_info``,
+ * ``suggests_alternative``, and ``not_eligible`` are all hidden.
+ *
+ *   - ``needs_info``  → clicking would dead-end on a readiness prompt;
+ *                       the agent surfaces what's missing through the
+ *                       conversation flow instead.
+ *   - ``suggests_alternative`` → clicking would pivot to the other
+ *                       disposition (the engine's SUGGEST_RESOLVE
+ *                       behaviour, [milestone_engine.py:6594-6603]).
+ *                       Don't waste the user's click; the engine
+ *                       considers the other action the right answer,
+ *                       so render that instead.
+ *   - ``not_eligible`` → no path to success.
+ *
+ * Both backend paths (dropdown click and natural-language request)
+ * converge on the same ``assess_*_readiness`` + pivot logic, so the
+ * dropdown options match what a free-text "please close this case"
+ * request would commit to. Hiding non-``ready`` verdicts keeps the
+ * UI honest with the engine.
+ *
  * Preference order:
- *   1. ``case.disposition_eligibility`` (post PR #373) — drives per-
- *      verdict UX on the resolved/closed entries. Items whose verdict
- *      is ``not_eligible`` are dropped entirely (rendered absent, not
- *      disabled, per the design).
- *   2. ``case.valid_next_states`` — structural fallback for older cases
- *      that have not yet been backfilled with disposition_eligibility.
- *      All items show with no verdict UX.
+ *   1. ``case.disposition_eligibility`` (post PR #373) — keep only
+ *      entries whose verdict is ``ready``.
+ *   2. ``case.valid_next_states`` — structural fallback for older
+ *      cases. All items show (the rich verdict isn't available, so
+ *      we fall back to "show what the action graph allows").
  *   3. Hardcoded per-status defaults — last-resort safety net so the
  *      dropdown is never empty during a degraded API response.
  *
@@ -76,8 +99,8 @@ export function getCaseActionOptions(
       { status: 'investigating', eligibility: null },
     ];
     if (elig) {
-      if (elig.closed !== 'not_eligible') {
-        options.push({ status: 'closed', eligibility: elig.closed });
+      if (elig.closed === 'ready') {
+        options.push({ status: 'closed', eligibility: 'ready' });
       }
       // ``resolved`` is structurally invalid from INQUIRY (per backend
       // ALLOWED_ACTIONS) so disposition_eligibility.resolved is always
@@ -103,11 +126,11 @@ export function getCaseActionOptions(
   if (caseData.status === 'investigating') {
     if (elig) {
       const options: CaseActionOption[] = [];
-      if (elig.resolved !== 'not_eligible') {
-        options.push({ status: 'resolved', eligibility: elig.resolved });
+      if (elig.resolved === 'ready') {
+        options.push({ status: 'resolved', eligibility: 'ready' });
       }
-      if (elig.closed !== 'not_eligible') {
-        options.push({ status: 'closed', eligibility: elig.closed });
+      if (elig.closed === 'ready') {
+        options.push({ status: 'closed', eligibility: 'ready' });
       }
       return options;
     }
@@ -126,63 +149,6 @@ export function getCaseActionOptions(
   }
 
   return [];
-}
-
-/**
- * Per-verdict UX metadata for the dropdown entries. Two slots — one
- * for resolve, one for close — because the copy is direction-specific
- * (e.g., "closing would discard the resolution" only makes sense on
- * the close side).
- *
- * ``ready`` and ``not_eligible`` are intentionally absent: ``ready`` is
- * the default (no tooltip / hint / softer styling) and ``not_eligible``
- * never reaches the render path (filtered out in getCaseActionOptions).
- *
- * Note on coverage: per ``derive_disposition_eligibility``'s current
- * implementation, ``Close / needs_info`` and ``Resolve / suggests_-
- * alternative`` never fire today. The entries below are defensive
- * placeholders so a future backend change to those branches won't
- * leave the UI without a tooltip.
- */
-const DISPOSITION_UX: Record<
-  'resolved' | 'closed',
-  Partial<
-    Record<
-      DispositionEligibility,
-      { tooltip?: string; hint?: string; className?: string }
-    >
-  >
-> = {
-  resolved: {
-    needs_info: {
-      tooltip: 'Add root cause and solution before resolving',
-      hint: 'needs more info',
-    },
-    // suggests_alternative: never fires for resolved per backend design
-    // (too-thin cases land on not_eligible instead). Defensive entry
-    // would go here if that ever changes.
-  },
-  closed: {
-    needs_info: {
-      // Defensive only — backend does not emit closed:needs_info today.
-      hint: 'needs more info',
-    },
-    suggests_alternative: {
-      tooltip:
-        'This case qualifies for Resolved — closing would discard the resolution. Click to see alternatives.',
-      className: 'opacity-70',
-    },
-  },
-};
-
-function getOptionUx(option: CaseActionOption): {
-  tooltip?: string;
-  hint?: string;
-  className?: string;
-} {
-  if (!option.eligibility) return {};
-  if (option.status !== 'resolved' && option.status !== 'closed') return {};
-  return DISPOSITION_UX[option.status][option.eligibility] ?? {};
 }
 
 /** The 6 progress milestones for milestone fraction display */
@@ -316,8 +282,21 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
       {/* Line 2: Phase pill + stage + milestones + timestamp + chevron */}
       <div className="flex items-center gap-1.5 text-fm-xs text-fm-text-tertiary">
-        {/* Phase dropdown or static pill */}
-        {canChangeStatus ? (
+        {/* Phase display — three render modes:
+            1. Terminal (resolved/closed) → plain inline label (no pill,
+               no button affordance, no chevron). The case is in its
+               final state; surfacing this as a button-shaped control
+               would imply actionability that doesn't exist.
+            2. Non-terminal with actions available → dropdown button
+               with chevron + menu of valid transitions.
+            3. Non-terminal with no actions available → static pill
+               (fallback; rare in practice). */}
+        {caseData.status === 'resolved' || caseData.status === 'closed' ? (
+          <span className="inline-flex items-center gap-1 font-medium text-fm-text-secondary">
+            <PhaseIcon className="w-3 h-3" />
+            {getStatusLabel(caseData.status)}
+          </span>
+        ) : canChangeStatus ? (
           <div className="relative inline-flex items-center" ref={dropdownRef}>
             <button
               type="button"
@@ -336,27 +315,18 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
               <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-fm-elevated border border-fm-border rounded-lg shadow-lg z-50 py-1">
                 {statusOptions.map((option) => {
                   const OptionIcon = getPhaseIcon(option.status);
-                  const ux = getOptionUx(option);
                   return (
                     <button
                       key={option.status}
                       type="button"
-                      // ``title`` is the browser-native tooltip; sufficient
-                      // for the short verdict copy (no rich content needed).
-                      title={ux.tooltip}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleStatusSelect(option.status);
                       }}
-                      className={`w-full text-left px-3 py-1.5 text-xs text-fm-text-primary hover:bg-fm-accent-soft hover:text-fm-accent transition-colors flex items-center gap-1.5 ${ux.className ?? ''}`}
+                      className="w-full text-left px-3 py-1.5 text-xs text-fm-text-primary hover:bg-fm-accent-soft hover:text-fm-accent transition-colors flex items-center gap-1.5"
                     >
                       <OptionIcon className="w-3.5 h-3.5" />
                       <span>{STATUS_LABELS[option.status] || option.status}</span>
-                      {ux.hint && (
-                        <span className="ml-auto text-[10px] text-fm-warning">
-                          {ux.hint}
-                        </span>
-                      )}
                     </button>
                   );
                 })}
