@@ -128,7 +128,10 @@ const ChatWindowComponent = function ChatWindow({
     enabled: Boolean(activeCase?.case_id && sessionId),
   });
   const fullCaseData = caseUIQuery.data ?? null;
-  const caseLoading = caseUIQuery.isFetching;
+  // isLoading (= isPending && isFetching) is true only on the initial fetch
+  // with no cached data. Using isFetching here would briefly flash the header
+  // skeleton over already-displayed data during background refetches.
+  const caseLoading = caseUIQuery.isLoading;
   const caseError = caseUIQuery.error
     ? (caseUIQuery.error instanceof Error
         ? caseUIQuery.error.message
@@ -272,11 +275,26 @@ const ChatWindowComponent = function ChatWindow({
   // the parent learned about a transition before the snapshot did (usually
   // via view_state.active_case on a query response). Gated on the initial
   // sync having already run so we don't fight it on first load.
+  //
+  // The lastHandledDivergenceRef bounds the worst case: if the backend
+  // persistently returns stale status (refetch lands without the transition
+  // having been persisted yet), we only invalidate once per unique
+  // (cache-status, parent-status) shape rather than spamming round-trips.
+  // Reset when statuses converge so a *new* transition triggers again.
+  const lastHandledDivergenceRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeCase?.case_id || !sessionId || !fullCaseData) return;
-    if (fullCaseData.status === activeCase.status) return;
+    if (fullCaseData.status === activeCase.status) {
+      lastHandledDivergenceRef.current = null;
+      return;
+    }
     const key = `${activeCase.case_id}:${sessionId}`;
     if (syncedSnapshotKeyRef.current !== key) return;
+    // Include the case key so a different case with the same divergence
+    // shape doesn't accidentally inherit a prior case's "already handled" mark.
+    const divergenceKey = `${key}|${fullCaseData.status}->${activeCase.status}`;
+    if (lastHandledDivergenceRef.current === divergenceKey) return;
+    lastHandledDivergenceRef.current = divergenceKey;
     log.info('Status diverged from cache — invalidating snapshot', {
       from: fullCaseData.status,
       to: activeCase.status,
