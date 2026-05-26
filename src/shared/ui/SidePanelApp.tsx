@@ -546,11 +546,31 @@ function SidePanelAppContent() {
             onOpenDashboard={async () => {
               const baseUrl = capabilities?.dashboardUrl;
               if (!baseUrl) return;
-              const targetUrl = `${baseUrl}/cases`;
+              // Route to the active case's detail page when there's an
+              // active case in the side panel; otherwise fall back to
+              // the case list. Better than re-activating whatever the
+              // dashboard tab last showed — preserves cross-surface
+              // context (user clicks "Open Dashboard" while looking at
+              // a case here → dashboard opens that same case there).
+              const targetUrl = activeCaseId
+                ? `${baseUrl}/cases/${activeCaseId}`
+                : `${baseUrl}/cases`;
               try {
                 const tabs = await browser.tabs.query({ url: `${baseUrl}/*` });
                 if (tabs.length > 0 && tabs[0].id != null) {
-                  await browser.tabs.update(tabs[0].id, { active: true });
+                  // Reuse the existing tab. If it's already on the
+                  // target page (or a sub-route — e.g. ``?tab=report``
+                  // deep-link, ``#hash``), skip the URL update so we
+                  // don't lose the user's in-tab navigation state or
+                  // cause a flash-of-reload.
+                  const currentUrl = tabs[0].url ?? '';
+                  const updateOpts: { active: boolean; url?: string } = {
+                    active: true,
+                  };
+                  if (!currentUrl.startsWith(targetUrl)) {
+                    updateOpts.url = targetUrl;
+                  }
+                  await browser.tabs.update(tabs[0].id, updateOpts);
                 } else {
                   await browser.tabs.create({ url: targetUrl });
                 }
