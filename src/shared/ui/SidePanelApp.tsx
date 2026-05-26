@@ -469,10 +469,42 @@ function SidePanelAppContent() {
           closed_at: msg.closed_at ?? null
         }));
         if (incoming.length > 0) {
-          setConversations(prev => ({
-            ...prev,
-            [caseId]: [...(prev[caseId] || []), ...incoming]
-          }));
+          setConversations(prev => {
+            const existing = prev[caseId] || [];
+            // Smart insertion: keep any trailing optimistic messages
+            // (added by an in-flight submission that beat this fetch)
+            // AFTER the incoming historical batch. The optimistic
+            // submit path always appends to the end of the array, so
+            // the optimistic block is contiguous and at the tail —
+            // walk back from the end while we see optimistic=true to
+            // find the split point.
+            //
+            // Why this matters: when the user opens a cold-cache case
+            // and submits before the history arrives, a naive append
+            // (``[...prev, ...incoming]``) would put the user's just-
+            // typed message ABOVE the case's own history — visually
+            // jumbled. Splicing the delta in BEFORE the optimistic
+            // tail keeps the chronological feel correct: history
+            // above, the user's pending message at the bottom.
+            //
+            // Server-assigned turn_number on the optimistic message is
+            // reconciled later when the submit response lands, so the
+            // brief turn_number mismatch is invisible to the user.
+            let splitAt = existing.length;
+            for (let i = existing.length - 1; i >= 0; i--) {
+              if (existing[i].optimistic) {
+                splitAt = i;
+              } else {
+                break;
+              }
+            }
+            const committed = existing.slice(0, splitAt);
+            const trailingOptimistic = existing.slice(splitAt);
+            return {
+              ...prev,
+              [caseId]: [...committed, ...incoming, ...trailingOptimistic],
+            };
+          });
           log.info('Conversation delta applied', { caseId, added: incoming.length, offset });
         }
       })
