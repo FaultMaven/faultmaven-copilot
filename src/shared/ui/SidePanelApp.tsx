@@ -66,6 +66,15 @@ function SidePanelAppContent() {
 
   // --- Data State ---
   const [conversations, setConversations] = useState<Record<string, OptimisticConversationItem[]>>({});
+  // ID of the case whose conversation is currently being fetched from a
+  // cold cache. Used to gate the chat input so the user can't type/send
+  // a message before they've even seen the existing history. Cleared by
+  // the fetch's ``.finally`` (or by a subsequent case-select on the
+  // same id resolving first — see the prev-check in the setter).
+  // Cases that already have cached messages skip this state entirely
+  // (a delta-fetch is fine to run in the background; the user can read
+  // and type immediately).
+  const [loadingCaseId, setLoadingCaseId] = useState<string | null>(null);
   const [conversationTitles, setConversationTitles] = useState<Record<string, string>>({});
   const [titleSources, setTitleSources] = useState<Record<string, 'user' | 'backend' | 'system'>>({});
   const [pendingOperations, setPendingOperations] = useState<Record<string, PendingOperation>>({});
@@ -382,7 +391,11 @@ function SidePanelAppContent() {
   };
 
   const handleCaseSelect = (caseId: string) => {
-    // Set UI state immediately so the chat input unlocks without waiting for the fetch.
+    // Set selection state immediately so the chat surface paints with
+    // a placeholder header. The chat input is gated separately for
+    // cold-cache opens (no messages cached yet) — see the
+    // ``setLoadingCaseId`` call further down. Already-opened cases
+    // skip that lock and keep the input live.
     setActiveCaseId(caseId);
     setHasUnsavedNewChat(false);
     setActiveTab('copilot');
@@ -431,6 +444,16 @@ function SidePanelAppContent() {
     //   offset=N  → subsequent opens, fetches only turns added after the last fetch
     //   offset=total_count → nothing new, backend returns an empty list, state unchanged
     const offset = conversations[caseId]?.length ?? 0;
+
+    // Lock the chat input only for cold-cache opens — the user hasn't
+    // seen the case's history yet, so they shouldn't be able to send a
+    // message until it has loaded. Already-opened cases run the delta-
+    // fetch in the background and keep the input live (the user can
+    // see what's already there and act on it).
+    if (offset === 0) {
+      setLoadingCaseId(caseId);
+    }
+
     getCaseConversation(resolvedCaseId, { offset })
       .then(data => {
         const incoming: OptimisticConversationItem[] = (data.messages || []).map((msg: any) => ({
@@ -453,7 +476,13 @@ function SidePanelAppContent() {
           log.info('Conversation delta applied', { caseId, added: incoming.length, offset });
         }
       })
-      .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }));
+      .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))
+      .finally(() => {
+        // Race-safe clear: only release the lock if it's still ours.
+        // A user who clicks case A then case B before A resolves
+        // should not have A's late resolution clear B's loading lock.
+        setLoadingCaseId(prev => (prev === caseId ? null : prev));
+      });
   };
 
   // Modals state
@@ -645,7 +674,16 @@ function SidePanelAppContent() {
               activeCaseId={activeCaseId || undefined}
               activeCase={activeCase}
               conversations={conversations}
-              loading={submitting || isUploading}
+              // ``loadingCaseId === activeCaseId`` is the cold-cache
+              // history-fetch case (see handleCaseSelect). Locks the
+              // chat input until the existing history lands so users
+              // can't send a message before seeing what's already
+              // there.
+              loading={
+                submitting ||
+                isUploading ||
+                (loadingCaseId !== null && loadingCaseId === activeCaseId)
+              }
               submitting={submitting}
               sessionId={sessionId}
               hasUnsavedNewChat={hasUnsavedNewChat}
