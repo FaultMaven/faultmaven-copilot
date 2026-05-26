@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Mock browser API from wxt
 vi.mock('wxt/browser', () => ({
@@ -28,7 +29,26 @@ vi.mock('../../lib/api', async (importOriginal) => {
   } as unknown as typeof import('../../lib/api');
 });
 
+// ChatWindow imports caseApi from a separate module — mock it so the
+// component's useQuery doesn't issue a real fetch in the test environment.
+vi.mock('../../lib/api/case-service', () => ({
+  caseApi: {
+    getCaseUI: vi.fn().mockResolvedValue({ status: 'inquiry' }),
+  },
+}));
+
 import { ChatInterface } from '../../shared/ui/components/ChatInterface';
+
+const renderWithQueryClient = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  // Using `wrapper` means subsequent rerender() calls reuse the same provider.
+  return render(ui, { wrapper: Wrapper });
+};
 
 describe('ChatInterface e2e', () => {
   const sessionId = 'sid-1';
@@ -44,7 +64,7 @@ describe('ChatInterface e2e', () => {
     // Create mock handlers to simulate state updates
     const mockQuerySubmit = vi.fn();
     const mockTurnSubmit = vi.fn();
-    const { rerender } = render(
+    const { rerender } = renderWithQueryClient(
       <ChatInterface
         activeCaseId={caseId}
         conversations={{ [caseId]: [] }}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Source,
   SuggestedAction,
@@ -115,10 +116,24 @@ const ChatWindowComponent = function ChatWindow({
 }: ChatWindowProps) {
   // Evidence panel state removed — case header handles evidence display.
 
-  // Phase 5: Enhanced Case Header state
-  const [fullCaseData, setFullCaseData] = useState<CaseUIResponse | null>(null);
-  const [caseLoading, setCaseLoading] = useState(false);
-  const [caseError, setCaseError] = useState<string | null>(null);
+  // Phase 5: Enhanced Case Header state — cached per (caseId, sessionId).
+  // Switching back to a recently-viewed case serves from cache (staleTime 5m
+  // via global QueryClient defaults); concurrent fetches are deduplicated and
+  // in-flight requests are aborted when the queryKey changes.
+  const queryClient = useQueryClient();
+  const caseUIQuery = useQuery<CaseUIResponse>({
+    queryKey: ['caseUI', activeCase?.case_id, sessionId],
+    queryFn: ({ signal }) =>
+      caseApi.getCaseUI(activeCase!.case_id, sessionId!, signal),
+    enabled: Boolean(activeCase?.case_id && sessionId),
+  });
+  const fullCaseData = caseUIQuery.data ?? null;
+  const caseLoading = caseUIQuery.isFetching;
+  const caseError = caseUIQuery.error
+    ? (caseUIQuery.error instanceof Error
+        ? caseUIQuery.error.message
+        : 'Failed to load case data')
+    : null;
 
   // Determine the last assistant turn (only its suggestions are interactive)
   const lastAssistantItemId = Array.isArray(conversation)
@@ -234,55 +249,42 @@ const ChatWindowComponent = function ChatWindow({
 
   const canInteract = Boolean(activeCase) || Boolean(isNewUnsavedChat);
 
-  // Fetch full case data - triggered only when case or session changes, not on every message
+  // Sync activeCase.status from the backend exactly once per case-switch.
+  // activeCase defaults to 'inquiry' in SidePanelApp before the first fetch
+  // lands, so without this the dropdown can show a stale state. The ref
+  // guard ensures the cache only "wins" on initial load — afterwards the
+  // parent is the source of truth (see the invalidation effect below).
+  const syncedSnapshotKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeCase?.case_id && sessionId) {
-      setCaseLoading(true);
-      setCaseError(null);
-
-      const loadCaseData = async () => {
-        try {
-          const data = await caseApi.getCaseUI(activeCase.case_id, sessionId);
-          setFullCaseData(data);
-
-          // Update activeCase status if it differs from backend
-          // This fixes the bug where activeCase defaults to 'inquiry' in SidePanelApp
-          if (data.status !== activeCase.status && setActiveCase) {
-            log.info('Syncing activeCase status with backend', {
-              oldStatus: activeCase.status,
-              newStatus: data.status
-            });
-            setActiveCase(prev => prev ? { ...prev, status: data.status } : null);
-          }
-        } catch (err) {
-          log.error('Failed to load case data:', err);
-          setCaseError(err instanceof Error ? err.message : 'Failed to load case data');
-        } finally {
-          setCaseLoading(false);
-        }
-      };
-
-      loadCaseData();
-    } else {
-      setFullCaseData(null);
-      setCaseError(null);
-    }
-  }, [activeCase?.case_id, sessionId]);
-
-  // Refresh full case data when status changes (triggered by backend view_state.active_case update)
-  useEffect(() => {
-    if (!activeCase || !fullCaseData || !sessionId) return;
+    if (!fullCaseData || !activeCase || !setActiveCase) return;
+    const key = `${activeCase.case_id}:${sessionId ?? ''}`;
+    if (syncedSnapshotKeyRef.current === key) return;
+    syncedSnapshotKeyRef.current = key;
     if (fullCaseData.status === activeCase.status) return;
-
-    log.info('Status changed - refreshing case data', {
-      from: fullCaseData.status,
-      to: activeCase.status
+    log.info('Syncing activeCase status with backend', {
+      oldStatus: activeCase.status,
+      newStatus: fullCaseData.status,
     });
+    setActiveCase(prev => prev ? { ...prev, status: fullCaseData.status } : null);
+  }, [fullCaseData, activeCase, sessionId, setActiveCase]);
 
-    caseApi.getCaseUI(activeCase.case_id, sessionId)
-      .then(data => setFullCaseData(data))
-      .catch(err => log.error('Failed to refresh case data:', err));
-  }, [activeCase?.status, fullCaseData?.status, activeCase?.case_id, sessionId]);
+  // Invalidate the cached snapshot when activeCase.status moves ahead of it —
+  // the parent learned about a transition before the snapshot did (usually
+  // via view_state.active_case on a query response). Gated on the initial
+  // sync having already run so we don't fight it on first load.
+  useEffect(() => {
+    if (!activeCase?.case_id || !sessionId || !fullCaseData) return;
+    if (fullCaseData.status === activeCase.status) return;
+    const key = `${activeCase.case_id}:${sessionId}`;
+    if (syncedSnapshotKeyRef.current !== key) return;
+    log.info('Status diverged from cache — invalidating snapshot', {
+      from: fullCaseData.status,
+      to: activeCase.status,
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['caseUI', activeCase.case_id, sessionId],
+    });
+  }, [activeCase?.status, fullCaseData?.status, activeCase?.case_id, sessionId, queryClient]);
 
   // Auto-scroll to bottom
   useEffect(() => {
