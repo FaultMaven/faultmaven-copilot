@@ -55,6 +55,7 @@ import {
   formatFileSize,
 } from './shared';
 import { createLogger } from '~/lib/utils/logger';
+import { capabilitiesManager } from '~/lib/capabilities';
 
 const log = createLogger('CaseDetails');
 
@@ -382,13 +383,32 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   // File count is on every CaseUIResponse variant.
   const headerFileCount = caseData.uploaded_files_count ?? 0;
 
-  // 6. Artifacts strip — investigation depth: evidence + hypotheses + duration.
-  // Files are excluded — the Files row below is their canonical surface.
+  // 6. Artifacts strip — DELIVERABLES first, depth signals at the end.
+  //
+  // Deliverables (the real "artifacts" of the investigation): the summary
+  // report, generated runbook, applied solution, and collected evidence.
+  // Depth signals (hypothesis count, total duration) describe the SHAPE
+  // of the investigation, not its outputs — they go at the tail so the
+  // useful stuff reads first.
+  //
+  // Summary + runbook badges are clickable links into the Dashboard when
+  // a dashboard URL is configured. The runbook badge's target depends on
+  // whether the draft has been verified:
+  //   - draft   → /kb?tab=drafts&case=<id>  (the case-filtered Drafts list)
+  //   - verified → /kb?tab=documents        (the published runbooks list)
+  //   - discarded → no badge (server already filters out discarded drafts)
+  //
+  // Files stay on their own row below — they're inputs to the
+  // investigation, not deliverables.
   let artifactsRow: React.ReactNode = null;
   {
     let evidence = 0;
     let hypotheses = 0;
     let durationMin = 0;
+    let hasSolution = false;
+    let hasSummary = false;
+    let hasRunbook = false;
+    let anyRunbookVerified = false;
 
     if (isCaseInvestigating(caseData)) {
       evidence = caseData.progress.total_evidence ?? 0;
@@ -398,17 +418,98 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
       evidence = rs?.evidence_collected ?? 0;
       hypotheses = rs?.hypotheses_tested ?? 0;
       durationMin = rs?.total_duration_minutes ?? 0;
+
+      // solution_applied exists only on RESOLVED responses.
+      if (isCaseResolved(caseData)) {
+        const solText = caseData.solution_applied?.description?.trim();
+        if (solText && !isPlaceholderValue(solText)) hasSolution = true;
+      }
+
+      // reports_available enumerates auto-generated summaries and any
+      // case-linked runbook drafts (enriched server-side from
+      // conversion_drafts). Status on a runbook entry is "available"
+      // once the draft is verified (knowledge_item_id populated),
+      // otherwise "draft".
+      const reports = caseData.reports_available ?? [];
+      hasSummary = reports.some(
+        (r) =>
+          (r.report_type === 'resolution_summary' ||
+            r.report_type === 'closure_summary') &&
+          r.status === 'auto_generated',
+      );
+      const runbookEntries = reports.filter((r) => r.report_type === 'runbook');
+      hasRunbook = runbookEntries.length > 0;
+      anyRunbookVerified = runbookEntries.some((r) => r.status === 'available');
     }
 
-    const parts: string[] = [];
-    if (evidence > 0) parts.push(`${evidence} evidence`);
-    if (hypotheses > 0) parts.push(`${hypotheses} hypothes${hypotheses === 1 ? 'is' : 'es'}`);
-    if (durationMin > 0) parts.push(formatDuration(durationMin));
+    const dashboardUrl = capabilitiesManager.getDashboardUrl();
+    const summaryHref = dashboardUrl
+      ? `${dashboardUrl}/cases/${caseId}?tab=report`
+      : null;
+    // Verified runbooks live in the Documents tab (filtered list view).
+    // The Documents tab doesn't currently accept a ?case= filter, so we
+    // land the user on the unfiltered list and they browse from there.
+    // Draft runbooks live in the Drafts tab, which DOES accept ?case=.
+    const runbookHref = dashboardUrl
+      ? anyRunbookVerified
+        ? `${dashboardUrl}/kb?tab=documents`
+        : `${dashboardUrl}/kb?tab=drafts&case=${encodeURIComponent(caseId)}`
+      : null;
 
-    if (parts.length > 0) {
+    // Order: deliverables (artifacts) first, depth signals last.
+    const items: React.ReactNode[] = [];
+    if (hasSummary) {
+      items.push(
+        summaryHref ? (
+          <a
+            key="summary"
+            href={summaryHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fm-accent hover:underline"
+          >
+            📄 summary
+          </a>
+        ) : (
+          <span key="summary">📄 summary</span>
+        ),
+      );
+    }
+    if (hasRunbook) {
+      items.push(
+        runbookHref ? (
+          <a
+            key="runbook"
+            href={runbookHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fm-accent hover:underline"
+          >
+            📘 runbook
+          </a>
+        ) : (
+          <span key="runbook">📘 runbook</span>
+        ),
+      );
+    }
+    if (hasSolution) items.push('1 solution');
+    if (evidence > 0) items.push(`${evidence} evidence`);
+    // Depth signals — investigation shape, not outputs.
+    if (hypotheses > 0)
+      items.push(`${hypotheses} hypothes${hypotheses === 1 ? 'is' : 'es'}`);
+    if (durationMin > 0) items.push(formatDuration(durationMin));
+
+    if (items.length > 0) {
       artifactsRow = (
         <DetailRow label="Artifacts">
-          <span className="text-fm-text-secondary">{parts.join(' · ')}</span>
+          <span className="text-fm-text-secondary">
+            {items.map((item, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <span aria-hidden="true"> · </span>}
+                {item}
+              </React.Fragment>
+            ))}
+          </span>
         </DetailRow>
       );
     }
