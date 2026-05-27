@@ -425,6 +425,12 @@ export interface SuggestedAction {
    *  alongside the payload. Bridges COOPERATIVE suggestions with deterministic
    *  intent routing (e.g., transition confirmations use IntentType.CONFIRMATION). */
   intent?: QueryIntent;
+  /** For EVIDENCE-type suggestions: the persistent EvidenceNeed this
+   *  suggestion derives from. Format: `eneed_xxxxxxxxxxxx`. Used for
+   *  visual linkage (highlight, dismiss, group by need). Backend already
+   *  resolves any same-turn `new_index_N` placeholders before this
+   *  reaches the wire. */
+  evidence_need_id?: string;
 }
 
 export interface CommandValidation {
