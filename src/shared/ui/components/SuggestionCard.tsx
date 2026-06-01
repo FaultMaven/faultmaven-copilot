@@ -24,6 +24,12 @@ export function SuggestionCard({
 }: SuggestionCardProps) {
   const isClickable = action.type === 'COOPERATIVE' && isCurrentTurn && !disabled;
   const isCommand = action.type === 'COOPERATIVE' && action.cooperative_action === 'command_copy';
+  // Phase 6 visual linkage: EVIDENCE-type suggestions that derive from a
+  // persistent open need carry a backend-resolved evidence_need_id. The
+  // visual signal is minimal — bullet recolored to the accent token + a
+  // hover title showing the need id — so the user sees continuity across
+  // turns without UI bloat. Future PRs can add dismiss / group affordances.
+  const isTrackedNeed = action.type === 'EVIDENCE' && Boolean(action.evidence_need_id);
   const [copied, setCopied] = useState(false);
 
   const handleClick = useCallback(() => {
@@ -67,8 +73,16 @@ export function SuggestionCard({
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
       aria-label={isClickable ? action.label : undefined}
+      title={isTrackedNeed ? `Tracks open evidence need (id: ${action.evidence_need_id})` : undefined}
+      data-evidence-need-id={isTrackedNeed ? action.evidence_need_id : undefined}
     >
-      <span className="text-fm-xs text-fm-text-tertiary select-none flex-shrink-0 leading-snug">•</span>
+      <span
+        className={`text-fm-xs select-none flex-shrink-0 leading-snug ${
+          isTrackedNeed ? 'text-fm-accent' : 'text-fm-text-tertiary'
+        }`}
+      >
+        •
+      </span>
       <div className="flex-1 min-w-0">
         <span className={`text-fm-xs font-medium leading-snug ${
           isClickable
