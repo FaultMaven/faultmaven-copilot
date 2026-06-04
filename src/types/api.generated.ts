@@ -4229,7 +4229,7 @@ export interface components {
              */
             description: string;
             /**
-             * @description Current lifecycle status (phase or disposition)
+             * @description Current lifecycle state (phase or disposition)
              * @default inquiry
              */
             state: components["schemas"]["CaseState"];
@@ -4329,7 +4329,7 @@ export interface components {
              * @default post_mortem
              */
             investigation_strategy: components["schemas"]["InvestigationStrategy"];
-            /** @description Pre-investigation INQUIRY status data */
+            /** @description Pre-investigation INQUIRY state data */
             inquiry?: components["schemas"]["InquiryData"];
             /** @description Consolidated verification data (symptom, scope, timeline, changes) */
             problem_verification?: components["schemas"]["ProblemVerification"] | null;
@@ -4416,7 +4416,7 @@ export interface components {
             version: number;
             /**
              * Resolved At
-             * @description When case reached RESOLVED status
+             * @description When case reached RESOLVED state
              */
             resolved_at?: string | null;
             /**
@@ -4556,7 +4556,7 @@ export interface components {
             escalated: boolean;
             /**
              * Valid Next States
-             * @description Allowed status transitions from current state for user-initiated changes
+             * @description Allowed state transitions from current state for user-initiated changes
              */
             valid_next_states?: string[];
         };
@@ -4723,7 +4723,7 @@ export interface components {
              * @description Limit to organization's cases
              */
             organization_id?: string | null;
-            /** @description Filter by status */
+            /** @description Filter by state */
             state?: components["schemas"]["CaseState"] | null;
             /**
              * Limit
@@ -4734,7 +4734,7 @@ export interface components {
         };
         /**
          * CaseState
-         * @description Case lifecycle status — passive label describing a case's current condition.
+         * @description Case lifecycle state — passive label describing a case's current condition.
          *
          *     Values fall into two categories:
          *     - **Phases** (active work): INQUIRY, INVESTIGATING
@@ -4803,7 +4803,7 @@ export interface components {
             is_terminal: boolean;
             /**
              * Valid Next States
-             * @description Allowed status transitions from current state for user-initiated changes
+             * @description Allowed state transitions from current state for user-initiated changes
              */
             valid_next_states?: string[];
         };
@@ -4854,7 +4854,7 @@ export interface components {
             uploaded_files_count: number;
             /**
              * Valid Next States
-             * @description Allowed status transitions from current state for user-initiated changes
+             * @description Allowed state transitions from current state for user-initiated changes
              */
             valid_next_states?: string[];
             /**
@@ -4923,7 +4923,7 @@ export interface components {
             uploaded_files_count: number;
             /**
              * Valid Next States
-             * @description Allowed status transitions from current state for user-initiated changes
+             * @description Allowed state transitions from current state for user-initiated changes
              */
             valid_next_states?: string[];
             /**
@@ -4989,7 +4989,7 @@ export interface components {
              */
             case_id: string;
             /**
-             * @description Case terminal status: 'resolved' (with solution) or 'closed' (without investigation) (enum property replaced by openapi-typescript)
+             * @description Case terminal state: 'resolved' (with solution) or 'closed' (without investigation) (enum property replaced by openapi-typescript)
              * @enum {string}
              */
             state: "resolved" | "closed";
@@ -5029,7 +5029,7 @@ export interface components {
             uploaded_files_count: number;
             /**
              * Valid Next States
-             * @description Allowed status transitions from current state for user-initiated changes
+             * @description Allowed state transitions from current state for user-initiated changes
              */
             valid_next_states?: string[];
             /**
@@ -5081,7 +5081,7 @@ export interface components {
              * @description Updated description
              */
             description?: string | null;
-            /** @description Updated status (admin only) */
+            /** @description Updated state (admin only) */
             state?: components["schemas"]["CaseState"] | null;
         };
         /**
@@ -5615,7 +5615,7 @@ export interface components {
          *     - Created by the LLM via ``EvidenceNeedUpdate`` emissions at
          *       problem-statement confirmation (symptom needs) and at hypothesis
          *       creation (causal needs).
-         *     - Updated by the LLM as evidence arrives (status, fulfilling
+         *     - Updated by the LLM as evidence arrives (state, fulfilling
          *       evidence linkage, motivating hypothesis IDs).
          *     - Auto-superseded by the engine on hypothesis retirement when the
          *       motivating list becomes empty AND purpose is CAUSAL_VERIFICATION
@@ -5663,7 +5663,7 @@ export interface components {
             motivating_hypothesis_ids?: string[];
             /**
              * Fulfilling Evidence Ids
-             * @description Evidence rows that fulfill this need. Multiple entries may accumulate across stages: presence evidence collected during DIAGNOSIS plus absence evidence collected during MITIGATION/TREATMENT. The list is append-only in practice — the need's status stays FULFILLED once fulfilled even when post-fix absence evidence is added.
+             * @description Evidence rows that fulfill this need. Multiple entries may accumulate across stages: presence evidence collected during DIAGNOSIS plus absence evidence collected during MITIGATION/TREATMENT. The list is append-only in practice — the need's state stays FULFILLED once fulfilled even when post-fix absence evidence is added.
              */
             fulfilling_evidence_ids?: string[];
             /**
@@ -5852,7 +5852,7 @@ export interface components {
             /** @description Hypothesis category (for anchoring detection) */
             category: components["schemas"]["HypothesisCategory"];
             /**
-             * @description Current hypothesis status
+             * @description Current hypothesis state
              * @default captured
              */
             state: components["schemas"]["HypothesisState"];
@@ -5991,7 +5991,7 @@ export interface components {
         HypothesisGenerationMode: "opportunistic" | "systematic" | "forced_alternative";
         /**
          * HypothesisState
-         * @description Hypothesis lifecycle status
+         * @description Hypothesis lifecycle state
          * @enum {string}
          */
         HypothesisState: "captured" | "active" | "validated" | "refuted" | "inconclusive" | "retired";
@@ -6051,7 +6051,7 @@ export interface components {
         };
         /**
          * InquiryData
-         * @description Pre-investigation INQUIRY status data.
+         * @description Pre-investigation INQUIRY state data.
          *     Captures early problem exploration before formal investigation commitment.
          */
         InquiryData: {
@@ -6103,7 +6103,7 @@ export interface components {
             decision_made_at?: string | null;
             /**
              * Inquiry Turns
-             * @description Number of turns spent in INQUIRY status
+             * @description Number of turns spent in INQUIRY state
              * @default 0
              */
             inquiry_turns: number;
@@ -6306,6 +6306,55 @@ export interface components {
              * @default 0
              */
             active_hypotheses: number;
+        };
+        /**
+         * InvestigationSessionResponse
+         * @description Response model for investigation session.
+         */
+        InvestigationSessionResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Case Id */
+            case_id: string;
+            /** User Id */
+            user_id: string;
+            /** Organization Id */
+            organization_id: string;
+            state: components["schemas"]["SessionState"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Total Duration Ms */
+            total_duration_ms?: number | null;
+            /** Session Goal */
+            session_goal?: string | null;
+            /** Findings Summary */
+            findings_summary?: string | null;
+            /** Total Token Usage */
+            total_token_usage: number;
+            /** Total Agent Executions */
+            total_agent_executions: number;
+            /** Token Budget Limit */
+            token_budget_limit?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * InvestigationStage
@@ -6872,9 +6921,9 @@ export interface components {
          *     (absence) on re-check after solution.
          *
          *     The same need produces multiple evidence rows of different
-         *     categories across the case's lifetime; the need's status stays
+         *     categories across the case's lifetime; the need's state stays
          *     FULFILLED once fulfilled — re-check evidence is appended via
-         *     ``fulfilling_evidence_ids``, it does not reset the status.
+         *     ``fulfilling_evidence_ids``, it does not reset the state.
          * @enum {string}
          */
         NeedPurpose: "symptom_verification" | "causal_verification";
@@ -7846,52 +7895,32 @@ export interface components {
         };
         /**
          * SessionResponse
-         * @description Response model for investigation session.
+         * @description Response payload for auth session operations - API spec compliance.
          */
         SessionResponse: {
+            /**
+             * Schema Version
+             * @default 3.1.0
+             * @constant
+             * @enum {string}
+             */
+            schema_version: "3.1.0";
             /** Session Id */
             session_id: string;
-            /** Case Id */
-            case_id: string;
             /** User Id */
-            user_id: string;
-            /** Organization Id */
-            organization_id: string;
-            state: components["schemas"]["SessionState"];
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /** Ended At */
-            ended_at?: string | null;
-            /**
-             * Last Activity At
-             * Format: date-time
-             */
-            last_activity_at: string;
-            /** Total Duration Ms */
-            total_duration_ms?: number | null;
-            /** Session Goal */
-            session_goal?: string | null;
-            /** Findings Summary */
-            findings_summary?: string | null;
-            /** Total Token Usage */
-            total_token_usage: number;
-            /** Total Agent Executions */
-            total_agent_executions: number;
-            /** Token Budget Limit */
-            token_budget_limit?: number | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            user_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** @default active */
+            status: components["schemas"]["AuthSessionStatus"];
+            /** Created At */
             created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+            /** Session Resumed */
+            session_resumed?: boolean | null;
         };
         /**
          * SessionRestoreRequest
@@ -8928,35 +8957,6 @@ export interface components {
              * @description When this conclusion was last updated
              */
             last_updated: string;
-        };
-        /**
-         * SessionResponse
-         * @description Response payload for auth session operations - API spec compliance.
-         */
-        faultmaven__models__api__SessionResponse: {
-            /**
-             * Schema Version
-             * @default 3.1.0
-             * @constant
-             * @enum {string}
-             */
-            schema_version: "3.1.0";
-            /** Session Id */
-            session_id: string;
-            /** User Id */
-            user_id?: string | null;
-            /** Client Id */
-            client_id?: string | null;
-            /** @default active */
-            status: components["schemas"]["AuthSessionStatus"];
-            /** Created At */
-            created_at: string;
-            /** Expires At */
-            expires_at?: string | null;
-            /** Metadata */
-            metadata?: Record<string, never> | null;
-            /** Session Resumed */
-            session_resumed?: boolean | null;
         };
     };
     responses: never;
@@ -10813,7 +10813,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"][];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -10850,7 +10850,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10883,7 +10883,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"] | null;
+                    "application/json": components["schemas"]["InvestigationSessionResponse"] | null;
                 };
             };
             /** @description Validation Error */
@@ -10917,7 +10917,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10955,7 +10955,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10989,7 +10989,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11023,7 +11023,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11061,7 +11061,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionResponse"];
+                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12958,7 +12958,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["faultmaven__models__api__SessionResponse"];
+                    "application/json": components["schemas"]["SessionResponse"];
                 };
             };
             /** @description Validation Error */
