@@ -11,7 +11,7 @@ import { components } from './api.generated';
 // ==================== Type Aliases from API Contract ====================
 
 // Case lifecycle status: Phases (active) + Dispositions (terminal)
-export type CaseStatus = 'inquiry' | 'investigating' | 'resolved' | 'closed';
+export type CaseState = 'inquiry' | 'investigating' | 'resolved' | 'closed';
 export type CaseDetail = components['schemas']['CaseDetail'];
 
 /**
@@ -19,7 +19,7 @@ export type CaseDetail = components['schemas']['CaseDetail'];
  * Phases: inquiry, investigating (active work)
  * Dispositions: resolved, closed (terminal)
  */
-export type UserCaseStatus = CaseStatus;
+export type UserCaseState = CaseState;
 
 /**
  * User Case Interface
@@ -29,7 +29,7 @@ export type UserCaseStatus = CaseStatus;
 export interface UserCase {
   case_id: string;
   title: string;
-  status: UserCaseStatus;
+  state: UserCaseState;
   created_at: string;
   updated_at?: string;
   description?: string;
@@ -184,23 +184,23 @@ export type RelatedHypothesis = components['schemas']['RelatedHypothesis'];
 export function isCaseInquiry(
   caseData: CaseUIResponse
 ): caseData is CaseUIResponse_Inquiry {
-  return caseData.status === 'inquiry';
+  return caseData.state === 'inquiry';
 }
 
 export function isCaseInvestigating(
   caseData: CaseUIResponse
 ): caseData is CaseUIResponse_Investigating {
-  return caseData.status === 'investigating';
+  return caseData.state === 'investigating';
 }
 
 export function isCaseResolved(
   caseData: CaseUIResponse
 ): caseData is CaseUIResponse_Resolved {
-  return caseData.status === 'resolved';
+  return caseData.state === 'resolved';
 }
 
 export function isCaseClosed(
-  caseData: CaseUIResponse | { status: string }
+  caseData: CaseUIResponse | { state: string }
 ): caseData is CaseUIResponse_Resolved {
-  return caseData.status === 'closed';
+  return caseData.state === 'closed';
 }

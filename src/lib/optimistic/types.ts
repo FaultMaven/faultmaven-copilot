@@ -18,7 +18,7 @@ import {
   AttachmentResult,
 } from '../api';
 
-import { CaseStatus, UserCase } from '../../types/case';
+import { CaseState, UserCase } from '../../types/case';
 export type { UserCase };
 
 /**
@@ -38,11 +38,11 @@ export interface ConversationItem {
   // v3.1.0 Evidence-centric fields
   evidenceRequests?: EvidenceRequest[];
   investigationMode?: InvestigationMode;
-  caseStatus?: CaseStatus;
+  caseStatus?: CaseState;
 
   // Case state tracking fields (added 2026-01-30 per commit b434152a)
   // These track case state at the time the message was created
-  case_status?: CaseStatus;  // Case status when this message was created
+  case_state?: CaseState;  // Case status when this message was created
   closure_reason?: string | null;  // If case was closed in this turn
   closed_at?: string | null;  // Timestamp if case reached terminal state
 

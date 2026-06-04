@@ -34,16 +34,16 @@ import type { CaseUIResponse } from '../../types/case';
 // for these tests. Casts are used to keep the fixtures terse — the
 // function is shape-driven, not validator-driven.
 function inquiry(extras: Partial<CaseUIResponse> = {}): CaseUIResponse {
-  return { status: 'inquiry', ...extras } as CaseUIResponse;
+  return { state: 'inquiry', ...extras } as CaseUIResponse;
 }
 function investigating(extras: Partial<CaseUIResponse> = {}): CaseUIResponse {
-  return { status: 'investigating', ...extras } as CaseUIResponse;
+  return { state: 'investigating', ...extras } as CaseUIResponse;
 }
 function resolved(extras: Partial<CaseUIResponse> = {}): CaseUIResponse {
-  return { status: 'resolved', ...extras } as CaseUIResponse;
+  return { state: 'resolved', ...extras } as CaseUIResponse;
 }
 function closed(extras: Partial<CaseUIResponse> = {}): CaseUIResponse {
-  return { status: 'closed', ...extras } as CaseUIResponse;
+  return { state: 'closed', ...extras } as CaseUIResponse;
 }
 
 describe('getCaseActionOptions', () => {
@@ -54,10 +54,10 @@ describe('getCaseActionOptions', () => {
           disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
         }),
       );
-      expect(opts.some((o) => o.status === 'investigating')).toBe(true);
+      expect(opts.some((o) => o.state === 'investigating')).toBe(true);
       // The investigating transition is not gated by disposition_eligibility;
       // its eligibility slot must be null.
-      const inv = opts.find((o) => o.status === 'investigating');
+      const inv = opts.find((o) => o.state === 'investigating');
       expect(inv?.eligibility).toBeNull();
     });
 
@@ -67,10 +67,10 @@ describe('getCaseActionOptions', () => {
           disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
         }),
       );
-      expect(opts).toContainEqual({ status: 'investigating', eligibility: null });
-      expect(opts).toContainEqual({ status: 'closed', eligibility: 'ready' });
+      expect(opts).toContainEqual({ state: 'investigating', eligibility: null });
+      expect(opts).toContainEqual({ state: 'closed', eligibility: 'ready' });
       // resolved is not_eligible from INQUIRY (structurally invalid) — drop it.
-      expect(opts.some((o) => o.status === 'resolved')).toBe(false);
+      expect(opts.some((o) => o.state === 'resolved')).toBe(false);
     });
 
     it('drops closed when not_eligible (defensive — backend should not emit this for INQUIRY today)', () => {
@@ -83,7 +83,7 @@ describe('getCaseActionOptions', () => {
         }),
       );
       // Investigating remains, closed dropped.
-      expect(opts).toEqual([{ status: 'investigating', eligibility: null }]);
+      expect(opts).toEqual([{ state: 'investigating', eligibility: null }]);
     });
   });
 
@@ -94,7 +94,7 @@ describe('getCaseActionOptions', () => {
           disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
         }),
       );
-      expect(opts).toEqual([{ status: 'closed', eligibility: 'ready' }]);
+      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
     });
 
     it('partial case (resolved:needs_info, closed:ready) hides Resolve — only Close shows', () => {
@@ -107,7 +107,7 @@ describe('getCaseActionOptions', () => {
           disposition_eligibility: { resolved: 'needs_info', closed: 'ready' },
         }),
       );
-      expect(opts).toEqual([{ status: 'closed', eligibility: 'ready' }]);
+      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
     });
 
     it('resolution-grade case (resolved:ready, closed:suggests_alternative) hides Close — only Resolve shows', () => {
@@ -123,7 +123,7 @@ describe('getCaseActionOptions', () => {
           },
         }),
       );
-      expect(opts).toEqual([{ status: 'resolved', eligibility: 'ready' }]);
+      expect(opts).toEqual([{ state: 'resolved', eligibility: 'ready' }]);
     });
 
     it('both ready (hypothetical — backend never co-emits this today) shows both', () => {
@@ -135,8 +135,8 @@ describe('getCaseActionOptions', () => {
         }),
       );
       expect(opts).toEqual([
-        { status: 'resolved', eligibility: 'ready' },
-        { status: 'closed', eligibility: 'ready' },
+        { state: 'resolved', eligibility: 'ready' },
+        { state: 'closed', eligibility: 'ready' },
       ]);
     });
 
@@ -195,8 +195,8 @@ describe('getCaseActionOptions', () => {
       // We surface what the action graph allows so the dropdown isn't empty
       // for cases that pre-date the disposition_eligibility column.
       expect(opts).toEqual([
-        { status: 'resolved', eligibility: null },
-        { status: 'closed', eligibility: null },
+        { state: 'resolved', eligibility: null },
+        { state: 'closed', eligibility: null },
       ]);
     });
 
@@ -204,14 +204,14 @@ describe('getCaseActionOptions', () => {
       const opts = getCaseActionOptions(investigating());
       // Last-resort safety net — keep the dropdown non-empty.
       expect(opts).toEqual([
-        { status: 'resolved', eligibility: null },
-        { status: 'closed', eligibility: null },
+        { state: 'resolved', eligibility: null },
+        { state: 'closed', eligibility: null },
       ]);
     });
 
     it('INQUIRY fallback always retains the investigating transition', () => {
       const opts = getCaseActionOptions(inquiry());
-      expect(opts.some((o) => o.status === 'investigating')).toBe(true);
+      expect(opts.some((o) => o.state === 'investigating')).toBe(true);
     });
   });
 });

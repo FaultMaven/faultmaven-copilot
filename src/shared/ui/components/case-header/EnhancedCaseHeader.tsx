@@ -9,7 +9,7 @@
 
 import React, { useState } from 'react';
 import type { CaseUIResponse, UserCase } from '../../../../types/case';
-import type { UserCaseStatus } from '../../../../lib/api';
+import type { UserCaseState } from '../../../../lib/api';
 import { HeaderSummary } from './HeaderSummary';
 import { CaseDetails } from './CaseDetails';
 import { StatusChangeRequestModal } from './StatusChangeRequestModal';
@@ -24,7 +24,7 @@ interface EnhancedCaseHeaderProps {
   loading?: boolean;
   error?: string | null;
   initialExpanded?: boolean;
-  onStatusChangeRequest?: (newStatus: UserCaseStatus) => void;
+  onStatusChangeRequest?: (newStatus: UserCaseState) => void;
   onScrollToTurn?: (turnNumber: number) => void;
 }
 
@@ -39,7 +39,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
 }) => {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [requestedStatus, setRequestedStatus] = useState<UserCaseStatus | null>(null);
+  const [requestedStatus, setRequestedStatus] = useState<UserCaseState | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [isSubmittingStatusChange, setIsSubmittingStatusChange] = useState(false);
 
@@ -87,7 +87,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
     }
     : undefined;
 
-  const handleStatusChangeRequest = (newStatus: UserCaseStatus) => {
+  const handleStatusChangeRequest = (newStatus: UserCaseState) => {
     log.debug('handleStatusChangeRequest called', {
       newStatus,
       isSubmittingStatusChange,
@@ -163,7 +163,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
       {caseData && requestedStatus && (
         <StatusChangeRequestModal
           isOpen={showStatusModal}
-          currentStatus={caseData.status}
+          currentStatus={caseData.state}
           newStatus={requestedStatus}
           onConfirm={handleConfirmStatusChange}
           onCancel={handleCancelStatusChange}

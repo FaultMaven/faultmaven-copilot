@@ -396,7 +396,7 @@ function SidePanelAppContent() {
       setActiveCase({
         case_id: optimisticCase.case_id,
         title: optimisticCase.title || conversationTitles[caseId] || 'New Case',
-        status: optimisticCase.status || 'inquiry',
+        status: optimisticCase.state || 'inquiry',
         created_at: optimisticCase.created_at || new Date().toISOString(),
         updated_at: optimisticCase.updated_at || new Date().toISOString(),
         owner_id: optimisticCase.owner_id || '',
@@ -405,11 +405,11 @@ function SidePanelAppContent() {
     } else {
       // Derive status from local messages; ChatWindow loads authoritative case data.
       const caseMessages = conversations[caseId] || [];
-      const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_status);
+      const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_state);
       setActiveCase({
         case_id: caseId,
         title: conversationTitles[caseId] || 'Loading...',
-        status: lastStatusMessage?.case_status || 'inquiry',
+        status: lastStatusMessage?.case_state || 'inquiry',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         owner_id: '',
@@ -446,7 +446,7 @@ function SidePanelAppContent() {
           originalId: msg.message_id,
           question: msg.role === 'user' ? msg.content : undefined,
           response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
-          case_status: msg.case_status,
+          case_state: msg.case_state,
           closure_reason: msg.closure_reason ?? null,
           closed_at: msg.closed_at ?? null
         }));

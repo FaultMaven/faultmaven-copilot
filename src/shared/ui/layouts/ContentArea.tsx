@@ -184,7 +184,7 @@ const arePropsEqual = (prevProps: ContentAreaProps, nextProps: ContentAreaProps)
 
   // Re-render on active case object changes (case_id or status)
   if (prevProps.activeCase?.case_id !== nextProps.activeCase?.case_id) return false;
-  if (prevProps.activeCase?.status !== nextProps.activeCase?.status) return false;
+  if (prevProps.activeCase?.state !== nextProps.activeCase?.state) return false;
 
   // Ignore function reference changes (callbacks are stable from parent)
   return true;

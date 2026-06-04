@@ -166,7 +166,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
             owner_id: '', // Will be populated
             organization_id: '', // Will be populated per commit b434152a
             title: conversationTitles[caseId] || 'Loading...',
-            status: 'inquiry',
+            state: 'inquiry',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             message_count: 0,
@@ -215,7 +215,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
         question: msg.role === 'user' ? msg.content : undefined,
         response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
         // Case state tracking fields (track case state at time of message creation)
-        case_status: msg.case_status,  // Case status when message was created
+        case_state: msg.case_state,  // Case status when message was created
         closure_reason: msg.closure_reason ?? null,  // If case was closed in this turn
         closed_at: msg.closed_at ?? null  // Timestamp if case reached terminal state
       }));
@@ -454,7 +454,7 @@ export const createCasesSlice: StateCreator<CasesSlice> = (set, get) => ({
       response: turnResponse.agent_response || "Data uploaded and processed successfully.",
       timestamp,
       turn_number: turnResponse.turn_number,
-      caseStatus: turnResponse.case_status,
+      caseStatus: turnResponse.case_state,
       optimistic: false
     };
 

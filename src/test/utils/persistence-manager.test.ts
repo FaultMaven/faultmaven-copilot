@@ -124,7 +124,7 @@ describe('PersistenceManager', () => {
           title: 'Test Chat 1',
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T01:00:00Z',
-          status: 'investigating' as const,
+          state: 'investigating' as const,
           message_count: 2,
           closure_reason: null,
           closed_at: null
@@ -136,7 +136,7 @@ describe('PersistenceManager', () => {
           title: 'Test Chat 2',
           created_at: '2023-01-02T00:00:00Z',
           updated_at: '2023-01-02T01:00:00Z',
-          status: 'investigating' as const,
+          state: 'investigating' as const,
           message_count: 1,
           closure_reason: null,
           closed_at: null
@@ -220,7 +220,7 @@ describe('PersistenceManager', () => {
           title: 'Working Chat',
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T01:00:00Z',
-          status: 'investigating' as const,
+          state: 'investigating' as const,
           message_count: 1,
           closure_reason: null,
           closed_at: null
@@ -232,7 +232,7 @@ describe('PersistenceManager', () => {
           title: 'Another Chat',
           created_at: '2023-01-02T00:00:00Z',
           updated_at: '2023-01-02T01:00:00Z',
-          status: 'investigating' as const,
+          state: 'investigating' as const,
           message_count: 1,
           closure_reason: null,
           closed_at: null
