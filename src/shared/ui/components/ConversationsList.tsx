@@ -186,7 +186,7 @@ export function ConversationsList({
       log.error('Failed to load cases', err);
 
       // Special handling for rate limit errors - don't spam retries
-      if (err.name === 'RateLimitError' || err.status === 429) {
+      if (err.name === 'RateLimitError' || err.state === 429) {
         const retryAfter = err.retryAfter || 60;
         log.warn('Rate limited', { retryAfter });
         setError(`Rate limit reached. Please wait ${retryAfter} seconds before refreshing.`);
@@ -411,7 +411,7 @@ export function ConversationsList({
         return;
       }
 
-      const status = c.status || 'inquiry';
+      const status = c.state || 'inquiry';
       if (status === 'resolved' || status === 'closed') groups.completed.push(c);
       else groups.active.push(c); // inquiry + investigating
     });

@@ -65,8 +65,8 @@ export interface APIError {
 }
 
 // Cases & Messages
-export type { UserCase, UserCaseStatus, CaseStatus } from "../../../types/case";
-import { CaseStatus } from "../../../types/case"; // Import for usage in types
+export type { UserCase, UserCaseState, CaseState } from "../../../types/case";
+import { CaseState } from "../../../types/case"; // Import for usage in types
 
 // ============================================================
 // Intent-Based Query System (Clean, No Keyword Matching)
@@ -190,7 +190,7 @@ export interface TurnResponse {
   agent_response: string;
   turn_number: number;
   milestones_completed: string[];
-  case_status: CaseStatus;
+  case_state: CaseState;
   progress_made: boolean;
   attachments_processed: AttachmentResult[];
   suggested_actions?: SuggestedAction[];
@@ -205,7 +205,7 @@ export interface TurnResponse {
 export interface Case {
   case_id: string;
   title: string;
-  status: CaseStatus;
+  status: CaseState;
   created_at: string;
   updated_at: string;
   description?: string;
@@ -450,7 +450,7 @@ export interface Hypothesis {
   supporting_evidence: string[];
   category: 'configuration' | 'code' | 'infrastructure' | 'dependency' | 'data';
   testing_strategy: string;
-  status: 'pending' | 'testing' | 'validated' | 'refuted';
+  state: 'pending' | 'testing' | 'validated' | 'refuted';
 }
 
 export interface TestResult {
@@ -483,7 +483,7 @@ export interface AgentResponse {
   metadata?: Record<string, any>;
   evidence_requests: EvidenceRequest[];
   investigation_mode: InvestigationMode;
-  case_status: CaseStatus;
+  case_state: CaseState;
   suggested_actions?: SuggestedAction[];
   command_validation?: CommandValidation | null;
   problem_detected?: boolean;
@@ -512,7 +512,7 @@ export interface UploadedData {
   agent_response: string;
   turn_number: number;
   milestones_completed: string[];
-  case_status: CaseStatus;
+  case_state: CaseState;
   progress_made: boolean;
   is_stuck: boolean;
 

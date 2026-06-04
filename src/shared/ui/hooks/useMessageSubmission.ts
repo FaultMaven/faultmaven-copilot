@@ -107,14 +107,14 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 
           // Update active case status from TurnResponse
-          if (response.case_status) {
+          if (response.case_state) {
             props.setActiveCase((prev: UserCase | null) => {
-              if (prev && prev.status !== response.case_status) {
+              if (prev && prev.state !== response.case_state) {
                 log.info('Updating active case status from backend', {
-                  oldStatus: prev.status,
-                  newStatus: response.case_status
+                  oldStatus: prev.state,
+                  newStatus: response.case_state
                 });
-                return { ...prev, status: response.case_status };
+                return { ...prev, status: response.case_state };
               }
               return prev;
             });
@@ -153,20 +153,20 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
               .then(data => {
                 const fresh = (data?.messages ?? []) as Array<{
                   message_id: string;
-                  case_status?: string;
+                  case_state?: string;
                   closure_reason?: string | null;
                   closed_at?: string | null;
                 }>;
                 // Sync activeCase status from the latest message's snapshot.
                 const last = fresh[fresh.length - 1];
-                if (last?.case_status) {
+                if (last?.case_state) {
                   props.setActiveCase((prev: UserCase | null) => {
-                    if (prev && prev.status !== last.case_status) {
+                    if (prev && prev.state !== last.case_state) {
                       log.info('activeCase status refreshed after 409', {
-                        oldStatus: prev.status,
-                        newStatus: last.case_status,
+                        oldStatus: prev.state,
+                        newStatus: last.case_state,
                       });
-                      return { ...prev, status: last.case_status as any };
+                      return { ...prev, status: last.case_state as any };
                     }
                     return prev;
                   });
@@ -251,7 +251,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                    ...item,
                    response: response.agent_response,
                    turn_number: response.turn_number,
-                   caseStatus: response.case_status,
+                   caseStatus: response.case_state,
                    suggestedActions: response.suggested_actions ?? null,
                    optimistic: false,
                    loading: false,

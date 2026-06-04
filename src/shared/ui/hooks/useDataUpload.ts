@@ -101,7 +101,7 @@ export function useDataUpload({
             case_id: newCaseId,
             owner_id: caseData.owner_id,
             title: caseData.title,
-            status: caseData.status || 'inquiry',
+            status: caseData.state || 'inquiry',
             created_at: caseData.created_at || new Date().toISOString(),
             updated_at: caseData.updated_at || new Date().toISOString(),
             message_count: 0
@@ -258,14 +258,14 @@ export function useDataUpload({
       log.info('Turn submitted successfully', { caseId: targetCaseId, turnNumber: turnResponse.turn_number });
 
       // Update active case status from TurnResponse (e.g. INQUIRY → INVESTIGATING)
-      if (turnResponse.case_status) {
+      if (turnResponse.case_state) {
         setActiveCase((prev: any) => {
-          if (prev && prev.status !== turnResponse.case_status) {
+          if (prev && prev.state !== turnResponse.case_state) {
             log.info('Updating active case status from backend', {
-              oldStatus: prev.status,
-              newStatus: turnResponse.case_status
+              oldStatus: prev.state,
+              newStatus: turnResponse.case_state
             });
-            return { ...prev, status: turnResponse.case_status };
+            return { ...prev, status: turnResponse.case_state };
           }
           return prev;
         });
@@ -294,7 +294,7 @@ export function useDataUpload({
               ...item,
               response: turnResponse.agent_response || "Data uploaded and processed successfully.",
               turn_number: turnResponse.turn_number,
-              caseStatus: turnResponse.case_status,
+              caseStatus: turnResponse.case_state,
               suggestedActions: turnResponse.suggested_actions ?? null,
               optimistic: false,
               loading: false,

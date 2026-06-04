@@ -483,7 +483,7 @@ describe('Authentication API', () => {
           agent_response: 'Processed',
           turn_number: 1,
           milestones_completed: [],
-          case_status: 'inquiry',
+          case_state: 'inquiry',
           progress_made: false,
           is_stuck: false,
           attachments_processed: []

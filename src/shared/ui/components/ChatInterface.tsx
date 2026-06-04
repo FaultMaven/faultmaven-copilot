@@ -50,7 +50,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
 
   // Check if interaction is allowed — terminal cases allow text Q&A but not evidence
-  const isTerminal = !!activeCase && (activeCase.status === 'resolved' || activeCase.status === 'closed');
+  const isTerminal = !!activeCase && (activeCase.state === 'resolved' || activeCase.state === 'closed');
   const canInteract = (!!activeCase || hasUnsavedNewChat);
 
   // Empty state — dark themed

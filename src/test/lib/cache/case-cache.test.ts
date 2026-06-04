@@ -28,7 +28,7 @@ describe('CaseCacheManager', () => {
         {
             case_id: '123',
             title: 'Test Case',
-            status: 'inquiry',
+            state: 'inquiry',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             message_count: 5,

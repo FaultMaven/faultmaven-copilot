@@ -12,7 +12,7 @@ import type {
   DispositionEligibility,
   UserCase,
 } from '../../../../types/case';
-import type { UserCaseStatus } from '../../../../lib/api';
+import type { UserCaseState } from '../../../../lib/api';
 import { STAGE_DISPLAY_INFO, CLOSURE_DISPLAY_INFO, STATUS_LABELS } from '../../../../lib/api/services/case-service';
 import { SeverityChip, ChevronDownIcon, getPhaseIcon, formatTimeAgo } from './shared';
 import { createLogger } from '~/lib/utils/logger';
@@ -33,7 +33,7 @@ const log = createLogger('HeaderSummary');
  * disposition_eligibility.
  */
 export interface CaseActionOption {
-  status: UserCaseStatus;
+  state: UserCaseState;
   eligibility: DispositionEligibility | null;
 }
 
@@ -86,21 +86,21 @@ export function getCaseActionOptions(
 ): CaseActionOption[] {
   // Terminal states have no outgoing actions, regardless of which
   // gating field is present.
-  if (caseData.status === 'resolved' || caseData.status === 'closed') {
+  if (caseData.state === 'resolved' || caseData.state === 'closed') {
     return [];
   }
 
   const elig = caseData.disposition_eligibility;
 
-  if (caseData.status === 'inquiry') {
+  if (caseData.state === 'inquiry') {
     // Phase change (investigating) is always offered; it is not a
     // disposition and is not gated by disposition_eligibility.
     const options: CaseActionOption[] = [
-      { status: 'investigating', eligibility: null },
+      { state: 'investigating', eligibility: null },
     ];
     if (elig) {
       if (elig.closed === 'ready') {
-        options.push({ status: 'closed', eligibility: 'ready' });
+        options.push({ state: 'closed', eligibility: 'ready' });
       }
       // ``resolved`` is structurally invalid from INQUIRY (per backend
       // ALLOWED_ACTIONS) so disposition_eligibility.resolved is always
@@ -112,25 +112,25 @@ export function getCaseActionOptions(
       ('valid_next_states' in caseData && caseData.valid_next_states) || null;
     if (validStates) {
       for (const s of validStates) {
-        if (s !== 'investigating' && s !== caseData.status) {
-          options.push({ status: s as UserCaseStatus, eligibility: null });
+        if (s !== 'investigating' && s !== caseData.state) {
+          options.push({ state: s as UserCaseState, eligibility: null });
         }
       }
     } else {
-      options.push({ status: 'closed', eligibility: null });
+      options.push({ state: 'closed', eligibility: null });
     }
     return options;
   }
 
   // INVESTIGATING — both resolved and closed are content-gated.
-  if (caseData.status === 'investigating') {
+  if (caseData.state === 'investigating') {
     if (elig) {
       const options: CaseActionOption[] = [];
       if (elig.resolved === 'ready') {
-        options.push({ status: 'resolved', eligibility: 'ready' });
+        options.push({ state: 'resolved', eligibility: 'ready' });
       }
       if (elig.closed === 'ready') {
-        options.push({ status: 'closed', eligibility: 'ready' });
+        options.push({ state: 'closed', eligibility: 'ready' });
       }
       return options;
     }
@@ -138,13 +138,13 @@ export function getCaseActionOptions(
       ('valid_next_states' in caseData && caseData.valid_next_states) || null;
     if (validStates) {
       return validStates
-        .filter((s) => s !== caseData.status)
-        .map((s) => ({ status: s as UserCaseStatus, eligibility: null }));
+        .filter((s) => s !== caseData.state)
+        .map((s) => ({ state: s as UserCaseState, eligibility: null }));
     }
     // Hardcoded fallback mirroring the legacy behaviour.
     return [
-      { status: 'resolved', eligibility: null },
-      { status: 'closed', eligibility: null },
+      { state: 'resolved', eligibility: null },
+      { state: 'closed', eligibility: null },
     ];
   }
 
@@ -163,7 +163,7 @@ interface HeaderSummaryProps {
   expanded: boolean;
   severity: string | null;
   onToggle: () => void;
-  onStatusChangeRequest?: (newStatus: UserCaseStatus) => void;
+  onStatusChangeRequest?: (newStatus: UserCaseState) => void;
 }
 
 export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
@@ -190,23 +190,23 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   // Defensive default: when closure_reason is null/missing/unrecognized,
   // fall back to the 'other' enum entry rather than the bare literal "Closed".
   const getStatusLabel = (status: string): string => {
-    if (status === caseData.status) {
+    if (status === caseData.state) {
       if (status === 'closed') {
         const reason = activeCase?.closure_reason;
         const info = (reason && CLOSURE_DISPLAY_INFO[reason]) || CLOSURE_DISPLAY_INFO.other;
         return `Closed - ${info.label}`;
       }
     }
-    return STATUS_LABELS[status as UserCaseStatus] || status.charAt(0).toUpperCase() + status.slice(1);
+    return STATUS_LABELS[status as UserCaseState] || status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   // Pill className — stage-specific for INVESTIGATING
   const getStatusPillClass = (): string => {
-    if (caseData.status === 'investigating' && 'progress' in caseData) {
+    if (caseData.state === 'investigating' && 'progress' in caseData) {
       const stage = caseData.progress.current_stage;
       return STAGE_DISPLAY_INFO[stage]?.pillClass || 'border border-fm-accent-border bg-fm-accent-soft text-fm-accent';
     }
-    if (caseData.status === 'closed') {
+    if (caseData.state === 'closed') {
       return 'border border-fm-border bg-fm-surface text-fm-text-tertiary';
     }
     return 'border border-fm-accent-border bg-fm-accent-soft text-fm-accent';
@@ -214,7 +214,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
   // Get investigating context: stage label + milestone fraction
   const getInvestigatingContext = (): { stageLabel: string; completed: number; total: number } | null => {
-    if (caseData.status !== 'investigating' || !('progress' in caseData)) return null;
+    if (caseData.state !== 'investigating' || !('progress' in caseData)) return null;
     const stage = caseData.progress.current_stage;
     const stageLabel = STAGE_DISPLAY_INFO[stage]?.label || stage;
     const completedIndicators = new Set(caseData.progress.completed_indicators ?? []);
@@ -244,21 +244,21 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [dropdownOpen]);
 
-  const handleStatusSelect = (newStatus: UserCaseStatus) => {
+  const handleStatusSelect = (newStatus: UserCaseState) => {
     log.debug('handleStatusSelect fired', {
-      currentStatus: caseData.status,
+      currentStatus: caseData.state,
       newStatus,
       hasCallback: !!onStatusChangeRequest
     });
 
     setDropdownOpen(false);
-    if (newStatus !== caseData.status && onStatusChangeRequest) {
+    if (newStatus !== caseData.state && onStatusChangeRequest) {
       onStatusChangeRequest(newStatus);
     }
   };
 
   const pillClass = getStatusPillClass();
-  const PhaseIcon = getPhaseIcon(caseData.status);
+  const PhaseIcon = getPhaseIcon(caseData.state);
 
   return (
     <div className="p-3 cursor-pointer hover:bg-fm-elevated/40 transition-colors" onClick={onToggle}>
@@ -291,10 +291,10 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
                with chevron + menu of valid transitions.
             3. Non-terminal with no actions available → static pill
                (fallback; rare in practice). */}
-        {caseData.status === 'resolved' || caseData.status === 'closed' ? (
+        {caseData.state === 'resolved' || caseData.state === 'closed' ? (
           <span className="inline-flex items-center gap-1 font-medium text-fm-text-secondary">
             <PhaseIcon className="w-3 h-3" />
-            {getStatusLabel(caseData.status)}
+            {getStatusLabel(caseData.state)}
           </span>
         ) : canChangeStatus ? (
           <div className="relative inline-flex items-center" ref={dropdownRef}>
@@ -307,26 +307,26 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
               className={`cursor-pointer font-medium rounded-full focus:outline-none focus:ring-1 focus:ring-fm-accent pl-2 pr-5 py-0.5 inline-flex items-center gap-1 ${pillClass}`}
             >
               <PhaseIcon className="w-3 h-3" />
-              {getStatusLabel(caseData.status)}
+              {getStatusLabel(caseData.state)}
             </button>
             <span className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-current/60 text-[10px]">▾</span>
 
             {dropdownOpen && (
               <div className="absolute top-full left-0 mt-1 min-w-[140px] bg-fm-elevated border border-fm-border rounded-lg shadow-lg z-50 py-1">
                 {statusOptions.map((option) => {
-                  const OptionIcon = getPhaseIcon(option.status);
+                  const OptionIcon = getPhaseIcon(option.state);
                   return (
                     <button
-                      key={option.status}
+                      key={option.state}
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleStatusSelect(option.status);
+                        handleStatusSelect(option.state);
                       }}
                       className="w-full text-left px-3 py-1.5 text-xs text-fm-text-primary hover:bg-fm-accent-soft hover:text-fm-accent transition-colors flex items-center gap-1.5"
                     >
                       <OptionIcon className="w-3.5 h-3.5" />
-                      <span>{STATUS_LABELS[option.status] || option.status}</span>
+                      <span>{STATUS_LABELS[option.state] || option.state}</span>
                     </button>
                   );
                 })}
@@ -336,7 +336,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
         ) : (
           <span className={`font-medium rounded-full px-2 py-0.5 inline-flex items-center gap-1 ${pillClass}`}>
             <PhaseIcon className="w-3 h-3" />
-            {getStatusLabel(caseData.status)}
+            {getStatusLabel(caseData.state)}
           </span>
         )}
 
@@ -394,7 +394,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
         {/* Gate 2 pending chip — visible during INQUIRY when Gate 1 has
             passed but the user has not yet committed to a path. */}
-        {caseData.status === 'inquiry'
+        {caseData.state === 'inquiry'
           && (caseData as any).path_selection
           && !(caseData as any).path_selection.user_confirmed && (
           <>

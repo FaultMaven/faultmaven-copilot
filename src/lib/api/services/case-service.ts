@@ -1,5 +1,5 @@
 import { getApiUrl } from "../../../config";
-import { UserCase, UserCaseStatus } from "../../../types/case";
+import { UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
@@ -19,7 +19,7 @@ const log = createLogger('CaseService');
 /**
  * Allowed case actions (phase transitions and dispositions)
  */
-export const ALLOWED_ACTIONS: Record<UserCaseStatus, UserCaseStatus[]> = {
+export const ALLOWED_ACTIONS: Record<UserCaseState, UserCaseState[]> = {
   inquiry: ['investigating', 'closed', 'resolved'],  // 'resolved' = fast-track KB resolution
   investigating: ['resolved', 'closed'],
   resolved: [],     // Disposition — terminal
@@ -31,7 +31,7 @@ export const ALLOWED_TRANSITIONS = ALLOWED_ACTIONS;
 /**
  * Human-readable status labels
  */
-export const STATUS_LABELS: Record<UserCaseStatus, string> = {
+export const STATUS_LABELS: Record<UserCaseState, string> = {
   inquiry: 'Inquiry',
   investigating: 'Investigating',
   resolved: 'Resolved',
@@ -41,7 +41,7 @@ export const STATUS_LABELS: Record<UserCaseStatus, string> = {
 /**
  * Status descriptions for tooltips
  */
-export const STATUS_DESCRIPTIONS: Record<UserCaseStatus, string> = {
+export const STATUS_DESCRIPTIONS: Record<UserCaseState, string> = {
   inquiry: 'Q&A mode - exploring the issue',
   investigating: 'Active troubleshooting - systematic investigation',
   resolved: 'Issue resolved with root cause and solution',
@@ -141,8 +141,8 @@ export const STATUS_CHANGE_MESSAGES = CASE_ACTION_MESSAGES;
 /**
  * Get valid case actions for current status
  */
-export function getValidActions(currentStatus: string): UserCaseStatus[] {
-  const normalizedStatus = normalizeStatus(currentStatus);
+export function getValidActions(currentStatus: string): UserCaseState[] {
+  const normalizedStatus = normalizeState(currentStatus);
   return ALLOWED_ACTIONS[normalizedStatus] || [];
 }
 /** @deprecated Use getValidActions */
@@ -152,8 +152,8 @@ export const getValidTransitions = getValidActions;
  * Get agent message for a case action
  */
 export function getCaseActionMessage(from: string, to: string): string | null {
-  const fromNormalized = normalizeStatus(from);
-  const toNormalized = normalizeStatus(to);
+  const fromNormalized = normalizeState(from);
+  const toNormalized = normalizeState(to);
   const key = `${fromNormalized}_to_${toNormalized}`;
   return CASE_ACTION_MESSAGES[key] || null;
 }
@@ -164,16 +164,16 @@ export const getStatusChangeMessage = getCaseActionMessage;
  * Check if a status is a disposition (terminal)
  */
 export function isDisposition(status: string): boolean {
-  const normalized = normalizeStatus(status);
+  const normalized = normalizeState(status);
   return normalized === 'resolved' || normalized === 'closed';
 }
 /** @deprecated Use isDisposition */
 export const isTerminalStatus = isDisposition;
 
 /**
- * Normalize status string to UserCaseStatus type
+ * Normalize status string to UserCaseState type
  */
-export function normalizeStatus(status: string | undefined | null): UserCaseStatus {
+export function normalizeState(status: string | undefined | null): UserCaseState {
   if (!status) {
     log.warn('Empty status, defaulting to inquiry');
     return 'inquiry';
@@ -262,7 +262,7 @@ export async function getUserCases(filters?: {
   const userCases = data.cases.map((c: any) => ({
     case_id: c.case_id,
     title: c.title,
-    status: normalizeStatus(c.status),
+    state: normalizeState(c.state),
     created_at: c.created_at,
     updated_at: c.updated_at,
     description: c.description,
@@ -310,7 +310,7 @@ export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
   const userCase: UserCase = {
     case_id: caseData.case_id,
     title: caseData.title,
-    status: normalizeStatus(caseData.status),
+    state: normalizeState(caseData.state),
     created_at: caseData.created_at,
     updated_at: caseData.updated_at,
     description: caseData.description,
@@ -392,9 +392,9 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
  * Update case status with terminal state validation
  * Added 2026-01-30: Handle closure_reason and closed_at for terminal states per commit b434152a
  */
-export async function updateCaseStatus(
+export async function updateCaseState(
   caseId: string,
-  status: UserCaseStatus,
+  status: UserCaseState,
   closureReason?: string
 ): Promise<void> {
   const isTerminal = isDisposition(status);

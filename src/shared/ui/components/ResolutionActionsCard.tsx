@@ -20,12 +20,12 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
   activeCase,
   caseData,
 }) => {
-  const isResolved = activeCase.status === 'resolved';
-  const isClosed = activeCase.status === 'closed';
+  const isResolved = activeCase.state === 'resolved';
+  const isClosed = activeCase.state === 'closed';
 
   if (!isResolved && !isClosed) return null;
 
-  const resolvedData = caseData && caseData.status === 'resolved' ? caseData : null;
+  const resolvedData = caseData && caseData.state === 'resolved' ? caseData : null;
   const rootCauseDescription = resolvedData?.root_cause?.description ?? null;
   const totalDurationMinutes = resolvedData?.resolution_summary?.total_duration_minutes ?? null;
   const currentTurn = resolvedData?.current_turn ?? (caseData as any)?.current_turn ?? null;

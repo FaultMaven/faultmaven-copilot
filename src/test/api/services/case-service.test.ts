@@ -93,7 +93,7 @@ describe('Case Service', () => {
         agent_response: 'AI Response',
         turn_number: 1,
         milestones_completed: [],
-        case_status: 'inquiry',
+        case_state: 'inquiry',
         progress_made: false,
         is_stuck: false,
         attachments_processed: []
@@ -128,7 +128,7 @@ describe('Case Service', () => {
         agent_response: 'Analyzed your logs',
         turn_number: 2,
         milestones_completed: ['initial_evidence'],
-        case_status: 'investigating',
+        case_state: 'investigating',
         progress_made: true,
         is_stuck: false,
         attachments_processed: [{
@@ -157,7 +157,7 @@ describe('Case Service', () => {
         agent_response: 'Case resolved',
         turn_number: 5,
         milestones_completed: [],
-        case_status: 'resolved',
+        case_state: 'resolved',
         progress_made: true,
         is_stuck: false,
         attachments_processed: []

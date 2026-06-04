@@ -33,7 +33,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
 // component's useQuery doesn't issue a real fetch in the test environment.
 vi.mock('../../lib/api/case-service', () => ({
   caseApi: {
-    getCaseUI: vi.fn().mockResolvedValue({ status: 'inquiry' }),
+    getCaseUI: vi.fn().mockResolvedValue({ state: 'inquiry' }),
   },
 }));
 
@@ -72,7 +72,7 @@ describe('ChatInterface e2e', () => {
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
-          status: 'inquiry',
+          state: 'inquiry',
           created_at: new Date().toISOString(),
           owner_id: 'user-1',
           organization_id: 'org-1',
@@ -118,7 +118,7 @@ describe('ChatInterface e2e', () => {
         activeCase={{
           case_id: caseId,
           title: 'Test Case',
-          status: 'inquiry',
+          state: 'inquiry',
           created_at: new Date().toISOString(),
           owner_id: 'user-1',
           organization_id: 'org-1',
@@ -166,7 +166,7 @@ describe('ChatInterface e2e', () => {
       activeCase: {
         case_id: caseId,
         title: 'Test Case',
-        status: 'inquiry' as const,
+        state: 'inquiry' as const,
         created_at: new Date().toISOString(),
         owner_id: 'user-1',
         organization_id: 'org-1',

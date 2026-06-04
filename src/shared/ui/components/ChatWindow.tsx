@@ -5,10 +5,10 @@ import {
   SuggestedAction,
   EvidenceRequest,
   InvestigationMode,
-  CaseStatus,
+  CaseState,
   CommandValidation,
   ScopeAssessment,
-  UserCaseStatus,
+  UserCaseState,
   getStatusChangeMessage,
   Hypothesis,
   TestResult,
@@ -48,7 +48,7 @@ interface ConversationItem {
   // v3.1.0 Evidence-centric fields
   evidenceRequests?: EvidenceRequest[];
   investigationMode?: InvestigationMode;
-  caseStatus?: CaseStatus;
+  caseStatus?: CaseState;
 
   suggestedActions?: SuggestedAction[] | null;
   commandValidation?: CommandValidation | null;
@@ -183,11 +183,11 @@ const ChatWindowComponent = function ChatWindow({
   /**
    * Handle status change request from CaseHeader dropdown
    */
-  const handleStatusChangeRequest = useCallback((newStatus: UserCaseStatus) => {
+  const handleStatusChangeRequest = useCallback((newStatus: UserCaseState) => {
     log.debug('handleStatusChangeRequest called', {
       newStatus,
       hasActiveCase: !!activeCase,
-      activeCaseStatus: activeCase?.status
+      activeCaseState: activeCase?.state
     });
 
     if (!activeCase) {
@@ -195,13 +195,13 @@ const ChatWindowComponent = function ChatWindow({
       return;
     }
 
-    // Prefer fullCaseData.status (backend-confirmed) over activeCase.status.
-    // activeCase.status can still hold the stale default 'inquiry' while
+    // Prefer fullCaseData.state (backend-confirmed) over activeCase.state.
+    // activeCase.state can still hold the stale default 'inquiry' while
     // fullCaseData has already been updated from getCaseUI() — the two states
     // are updated independently (one in the parent, one locally) and a narrow
     // race window exists between them. The header that renders the dropdown
     // already requires fullCaseData to be non-null, so this is always safe.
-    const currentStatus = (fullCaseData?.status ?? activeCase.status) as UserCaseStatus;
+    const currentStatus = (fullCaseData?.state ?? activeCase.state) as UserCaseState;
     const message = getStatusChangeMessage(currentStatus, newStatus);
 
     log.debug('getStatusChangeMessage result', {
@@ -252,7 +252,7 @@ const ChatWindowComponent = function ChatWindow({
 
   const canInteract = Boolean(activeCase) || Boolean(isNewUnsavedChat);
 
-  // Sync activeCase.status from the backend exactly once per case-switch.
+  // Sync activeCase.state from the backend exactly once per case-switch.
   // activeCase defaults to 'inquiry' in SidePanelApp before the first fetch
   // lands, so without this the dropdown can show a stale state. The ref
   // guard ensures the cache only "wins" on initial load — afterwards the
@@ -263,15 +263,15 @@ const ChatWindowComponent = function ChatWindow({
     const key = `${activeCase.case_id}:${sessionId ?? ''}`;
     if (syncedSnapshotKeyRef.current === key) return;
     syncedSnapshotKeyRef.current = key;
-    if (fullCaseData.status === activeCase.status) return;
+    if (fullCaseData.state === activeCase.state) return;
     log.info('Syncing activeCase status with backend', {
-      oldStatus: activeCase.status,
-      newStatus: fullCaseData.status,
+      oldStatus: activeCase.state,
+      newStatus: fullCaseData.state,
     });
-    setActiveCase(prev => prev ? { ...prev, status: fullCaseData.status } : null);
+    setActiveCase(prev => prev ? { ...prev, status: fullCaseData.state } : null);
   }, [fullCaseData, activeCase, sessionId, setActiveCase]);
 
-  // Invalidate the cached snapshot when activeCase.status moves ahead of it —
+  // Invalidate the cached snapshot when activeCase.state moves ahead of it —
   // the parent learned about a transition before the snapshot did (usually
   // via view_state.active_case on a query response). Gated on the initial
   // sync having already run so we don't fight it on first load.
@@ -284,7 +284,7 @@ const ChatWindowComponent = function ChatWindow({
   const lastHandledDivergenceRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeCase?.case_id || !sessionId || !fullCaseData) return;
-    if (fullCaseData.status === activeCase.status) {
+    if (fullCaseData.state === activeCase.state) {
       lastHandledDivergenceRef.current = null;
       return;
     }
@@ -292,17 +292,17 @@ const ChatWindowComponent = function ChatWindow({
     if (syncedSnapshotKeyRef.current !== key) return;
     // Include the case key so a different case with the same divergence
     // shape doesn't accidentally inherit a prior case's "already handled" mark.
-    const divergenceKey = `${key}|${fullCaseData.status}->${activeCase.status}`;
+    const divergenceKey = `${key}|${fullCaseData.state}->${activeCase.state}`;
     if (lastHandledDivergenceRef.current === divergenceKey) return;
     lastHandledDivergenceRef.current = divergenceKey;
     log.info('Status diverged from cache — invalidating snapshot', {
-      from: fullCaseData.status,
-      to: activeCase.status,
+      from: fullCaseData.state,
+      to: activeCase.state,
     });
     queryClient.invalidateQueries({
       queryKey: ['caseUI', activeCase.case_id, sessionId],
     });
-  }, [activeCase?.status, fullCaseData?.status, activeCase?.case_id, sessionId, queryClient]);
+  }, [activeCase?.state, fullCaseData?.state, activeCase?.case_id, sessionId, queryClient]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -327,7 +327,7 @@ const ChatWindowComponent = function ChatWindow({
       )}
 
       {/* Post-Terminal Actions */}
-      {activeCase && (activeCase.status === 'resolved' || activeCase.status === 'closed') && (
+      {activeCase && (activeCase.state === 'resolved' || activeCase.state === 'closed') && (
         <ResolutionActionsCard
           activeCase={activeCase}
           caseData={fullCaseData}
@@ -537,12 +537,12 @@ const ChatWindowComponent = function ChatWindow({
                               <div className="flex items-center gap-2 text-micro text-fm-text-tertiary mb-1">
                                 <span className="px-1.5 py-0.5 bg-fm-accent-soft rounded font-mono">{hypothesis.category}</span>
                                 <span>Likelihood: {(hypothesis.likelihood * 100).toFixed(0)}%</span>
-                                <span className={`px-1.5 py-0.5 rounded ${hypothesis.status === 'validated' ? 'bg-fm-success-bg text-fm-success' :
-                                  hypothesis.status === 'refuted' ? 'bg-fm-critical-bg text-fm-critical' :
-                                    hypothesis.status === 'testing' ? 'bg-fm-warning-bg text-fm-warning' :
+                                <span className={`px-1.5 py-0.5 rounded ${hypothesis.state === 'validated' ? 'bg-fm-success-bg text-fm-success' :
+                                  hypothesis.state === 'refuted' ? 'bg-fm-critical-bg text-fm-critical' :
+                                    hypothesis.state === 'testing' ? 'bg-fm-warning-bg text-fm-warning' :
                                       'bg-fm-surface text-fm-text-tertiary'
                                   }`}>
-                                  {hypothesis.status}
+                                  {hypothesis.state}
                                 </span>
                               </div>
                               {hypothesis.testing_strategy && (
