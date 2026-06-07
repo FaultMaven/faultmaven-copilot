@@ -15,14 +15,10 @@
  *   Files            |    ✓    |       ✓       |       ✓         |       ✓
  *
  * Inquiry collapses to a single visible row (Files) — inquiry is conversational,
- * the chat is the surface. Gate 2 (path selection) and Gate 3 (post-mitigation)
- * are surfaced as inline COOPERATIVE suggestions in chat; the header chips in
- * HeaderSummary indicate the gate state at a glance.
+ * the chat is the surface.
  *
- * Progress row uses Option C: dots + inline labels in one wrapping row. On the
- * mitigation-first path the row gains two diamond-outline mitigation gates
- * (mitigation_accepted, mitigation_verified) inserted between Changes and
- * Root Cause. The pending milestone gets a tooltip with the
+ * Progress row uses Option C: dots + inline labels in one wrapping row. The
+ * pending milestone gets a tooltip with the
  * progress_transparency.milestone_description so the user can read what's
  * blocking without a separate "Needs" row.
  */
@@ -33,7 +29,6 @@ import type {
   UploadedFileMetadata,
   UploadedFileDetailsResponse,
   UserCase,
-  PathSelection,
 } from '../../../../types/case';
 import {
   isCaseInquiry,
@@ -48,8 +43,6 @@ import {
   DetailRow,
   FilledCircleIcon,
   EmptyCircleIcon,
-  FilledDiamondIcon,
-  EmptyDiamondIcon,
   CheckCircleIcon,
   formatDuration,
   formatFileSize,
@@ -64,37 +57,17 @@ const log = createLogger('CaseDetails');
 interface MilestoneSpec {
   key: string;
   label: string;
-  kind: 'indicator' | 'mitigation_gate';
 }
 
 /** The 6 universal progress indicators (no fixed order — completed opportunistically). */
 const BASE_MILESTONES: MilestoneSpec[] = [
-  { key: 'symptom_verified', label: 'Symptoms', kind: 'indicator' },
-  { key: 'scope_assessed', label: 'Scope', kind: 'indicator' },
-  { key: 'timeline_established', label: 'Timeline', kind: 'indicator' },
-  { key: 'changes_identified', label: 'Changes', kind: 'indicator' },
-  { key: 'root_cause_identified', label: 'Root Cause', kind: 'indicator' },
-  { key: 'solution_proposed', label: 'Solution', kind: 'indicator' },
+  { key: 'symptom_verified', label: 'Symptoms' },
+  { key: 'scope_assessed', label: 'Scope' },
+  { key: 'timeline_established', label: 'Timeline' },
+  { key: 'changes_identified', label: 'Changes' },
+  { key: 'root_cause_identified', label: 'Root Cause' },
+  { key: 'solution_proposed', label: 'Solution' },
 ];
-
-/**
- * Mitigation-first path inserts the two stage-gate milestones between Changes
- * and Root Cause, rendered as diamonds to signal "detour" (per slice 4 design).
- * RCA-only path uses BASE_MILESTONES unchanged.
- */
-function buildMilestoneList(pathSelection: PathSelection | null | undefined): MilestoneSpec[] {
-  if (pathSelection?.path !== 'mitigation_first') {
-    return BASE_MILESTONES;
-  }
-  const before = BASE_MILESTONES.slice(0, 4); // up through Changes
-  const after = BASE_MILESTONES.slice(4); // Root Cause, Solution
-  return [
-    ...before,
-    { key: 'mitigation_accepted', label: 'Mit. Accepted', kind: 'mitigation_gate' },
-    { key: 'mitigation_verified', label: 'Mit. Verified', kind: 'mitigation_gate' },
-    ...after,
-  ];
-}
 
 /**
  * Strings the backend sometimes leaks into description fields when the LLM
@@ -137,12 +110,11 @@ interface MilestoneMapProps {
 }
 
 /**
- * Milestone visualization — icons + inline labels in one wrapping row.
+ * Milestone visualization — circles + inline labels in one wrapping row.
  *
- * Indicators use circles, mitigation gates use diamonds. The pending milestone
- * (from progress_transparency, when active) pulses in warning color and carries
- * the milestone_description in its tooltip — the user can hover to read what's
- * blocking, replacing the standalone "Needs" row.
+ * The pending milestone (from progress_transparency, when active) pulses in
+ * warning color and carries the milestone_description in its tooltip — the user
+ * can hover to read what's blocking, replacing the standalone "Needs" row.
  */
 const MilestoneMap: React.FC<MilestoneMapProps> = ({
   milestones,
@@ -174,14 +146,7 @@ const MilestoneMap: React.FC<MilestoneMapProps> = ({
             : `${m.label} — needs attention`;
         }
 
-        const Icon =
-          m.kind === 'mitigation_gate'
-            ? done
-              ? FilledDiamondIcon
-              : EmptyDiamondIcon
-            : done
-              ? FilledCircleIcon
-              : EmptyCircleIcon;
+        const Icon = done ? FilledCircleIcon : EmptyCircleIcon;
 
         return (
           <span
@@ -281,25 +246,18 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   }
 
   // 2. Progress (milestone map) — INVESTIGATING only.
-  // Path-aware: includes mitigation gates as diamonds when on mitigation-first.
   let progressRow: React.ReactNode = null;
   if (isCaseInvestigating(caseData)) {
     const completedIndicators = new Set(caseData.progress.completed_indicators ?? []);
-    // Include completed stage-gate milestones in the same set so mitigation
-    // diamonds light up when the user reports compliance.
-    for (const gate of caseData.progress.completed_stage_gates ?? []) {
-      completedIndicators.add(gate);
-    }
     const pendingMilestone = caseData.progress_transparency?.active
       ? caseData.progress_transparency.pending_milestone ?? null
       : null;
     const pendingDescription = caseData.progress_transparency?.active
       ? caseData.progress_transparency.milestone_description ?? null
       : null;
-    const milestones = buildMilestoneList(caseData.path_selection ?? null);
     progressRow = (
       <MilestoneMap
-        milestones={milestones}
+        milestones={BASE_MILESTONES}
         completedKeys={completedIndicators}
         pendingMilestone={pendingMilestone}
         pendingDescription={pendingDescription}
@@ -308,9 +266,6 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   }
 
   // 3. Leading Hypothesis (INVESTIGATING) / Root Cause (terminal).
-  // Label changed from "Working Theory (mitigation first)" to "Leading
-  // Hypothesis" — the path is now its own chip in HeaderSummary, no
-  // parenthetical needed. getApproachHint regex removed.
   let understandingRow: React.ReactNode = null;
   if (isCaseInvestigating(caseData)) {
     const wc = caseData.working_conclusion;

@@ -43,30 +43,6 @@ export interface UserCase {
   valid_next_states?: string[]; // Server-provided list of allowed case actions (empty for dispositions)
 }
 
-// Investigation path enum (added ahead of OpenAPI regen — slice 1 of
-// investigation-gates redesign collapsed this to binary; the generated
-// types may still list a third value until regenerated, which would
-// silently widen the union).
-export type InvestigationPath = 'mitigation_first' | 'root_cause';
-
-// PathSelection — the structured Gate-2/Gate-3 state surfaced on every
-// CaseUIResponse variant. Added ahead of OpenAPI regen by the backend
-// commit that exposes path_selection on the UI response.
-export interface PathSelection {
-  path: InvestigationPath;
-  auto_selected: boolean;
-  rationale: string;
-  alternate_path?: InvestigationPath | null;
-
-  // Gate 2 (slice 2)
-  user_confirmed: boolean;
-  user_confirmed_at_turn?: number | null;
-
-  // Gate 3 (slice 3) — meaningful only when path === 'mitigation_first'
-  rca_after_mitigation_confirmed: boolean;
-  rca_after_mitigation_confirmed_at_turn?: number | null;
-  mitigation_completed_at_turn?: number | null;
-}
 
 // Disposition eligibility — content-readiness verdicts for the
 // terminal actions (resolve/close), added ahead of OpenAPI regen by
@@ -110,8 +86,6 @@ export interface DispositionEligibilityMap {
 
 // Inquiry Phase Types
 export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'] & {
-  /** Path recommendation + Gate-2 state (slice 2). Present once Gate 1 closes. */
-  path_selection?: PathSelection | null;
   /** Per-disposition readiness verdicts (PR #373). Drives menu gating. */
   disposition_eligibility?: DispositionEligibilityMap | null;
 };
@@ -133,8 +107,6 @@ export interface ProgressTransparencyInfo {
 export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'] & {
   /** Progress transparency state. Present when investigation has stalled. */
   progress_transparency?: ProgressTransparencyInfo | null;
-  /** Path commitment + Gate-3 state (slices 2 + 3). Always present on INVESTIGATING. */
-  path_selection?: PathSelection | null;
   /** Confirmed problem statement (sourced from case.description). */
   problem_statement?: string | null;
   /** Per-disposition readiness verdicts (PR #373). Drives menu gating. */
@@ -147,14 +119,10 @@ export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'
 // `InvestigationStrategyData`, the descriptive-string response model that
 // fed the old `getApproachHint` regex. Both the regex (slice 4 frontend)
 // and the backing field (faultmaven PR #320) are gone; the alias had no
-// production consumer. Path information now lives on `PathSelection`,
-// already exported above. After the next OpenAPI regen there will be no
-// matching `components['schemas']['InvestigationStrategyData']` to point at.
+// production consumer.
 
 // Resolved Disposition Types
 export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'] & {
-  /** Path that was followed; lets terminal UI show mitigation-first retrospectively. */
-  path_selection?: PathSelection | null;
   /** Confirmed problem statement (sourced from case.description). */
   problem_statement?: string | null;
   /** Per-disposition readiness verdicts (PR #373). All ``not_eligible`` on terminal cases. */

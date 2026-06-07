@@ -50,7 +50,7 @@ export const STATUS_DESCRIPTIONS: Record<UserCaseState, string> = {
 
 /**
  * Investigation stage display info for INVESTIGATING substage pill.
- * Maps InvestigationStage enum values → user-facing label, icon, and pill style.
+ * Maps InvestigationStage enum values → user-facing label and pill style.
  */
 export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: string }> = {
   diagnosis: {
@@ -85,11 +85,6 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: 
     label: 'Closed after investigation',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Investigation occurred but no resolution was reached.',
-  },
-  mitigation_sufficient: {
-    label: 'Mitigated',
-    bannerClass: 'bg-fm-warning-bg border border-fm-warning-border text-fm-warning',
-    description: 'Temporary mitigation applied; root cause investigation deferred.',
   },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {

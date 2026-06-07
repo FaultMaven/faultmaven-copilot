@@ -11,8 +11,8 @@ interface ResolutionActionsCardProps {
 const CLOSURE_REASON_LABELS: Record<string, string> = {
   abandoned: 'Abandoned',
   escalated: 'Escalated',
-  mitigation_sufficient: 'Mitigated',
   inquiry_only: 'Inquiry Only',
+  closed_after_investigation: 'Closed',
   other: 'Closed',
 };
 
@@ -76,17 +76,9 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
   }
 
   // CLOSED case
-  const isMitigated = closureReason === 'mitigation_sufficient';
-
   return (
-    <div className={`flex items-start gap-2 ${
-      isMitigated
-        ? 'bg-fm-warning-bg/30 border border-fm-warning-border/40'
-        : 'bg-fm-surface border border-fm-border'
-    } rounded-fm-card px-3 py-2 mx-4 mb-2`}>
-      <LockClosedIcon className={`w-4 h-4 mt-0.5 shrink-0 ${
-        isMitigated ? 'text-fm-warning' : 'text-fm-text-tertiary'
-      }`} />
+    <div className="flex items-start gap-2 bg-fm-surface border border-fm-border rounded-fm-card px-3 py-2 mx-4 mb-2">
+      <LockClosedIcon className="w-4 h-4 mt-0.5 shrink-0 text-fm-text-tertiary" />
       <div className="min-w-0">
         <span className="text-fm-xs font-semibold text-fm-text-primary">
           Case Closed{closureLabel ? ` \u00B7 ${closureLabel}` : ''}
@@ -97,10 +89,7 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
           </p>
         )}
         <p className="text-fm-text-tertiary text-fm-xs mt-0.5">
-          {isMitigated
-            ? 'Ask questions or request a runbook from this case.'
-            : 'Ask questions about this case.'
-          }
+          Ask questions about this case.
         </p>
       </div>
     </div>
