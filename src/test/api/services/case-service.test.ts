@@ -167,7 +167,7 @@ describe('Case Service', () => {
       await caseService.submitTurn('case-123', {
         query: 'Resolve this case',
         intentType: 'status_transition',
-        intentData: { from_status: 'investigating', to_status: 'resolved', user_confirmed: true }
+        intentData: { from_state: 'investigating', to_state: 'resolved', user_confirmed: true }
       });
 
       const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
@@ -175,8 +175,8 @@ describe('Case Service', () => {
       expect(body.get('query')).toBe('Resolve this case');
       expect(body.get('intent_type')).toBe('status_transition');
       expect(JSON.parse(body.get('intent_data'))).toEqual({
-        from_status: 'investigating',
-        to_status: 'resolved',
+        from_state: 'investigating',
+        to_state: 'resolved',
         user_confirmed: true
       });
     });
