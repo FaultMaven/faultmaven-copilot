@@ -123,9 +123,6 @@ export interface QueryIntent {
 
   /** For confirmation: yes/no value */
   confirmation_value?: boolean;
-
-  /** For status_transition: optional closure reason specified at click time. */
-  closure_reason?: string;
 }
 
 // ============================================================
