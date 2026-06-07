@@ -221,8 +221,8 @@ const ChatWindowComponent = function ChatWindow({
     // Send with structured intent for reliable backend routing
     const intent: QueryIntent = {
       type: IntentType.StatusTransition,
-      from_status: currentStatus,
-      to_status: newStatus,
+      from_state: currentStatus,
+      to_state: newStatus,
       user_confirmed: true
     };
 
