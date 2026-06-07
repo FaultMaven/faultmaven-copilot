@@ -63,20 +63,6 @@ export const PaperClipIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) =>
   </svg>
 );
 
-/** Wrench icon for treatment/resolving stage */
-export const WrenchIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.383 5.383a1.5 1.5 0 01-2.12-2.121l5.382-5.383m0 0a5.25 5.25 0 017.56-7.04l-3.53 3.53a.75.75 0 000 1.06l1.06 1.06a.75.75 0 001.061 0l3.53-3.53a5.25 5.25 0 01-7.04 7.56" />
-  </svg>
-);
-
-/** Bolt icon for mitigation stage */
-export const BoltIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-  </svg>
-);
-
 /** Small filled circle for completed milestones */
 export const FilledCircleIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) => (
   <svg className={className} viewBox="0 0 8 8" fill="currentColor">
@@ -88,20 +74,6 @@ export const FilledCircleIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' })
 export const EmptyCircleIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) => (
   <svg className={className} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
     <circle cx="4" cy="4" r="3" />
-  </svg>
-);
-
-/** Small filled diamond for completed mitigation gates (detour milestones). */
-export const FilledDiamondIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) => (
-  <svg className={className} viewBox="0 0 8 8" fill="currentColor">
-    <polygon points="4,0 8,4 4,8 0,4" />
-  </svg>
-);
-
-/** Small outline diamond for incomplete mitigation gates. */
-export const EmptyDiamondIcon: React.FC<IconProps> = ({ className = 'w-2 h-2' }) => (
-  <svg className={className} viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <polygon points="4,1 7,4 4,7 1,4" />
   </svg>
 );
 
