@@ -87,4 +87,26 @@ describe('SuggestionCard — Phase 6 evidence_need_id visual linkage', () => {
     expect(screen.getByText('Upload metrics')).toBeInTheDocument();
     expect(screen.getByText(/why: timeline reconstruction/)).toBeInTheDocument();
   });
+
+  it('renders a payload-less FREE_SPEECH as a non-clickable user-voiced line', () => {
+    // payload is now COOPERATIVE-only; FREE_SPEECH carries everything in the
+    // user-voiced label + hints, and is never clickable.
+    const { container } = render(
+      <SuggestionCard
+        action={_action({
+          label: "Share what I'm seeing in my environment",
+          type: 'FREE_SPEECH',
+          payload: undefined,
+          hints: ['symptoms', 'timeline'],
+        })}
+        isCurrentTurn
+      />,
+    );
+    expect(
+      screen.getByText("Share what I'm seeing in my environment"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/symptoms · timeline/)).toBeInTheDocument();
+    const row = container.firstChild as HTMLElement;
+    expect(row.getAttribute('role')).toBe(null); // not a button
+  });
 });
