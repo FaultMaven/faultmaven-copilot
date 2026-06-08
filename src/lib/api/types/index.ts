@@ -393,7 +393,10 @@ export type CooperativeAction = 'query_submit' | 'command_copy';
 export interface SuggestedAction {
   label: string;
   type: SuggestionType;
-  payload: string;
+  /** COOPERATIVE only: the text a click submits (query_submit) or copies
+   *  (command_copy). Absent for EVIDENCE/FREE_SPEECH — those carry
+   *  everything in label + body/hints and are not clickable. */
+  payload?: string;
   body?: string | null;
   cooperative_action?: CooperativeAction;
   hints?: string[];

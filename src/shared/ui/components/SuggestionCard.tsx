@@ -33,7 +33,8 @@ export function SuggestionCard({
   const [copied, setCopied] = useState(false);
 
   const handleClick = useCallback(() => {
-    if (!isClickable) return;
+    // payload is COOPERATIVE-only; a clickable suggestion always carries one.
+    if (!isClickable || !action.payload) return;
     const cooperativeAction = action.cooperative_action ?? 'query_submit';
 
     if (cooperativeAction === 'command_copy') {
