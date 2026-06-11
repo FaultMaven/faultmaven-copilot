@@ -120,6 +120,43 @@ describe('useMessageSubmission', () => {
     expect(pendingOpsManager.complete).toHaveBeenCalledWith('ai-msg-id');
   });
 
+  it('should sync activeCase.state from TurnResponse.case_state', async () => {
+    // Regression: the updater previously wrote the new value to a
+    // nonexistent `status` field, leaving activeCase.state stale — the
+    // case header showed INQUIRY until a remount refetched the case UI.
+    const { result } = renderHook(() => useMessageSubmission(mockProps));
+
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Starting the investigation.',
+      turn_number: 2,
+      milestones_completed: [],
+      case_state: 'investigating',
+      progress_made: true,
+      is_stuck: false,
+      attachments_processed: []
+    });
+
+    await act(async () => {
+      await result.current.handleQuerySubmit('Yes, let us investigate');
+    });
+
+    expect(mockProps.setActiveCase).toHaveBeenCalled();
+    const updater = (mockProps.setActiveCase as any).mock.calls[0][0];
+    const prev = {
+      case_id: 'case-123',
+      title: 'Test',
+      state: 'inquiry',
+      created_at: '2026-01-01T00:00:00Z',
+      owner_id: 'u1',
+      organization_id: 'o1',
+      closure_reason: null,
+      closed_at: null
+    };
+    const next = updater(prev);
+    expect(next.state).toBe('investigating');
+    expect(next).not.toHaveProperty('status');
+  });
+
   it('should create new case if no active case exists', async () => {
     const propsNoCase = { ...mockProps, activeCaseId: undefined };
     const { result } = renderHook(() => useMessageSubmission(propsNoCase));

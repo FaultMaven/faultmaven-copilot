@@ -60,7 +60,7 @@ export interface UseMessageSubmissionProps {
   setActiveCaseId: (id: string | undefined) => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
   setConversations: React.Dispatch<React.SetStateAction<Record<string, OptimisticConversationItem[]>>>;
-  setActiveCase: React.Dispatch<React.SetStateAction<any>>;
+  setActiveCase: React.Dispatch<React.SetStateAction<UserCase | null>>;
   setOptimisticCases: React.Dispatch<React.SetStateAction<OptimisticUserCase[]>>;
   setConversationTitles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
@@ -114,7 +114,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                   oldStatus: prev.state,
                   newStatus: response.case_state
                 });
-                return { ...prev, status: response.case_state };
+                return { ...prev, state: response.case_state as UserCase['state'] };
               }
               return prev;
             });
@@ -166,7 +166,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                         oldStatus: prev.state,
                         newStatus: last.case_state,
                       });
-                      return { ...prev, status: last.case_state as any };
+                      return { ...prev, state: last.case_state as UserCase['state'] };
                     }
                     return prev;
                   });

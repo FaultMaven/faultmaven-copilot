@@ -268,7 +268,7 @@ const ChatWindowComponent = function ChatWindow({
       oldStatus: activeCase.state,
       newStatus: fullCaseData.state,
     });
-    setActiveCase(prev => prev ? { ...prev, status: fullCaseData.state } : null);
+    setActiveCase(prev => prev ? { ...prev, state: fullCaseData.state as UserCase['state'] } : null);
   }, [fullCaseData, activeCase, sessionId, setActiveCase]);
 
   // Invalidate the cached snapshot when activeCase.state moves ahead of it —

@@ -32,6 +32,7 @@ import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useMessageSubmission } from "./hooks/useMessageSubmission";
 import { useBatchedPersistence } from "./hooks/useBatchedPersistence";
 import { useDataUpload } from "./hooks/useDataUpload";
+import type { UserCase } from "../../types/case";
 
 // Wrapper component that provides error handling context
 export default function SidePanelApp() {
@@ -71,7 +72,7 @@ function SidePanelAppContent() {
   const [pendingOperations, setPendingOperations] = useState<Record<string, PendingOperation>>({});
   const [optimisticCases, setOptimisticCases] = useState<OptimisticUserCase[]>([]);
   const [pinnedCases, setPinnedCases] = useState<Set<string>>(new Set());
-  const [activeCase, setActiveCase] = useState<any | null>(null); // Should be UserCase
+  const [activeCase, setActiveCase] = useState<UserCase | null>(null);
   const [caseEvidence, setCaseEvidence] = useState<Record<string, any[]>>({}); // Should be UploadedData[]
 
   // --- Case Management ---
@@ -396,10 +397,13 @@ function SidePanelAppContent() {
       setActiveCase({
         case_id: optimisticCase.case_id,
         title: optimisticCase.title || conversationTitles[caseId] || 'New Case',
-        status: optimisticCase.state || 'inquiry',
+        state: (optimisticCase.state || 'inquiry') as UserCase['state'],
         created_at: optimisticCase.created_at || new Date().toISOString(),
         updated_at: optimisticCase.updated_at || new Date().toISOString(),
         owner_id: optimisticCase.owner_id || '',
+        organization_id: '',
+        closure_reason: null,
+        closed_at: null,
         message_count: conversations[caseId]?.length || 0
       });
     } else {
@@ -409,10 +413,13 @@ function SidePanelAppContent() {
       setActiveCase({
         case_id: caseId,
         title: conversationTitles[caseId] || 'Loading...',
-        status: lastStatusMessage?.case_state || 'inquiry',
+        state: (lastStatusMessage?.case_state || 'inquiry') as UserCase['state'],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         owner_id: '',
+        organization_id: '',
+        closure_reason: null,
+        closed_at: null,
         message_count: caseMessages.length || 0
       });
     }

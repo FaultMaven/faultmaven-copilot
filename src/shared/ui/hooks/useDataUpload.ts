@@ -14,6 +14,7 @@ import {
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { createLogger } from '../../../lib/utils/logger';
 import type { ErrorContext } from '../../../lib/errors/types';
+import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { TITLE_GENERATION_THRESHOLD } from './useMessageSubmission';
 
@@ -26,7 +27,7 @@ interface UseDataUploadProps {
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   setActiveCaseId: (id: string) => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
-  setActiveCase: (caseData: any) => void;
+  setActiveCase: React.Dispatch<React.SetStateAction<UserCase | null>>;
   setConversations: React.Dispatch<React.SetStateAction<Record<string, OptimisticConversationItem[]>>>;
   setConversationTitles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
@@ -97,15 +98,10 @@ export function useDataUpload({
           setActiveCaseId(newCaseId);
           setHasUnsavedNewChat(false);
 
-          setActiveCase({
-            case_id: newCaseId,
-            owner_id: caseData.owner_id,
-            title: caseData.title,
-            status: caseData.state || 'inquiry',
-            created_at: caseData.created_at || new Date().toISOString(),
-            updated_at: caseData.updated_at || new Date().toISOString(),
-            message_count: 0
-          });
+          // createCase already returns a normalized UserCase — pass it
+          // through instead of rebuilding it (a hand-built literal here
+          // previously wrote the state to a nonexistent `status` field).
+          setActiveCase(caseData);
 
           setConversations(prev => ({
             ...prev,
@@ -259,13 +255,13 @@ export function useDataUpload({
 
       // Update active case status from TurnResponse (e.g. INQUIRY → INVESTIGATING)
       if (turnResponse.case_state) {
-        setActiveCase((prev: any) => {
+        setActiveCase((prev: UserCase | null) => {
           if (prev && prev.state !== turnResponse.case_state) {
             log.info('Updating active case status from backend', {
               oldStatus: prev.state,
               newStatus: turnResponse.case_state
             });
-            return { ...prev, status: turnResponse.case_state };
+            return { ...prev, state: turnResponse.case_state as UserCase['state'] };
           }
           return prev;
         });
