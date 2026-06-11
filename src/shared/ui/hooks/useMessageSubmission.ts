@@ -37,6 +37,7 @@ import {
   MergeContext,
   ConflictDetectionResult
 } from '../../../lib/optimistic';
+import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
@@ -60,7 +61,7 @@ export interface UseMessageSubmissionProps {
   setActiveCaseId: (id: string | undefined) => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
   setConversations: React.Dispatch<React.SetStateAction<Record<string, OptimisticConversationItem[]>>>;
-  setActiveCase: React.Dispatch<React.SetStateAction<any>>;
+  setActiveCase: React.Dispatch<React.SetStateAction<UserCase | null>>;
   setOptimisticCases: React.Dispatch<React.SetStateAction<OptimisticUserCase[]>>;
   setConversationTitles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
@@ -114,11 +115,18 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                   oldStatus: prev.state,
                   newStatus: response.case_state
                 });
-                return { ...prev, status: response.case_state };
+                return { ...prev, state: response.case_state as UserCase['state'] };
               }
               return prev;
             });
           }
+
+          // Every turn can change what the case header displays (milestones,
+          // evidence counts, hypotheses, state) — drop the cached case-UI
+          // snapshot so ChatWindow refetches it. State divergence alone is
+          // not a sufficient trigger: most turns mutate header content
+          // without a state transition.
+          queryClient.invalidateQueries({ queryKey: ['caseUI', caseId] });
 
           return response;
         },
@@ -166,7 +174,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                         oldStatus: prev.state,
                         newStatus: last.case_state,
                       });
-                      return { ...prev, status: last.case_state as any };
+                      return { ...prev, state: last.case_state as UserCase['state'] };
                     }
                     return prev;
                   });
