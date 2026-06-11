@@ -11,6 +11,7 @@ import {
 import {
   OptimisticConversationItem,
 } from '../../../lib/optimistic';
+import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { createLogger } from '../../../lib/utils/logger';
 import type { ErrorContext } from '../../../lib/errors/types';
@@ -266,6 +267,11 @@ export function useDataUpload({
           return prev;
         });
       }
+
+      // Every turn can change what the case header displays — drop the
+      // cached case-UI snapshot so ChatWindow refetches it (mirrors
+      // useMessageSubmission).
+      queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
       // Step 5: Update optimistic messages with real response data
       // Prefer backend-processed attachments over local file info

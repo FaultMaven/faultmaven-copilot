@@ -37,6 +37,7 @@ import {
   MergeContext,
   ConflictDetectionResult
 } from '../../../lib/optimistic';
+import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
@@ -119,6 +120,13 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
               return prev;
             });
           }
+
+          // Every turn can change what the case header displays (milestones,
+          // evidence counts, hypotheses, state) — drop the cached case-UI
+          // snapshot so ChatWindow refetches it. State divergence alone is
+          // not a sufficient trigger: most turns mutate header content
+          // without a state transition.
+          queryClient.invalidateQueries({ queryKey: ['caseUI', caseId] });
 
           return response;
         },

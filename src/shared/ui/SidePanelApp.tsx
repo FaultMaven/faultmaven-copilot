@@ -1,5 +1,5 @@
 // src/shared/ui/SidePanelApp.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { browser } from "wxt/browser";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
@@ -16,7 +16,8 @@ import { PersistenceManager } from "../../lib/utils/persistence-manager";
 
 const log = createLogger('SidePanelApp');
 import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
-import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation } from "../../lib/api";
+import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation, getUserCases } from "../../lib/api";
+import { caseCacheManager } from "../../lib/cache/case-cache";
 import { isOptimisticId, isRealId } from "../../lib/utils/data-integrity";
 import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
 
@@ -74,6 +75,43 @@ function SidePanelAppContent() {
   const [pinnedCases, setPinnedCases] = useState<Set<string>>(new Set());
   const [activeCase, setActiveCase] = useState<UserCase | null>(null);
   const [caseEvidence, setCaseEvidence] = useState<Record<string, any[]>>({}); // Should be UploadedData[]
+
+  // State-transition reconciliation. When the active case's state changes
+  // mid-session (INQUIRY → INVESTIGATING → RESOLVED/CLOSED), two displays go
+  // stale: the case list grouping (active vs completed, served from a cached
+  // getUserCases list) and — on terminal transitions — the terminal metadata
+  // on activeCase (closure_reason / closed_at / resolved_at live on the case
+  // row; TurnResponse carries only case_state). Refresh both from the
+  // authoritative list. Keyed per case so switching cases never counts as a
+  // transition.
+  const lastCaseStateRef = useRef<{ id: string; state: string } | null>(null);
+  useEffect(() => {
+    if (!activeCase) return;
+    const prevPair = lastCaseStateRef.current;
+    lastCaseStateRef.current = { id: activeCase.case_id, state: activeCase.state };
+    if (!prevPair || prevPair.id !== activeCase.case_id) return; // case switch
+    if (prevPair.state === activeCase.state) return; // no transition
+    const transitionedCaseId = activeCase.case_id;
+    const isTerminal = activeCase.state === 'resolved' || activeCase.state === 'closed';
+    (async () => {
+      try {
+        await caseCacheManager.invalidateCache();
+        if (isTerminal) {
+          const cases = await getUserCases({ limit: 100, offset: 0 });
+          const fresh = cases.find(c => c.case_id === transitionedCaseId);
+          if (fresh) {
+            setActiveCase(prev =>
+              prev && prev.case_id === fresh.case_id ? { ...prev, ...fresh } : prev
+            );
+          }
+        }
+        setRefreshSessions(prev => prev + 1);
+      } catch (error) {
+        // Non-critical — the next list reload will reconcile.
+        log.debug('Post-transition case refresh failed', error);
+      }
+    })();
+  }, [activeCase?.case_id, activeCase?.state]);
 
   // --- Case Management ---
   const {
