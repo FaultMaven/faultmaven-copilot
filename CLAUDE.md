@@ -485,7 +485,7 @@ When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is
 **Auto-generated summaries vs runbooks:**
 
 - **Summaries** (Resolution Summary, Closure Summary) are auto-generated synchronously at terminal transition and embedded directly into the closure-turn chat reply.
-- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or CLOSED(mitigation_sufficient) cases. The agent offers them as COOPERATIVE suggestions in chat on terminal Q&A turns; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
+- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or CLOSED(mitigation_sufficient) cases. The agent offers them as DECIDE suggestions in chat on terminal Q&A turns; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
 
 **Key files:**
 

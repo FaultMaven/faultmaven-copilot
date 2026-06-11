@@ -386,24 +386,27 @@ export interface EvidenceProvided {
   confidence_impact?: number | null;
 }
 
-// Suggestion type system (intent-based classification)
-export type SuggestionType = 'COOPERATIVE' | 'EVIDENCE' | 'FREE_SPEECH';
-export type CooperativeAction = 'query_submit' | 'command_copy';
+// Suggestion type system — the type IS the agent's intent, and encoding
+// follows from it: DECIDE (clickable — click sends payload as the user's
+// message), RUN (clickable — click copies payload command to clipboard),
+// EVIDENCE / FREE_SPEECH (informational, never clickable).
+export type SuggestionType = 'DECIDE' | 'RUN' | 'EVIDENCE' | 'FREE_SPEECH';
+/** The clickable subset — these carry a payload. */
+export type ClickableSuggestionType = Extract<SuggestionType, 'DECIDE' | 'RUN'>;
 
 export interface SuggestedAction {
   label: string;
   type: SuggestionType;
-  /** COOPERATIVE only: the text a click submits (query_submit) or copies
-   *  (command_copy). Absent for EVIDENCE/FREE_SPEECH — those carry
+  /** DECIDE: the exact message a click sends; RUN: the exact command a
+   *  click copies. Absent for EVIDENCE/FREE_SPEECH — those carry
    *  everything in label + body/hints and are not clickable. */
   payload?: string;
   body?: string | null;
-  cooperative_action?: CooperativeAction;
   hints?: string[];
   icon?: string | null;
   metadata?: Record<string, any>;
   /** Optional intent metadata — when present, frontend sends this as QueryIntent
-   *  alongside the payload. Bridges COOPERATIVE suggestions with deterministic
+   *  alongside the payload. Bridges DECIDE suggestions with deterministic
    *  intent routing (e.g., transition confirmations use IntentType.CONFIRMATION). */
   intent?: QueryIntent;
   /** For EVIDENCE-type suggestions: the persistent EvidenceNeed this
