@@ -504,8 +504,9 @@ const ChatWindowComponent = function ChatWindow({
                             action={action}
                             isCurrentTurn={item.id === lastAssistantItemId}
                             disabled={!canInteract}
-                            onCooperativeClick={(payload, cooperativeAction, intent) => {
-                              if (cooperativeAction === 'query_submit') {
+                            onClickableSuggestion={(payload, type, intent) => {
+                              // RUN copies inside the card; only DECIDE submits.
+                              if (type === 'DECIDE') {
                                 onQuerySubmit(payload, intent);
                               }
                             }}

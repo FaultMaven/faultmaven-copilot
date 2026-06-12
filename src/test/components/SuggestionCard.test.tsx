@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { SuggestionCard } from '~/shared/ui/components/SuggestionCard';
 import type { SuggestedAction } from '~/lib/api/types';
@@ -67,8 +67,8 @@ describe('SuggestionCard — Phase 6 evidence_need_id visual linkage', () => {
     const { container } = render(
       <SuggestionCard
         action={_action({
-          type: 'COOPERATIVE',
-          cooperative_action: 'query_submit',
+          type: 'DECIDE',
+          payload: 'Yes, proceed',
           evidence_need_id: 'eneed_abc123def456',
         })}
       />,
@@ -89,8 +89,8 @@ describe('SuggestionCard — Phase 6 evidence_need_id visual linkage', () => {
   });
 
   it('renders a payload-less FREE_SPEECH as a non-clickable user-voiced line', () => {
-    // payload is now COOPERATIVE-only; FREE_SPEECH carries everything in the
-    // user-voiced label + hints, and is never clickable.
+    // payload belongs to the clickable types (DECIDE/RUN); FREE_SPEECH
+    // carries everything in the user-voiced label + hints, never clickable.
     const { container } = render(
       <SuggestionCard
         action={_action({
@@ -108,5 +108,63 @@ describe('SuggestionCard — Phase 6 evidence_need_id visual linkage', () => {
     expect(screen.getByText(/symptoms · timeline/)).toBeInTheDocument();
     const row = container.firstChild as HTMLElement;
     expect(row.getAttribute('role')).toBe(null); // not a button
+  });
+});
+
+
+describe('SuggestionCard — DECIDE/RUN click encoding', () => {
+  it('DECIDE click invokes the callback with the payload (submit path)', () => {
+    const onClick = vi.fn();
+    render(
+      <SuggestionCard
+        action={_action({ label: 'Yes, investigate', type: 'DECIDE', payload: 'Yes, let us investigate' })}
+        isCurrentTurn
+        onClickableSuggestion={onClick}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(onClick).toHaveBeenCalledWith('Yes, let us investigate', 'DECIDE', undefined);
+  });
+
+  it('RUN click copies the command to the clipboard and reports type RUN', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const onClick = vi.fn();
+    render(
+      <SuggestionCard
+        action={_action({ label: 'Get pod logs', type: 'RUN', payload: 'kubectl logs <pod> --tail=100' })}
+        isCurrentTurn
+        onClickableSuggestion={onClick}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(writeText).toHaveBeenCalledWith('kubectl logs <pod> --tail=100');
+    expect(onClick).toHaveBeenCalledWith('kubectl logs <pod> --tail=100', 'RUN', undefined);
+  });
+
+  it('EVIDENCE and FREE_SPEECH are never clickable, even on the current turn', () => {
+    for (const type of ['EVIDENCE', 'FREE_SPEECH'] as const) {
+      const { container, unmount } = render(
+        <SuggestionCard action={_action({ type, payload: undefined })} isCurrentTurn />,
+      );
+      expect((container.firstChild as HTMLElement).getAttribute('role')).toBe(null);
+      unmount();
+    }
+  });
+
+  it('clickable suggestions from past turns are inert and dimmed', () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <SuggestionCard
+        action={_action({ label: 'Yes', type: 'DECIDE', payload: 'Yes' })}
+        isCurrentTurn={false}
+        onClickableSuggestion={onClick}
+      />,
+    );
+    const row = container.firstChild as HTMLElement;
+    expect(row.getAttribute('role')).toBe(null);
+    expect(row.className).toContain('opacity-50');
+    fireEvent.click(row);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });

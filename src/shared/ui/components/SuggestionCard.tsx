@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import type { SuggestedAction, CooperativeAction, QueryIntent } from '~/lib/api/types';
+import type { SuggestedAction, ClickableSuggestionType, QueryIntent } from '~/lib/api/types';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('SuggestionCard');
@@ -13,17 +13,18 @@ export interface SuggestionCardProps {
   /** Whether this suggestion belongs to the current (latest) turn */
   isCurrentTurn?: boolean;
   disabled?: boolean;
-  onCooperativeClick?: (payload: string, cooperativeAction: CooperativeAction, intent?: QueryIntent) => void;
+  onClickableSuggestion?: (payload: string, type: ClickableSuggestionType, intent?: QueryIntent) => void;
 }
 
 export function SuggestionCard({
   action,
   isCurrentTurn = false,
   disabled = false,
-  onCooperativeClick,
+  onClickableSuggestion,
 }: SuggestionCardProps) {
-  const isClickable = action.type === 'COOPERATIVE' && isCurrentTurn && !disabled;
-  const isCommand = action.type === 'COOPERATIVE' && action.cooperative_action === 'command_copy';
+  const isClickableType = action.type === 'DECIDE' || action.type === 'RUN';
+  const isClickable = isClickableType && isCurrentTurn && !disabled;
+  const isCommand = action.type === 'RUN';
   // Phase 6 visual linkage: EVIDENCE-type suggestions that derive from a
   // persistent open need carry a backend-resolved evidence_need_id. The
   // visual signal is minimal — bullet recolored to the accent token + a
@@ -33,18 +34,17 @@ export function SuggestionCard({
   const [copied, setCopied] = useState(false);
 
   const handleClick = useCallback(() => {
-    // payload is COOPERATIVE-only; a clickable suggestion always carries one.
+    // payload exists only on the clickable types (DECIDE/RUN).
     if (!isClickable || !action.payload) return;
-    const cooperativeAction = action.cooperative_action ?? 'query_submit';
 
-    if (cooperativeAction === 'command_copy') {
+    if (action.type === 'RUN') {
       navigator.clipboard.writeText(action.payload);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
 
-    onCooperativeClick?.(action.payload, cooperativeAction, action.intent);
-  }, [isClickable, action.payload, action.cooperative_action, action.intent, onCooperativeClick]);
+    onClickableSuggestion?.(action.payload, action.type as ClickableSuggestionType, action.intent);
+  }, [isClickable, action.payload, action.type, action.intent, onClickableSuggestion]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && isClickable) {
@@ -65,7 +65,7 @@ export function SuggestionCard({
       className={`flex items-baseline gap-1.5 py-px leading-snug ${
         isClickable
           ? 'cursor-pointer group'
-          : action.type === 'COOPERATIVE' && !isCurrentTurn
+          : isClickableType && !isCurrentTurn
             ? 'opacity-50'
             : ''
       }`}

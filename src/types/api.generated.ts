@@ -506,7 +506,7 @@ export interface paths {
          * Update Case
          * @description Update case details
          *
-         *     Updates case metadata such as title, description, status, priority, and tags.
+         *     Updates case metadata such as title, description, state, priority, and tags.
          *     Requires edit permissions on the case.
          */
         put: operations["update_case_api_v1_cases__case_id__put"];
@@ -4267,7 +4267,7 @@ export interface components {
             pending_transition?: Record<string, never> | null;
             /**
              * Last Suggestions
-             * @description COOPERATIVE suggestions with intent metadata from the last agent turn. Used by the intent resolver to match typed responses against offered choices. Updated after each turn; only suggestions carrying intent metadata are stored.
+             * @description DECIDE suggestions with intent metadata from the last agent turn. Used by the intent resolver to match typed responses against offered choices. Updated after each turn; only suggestions carrying intent metadata are stored.
              */
             last_suggestions?: Record<string, never>[] | null;
             /**
@@ -4322,8 +4322,6 @@ export interface components {
              * @default 0
              */
             message_count: number;
-            /** @description Selected investigation path (MITIGATION vs ROOT_CAUSE) */
-            path_selection?: components["schemas"]["PathSelection"] | null;
             /**
              * @description Investigation approach: ACTIVE_INCIDENT (speed) vs POST_MORTEM (thoroughness)
              * @default post_mortem
@@ -4870,8 +4868,6 @@ export interface components {
             disposition_eligibility?: {
                 [key: string]: string;
             } | null;
-            /** @description Investigation path commitment. Post-INV-19 redesign Gate 2 fires inside INVESTIGATING after ``symptom_verified=True``, so INQUIRY-stage cases ALWAYS have ``path_selection=None`` — the field is never written during INQUIRY. Existence of this field IS the Gate 2 commit; the recommendation that powers the Gate 2 chip is computed on-demand by the engine and rendered into the affordance pair, never stored on the case. */
-            path_selection?: components["schemas"]["PathSelection"] | null;
             /** @description Nested inquiry phase data */
             inquiry: components["schemas"]["InquiryResponseData"];
         };
@@ -4944,8 +4940,6 @@ export interface components {
              * @description Confirmed problem statement carried over from INQUIRY (sourced from case.description).
              */
             problem_statement?: string | null;
-            /** @description Investigation path commitment + Gate-3 state. Post-INV-19 redesign Gate 2 fires INSIDE INVESTIGATING after ``symptom_verified=True``, so this field is ``None`` during the pre-path window (INVESTIGATING + symptom_verified=False, and the brief INVESTIGATING + symptom_verified=True window before the user clicks a Gate 2 button). Existence of this field IS the commit signal. mitigation_completed_at_turn is set after mitigation_verified; rca_after_mitigation_confirmed drives Gate 3 prompts on the mitigation-first path. */
-            path_selection?: components["schemas"]["PathSelection"] | null;
             /** @description Agent's current understanding of the problem */
             working_conclusion?: components["schemas"]["WorkingConclusionSummary"] | null;
             /** @description Milestone-based progress tracking */
@@ -5050,8 +5044,6 @@ export interface components {
              * @description Confirmed problem statement carried over from INQUIRY (sourced from case.description).
              */
             problem_statement?: string | null;
-            /** @description Investigation path that was followed. Lets the terminal UI display 'Mitigation-first' or 'Root-cause' retrospectively, and exposes mitigation_completed_at_turn for resolved cases that detoured through MITIGATION. */
-            path_selection?: components["schemas"]["PathSelection"] | null;
             /** @description What caused the problem */
             root_cause: components["schemas"]["RootCauseSummary"];
             /** @description Solution that fixed the problem */
@@ -5084,6 +5076,18 @@ export interface components {
             /** @description Updated state (admin only) */
             state?: components["schemas"]["CaseState"] | null;
         };
+        /**
+         * CauseState
+         * @description Engine-derived knowledge state of the root cause (assessment variable).
+         *
+         *     Recomputed every turn from the LLM's grounded cause-identification signal
+         *     plus the active-hypothesis count (see investigation-flow-redesign.md R1).
+         *     NEVER path-stripped — recording a cause the engine legitimately knows is a
+         *     truth signal, not an earned process milestone. Drives whether the diagnostic
+         *     machinery (hypothesis formulation + evidence-needs) runs this turn.
+         * @enum {string}
+         */
+        CauseState: "unknown" | "candidates" | "identified";
         /**
          * Change
          * @description Recent change that may be relevant to the problem.
@@ -5619,7 +5623,7 @@ export interface components {
          *       evidence linkage, motivating hypothesis IDs).
          *     - Auto-superseded by the engine on hypothesis retirement when the
          *       motivating list becomes empty AND purpose is CAUSAL_VERIFICATION
-         *       AND status is not FULFILLED. Symptom needs (empty motivating
+         *       AND state is not FULFILLED. Symptom needs (empty motivating
          *       list by design) are exempt — they're motivated by the problem
          *       statement, not by a hypothesis.
          */
@@ -6167,26 +6171,6 @@ export interface components {
          */
         InvestigationMomentum: "high" | "moderate" | "low" | "blocked";
         /**
-         * InvestigationPath
-         * @description Investigation routing strategy (2-stage model with mitigation detour).
-         *
-         *     Path is SYSTEM-RECOMMENDED from the (temporal_state x urgency_level) matrix
-         *     and USER-CONFIRMED via Gate 2. The LLM provides inputs (temporal_state,
-         *     urgency_level) during inquiry; the router in investigation_router.py
-         *     produces a deterministic recommendation from those user-stated inputs;
-         *     the user accepts or overrides via a COOPERATIVE suggestion (Gate 2).
-         *     Post-INV-19 redesign, Gate 2 fires inside INVESTIGATING after the agent
-         *     sets ``symptom_verified=True``, so the user's accept/override decision
-         *     happens with the agent's symptom-validation work visible in the
-         *     transcript. The recommendation algorithm itself is unchanged — it
-         *     still reads ``case.inquiry.preliminary_urgency``; what the timing
-         *     move changed is the *override context the user sees*. Making the
-         *     recommendation evidence-derived is deferred follow-up. LLM does NOT
-         *     choose the path directly.
-         * @enum {string}
-         */
-        InvestigationPath: "mitigation_first" | "root_cause";
-        /**
          * InvestigationProgress
          * @description Evidence-driven progress tracking with two distinct milestone types:
          *
@@ -6198,18 +6182,8 @@ export interface components {
          *        Set by LLM in structured output. Do NOT drive stage transitions.
          */
         InvestigationProgress: {
-            /**
-             * Mitigation Accepted
-             * @description User complied with proposed temp fix (inferred from submission). Triggers DIAGNOSIS → MITIGATION transition.
-             * @default false
-             */
-            mitigation_accepted: boolean;
-            /**
-             * Mitigation Verified
-             * @description User confirmed mitigation worked. Triggers MITIGATION → DIAGNOSIS return for RCA.
-             * @default false
-             */
-            mitigation_verified: boolean;
+            /** @description Mitigation insert record (redesign R2). Materialized by the engine from the LLM's mitigation accept/verify gate signals plus the workaround ProposedAction. Replaces the legacy path-coupled mitigation gates. */
+            mitigation?: components["schemas"]["MitigationRecord"] | null;
             /**
              * Solution Accepted
              * @description User complied with proposed solution (inferred from submission). Triggers DIAGNOSIS → TREATMENT transition.
@@ -6229,17 +6203,26 @@ export interface components {
              */
             symptom_verified: boolean;
             /**
-             * Root Cause Identified
-             * @description Root cause determined (directly or via hypothesis validation)
-             * @default false
-             */
-            root_cause_identified: boolean;
-            /**
              * Solution Proposed
              * @description Set programmatically when ProposedAction with action_type=SOLUTION is created. Not directly set by LLM.
              * @default false
              */
             solution_proposed: boolean;
+            /**
+             * @description Engine-derived knowledge state of the root cause (UNKNOWN | CANDIDATES | IDENTIFIED). Replaces the boolean root_cause_identified. IDENTIFIED is the grounded cause-known signal; CANDIDATES is derived from >=2 ACTIVE hypotheses. Drives whether the diagnostic machinery runs. Recomputed each turn by the engine; never path-stripped.
+             * @default unknown
+             */
+            cause_state: components["schemas"]["CauseState"];
+            /**
+             * @description Knowledge state of the fix (UNKNOWN | SELECTED). CANDIDATES (multi-solution deliberation) is reserved for a follow-on and not produced this round.
+             * @default unknown
+             */
+            solution_state: components["schemas"]["SolutionState"];
+            /**
+             * @description Whether the SELECTED solution can be applied this session (NOW | DEFERRED). DEFERRED routes to CLOSE-with-documented-solution.
+             * @default now
+             */
+            solution_feasible: components["schemas"]["SolutionFeasible"];
             /**
              * Root Cause Likelihood
              * @description Likelihood in root cause identification (0.0 = unknown, 1.0 = certain)
@@ -6360,23 +6343,17 @@ export interface components {
          * InvestigationStage
          * @description Investigation stage within the Investigating Phase.
          *
-         *     2-stage model with mitigation detour:
-         *     - DIAGNOSIS: Understand, diagnose, propose actions (core stage)
-         *     - TREATMENT: Verify permanent fix, resolve case (core stage)
-         *     - MITIGATION: Apply and verify temporary fix (optional detour)
+         *     These three stages are pure DERIVED DISPLAY labels in the unified
+         *     opportunistic flow. They are re-derived from the action-compliance
+         *     gates (see ``InvestigationProgress.current_stage``); they do NOT drive
+         *     prompt dispatch and there is NO path fork or prospective routing.
          *
-         *     DIAGNOSIS and TREATMENT are the two core stages every investigation
-         *     passes through. MITIGATION is an optional detour that temporarily
-         *     narrows focus to "stop the bleeding" before returning to DIAGNOSIS.
+         *     - DIAGNOSIS → "Investigating" (default view)
+         *     - MITIGATION → "Mitigating" (an optional inserted sub-activity)
+         *     - TREATMENT → "Resolving"
          *
-         *     Computed from stage-gate milestones. Stage transitions are
-         *     inference-based — user compliance with proposed actions triggers
-         *     transitions via compliance detection. The stage determines which
-         *     prompt template the LLM receives.
-         *
-         *     Investigation Paths:
-         *     - ROOT_CAUSE: DIAGNOSIS → TREATMENT
-         *     - MITIGATION_FIRST: DIAGNOSIS → MITIGATION (detour) → DIAGNOSIS → TREATMENT
+         *     MITIGATION is not a separate path — it is an optional "stop the
+         *     bleeding" insert that surfaces while the investigation continues.
          * @enum {string}
          */
         InvestigationStage: "diagnosis" | "mitigation" | "treatment";
@@ -6901,6 +6878,45 @@ export interface components {
             message_parsing_errors: number;
         };
         /**
+         * MitigationRecord
+         * @description A single forward-only mitigation (the inserted "stop the bleeding" move).
+         *
+         *     Replaces the legacy path-coupled mitigation gates
+         *     (redesign R2). The engine materializes this record from the LLM's accept/verify
+         *     gate signals plus the workaround ProposedAction:
+         *     - ``proposed_at_turn`` is set when a ``solution_type=workaround`` action is created.
+         *     - ``accepted`` / ``verified`` mirror the LLM gate signals (compliance detection).
+         *     - ``completed_at_turn`` is set the turn ``verified`` flips True (the boundary for
+         *       up-weighting pre-mitigation evidence in any later RCA).
+         *
+         *     Single record per investigation for now (redesign §3.2.1); the flow stays open
+         *     to user-led action so a non-mitigating insert is never a dead-end.
+         */
+        MitigationRecord: {
+            /**
+             * Proposed At Turn
+             * @description Turn a workaround mitigation was first proposed
+             */
+            proposed_at_turn?: number | null;
+            /**
+             * Accepted
+             * @description User complied with the proposed mitigation
+             * @default false
+             */
+            accepted: boolean;
+            /**
+             * Verified
+             * @description User confirmed the mitigation stabilized the situation
+             * @default false
+             */
+            verified: boolean;
+            /**
+             * Completed At Turn
+             * @description Turn `verified` flipped True (Gate-3-equivalent boundary)
+             */
+            completed_at_turn?: number | null;
+        };
+        /**
          * NeedPriority
          * @description Priority hint for surfacing needs as EVIDENCE-type suggestions.
          *
@@ -7074,64 +7090,6 @@ export interface components {
             description?: string | null;
         };
         /**
-         * PathSelection
-         * @description Path selection details.
-         *     Records how investigation path was chosen.
-         *
-         *     IMPORTANT: Path is SYSTEM-DETERMINED from matrix (temporal_state x urgency_level).
-         *     LLM provides inputs (temporal_state, urgency_level) during verification.
-         *     System calls determine_investigation_path() to select path deterministically.
-         *     LLM does NOT choose the path directly!
-         */
-        PathSelection: {
-            /** @description Selected investigation path (system-determined from matrix) */
-            path: components["schemas"]["InvestigationPath"];
-            /**
-             * Auto Selected
-             * @description True if system auto-selected, False if user chose
-             */
-            auto_selected: boolean;
-            /**
-             * Rationale
-             * @description Why this path was selected
-             */
-            rationale: string;
-            /** @description Alternative path user could have chosen (if auto-selected) */
-            alternate_path?: components["schemas"]["InvestigationPath"] | null;
-            /**
-             * Selected At
-             * Format: date-time
-             * @description When path was selected
-             */
-            selected_at?: string;
-            /**
-             * Selected By
-             * @description Who selected: 'system' for auto, or user_id for manual
-             * @default system
-             */
-            selected_by: string;
-            /**
-             * Rca After Mitigation Confirmed
-             * @description User has confirmed continuing to RCA after mitigation verified (Gate 3). Mitigation-first path only.
-             * @default false
-             */
-            rca_after_mitigation_confirmed: boolean;
-            /**
-             * Rca After Mitigation Confirmed At Turn
-             * @description Turn number when the user confirmed post-mitigation RCA.
-             */
-            rca_after_mitigation_confirmed_at_turn?: number | null;
-            /**
-             * Mitigation Completed At Turn
-             * @description Turn at which mitigation_verified first became True. Boundary for the pre-mitigation evidence window used by the context builder on post-mitigation RCA runs.
-             */
-            mitigation_completed_at_turn?: number | null;
-            /** @description Temporal state used in decision */
-            temporal_state?: components["schemas"]["TemporalState"] | null;
-            /** @description Urgency level used in decision */
-            urgency_level?: components["schemas"]["UrgencyLevel"] | null;
-        };
-        /**
          * PermissionCheckRequest
          * @description Request to check user permission
          */
@@ -7301,7 +7259,7 @@ export interface components {
             urgency_factors?: string[];
             /**
              * Rca Infeasible
-             * @description Advisory signal: root cause analysis is infeasible for this problem. Set by the LLM during verification when the problem involves uncontrollable external dependencies, deprecated/EOL systems, or known intractable conditions where mitigation is the accepted strategy. Does NOT affect path selection — influences post-mitigation agent behavior only.
+             * @description Advisory signal: root cause analysis is infeasible for this problem. Set by the LLM during verification when the problem involves uncontrollable external dependencies, deprecated/EOL systems, or known intractable conditions where mitigation is the accepted strategy. Influences post-mitigation agent behavior only.
              * @default false
              */
             rca_infeasible: boolean;
@@ -7893,34 +7851,31 @@ export interface components {
             /** Metadata */
             metadata?: Record<string, never> | null;
         };
-        /**
-         * SessionResponse
-         * @description Response payload for auth session operations - API spec compliance.
-         */
         SessionResponse: {
+            /** @description Unique session identifier */
+            session_id: string;
+            /** @description Associated user identifier */
+            user_id?: string | null;
+            /** @description Client/device identifier for session resumption */
+            client_id?: string | null;
             /**
-             * Schema Version
-             * @default 3.1.0
-             * @constant
+             * @description Current session status
              * @enum {string}
              */
-            schema_version: "3.1.0";
-            /** Session Id */
-            session_id: string;
-            /** User Id */
-            user_id?: string | null;
-            /** Client Id */
-            client_id?: string | null;
-            /** @default active */
-            status: components["schemas"]["AuthSessionStatus"];
-            /** Created At */
-            created_at: string;
-            /** Expires At */
-            expires_at?: string | null;
-            /** Metadata */
-            metadata?: Record<string, never> | null;
-            /** Session Resumed */
+            status: "active" | "idle" | "expired";
+            /**
+             * Format: date-time
+             * @description Session creation timestamp
+             */
+            created_at?: string;
+            /** @description Indicates if this was an existing session resumed */
             session_resumed?: boolean | null;
+            /** @description Type of session (e.g., troubleshooting) */
+            session_type?: string;
+            /** @description Status message about session creation/resumption */
+            message?: string;
+            /** @description Session metadata and context */
+            metadata?: Record<string, never>;
         };
         /**
          * SessionRestoreRequest
@@ -8102,6 +8057,24 @@ export interface components {
             effectiveness?: number | null;
         };
         /**
+         * SolutionFeasible
+         * @description Whether the SELECTED solution can be applied within this session.
+         *
+         *     LLM-settable. DEFERRED routes to CLOSE-with-documented-solution (redesign §6 Q2).
+         * @enum {string}
+         */
+        SolutionFeasible: "now" | "deferred";
+        /**
+         * SolutionState
+         * @description Engine-derived knowledge state of the fix (assessment variable).
+         *
+         *     UNKNOWN | SELECTED only this round. CANDIDATES (multi-solution deliberation,
+         *     redesign §6) is reserved for the follow-on that reuses the hypothesis machinery
+         *     and is intentionally not produced yet.
+         * @enum {string}
+         */
+        SolutionState: "unknown" | "candidates" | "selected";
+        /**
          * SolutionSummary
          * @description Solution information for RESOLVED phase.
          */
@@ -8151,11 +8124,9 @@ export interface components {
             /** Type */
             type: string;
             /** Payload */
-            payload: string;
+            payload?: string | null;
             /** Body */
             body?: string | null;
-            /** Cooperative Action */
-            cooperative_action?: string | null;
             /** Hints */
             hints?: string[] | null;
             /** Intent */
@@ -8261,7 +8232,7 @@ export interface components {
         /**
          * TemporalState
          * @description Problem temporal classification.
-         *     Used for investigation path routing.
+         *     Context signal only — does not drive a path fork.
          * @enum {string}
          */
         TemporalState: "ongoing" | "historical";
@@ -8664,15 +8635,11 @@ export interface components {
         };
         /**
          * UrgencyLevel
-         * @description Urgency classification for path routing.
+         * @description Urgency classification.
          *
-         *     Used with TemporalState to recommend an investigation path:
-         *     - ONGOING + HIGH/CRITICAL -> MITIGATION_FIRST
-         *     - All other matched combinations -> ROOT_CAUSE
-         *     - Missing temporal or UNKNOWN urgency -> ROOT_CAUSE (with auto_selected=False)
-         *
-         *     The recommendation is surfaced through Gate 2 for user confirmation
-         *     before INQUIRY -> INVESTIGATING.
+         *     Context signal used (with TemporalState) to inform how the agent
+         *     prioritizes mitigation vs. root-cause work within the unified
+         *     opportunistic flow. It does not select a path — there is no path fork.
          * @enum {string}
          */
         UrgencyLevel: "critical" | "high" | "medium" | "low" | "unknown";
@@ -8958,11 +8925,198 @@ export interface components {
              */
             last_updated: string;
         };
+        /**
+         * @example {
+         *       "detail": "Invalid session ID provided",
+         *       "error_type": "ValidationError",
+         *       "correlation_id": "123e4567-e89b-12d3-a456-426614174000",
+         *       "timestamp": "2025-01-15T10:30:00Z",
+         *       "context": {
+         *         "session_id": "invalid_session_123",
+         *         "validation_errors": [
+         *           "Session ID format invalid"
+         *         ]
+         *       }
+         *     }
+         */
+        ErrorResponse: {
+            /** @description Human-readable error description */
+            detail: string;
+            /**
+             * @description Machine-readable error classification
+             * @enum {string}
+             */
+            error_type?: "ValidationError" | "AuthenticationError" | "AuthorizationError" | "NotFoundError" | "RateLimitError" | "ServiceUnavailableError" | "InternalServerError";
+            /**
+             * Format: uuid
+             * @description Unique identifier for request tracing and support
+             */
+            correlation_id?: string;
+            /**
+             * Format: date-time
+             * @description Error occurrence timestamp in ISO format
+             */
+            timestamp?: string;
+            /** @description Additional error context for debugging */
+            context?: Record<string, never>;
+        };
+        /**
+         * @example {
+         *       "investigation_id": "inv_789",
+         *       "status": "completed",
+         *       "findings": [
+         *         {
+         *           "type": "root_cause",
+         *           "message": "Database connection pool exhausted due to connection leak",
+         *           "severity": "high",
+         *           "confidence": 0.9,
+         *           "evidence": [
+         *             "Connection pool size: 20, Active connections: 20",
+         *             "No idle connections available",
+         *             "Long-running transactions detected"
+         *           ]
+         *         }
+         *       ],
+         *       "recommendations": [
+         *         {
+         *           "action": "Increase database connection pool size to 50",
+         *           "priority": "immediate",
+         *           "impact": "Should restore service within 5 minutes",
+         *           "effort": "low"
+         *         },
+         *         {
+         *           "action": "Review application code for connection leaks",
+         *           "priority": "high",
+         *           "impact": "Prevents future occurrences",
+         *           "effort": "medium"
+         *         }
+         *       ],
+         *       "session_id": "session_db_123",
+         *       "reasoning_trace": [
+         *         {
+         *           "step": "symptom_analysis",
+         *           "reasoning": "HTTP 500 errors correlate with database timeout errors",
+         *           "data_sources": [
+         *             "application_logs",
+         *             "database_metrics"
+         *           ]
+         *         },
+         *         {
+         *           "step": "hypothesis_formation",
+         *           "reasoning": "Connection pool exhaustion is most likely cause given metrics",
+         *           "data_sources": [
+         *             "connection_pool_metrics",
+         *             "transaction_logs"
+         *           ]
+         *         }
+         *       ]
+         *     }
+         */
+        TroubleshootingResponse: {
+            /** @description Unique identifier for this troubleshooting investigation */
+            investigation_id: string;
+            /**
+             * @description Current status of the investigation
+             * @enum {string}
+             */
+            status: "in_progress" | "completed" | "failed" | "requires_input";
+            /** @description List of findings from the investigation */
+            findings?: {
+                /**
+                 * @description Finding category
+                 * @enum {string}
+                 */
+                type?: "root_cause" | "contributing_factor" | "symptom" | "recommendation";
+                /** @description Finding description */
+                message?: string;
+                /**
+                 * @description Finding severity level
+                 * @enum {string}
+                 */
+                severity?: "critical" | "high" | "medium" | "low" | "info";
+                /** @description AI confidence in this finding (0.0 to 1.0) */
+                confidence?: number;
+                /** @description Supporting evidence for this finding */
+                evidence?: string[];
+            }[];
+            /** @description Recommended actions based on findings */
+            recommendations?: {
+                /** @description Recommended action to take */
+                action?: string;
+                /**
+                 * @description Action priority
+                 * @enum {string}
+                 */
+                priority?: "immediate" | "high" | "medium" | "low";
+                /** @description Expected impact of this action */
+                impact?: string;
+                /**
+                 * @description Estimated effort required
+                 * @enum {string}
+                 */
+                effort?: "low" | "medium" | "high";
+            }[];
+            /** @description Session ID for this troubleshooting session */
+            session_id: string;
+            /** @description AI reasoning process trace for transparency */
+            reasoning_trace?: {
+                step?: string;
+                reasoning?: string;
+                data_sources?: string[];
+            }[];
+        };
+        /**
+         * @example {
+         *       "ingestion_id": "ingest_456",
+         *       "status": "completed",
+         *       "file_info": {
+         *         "filename": "app.log",
+         *         "size_bytes": 1048576,
+         *         "file_type": "application/log",
+         *         "detected_format": "json_logs"
+         *       },
+         *       "processing_results": {
+         *         "lines_processed": 15420,
+         *         "errors_found": 23,
+         *         "insights_extracted": 8,
+         *         "processing_time_ms": 2340
+         *       }
+         *     }
+         */
+        DataIngestionResponse: {
+            /** @description Unique identifier for this data ingestion */
+            ingestion_id: string;
+            /**
+             * @description Current processing status
+             * @enum {string}
+             */
+            status: "processing" | "completed" | "failed";
+            /** @description Information about the uploaded file */
+            file_info?: {
+                filename?: string;
+                size_bytes?: number;
+                file_type?: string;
+                detected_format?: string;
+            };
+            /** @description Results of data processing */
+            processing_results?: {
+                lines_processed?: number;
+                errors_found?: number;
+                insights_extracted?: number;
+                processing_time_ms?: number;
+            };
+        };
     };
     responses: never;
     parameters: never;
     requestBodies: never;
-    headers: never;
+    headers: {
+        /**
+         * @description Unique identifier for request tracing and debugging
+         * @example 550e8400-e29b-41d4-a716-446655440000
+         */
+        "X-Correlation-ID": string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
