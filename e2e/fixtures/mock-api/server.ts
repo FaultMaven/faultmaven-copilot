@@ -108,16 +108,36 @@ app.get('/api/v1/cases/:id/messages', (req, res) => {
     sendFixture(res, 'case_messages');
 });
 
-// Case UI endpoint (used by ChatWindow for status reconciliation)
+// Case UI endpoint (used by ChatWindow for state reconciliation).
+// `state` is the discriminator of CaseUIResponse_* — the header crashes
+// if it is missing (this fixture drifted when the API renamed
+// status -> state, which is what broke e2e from 2026-06-04 on).
 app.get('/api/v1/cases/:id/ui', (req, res) => {
     res.json({
         case_id: req.params.id,
         title: 'E2E Test Case',
-        status: 'inquiry',
+        state: 'inquiry',
         created_at: '2026-02-20T21:42:36.236Z',
         updated_at: '2026-02-20T21:42:36.236Z',
         current_turn: 0,
-        messages: []
+        valid_next_states: ['investigating', 'closed']
+    });
+});
+
+// Backend capabilities (sidepanel boot fetch — without this the panel
+// falls back to cached capabilities and logs a 404 on every test).
+app.get('/v1/meta/capabilities', (req, res) => {
+    res.json({
+        deploymentMode: 'self-hosted',
+        kbManagement: 'dashboard',
+        dashboardUrl: 'http://localhost:3333',
+        features: {
+            extensionKB: false,
+            adminKB: true,
+            teamWorkspaces: false,
+            caseHistory: true,
+            sso: false
+        }
     });
 });
 

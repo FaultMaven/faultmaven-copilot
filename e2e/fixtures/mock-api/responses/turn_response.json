@@ -2,8 +2,8 @@
   "agent_response": "This is a mock response from the API. I can see your query.",
   "turn_number": 1,
   "milestones_completed": [],
-  "case_status": "inquiry",
   "progress_made": false,
-  "is_stuck": false,
-  "attachments_processed": []
+  "attachments_processed": [],
+  "case_state": "inquiry",
+  "suggested_actions": []
 }
