@@ -190,6 +190,9 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   // Defensive default: when closure_reason is null/missing/unrecognized,
   // fall back to the 'other' enum entry rather than the bare literal "Closed".
   const getStatusLabel = (status: string): string => {
+    // Defensive: a malformed/missing state must never crash the header
+    // (a white-screened panel is strictly worse than a blank label).
+    if (!status) return '—';
     if (status === caseData.state) {
       if (status === 'closed') {
         const reason = activeCase?.closure_reason;
