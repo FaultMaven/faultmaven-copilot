@@ -120,7 +120,8 @@ export async function cleanupOAuthState(): Promise<void> {
     'pkce_verifier',
     'auth_state',
     'redirect_uri',
-    'auth_initiated_at'
+    'auth_initiated_at',
+    'oauth_pending'
   ]);
   log.info('OAuth state cleaned up');
 }

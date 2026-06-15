@@ -114,7 +114,10 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(({
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={markdownComponents}
-        // Disable HTML parsing for security (already using DOMPurify but extra safety)
+        // XSS-safety: react-markdown does NOT render embedded raw HTML unless
+        // rehype-raw is added — it is escaped to text. Do NOT add rehype-raw
+        // here without also adding rehype-sanitize, since `content` is
+        // untrusted (LLM- and page-derived). This list is belt-and-suspenders.
         disallowedElements={['script', 'iframe', 'object', 'embed']}
         unwrapDisallowed
       >

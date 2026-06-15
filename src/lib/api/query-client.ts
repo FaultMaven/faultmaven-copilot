@@ -7,7 +7,10 @@ export const queryClient = new QueryClient({
       gcTime: 1000 * 60 * 30, // 30 minutes
       retry: 1,
       refetchOnWindowFocus: false,
-      refetchOnReconnect: 'always',
+      // `true` (not 'always') so reconnect respects staleTime — an extension
+      // sees frequent connectivity transitions (SW sleep/wake, network changes)
+      // and 'always' would refetch every active query on each blip.
+      refetchOnReconnect: true,
     },
     mutations: {
       retry: 0,

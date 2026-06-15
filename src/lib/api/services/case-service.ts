@@ -547,10 +547,10 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
     throw await createHttpErrorFromResponse(response);
   }
 
-  const POLL_INITIAL_MS = Number((import.meta as any).env?.VITE_POLL_INITIAL_MS ?? 1500);
-  const POLL_BACKOFF = Number((import.meta as any).env?.VITE_POLL_BACKOFF ?? 1.5);
-  const POLL_MAX_MS = Number((import.meta as any).env?.VITE_POLL_MAX_MS ?? 10000);
-  const POLL_MAX_TOTAL_MS = Number((import.meta as any).env?.VITE_POLL_MAX_TOTAL_MS ?? 300000);
+  const POLL_INITIAL_MS = Number(import.meta.env.VITE_POLL_INITIAL_MS ?? 1500);
+  const POLL_BACKOFF = Number(import.meta.env.VITE_POLL_BACKOFF ?? 1.5);
+  const POLL_MAX_MS = Number(import.meta.env.VITE_POLL_MAX_MS ?? 10000);
+  const POLL_MAX_TOTAL_MS = Number(import.meta.env.VITE_POLL_MAX_TOTAL_MS ?? 300000);
 
   // Handle async 202 Accepted with polling
   if (response.status === 202) {

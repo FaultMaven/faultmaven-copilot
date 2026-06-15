@@ -8,6 +8,10 @@ interface ImportMetaEnv {
   readonly VITE_MAX_FILE_SIZE_MB?: string;
   readonly VITE_DASHBOARD_URL?: string;
   readonly VITE_DEBUG?: string;
+  readonly VITE_POLL_INITIAL_MS?: string;
+  readonly VITE_POLL_BACKOFF?: string;
+  readonly VITE_POLL_MAX_MS?: string;
+  readonly VITE_POLL_MAX_TOTAL_MS?: string;
   readonly DEV?: boolean;
 }
 
