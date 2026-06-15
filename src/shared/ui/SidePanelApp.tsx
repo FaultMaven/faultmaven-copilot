@@ -15,11 +15,10 @@ import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 
 const log = createLogger('SidePanelApp');
-import { ConflictResolutionModal, ConflictResolution } from "./components/ConflictResolutionModal";
 import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation, getUserCases } from "../../lib/api";
 import { caseCacheManager } from "../../lib/cache/case-cache";
 import { isOptimisticId, isRealId } from "../../lib/utils/data-integrity";
-import { conflictResolver, ConflictDetectionResult, MergeResult, OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
+import { OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
 
 // Layouts
 import { CollapsibleNavigation, ContentArea } from "./layouts";
@@ -150,39 +149,6 @@ function SidePanelAppContent() {
     getErrorMessageForOperation
   } = usePendingOperations(activeCaseId || undefined, showError);
 
-  // --- Conflict Resolution State ---
-  const [conflictResolutionData, setConflictResolutionData] = useState<{
-    isOpen: boolean;
-    conflict: ConflictDetectionResult | null;
-    localData: any;
-    remoteData: any;
-    mergeResult?: MergeResult<any>;
-    resolveCallback?: (resolution: ConflictResolution) => void;
-  }>({
-    isOpen: false,
-    conflict: null,
-    localData: null,
-    remoteData: null
-  });
-
-  const showConflictResolution = (
-    conflict: ConflictDetectionResult,
-    localData: any,
-    remoteData: any,
-    mergeResult?: MergeResult<any>
-  ): Promise<ConflictResolution> => {
-    return new Promise((resolve) => {
-      setConflictResolutionData({
-        isOpen: true,
-        conflict,
-        localData,
-        remoteData,
-        mergeResult,
-        resolveCallback: resolve
-      });
-    });
-  };
-
   // --- Message Submission ---
   const { submitting, handleQuerySubmit } = useMessageSubmission({
     sessionId,
@@ -297,8 +263,7 @@ function SidePanelAppContent() {
     showErrorWithRetry: (error, retryFn, context) => {
       // Implement retry logic wrapper if needed, or pass directly
       showError(error instanceof Error ? error.message : String(error));
-    },
-    showConflictResolution
+    }
   });
 
   // --- Data Upload (unified turn submission with query + attachments) ---
@@ -773,23 +738,6 @@ function SidePanelAppContent() {
           isOpen={isDocumentModalOpen}
           onClose={() => { setIsDocumentModalOpen(false); setViewingDocument(null); }}
           onEdit={() => { setIsDocumentModalOpen(false); setViewingDocument(null); }}
-        />
-
-        <ConflictResolutionModal
-          isOpen={conflictResolutionData.isOpen}
-          conflict={conflictResolutionData.conflict!}
-          localData={conflictResolutionData.localData}
-          remoteData={conflictResolutionData.remoteData}
-          mergeResult={conflictResolutionData.mergeResult}
-          availableBackups={conflictResolutionData.conflict ? conflictResolver.getBackupsForCase(conflictResolutionData.conflict.affectedData.caseId || '') : []}
-          onResolve={(res) => {
-            if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback(res);
-            setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
-          }}
-          onCancel={() => {
-            if (conflictResolutionData.resolveCallback) conflictResolutionData.resolveCallback({ choice: 'keep_local' });
-            setConflictResolutionData(prev => ({ ...prev, isOpen: false }));
-          }}
         />
 
       </ErrorBoundary>

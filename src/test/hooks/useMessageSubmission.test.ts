@@ -72,8 +72,7 @@ describe('useMessageSubmission', () => {
     createOptimisticCaseInBackground: vi.fn(),
     refreshSession: vi.fn(),
     showError: vi.fn(),
-    showErrorWithRetry: vi.fn(),
-    showConflictResolution: vi.fn()
+    showErrorWithRetry: vi.fn()
   };
 
   beforeEach(() => {

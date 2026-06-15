@@ -29,20 +29,15 @@ import {
   OptimisticIdGenerator,
   IdUtils,
   pendingOpsManager,
-  conflictResolver,
-  MergeStrategies,
   OptimisticUserCase,
   OptimisticConversationItem,
-  PendingOperation,
-  MergeContext,
-  ConflictDetectionResult
+  PendingOperation
 } from '../../../lib/optimistic';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
 import { classifyError, formatErrorForChat } from '../../../lib/utils/api-error-handler';
-import type { ConflictResolution } from '../components/ConflictResolutionModal';
 
 const log = createLogger('useMessageSubmission');
 
@@ -71,12 +66,6 @@ export interface UseMessageSubmissionProps {
   refreshSession: () => Promise<string>;
   showError: (error: any, context?: any) => void;
   showErrorWithRetry: (error: any, retryFn: () => Promise<void>, context?: any) => void;
-  showConflictResolution: (
-    conflict: ConflictDetectionResult,
-    localData: any,
-    remoteData: any,
-    mergeResult?: any
-  ) => Promise<ConflictResolution>;
 }
 
 export function useMessageSubmission(props: UseMessageSubmissionProps) {
