@@ -1,1 +1,1 @@
-npm run compile && npm run test
+node scripts/brand-lint.mjs && npm run compile && npm run test
