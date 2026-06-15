@@ -137,9 +137,8 @@ This project is licensed under the **Apache 2.0 License** - see the [LICENSE](LI
 
 The FaultMaven ecosystem includes:
 
-- **[faultmaven](https://github.com/FaultMaven/faultmaven)** - Main repository with microservices backend
+- **[faultmaven](https://github.com/FaultMaven/faultmaven)** - Main repository with the modular-monolith backend
 - **[faultmaven-dashboard](https://github.com/FaultMaven/faultmaven-dashboard)** - Web-based dashboard UI
-- **[faultmaven-deploy](https://github.com/FaultMaven/faultmaven-deploy)** - Deployment configurations and tooling
 - **[faultmaven-website](https://github.com/FaultMaven/faultmaven-website)** - Official website
 
 ---
