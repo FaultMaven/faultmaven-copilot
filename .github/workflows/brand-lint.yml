@@ -1,0 +1,25 @@
+name: Brand Lint
+
+# Enforces FaultMaven's canonical product terminology in brand-facing files.
+# Source of truth: faultmaven repo, .claude/skills/brand-messaging.md (§3/§7).
+# Pure Node stdlib — nothing to install.
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "scripts/brand-lint.mjs"
+      - ".github/workflows/brand-lint.yml"
+  push:
+    branches: [main]
+
+jobs:
+  brand-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run brand-messaging lint
+        run: node scripts/brand-lint.mjs
