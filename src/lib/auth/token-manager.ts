@@ -12,6 +12,7 @@
 import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
+import { fetchWithTimeout } from '../utils/fetch-timeout';
 
 const log = createLogger('TokenManager');
 
@@ -126,7 +127,7 @@ export class TokenManager {
 
     try {
       const apiUrl = await getApiUrl();
-      const response = await fetch(`${apiUrl}/api/v1/auth/oauth/token`, {
+      const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/oauth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

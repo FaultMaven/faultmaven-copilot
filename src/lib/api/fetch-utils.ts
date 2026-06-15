@@ -4,6 +4,7 @@ import { tokenManager } from "../auth/token-manager";
 import { browser } from "wxt/browser";
 import { APIError, Session } from "./types";
 import { createLogger } from "../utils/logger";
+import { fetchWithTimeout } from "../utils/fetch-timeout";
 
 const log = createLogger('FetchUtils');
 
@@ -77,7 +78,7 @@ export async function createFreshSession(metadata?: Record<string, any>): Promis
   // Include auth headers so backend can associate session with authenticated user
   const authHeaders = await getAuthHeaders();
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: 'POST',
     headers: {
       ...authHeaders,

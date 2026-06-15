@@ -4,8 +4,15 @@ import { AuthenticationError, SessionExpiredError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
 import { createSession } from './session-core';
 import { createLogger } from '../utils/logger';
+import { fetchWithTimeout } from '../utils/fetch-timeout';
 
 const log = createLogger('APIClient');
+
+// Default request timeout. Bounds hung connections (network stalls with no RST)
+// that would otherwise leave a promise pending forever — which is especially
+// damaging on the token-refresh / poll paths. Generous enough for the 10 MB
+// max file upload on a slow link; callers may override per request.
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 
 /**
  * Prepares a request body for JSON serialization.
@@ -93,7 +100,11 @@ export async function authenticatedFetchWithRetry(url: string, options: RequestI
   }
 }
 
-export async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authenticatedFetch(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS
+): Promise<Response> {
   try {
     const headers = await getAuthHeaders();
 
@@ -108,13 +119,13 @@ export async function authenticatedFetch(url: string, options: RequestInit = {})
       delete (headers as any)['Content-Type'];
     }
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       ...options,
       headers: {
         ...headers,
         ...(options.headers || {})
       }
-    });
+    }, timeoutMs);
 
     // Handle 401 errors - distinguish between auth failure and session expiration
     if (response.status === 401) {
@@ -161,12 +172,21 @@ export async function authenticatedFetch(url: string, options: RequestInit = {})
 
     return response;
   } catch (error) {
+    // Timeout (from fetchWithTimeout) or caller-initiated cancellation →
+    // propagate as-is rather than masking it as a generic network failure.
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw error;
+    }
+    if (options.signal?.aborted) {
+      throw error;
+    }
+
     // If already thrown from above (HTTP error), re-throw as-is
     if (error instanceof Error && 'status' in error) {
       throw error;
     }
 
-    // Network errors (ECONNREFUSED, timeout, etc.) - wrap with context
+    // Network errors (ECONNREFUSED, etc.) - wrap with context
     const networkError = error instanceof Error ? error : new Error(String(error));
     networkError.name = 'NetworkError';
 

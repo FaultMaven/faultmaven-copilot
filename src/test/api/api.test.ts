@@ -140,7 +140,9 @@ describe('API Functions', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include'
+          credentials: 'include',
+          // authenticatedFetch wraps the request with an abortable timeout.
+          signal: expect.any(AbortSignal)
         }
       );
     });
