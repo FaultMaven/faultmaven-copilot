@@ -24,6 +24,12 @@ export interface IdMappingState {
 
 export class IdMappingManager {
   private mappings: Map<string, IdMapping> = new Map();
+  private cleanupTimer?: ReturnType<typeof setInterval>;
+
+  // Elastic cleanup: the timer starts on the first mapping and stops when the
+  // map empties, so an idle manager holds no timer. Without this the map grew
+  // unbounded for the life of the side panel — cleanup() was never invoked.
+  constructor(private cleanupIntervalMs: number = 600000) {} // 10 minutes
 
   /**
    * Add a mapping between optimistic and real ID
@@ -47,7 +53,9 @@ export class IdMappingManager {
       createdAt: Date.now()
     };
 
+    const wasEmpty = this.mappings.size === 0;
     this.mappings.set(optimisticId, mapping);
+    if (wasEmpty) this.startCleanupTimer();
     log.debug('Added mapping', { optimisticId, realId, type });
   }
 
@@ -92,8 +100,23 @@ export class IdMappingManager {
     const removed = this.mappings.delete(optimisticId);
     if (removed) {
       log.debug('Removed mapping', { optimisticId });
+      if (this.mappings.size === 0) this.stopCleanupTimer();
     }
     return removed;
+  }
+
+  /** Start the elastic cleanup timer (runs while mappings exist). */
+  private startCleanupTimer(): void {
+    if (this.cleanupTimer) return;
+    this.cleanupTimer = setInterval(() => this.cleanup(), this.cleanupIntervalMs);
+  }
+
+  /** Stop the cleanup timer (called when the map becomes empty). */
+  private stopCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
   }
 
   /**
@@ -176,6 +199,7 @@ export class IdMappingManager {
   clear(): void {
     const count = this.mappings.size;
     this.mappings.clear();
+    this.stopCleanupTimer();
     log.info('Cleared all mappings', { count });
   }
 

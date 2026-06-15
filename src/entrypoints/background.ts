@@ -13,7 +13,11 @@ export default defineBackground({
 
     // === Auth Handler ===
     async function handleStoreAuth(payload: any, sendResponse: (response?: any) => void) {
-      log.info("storing auth state from bridge", payload);
+      // Never log the token-bearing payload; record only non-secret fields.
+      log.info("storing auth state from bridge", {
+        hasToken: !!payload?.access_token,
+        expiresAt: payload?.expires_at,
+      });
       try {
         // Use AuthManager to save state
         await authManager.saveAuthState(payload);
@@ -120,50 +124,64 @@ export default defineBackground({
       }
     }
 
-    // === Monitor OAuth Tab for Success Page ===
-    function monitorOAuthTab(tabId: number, expectedState: string) {
-      const listener = async (updatedTabId: number, changeInfo: any, tab: any) => {
-        if (updatedTabId !== tabId) return;
+    // === Monitor OAuth Tab for Success Page (MV3 service-worker resilient) ===
+    // The listener is registered once at the top level of the worker (see
+    // main() below) and reads the pending-OAuth context from storage on each
+    // navigation. This survives service-worker eviction: the worker is woken by
+    // the tab-update event and reconstructs context from storage. The old
+    // implementation relied on an in-memory closure + setTimeout, both of which
+    // were destroyed if the SW slept while the user was on the login page (the
+    // common case), silently stranding the OAuth flow.
+    const OAUTH_PENDING_KEY = 'oauth_pending';
 
-        // Check if the URL contains the authorization code
-        const url = tab.url || changeInfo.url;
-        if (!url) return;
+    async function handleOAuthTabUpdate(tabId: number, changeInfo: any, tab: any) {
+      // Only navigation events can carry the OAuth redirect; skip the frequent
+      // status/title/favicon updates to avoid needless storage reads.
+      const url = changeInfo?.url || (changeInfo?.status === 'complete' ? tab?.url : undefined);
+      if (!url) return;
+
+      let pending: any;
+      try {
+        const stored = await browser.storage.local.get([OAUTH_PENDING_KEY]);
+        pending = stored[OAUTH_PENDING_KEY];
+      } catch {
+        return;
+      }
+      if (!pending || pending.tabId !== tabId) return;
+
+      // Expire stale flows (replaces the old setTimeout-based cleanup).
+      if (typeof pending.deadline === 'number' && Date.now() > pending.deadline) {
+        log.warn('OAuth flow timed out; clearing pending state');
+        await cleanupOAuthState();
+        return;
+      }
+
+      let code: string | null = null;
+      let state: string | null = null;
+      try {
+        const parsedUrl = new URL(url);
+        code = parsedUrl.searchParams.get('code');
+        state = parsedUrl.searchParams.get('state');
+      } catch {
+        return; // not a navigable URL yet
+      }
+
+      if (code && state && state === pending.expectedState) {
+        log.info('OAuth authorization code detected in monitored tab');
+        // Clear pending first so the parallel callback.html → AUTH_CALLBACK path
+        // does not double-process the same authorization code.
+        await browser.storage.local.remove(OAUTH_PENDING_KEY);
+
+        await handleAuthCallback({ code, state }, (response) => {
+          log.info('OAuth callback handled (tab monitor):', response);
+        });
 
         try {
-          const parsedUrl = new URL(url);
-          const code = parsedUrl.searchParams.get('code');
-          const state = parsedUrl.searchParams.get('state');
-
-          if (code && state === expectedState) {
-            log.info('OAuth authorization code detected in tab URL');
-
-            // Remove the listener
-            browser.tabs.onUpdated.removeListener(listener);
-
-            // Handle the callback
-            await handleAuthCallback({ code, state }, (response) => {
-              log.info('OAuth callback handled:', response);
-            });
-
-            // Close the OAuth tab
-            try {
-              await browser.tabs.remove(tabId);
-            } catch (e) {
-              log.warn('Could not close OAuth tab:', e);
-            }
-          }
+          await browser.tabs.remove(tabId);
         } catch (e) {
-          // Invalid URL, ignore
+          log.warn('Could not close OAuth tab:', e);
         }
-      };
-
-      browser.tabs.onUpdated.addListener(listener);
-
-      // Clean up listener after 5 minutes (timeout)
-      setTimeout(() => {
-        browser.tabs.onUpdated.removeListener(listener);
-        log.warn('OAuth tab monitoring timed out');
-      }, 5 * 60 * 1000);
+      }
     }
 
     // === Dashboard OAuth Login Handler ===
@@ -193,8 +211,15 @@ export default defineBackground({
 
         log.info('Dashboard OAuth initiated, authorization tab opened');
 
-        // Monitor the tab for the success page with authorization code
-        monitorOAuthTab(tab.id, oauthResponse.state);
+        // Persist pending-OAuth context so the top-level tab listener can
+        // complete the flow even if the service worker is evicted during login.
+        await browser.storage.local.set({
+          [OAUTH_PENDING_KEY]: {
+            tabId: tab.id,
+            expectedState: oauthResponse.state,
+            deadline: Date.now() + 5 * 60 * 1000
+          }
+        });
 
         sendResponse({ status: 'success', state: oauthResponse.state });
       } catch (error: any) {
@@ -249,7 +274,7 @@ export default defineBackground({
             code: payload.code,
             code_verifier: storage.pkce_verifier,
             client_id: 'faultmaven-copilot',
-            redirect_uri: storage.redirect_uri || `chrome-extension://${browser.runtime.id}/callback`
+            redirect_uri: storage.redirect_uri || browser.runtime.getURL('/callback.html')
           })
         });
 
@@ -344,7 +369,16 @@ export default defineBackground({
     }
 
     // === Message Handler ===
-    browser.runtime.onMessage.addListener((request: any, _sender: any, sendResponse: any) => {
+    browser.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
+      // Defense-in-depth: only accept messages from this extension's own
+      // contexts (our content scripts, side panel, options page). Messages from
+      // other installed extensions carry a different sender.id and are rejected
+      // before reaching any auth/session handler.
+      if (sender?.id !== browser.runtime.id) {
+        log.warn("Rejected runtime message from unexpected sender", { senderId: sender?.id });
+        sendResponse({ status: "error", message: "Unauthorized sender" });
+        return false;
+      }
       log.info("Message received:", request);
 
       if (request.action === "storeAuth") {
@@ -385,6 +419,9 @@ export default defineBackground({
       // Handle other actions...
       sendResponse({ status: "error", message: "Unknown action" });
     });
+
+    // === OAuth Tab Monitor (registered top-level so it survives SW eviction) ===
+    browser.tabs.onUpdated.addListener(handleOAuthTabUpdate);
 
     // === Action Click Handler ===
     browser.action.onClicked.addListener(async (tab: any) => {

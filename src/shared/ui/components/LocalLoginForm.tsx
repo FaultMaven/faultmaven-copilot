@@ -5,7 +5,7 @@
  * Displayed directly in the extension (no redirect to Dashboard).
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LocalAuthClient, type LocalLoginCredentials } from '../../../lib/auth/local-auth-client';
 import type { AuthConfig } from '../../../lib/auth/auth-config';
 import { createLogger } from '../../../lib/utils/logger';
@@ -26,7 +26,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
   const [error, setError] = useState<string | null>(null);
   const [showRegister, setShowRegister] = useState(false);
 
-  const authClient = new LocalAuthClient();
+  const authClient = useMemo(() => new LocalAuthClient(), []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();

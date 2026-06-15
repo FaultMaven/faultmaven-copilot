@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the **FaultMaven Copilot** browser extension - an AI-powered troubleshooting copilot built with WXT framework. The extension provides in-context help, analyzes web content, and enables interaction with the FaultMaven AI to diagnose and resolve issues efficiently.
 
-**Key Technologies**: WXT v0.20.6, React 19.x, TypeScript 5.x, Tailwind CSS, Vitest, Zustand 5.x, TanStack Query 5.x.
+**Key Technologies**: WXT v0.20.6, React 19.x, TypeScript 5.x, Tailwind CSS, Vitest, TanStack Query 5.x.
 
 ## Common Commands
 
@@ -66,11 +66,6 @@ All configuration is done via environment variables (set before build). Copy `.e
 | `VITE_MAX_QUERY_LENGTH` | Maximum query length (chars) | `200000` |
 | `VITE_MAX_FILE_SIZE_MB` | Maximum file upload size | `10` |
 
-**Feature Flags:**
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VITE_USE_NEW_HEADER` | Enable enhanced case header UI | `false` |
-
 **Configuration Files:**
 - **`src/config.ts`** - Central runtime configuration
 - **`.env.example`** - Documentation of all available variables
@@ -83,7 +78,6 @@ src/
 ├── entrypoints/               # WXT entry points
 │   ├── background.ts                    # Service worker (auth, sessions, messages)
 │   ├── auth-bridge.content.ts           # OAuth bridge content script
-│   ├── page-content.content.ts          # Page content capture
 │   ├── sidepanel_manual/main.tsx        # React side panel entry
 │   ├── options/main.tsx                 # Extension options page
 │   └── oidc-callback.html               # OIDC callback handler
@@ -111,14 +105,6 @@ src/
 │   │   ├── oauth-client.ts              # OAuth client implementation
 │   │   ├── oidc-callback.ts             # OIDC callback handler
 │   │   └── token-manager.ts             # Token storage & refresh
-│   │
-│   ├── state/                           # Zustand stores
-│   │   ├── store.ts                     # Main store composition
-│   │   └── slices/
-│   │       ├── auth-slice.ts            # Auth state
-│   │       ├── session-slice.ts         # Session state
-│   │       ├── cases-slice.ts           # Cases & conversations
-│   │       └── ui-slice.ts              # UI state (modals, sidebar)
 │   │
 │   ├── errors/                          # Error handling
 │   │   ├── types.ts                     # UserFacingError class hierarchy
@@ -200,7 +186,7 @@ Example: `import { createLogger } from '~/lib/utils/logger'`
 
 ### Key Patterns
 
-1. **State Management**: Zustand stores with 4 slices (`AuthSlice`, `SessionSlice`, `CasesSlice`, `UISlice`)
+1. **State Management**: React `useState` in `SidePanelApp.tsx` plus the `shared/ui/hooks/*` family (`useCaseManagement`, `useSessionManagement`, `useMessageSubmission`, `useDataUpload`, `usePendingOperations`, `useBatchedPersistence`). Server state via TanStack Query
 2. **Optimistic UI**: Immediate feedback with background reconciliation and rollback
 3. **Data Integrity**: Strict separation between optimistic (`opt_*`) and real IDs
 4. **Event Bus**: Typed `EventBus` for Background ↔ Sidepanel ↔ Content script communication
@@ -279,7 +265,7 @@ log.info(`Case ID: ${caseId}`);
 log.info(`New title: ${newTitle}`);
 ```
 
-**State Access** - Use custom hooks to access Zustand stores:
+**State Access** - Use the custom hooks for state and lifecycle:
 ```typescript
 const { isAuthenticated, user, login, logout } = useAuth();
 const { sessionId, refreshSession } = useSessionManagement(shouldInit);

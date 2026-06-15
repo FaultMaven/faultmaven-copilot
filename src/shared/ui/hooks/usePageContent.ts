@@ -56,9 +56,9 @@ export function usePageContent() {
             }
           }
 
-          // Semantic text extraction — must be fully inline because
-          // scripting.executeScript serializes the func (no imports).
-          // Mirrors htmlToStructuredText from lib/utils/html-to-structured-text.ts.
+          // Semantic text extraction — must be fully inline (self-contained)
+          // because scripting.executeScript serializes the func and runs it in
+          // the page context, so it cannot import or close over module code.
           const [result] = await browser.scripting.executeScript({
             target: { tabId: tab.id },
             func: () => {

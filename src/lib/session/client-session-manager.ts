@@ -3,6 +3,7 @@ import config from "../../config";
 import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
 import { getAuthHeaders } from '../api/fetch-utils';
+import { fetchWithTimeout } from '../utils/fetch-timeout';
 
 const log = createLogger('ClientSessionManager');
 
@@ -134,7 +135,7 @@ export class ClientSessionManager {
       authorizationPreview: authPreview
     });
 
-    const response = await fetch(`${apiUrl}/api/v1/sessions`, {
+    const response = await fetchWithTimeout(`${apiUrl}/api/v1/sessions`, {
       method: 'POST',
       headers: {
         ...authHeaders,
