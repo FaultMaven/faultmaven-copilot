@@ -48,7 +48,9 @@ describe('Dashboard OAuth', () => {
     it('reads Dashboard URL from storage (local deployment)', async () => {
       const dashboardUrl = await getDashboardUrl();
       expect(dashboardUrl).toBe('http://localhost:3333');
-      expect(mockBrowserStorage.local.get).toHaveBeenCalledWith(['apiEndpoint']);
+      // Delegates to config.getDashboardUrl, which prefers the explicit
+      // dashboardUrl key and falls back to the legacy apiEndpoint key.
+      expect(mockBrowserStorage.local.get).toHaveBeenCalledWith(['dashboardUrl', 'apiEndpoint']);
     });
 
     it('returns production default when storage is empty', async () => {

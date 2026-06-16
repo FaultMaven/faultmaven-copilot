@@ -13,7 +13,7 @@
  */
 
 import { browser } from 'wxt/browser';
-import { getApiUrl } from '../../config';
+import { getApiUrl, getDashboardUrl as getConfiguredDashboardUrl } from '../../config';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DashboardOAuth');
@@ -39,22 +39,9 @@ export interface DashboardOAuthInitiateResponse {
  * Cloud deployment: https://app.faultmaven.ai
  */
 export async function getDashboardUrl(): Promise<string> {
-  try {
-    // Read Dashboard URL from storage (configured in Settings)
-    // Storage key is still 'apiEndpoint' for backward compatibility
-    // but it now stores Dashboard URL, not API URL
-    if (typeof browser !== 'undefined' && browser.storage) {
-      const stored = await browser.storage.local.get(['apiEndpoint']);
-      if (stored.apiEndpoint) {
-        return stored.apiEndpoint;
-      }
-    }
-  } catch (error) {
-    log.warn('Failed to read Dashboard URL from storage:', error);
-  }
-
-  // Fallback to production default
-  return 'https://app.faultmaven.ai';
+  // Single source of truth lives in config.ts (explicit dashboardUrl key with
+  // legacy fallback). This thin wrapper is kept for existing call sites.
+  return getConfiguredDashboardUrl();
 }
 
 /**
