@@ -428,12 +428,18 @@ export default defineBackground({
     // dashboard URL or granted host permissions change.
     reconcileAuthBridgeRegistration();
     browser.storage.onChanged.addListener((changes: any, area: string) => {
-      if (area === 'local' && changes.dashboardUrl) {
+      // dashboardUrl is the explicit key; apiEndpoint is the legacy key
+      // getDashboardUrl() still falls back to.
+      if (area === 'local' && (changes.dashboardUrl || changes.apiEndpoint)) {
         reconcileAuthBridgeRegistration();
       }
     });
+    // Re-reconcile on both grant and revoke of host permissions.
     if (browser.permissions?.onAdded) {
       browser.permissions.onAdded.addListener(() => reconcileAuthBridgeRegistration());
+    }
+    if (browser.permissions?.onRemoved) {
+      browser.permissions.onRemoved.addListener(() => reconcileAuthBridgeRegistration());
     }
 
     // === OAuth Tab Monitor (registered top-level so it survives SW eviction) ===

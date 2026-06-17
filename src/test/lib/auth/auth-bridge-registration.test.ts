@@ -1,11 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { reconcileAuthBridgeRegistration } from '../../../lib/auth/auth-bridge-registration';
 
 // Resolves `browser` to the global mock from src/test/setup.ts (the per-file
 // vi.mock('wxt/browser') does not apply through the transitive config import).
 const b = (global as any).browser;
+const origScripting = b.scripting;
+const origPermissions = b.permissions;
 
 describe('reconcileAuthBridgeRegistration', () => {
+  afterEach(() => {
+    // Restore the shared global mock so this file's mutations don't leak.
+    b.scripting = origScripting;
+    b.permissions = origPermissions;
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     // dashboardUrl drives getDashboardUrl()

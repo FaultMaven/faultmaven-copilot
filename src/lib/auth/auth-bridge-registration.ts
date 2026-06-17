@@ -24,7 +24,19 @@ export async function unregisterAuthBridge(): Promise<void> {
   }
 }
 
-export async function reconcileAuthBridgeRegistration(): Promise<void> {
+// Serialize reconciles: startup + storage.onChanged + permission events can
+// fire concurrently, and two overlapping runs could both try to register the
+// same script id. Chaining keeps them sequential so the get→register check is
+// consistent. doReconcile never rejects (it catches internally), so the chain
+// stays resolved.
+let reconcileChain: Promise<void> = Promise.resolve();
+
+export function reconcileAuthBridgeRegistration(): Promise<void> {
+  reconcileChain = reconcileChain.then(doReconcile);
+  return reconcileChain;
+}
+
+async function doReconcile(): Promise<void> {
   try {
     const dashboardUrl = await getDashboardUrl();
     let matchPattern: string;
