@@ -23,7 +23,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
       await browser.storage.local.set({ hasCompletedFirstRun: true });
       onComplete();
     } catch (err) {
-      setError('Failed to configure cloud deployment');
+      setError('Failed to configure Cloud deployment');
       log.error('Cloud setup error:', err);
     }
   };
@@ -63,7 +63,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
       onComplete();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Failed to configure local deployment: ${errorMessage}`);
+      setError(`Failed to configure Standalone deployment: ${errorMessage}`);
       log.error('Self-hosted setup error:', err);
     }
   };
@@ -90,7 +90,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
 
         {/* Deployment options */}
         <div className="grid md:grid-cols-2 gap-6">
-          {/* FaultMaven Enterprise */}
+          {/* FaultMaven Cloud */}
           <button
             onClick={handleCloudSetup}
             className="group bg-fm-surface border-2 border-fm-accent-border rounded-xl p-6 hover:border-fm-accent hover:shadow-lg transition-all text-left"
@@ -127,7 +127,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                 <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
-                <span>Enterprise Security – Fully managed with SSO, RBAC, and SOC 2 readiness</span>
+                <span>Managed Security – Fully managed with SSO, RBAC, and SOC 2 readiness</span>
               </li>
               <li className="flex items-start gap-2">
                 <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -157,12 +157,12 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-fm-text-primary">
-                FaultMaven Open Source (Local)
+                FaultMaven Standalone (Self-Hosted)
               </h3>
             </div>
 
             <p className="text-fm-text-tertiary mb-4">
-              Best for individuals. Run the full stack on your own hardware.
+              Best for individuals and air-gapped environments. Run the full stack on your own hardware.
             </p>
 
             <ul className="space-y-2 text-sm text-fm-text-tertiary mb-6">
@@ -176,7 +176,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                 <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
-                <span>Custom Knowledge Base – Starts empty. Build a personal KB tailored exactly to your specific needs</span>
+                <span>Knowledge Base – Ships with the global runbook pack; build a personal KB tailored to your needs</span>
               </li>
               <li className="flex items-start gap-2">
                 <svg className="w-5 h-5 text-fm-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
