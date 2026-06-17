@@ -34,18 +34,27 @@ substitution (`app.`→`api.`, `:3333`→`:8090`). That only worked for FaultMav
 own domain convention and produced a wrong API host on any other domain. The API
 base URL is now set **explicitly**; there is no derivation.
 
-## Deployment tiers
+## HTTP and HTTPS both work
 
-| Host | Scheme | Notes |
-|------|--------|-------|
-| `localhost` / `127.0.0.1` | `http://` OK | Browsers treat localhost as a secure context, so plain HTTP works. This is the zero-config trial path. |
-| Any other host (LAN IP, custom domain) | **`https://` required** | Off-localhost, the browser requires HTTPS for the secure-context features the extension relies on (secure cookies, service worker, no mixed content). |
+The copilot can connect to an `http://` backend on **any** host — `localhost`, a
+LAN IP (`http://192.168.0.200:8090`), or a custom domain — not just localhost.
+Two browser facts make this work:
 
-The extension does not provision TLS. "Bring your own HTTPS / reverse proxy" is
-the supported answer for custom domains. The extension's responsibility is only
-to **work correctly when given an HTTPS endpoint** — no hardcoded `http://`, no
-assumptions that break off-localhost. On save, a non-localhost `http://` URL is
-rejected with a clear message.
+- **No mixed-content block.** A request from an extension page to a plain-HTTP
+  URL is not blocked as mixed content (unlike a normal web page).
+- **CORS is bypassed.** MV3 extension pages (the side panel/options) and the
+  service worker bypass CORS for any origin in the extension's granted
+  `host_permissions` — the backend does **not** need to send
+  `Access-Control-Allow-Origin` headers. The user grants that permission on
+  save (a standard per-site prompt).
+
+So the straight self-host path is: enter your server's URL (http or https),
+click **Test Connection**, approve the access prompt, **Save**. No reverse
+proxy, no TLS, no SSH tunnel, no backend CORS configuration required.
+
+**https is still recommended on untrusted networks** — over `http://`, auth
+tokens travel in cleartext. For a trusted LAN or a tunnelled connection, `http`
+is fine. This is a recommendation, not an enforced restriction.
 
 ## How configuration works
 

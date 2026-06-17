@@ -283,11 +283,7 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
             <p className="mt-1 text-xs text-fm-text-tertiary">
-              Non-localhost hosts must use <strong className="text-fm-text-primary">https://</strong> (browser secure-context requirement). Bring your own TLS / reverse proxy.
-            </p>
-            <p className="mt-1 text-xs text-fm-text-tertiary">
-              Connecting to a remote server that serves plain HTTP? Tunnel it to localhost and use <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://localhost:8090</code>:<br/>
-              <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">ssh -L 8090:localhost:8090 user@server</code>
+              <strong className="text-fm-text-primary">http</strong> or <strong className="text-fm-text-primary">https</strong>, any host — e.g. <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.0.200:8090</code>. You'll be asked to grant access to the server on Save. https is recommended on untrusted networks (over http, tokens travel in cleartext).
             </p>
           </div>
 
@@ -373,7 +369,7 @@ function OptionsApp() {
             </div>
             <div>
               <strong className="font-semibold text-fm-text-primary">Custom / self-hosted:</strong>
-              <p className="mt-1">Set your own API base URL (HTTPS for non-localhost). The Dashboard URL is only needed for OAuth login — leave it for local username/password auth. See the self-hosting guide.</p>
+              <p className="mt-1">Set your own API base URL — http or https, any host (LAN IP or domain). Grant access when prompted on Save; no reverse proxy or backend CORS setup needed. The Dashboard URL is only needed for OAuth login. See the self-hosting guide.</p>
             </div>
             <div className="pt-2 border-t border-fm-border">
               <p>Click <strong className="text-fm-text-primary">"Test Connection"</strong> before saving.</p>

@@ -85,9 +85,14 @@ function normalizeUrl(url: string): string {
 }
 
 /**
- * Validate an endpoint URL against the deployment-tier rules:
- * - must be a valid http(s) URL
- * - non-localhost hosts must use https (browser secure-context requirement)
+ * Validate an endpoint URL. Must be a valid http(s) URL.
+ *
+ * Plain http is allowed for ANY host (including LAN IPs / custom domains):
+ * extension pages bypass CORS for granted host_permissions and are not subject
+ * to mixed-content blocking, so the copilot can reach an http self-hosted
+ * backend directly once the user grants host permission. https remains
+ * advisable on untrusted networks (tokens travel in cleartext over http), but
+ * that is a recommendation, not a hard requirement enforced here.
  *
  * @returns an error message, or null if valid.
  */
@@ -100,12 +105,6 @@ export function validateEndpointUrl(url: string): string | null {
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return 'URL must start with http:// or https://';
-  }
-  const isLoopback = parsed.hostname === 'localhost' ||
-    parsed.hostname === '127.0.0.1' ||
-    parsed.hostname === '0.0.0.0';
-  if (parsed.protocol === 'http:' && !isLoopback) {
-    return 'Non-localhost endpoints must use https:// (browser secure-context requirement)';
   }
   return null;
 }
