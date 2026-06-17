@@ -26,16 +26,14 @@ describe('config endpoints', () => {
   });
 
   describe('validateEndpointUrl', () => {
-    it('accepts https custom domains', () => {
+    it('accepts https URLs', () => {
       expect(validateEndpointUrl('https://fm.acme.com')).toBeNull();
     });
-    it('accepts http only on loopback hosts (localhost / 127.0.0.1 / 0.0.0.0)', () => {
+    it('accepts http on loopback AND LAN/custom hosts (extension bypasses CORS, no mixed-content block)', () => {
       expect(validateEndpointUrl('http://localhost:8090')).toBeNull();
       expect(validateEndpointUrl('http://127.0.0.1:8090')).toBeNull();
-      expect(validateEndpointUrl('http://0.0.0.0:8090')).toBeNull();
-    });
-    it('rejects http on a non-loopback host', () => {
-      expect(validateEndpointUrl('http://fm.acme.com')).toMatch(/https/i);
+      expect(validateEndpointUrl('http://192.168.1.100:8090')).toBeNull();
+      expect(validateEndpointUrl('http://fm.acme.com')).toBeNull();
     });
     it('rejects non-http(s) schemes and garbage', () => {
       expect(validateEndpointUrl('ftp://x')).not.toBeNull();
@@ -52,7 +50,7 @@ describe('config endpoints', () => {
       });
     });
     it('throws on an invalid URL without writing anything', async () => {
-      await expect(setEndpoints({ apiBaseUrl: 'http://fm.acme.com' })).rejects.toThrow();
+      await expect(setEndpoints({ apiBaseUrl: 'not a url' })).rejects.toThrow();
       expect(mockStorage.local.set).not.toHaveBeenCalled();
     });
   });
