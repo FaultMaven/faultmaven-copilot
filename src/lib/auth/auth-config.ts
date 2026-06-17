@@ -59,6 +59,9 @@ let cachedAuthConfig: AuthConfig | null = null;
  */
 const CONFIG_CACHE_VERSION = 2;  // Incremented for local auth implementation
 
+/** Storage key for the last-known-good auth config (survives SW restarts). */
+const AUTH_CONFIG_CACHE_KEY = 'auth_config_cache';
+
 /**
  * Get authentication configuration from backend
  *
@@ -80,6 +83,7 @@ export async function getAuthConfig(): Promise<AuthConfig> {
         log.info(`Cache version mismatch (${storedVersion} < ${CONFIG_CACHE_VERSION}), clearing cache`);
         cachedAuthConfig = null;
         await browser.storage.local.set({ auth_config_version: CONFIG_CACHE_VERSION });
+        await browser.storage.local.remove([AUTH_CONFIG_CACHE_KEY]);
       }
     } catch (err) {
       log.warn('Failed to check cache version:', err);
@@ -118,16 +122,37 @@ export async function getAuthConfig(): Promise<AuthConfig> {
       }
     };
 
-    // Cache the config
+    // Cache the config (in-memory + persisted, so a later transient failure
+    // can fall back to the real config instead of defaulting to local).
     cachedAuthConfig = config;
+    try {
+      await browser.storage.local.set({ [AUTH_CONFIG_CACHE_KEY]: config });
+    } catch (persistErr) {
+      log.warn('Failed to persist auth config:', persistErr);
+    }
 
     log.info('Retrieved auth configuration:', config.provider);
     return config;
-  
+
   } catch (error) {
     log.error('Failed to get auth config:', error);
 
-    // Fallback to local auth if backend is unreachable
+    // Prefer the last-known-good config over silently switching the user to a
+    // local username/password form — that would be wrong for a cloud/OAuth
+    // deployment hit by a transient config-fetch failure.
+    try {
+      const stored = await browser.storage.local.get([AUTH_CONFIG_CACHE_KEY]);
+      const lastKnown = stored?.[AUTH_CONFIG_CACHE_KEY] as AuthConfig | undefined;
+      if (lastKnown?.provider) {
+        log.warn('Using last-known-good auth config after fetch failure', { provider: lastKnown.provider });
+        cachedAuthConfig = lastKnown;
+        return lastKnown;
+      }
+    } catch (cacheErr) {
+      log.warn('Failed to read cached auth config:', cacheErr);
+    }
+
+    // No prior config (e.g. first run while offline) — fall back to local.
     const fallbackConfig: AuthConfig = {
       provider: 'local',
       features: {
