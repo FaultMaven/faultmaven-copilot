@@ -48,13 +48,27 @@ Two browser facts make this work:
   `Access-Control-Allow-Origin` headers. The user grants that permission on
   save (a standard per-site prompt).
 
-So the straight self-host path is: enter your server's URL (http or https),
-click **Test Connection**, approve the access prompt, **Save**. No reverse
-proxy, no TLS, no SSH tunnel, no backend CORS configuration required.
+So the straight self-host path over `http` is: enter your server's URL, click
+**Test Connection**, approve the access prompt, **Save**. No reverse proxy, no
+TLS, no SSH tunnel, no backend CORS configuration required.
 
-**https is still recommended on untrusted networks** — over `http://`, auth
-tokens travel in cleartext. For a trusted LAN or a tunnelled connection, `http`
-is fine. This is a recommendation, not an enforced restriction.
+### When does https work?
+
+`https` is accepted on any host, but it only *connects* if the server presents
+a TLS certificate the browser already trusts — host permission bypasses CORS,
+**not** certificate validation:
+
+- **Public domain with a CA cert** (`https://fm.acme.com`) → works.
+- **LAN IP / `localhost` over https** → only if you set up TLS *and* the cert is
+  trusted. A **self-signed cert is rejected** by `fetch()`
+  (`ERR_CERT_AUTHORITY_INVALID`, with no click-through) unless you import it into
+  the OS/browser trust store.
+- **A plain-`http` server** (the default `docker compose` setup) does not speak
+  `https` at all — pointing `https://` at it just fails the TLS handshake.
+
+**Recommendation:** use `http` for a trusted LAN or a tunnelled connection (no
+setup); use `https` only when the server has real, trusted TLS — which matters
+on untrusted networks, since over `http` auth tokens travel in cleartext.
 
 ## How configuration works
 
