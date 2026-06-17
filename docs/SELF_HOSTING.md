@@ -93,6 +93,14 @@ validates `event.origin` against the configured Dashboard origin (read from
 storage) before trusting any message, so it cannot be driven by an arbitrary page
 that happens to share a localhost port.
 
+> **Firefox limitation:** runtime registration requires host permission for the
+> dashboard origin. The Chrome build grants custom/localhost origins on demand
+> via `optional_host_permissions`; the Firefox (MV2) build has no optional host
+> permissions, so the auth bridge can only register for the built-in Cloud
+> origin there. **OAuth login against a self-hosted/custom dashboard is not
+> supported on Firefox** — use Cloud, or local username/password auth (which
+> does not use the bridge). Chrome supports all cases.
+
 ## Backward compatibility
 
 Existing installs stored the Dashboard URL under the legacy `apiEndpoint` key. On
