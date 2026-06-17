@@ -19,7 +19,7 @@ export interface RetryOptions {
   /** Function to determine if error is retryable (default: all errors retryable) */
   shouldRetry?: (error: any, attempt: number) => boolean;
   /** Callback for each retry attempt */
-  onRetry?: (error: any, attempt: number, delay: number) => void;
+  onRetry?: (error: any, attempt: number, delay: number) => void | Promise<void>;
 }
 
 /**
@@ -73,9 +73,10 @@ export async function retryWithBackoff<T>(
       // Calculate next delay with exponential backoff
       const nextDelay = Math.min(delay * backoffMultiplier, maxDelay);
 
-      // Notify retry callback
+      // Notify retry callback. Await it: retryWithRateLimit returns a promise
+      // here for the extra Retry-After wait, which was previously discarded.
       if (onRetry) {
-        onRetry(error, attempt, delay);
+        await onRetry(error, attempt, delay);
       }
 
       // Wait before retrying
