@@ -2,32 +2,68 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
+import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../config';
 import { createLogger } from '~/lib/utils/logger';
 import '../../assets/styles/globals.css';
 
 const log = createLogger('Settings');
 
-// Preset Dashboard endpoints for quick selection
-// Users configure Dashboard URL (where they log in), not API URL
-const PRESET_ENDPOINTS = {
-  production: 'https://app.faultmaven.ai',
-  localhost: 'http://127.0.0.1:3333',
-  custom: ''
+// Quick-fill presets. Each sets BOTH endpoints explicitly — the API base URL is
+// no longer derived from the Dashboard URL (see docs/SELF_HOSTING.md).
+const PRESETS = {
+  cloud: { label: 'FaultMaven Cloud', apiBaseUrl: 'https://api.faultmaven.ai', dashboardUrl: 'https://app.faultmaven.ai' },
+  localhost: { label: 'Local (localhost)', apiBaseUrl: 'http://127.0.0.1:8090', dashboardUrl: 'http://127.0.0.1:3333' },
+  custom: { label: 'Custom / self-hosted', apiBaseUrl: '', dashboardUrl: '' },
 } as const;
 
-type PresetKey = keyof typeof PRESET_ENDPOINTS;
+type PresetKey = keyof typeof PRESETS;
+
+/** Build the host-permission origin pattern (e.g. https://fm.acme.com/*) for a URL. */
+function originPattern(url: string): string | null {
+  try {
+    return `${new URL(url).origin}/*`;
+  } catch {
+    return null;
+  }
+}
+
+/** Ping an API base URL's capabilities/health endpoint with a timeout. */
+async function probeApi(apiBaseUrl: string): Promise<{ ok: boolean; error?: string }> {
+  const base = apiBaseUrl.replace(/\/+$/, '');
+  const tryFetch = async (path: string): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      return await fetch(`${base}${path}`, { method: 'GET', signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    const res = await tryFetch('/v1/meta/capabilities');
+    if (res.ok) return { ok: true };
+    if (res.status === 404) {
+      const health = await tryFetch('/health');
+      return health.ok
+        ? { ok: true }
+        : { ok: false, error: `Server reachable but unhealthy (${health.status}).` };
+    }
+    return { ok: false, error: `Server returned ${res.status}. Check the URL and server status.` };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') return { ok: false, error: 'Connection timed out — server not responding.' };
+    return { ok: false, error: `Could not reach server: ${error?.message || 'connection failed'} (check URL / TLS / CORS).` };
+  }
+}
 
 function OptionsApp() {
-  const [selectedPreset, setSelectedPreset] = useState<PresetKey>('production');
-  const [apiEndpoint, setApiEndpoint] = useState('https://app.faultmaven.ai');
+  const [selectedPreset, setSelectedPreset] = useState<PresetKey>('cloud');
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>(PRESETS.cloud.apiBaseUrl);
+  const [dashboardUrl, setDashboardUrl] = useState<string>(PRESETS.cloud.dashboardUrl);
   const [capabilities, setCapabilities] = useState<BackendCapabilities | null>(null);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{
-    text: string;
-    type: 'success' | 'error' | 'info';
-  } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -36,22 +72,17 @@ function OptionsApp() {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const stored = await browser.storage.local.get(['apiEndpoint']);
-      const dashboardUrl = stored.apiEndpoint || 'https://app.faultmaven.ai';
-      setApiEndpoint(dashboardUrl);
+      const [api, dash] = await Promise.all([getApiUrl(), getDashboardUrl()]);
+      setApiBaseUrl(api);
+      setDashboardUrl(dash);
 
-      // Detect which preset matches the stored endpoint
-      const matchedPreset = (Object.keys(PRESET_ENDPOINTS) as PresetKey[]).find(
-        key => PRESET_ENDPOINTS[key] === dashboardUrl
+      const matched = (Object.keys(PRESETS) as PresetKey[]).find(
+        key => PRESETS[key].apiBaseUrl === api && PRESETS[key].dashboardUrl === dash
       );
-      setSelectedPreset(matchedPreset || 'custom');
+      setSelectedPreset(matched || 'custom');
 
-      // Try to load capabilities from API backend
-      // Note: Storage contains Dashboard URL, derive API URL for capabilities
       try {
-        const apiUrl = deriveApiUrl(dashboardUrl);
-        const caps = await capabilitiesManager.fetch(apiUrl);
-        setCapabilities(caps);
+        setCapabilities(await capabilitiesManager.fetch(api));
       } catch (error) {
         log.warn('Failed to load capabilities', error);
       }
@@ -60,243 +91,110 @@ function OptionsApp() {
     }
   };
 
-  /**
-   * Derives API URL from Dashboard URL for validation
-   *
-   * Since we store Dashboard URL but need to validate the API backend,
-   * we must derive the API URL using the same logic as config.ts:getApiUrl()
-   */
-  const deriveApiUrl = (dashboardUrl: string): string => {
-    // Local deployment: Replace Dashboard port (3333) with API port (8090)
-    // Supports localhost and 127.0.0.1 (port 3333 auto-detection as fallback)
-    if (dashboardUrl.includes('localhost') ||
-        dashboardUrl.includes('127.0.0.1') ||
-        dashboardUrl.includes(':3333')) {
-      return dashboardUrl.replace(':3333', ':8090');
-    }
-
-    // Cloud deployment: Replace app subdomain with api subdomain
-    // https://app.faultmaven.ai → https://api.faultmaven.ai
-    return dashboardUrl.replace('app.', 'api.');
+  const showStatus = (text: string, type: 'success' | 'error' | 'info') => {
+    setStatusMessage({ text, type });
+    setTimeout(() => setStatusMessage(null), 6000);
   };
 
-  /**
-   * Validates Dashboard URL by checking the API backend
-   *
-   * Architecture: Users configure Dashboard URL (where they login), but we validate
-   * by checking the API backend since that's what actually serves the capabilities endpoint.
-   *
-   * Validation steps:
-   * 1. Derive API URL from Dashboard URL
-   * 2. Check API capabilities endpoint (validates full stack)
-   * 3. Fallback to basic health check if capabilities not available
-   */
-  const validateEndpoint = async (dashboardUrl: string): Promise<{ success: boolean; error?: string }> => {
-    if (!dashboardUrl || !dashboardUrl.trim()) {
-      return { success: false, error: 'Please enter a Dashboard URL' };
+  const handlePresetChange = (preset: PresetKey) => {
+    setSelectedPreset(preset);
+    if (preset !== 'custom') {
+      setApiBaseUrl(PRESETS[preset].apiBaseUrl);
+      setDashboardUrl(PRESETS[preset].dashboardUrl);
     }
-
-    // Validate URL format
-    try {
-      const parsedUrl = new URL(dashboardUrl);
-      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-        return { success: false, error: 'Invalid protocol. Use http:// or https://' };
-      }
-
-      // Warn about insecure HTTP for non-localhost
-      if (parsedUrl.protocol === 'http:' && !['localhost', '127.0.0.1', '0.0.0.0'].includes(parsedUrl.hostname)) {
-        log.warn('Insecure HTTP endpoint detected', { dashboardUrl });
-      }
-    } catch (error) {
-      return { success: false, error: 'Invalid URL format' };
-    }
-
-    // Derive API URL from Dashboard URL for validation
-    const apiUrl = deriveApiUrl(dashboardUrl);
-
-    // Perform health check via API Gateway with timeout
-    // Try capabilities endpoint first (validates full stack), fall back to simple health check
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-      // Try capabilities endpoint (validates API Gateway + backend)
-      const capabilitiesUrl = `${apiUrl.replace(/\/$/, '')}/v1/meta/capabilities`;
-      const response = await fetch(capabilitiesUrl, {
-        method: 'GET',
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        // Successfully reached API Gateway and backend
-        return { success: true };
-      } else if (response.status === 404) {
-        // Capabilities endpoint not found - try fallback health check
-        return await validateEndpointFallback(apiUrl);
-      } else {
-        return {
-          success: false,
-          error: `Server returned ${response.status}. Check URL and server status.`
-        };
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        return { success: false, error: 'Connection timeout. Server not responding.' };
-      }
-      return {
-        success: false,
-        error: `Connection failed: ${error.message || 'Unable to reach server'}`
-      };
-    }
-  };
-
-  /**
-   * Fallback health check using generic health endpoint
-   * Used when capabilities endpoint is not available (older backend versions)
-   */
-  const validateEndpointFallback = async (apiUrl: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      // Try generic health endpoint on API server
-      const healthUrl = `${apiUrl.replace(/\/$/, '')}/health`;
-      const response = await fetch(healthUrl, {
-        method: 'GET',
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        return { success: true };
-      } else {
-        return {
-          success: false,
-          error: `API Gateway unreachable (${response.status}). Verify URL is correct.`
-        };
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        return { success: false, error: 'Connection timeout. Server not responding.' };
-      }
-      return {
-        success: false,
-        error: `Unable to reach API Gateway: ${error.message || 'Connection failed'}`
-      };
-    }
-  };
-
-  const handleSave = async () => {
-    const trimmedUrl = apiEndpoint.trim();
-
-    if (!trimmedUrl) {
-      showStatus('Please enter an API endpoint', 'error');
-      return;
-    }
-
-    setSaving(true);
-    showStatus('Validating connection...', 'info');
-
-    try {
-      // VALIDATION REQUIREMENT: Test connection before saving
-      const validation = await validateEndpoint(trimmedUrl);
-
-      if (!validation.success) {
-        showStatus(`Connection failed: ${validation.error}`, 'error');
-        setSaving(false);
-        return;
-      }
-
-      // Connection successful - save to storage
-      await browser.storage.local.set({ apiEndpoint: trimmedUrl });
-
-      // Also mark first run as completed (if not already done)
-      await browser.storage.local.set({ hasCompletedFirstRun: true });
-
-      showStatus('✓ Settings saved! Please reload the extension.', 'success');
-
-      // Try to load capabilities from new endpoint
-      // Note: capabilitiesManager.fetch expects API URL, not Dashboard URL
-      try {
-        const apiUrl = deriveApiUrl(trimmedUrl);
-        const caps = await capabilitiesManager.fetch(apiUrl);
-        setCapabilities(caps);
-      } catch (error) {
-        log.warn('Failed to load capabilities after save', error);
-        setCapabilities(null);
-      }
-    } catch (error) {
-      log.error('Save failed', error);
-      showStatus('Failed to save settings', 'error');
-    } finally {
-      setSaving(false);
-    }
+    setCapabilities(null);
+    setStatusMessage(null);
   };
 
   const handleTest = async () => {
-    const trimmedUrl = apiEndpoint.trim();
-
-    if (!trimmedUrl) {
-      showStatus('Please enter an API endpoint', 'error');
+    const api = apiBaseUrl.trim();
+    const formatError = validateEndpointUrl(api);
+    if (formatError) {
+      showStatus(`✗ API base URL: ${formatError}`, 'error');
       return;
     }
-
     setTesting(true);
-    showStatus('Testing connection...', 'info');
-
+    showStatus('Testing connection…', 'info');
     try {
-      const validation = await validateEndpoint(trimmedUrl);
-
-      if (validation.success) {
-        // Also try to fetch capabilities for detailed info
-        // Note: capabilitiesManager.fetch expects API URL, not Dashboard URL
-        try {
-          const apiUrl = deriveApiUrl(trimmedUrl);
-          const caps = await capabilitiesManager.fetch(apiUrl);
-          setCapabilities(caps);
-          showStatus(
-            `✓ Connected successfully to ${caps.deploymentMode} backend`,
-            'success'
-          );
-        } catch (error) {
-          // Health check passed but capabilities fetch failed - still valid endpoint
-          showStatus('✓ Connection successful', 'success');
-          setCapabilities(null);
-        }
-      } else {
-        showStatus(`✗ ${validation.error}`, 'error');
+      const result = await probeApi(api);
+      if (!result.ok) {
+        showStatus(`✗ ${result.error}`, 'error');
         setCapabilities(null);
+        return;
       }
-    } catch (error: any) {
-      showStatus(`✗ Connection failed: ${error.message}`, 'error');
-      setCapabilities(null);
+      try {
+        const caps = await capabilitiesManager.fetch(api);
+        setCapabilities(caps);
+        showStatus(`✓ Connected to ${caps.deploymentMode} backend`, 'success');
+      } catch {
+        setCapabilities(null);
+        showStatus('✓ Connection successful', 'success');
+      }
     } finally {
       setTesting(false);
     }
   };
 
-  /**
-   * Handle preset selection change
-   *
-   * Clears capabilities when user changes selection so "Detected Mode" badge
-   * disappears until they test/save the new URL
-   */
-  const handlePresetChange = (preset: PresetKey) => {
-    setSelectedPreset(preset);
-    if (preset !== 'custom') {
-      setApiEndpoint(PRESET_ENDPOINTS[preset]);
-    }
-    // Clear capabilities when changing selection - user must test/save to re-detect
-    setCapabilities(null);
-    setStatusMessage(null); // Also clear any previous status messages
-  };
+  const handleSave = async () => {
+    const api = apiBaseUrl.trim();
+    const dash = dashboardUrl.trim();
 
-  const showStatus = (text: string, type: 'success' | 'error' | 'info') => {
-    setStatusMessage({ text, type });
-    setTimeout(() => setStatusMessage(null), 5000);
+    // Validate both before doing anything (non-localhost must be https).
+    const apiError = validateEndpointUrl(api);
+    if (apiError) {
+      showStatus(`✗ API base URL: ${apiError}`, 'error');
+      return;
+    }
+    const dashError = dash ? validateEndpointUrl(dash) : null;
+    if (dashError) {
+      showStatus(`✗ Dashboard URL: ${dashError}`, 'error');
+      return;
+    }
+
+    setSaving(true);
+    showStatus('Requesting access and validating…', 'info');
+    try {
+      // Request host permission for the configured origin(s) at runtime. Cloud
+      // origins are already in host_permissions and resolve without a prompt.
+      const origins = Array.from(
+        new Set([originPattern(api), dash ? originPattern(dash) : null].filter((o): o is string => !!o))
+      );
+      if (origins.length > 0) {
+        const hasAll = await browser.permissions.contains({ origins });
+        if (!hasAll) {
+          const granted = await browser.permissions.request({ origins });
+          if (!granted) {
+            showStatus('✗ Permission to access the configured server was denied.', 'error');
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
+      // Validate connectivity before persisting (no silent dead copilot).
+      const probe = await probeApi(api);
+      if (!probe.ok) {
+        showStatus(`✗ ${probe.error}`, 'error');
+        setSaving(false);
+        return;
+      }
+
+      await setEndpoints({ apiBaseUrl: api, dashboardUrl: dash || undefined });
+      await browser.storage.local.set({ hasCompletedFirstRun: true });
+      showStatus('✓ Settings saved. Reload the extension to apply.', 'success');
+
+      try {
+        setCapabilities(await capabilitiesManager.fetch(api));
+      } catch (error) {
+        log.warn('Failed to load capabilities after save', error);
+        setCapabilities(null);
+      }
+    } catch (error: any) {
+      log.error('Save failed', error);
+      showStatus(`✗ ${error?.message || 'Failed to save settings'}`, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -309,6 +207,8 @@ function OptionsApp() {
       </div>
     );
   }
+
+  const isCustom = selectedPreset === 'custom';
 
   return (
     <div className="min-h-screen bg-fm-canvas py-8 px-4">
@@ -336,57 +236,57 @@ function OptionsApp() {
               onChange={(e) => handlePresetChange(e.target.value as PresetKey)}
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary"
             >
-              <option value="production">FaultMaven Cloud</option>
-              <option value="localhost">Local Deployment (localhost - includes SSH tunnels)</option>
-              <option value="custom">Custom Server URL (enterprise domains)</option>
+              <option value="cloud">FaultMaven Cloud</option>
+              <option value="localhost">Local Deployment (localhost)</option>
+              <option value="custom">Custom / self-hosted</option>
             </select>
-            {selectedPreset === 'localhost' && (
-              <p className="mt-1 text-xs text-fm-text-tertiary">
-                <strong className="text-fm-text-primary">Local machine:</strong> Dashboard runs on localhost:3333<br/>
-                <strong className="text-fm-text-primary">Remote server:</strong> Use SSH tunnel: <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">ssh -L 3333:localhost:3333 -L 8090:localhost:8090 user@server</code>
-              </p>
-            )}
-            {selectedPreset === 'production' && (
-              <p className="mt-1 text-xs text-fm-text-secondary">
-                Connect to FaultMaven's managed cloud service
-              </p>
-            )}
-            {selectedPreset === 'custom' && (
-              <p className="mt-1 text-xs text-fm-text-secondary">
-                For enterprise deployments with custom domains (e.g., https://faultmaven.acme.com)
-              </p>
-            )}
+            <p className="mt-1 text-xs text-fm-text-secondary">
+              The API base URL is what the copilot talks to. The Dashboard URL is only needed for OAuth login.
+            </p>
           </div>
 
-          {/* Dashboard URL Input */}
+          {/* API Base URL */}
           <div className="mb-6">
-            <label htmlFor="api-endpoint" className="block text-sm font-medium text-fm-text-primary mb-2">
-              Dashboard URL
-              {selectedPreset === 'custom' && <span className="text-fm-critical ml-1">*</span>}
+            <label htmlFor="api-base-url" className="block text-sm font-medium text-fm-text-primary mb-2">
+              API base URL <span className="text-fm-critical ml-1">*</span>
             </label>
             <input
               type="text"
-              id="api-endpoint"
-              value={apiEndpoint}
+              id="api-base-url"
+              value={apiBaseUrl}
               onChange={(e) => {
-                setApiEndpoint(e.target.value);
-                // Auto-switch to custom when manually editing
-                if (selectedPreset !== 'custom') {
-                  setSelectedPreset('custom');
-                }
-                // Clear capabilities when URL changes - user must test/save to re-detect
+                setApiBaseUrl(e.target.value);
+                if (!isCustom) setSelectedPreset('custom');
                 setCapabilities(null);
-                setStatusMessage(null); // Also clear any previous status messages
+                setStatusMessage(null);
               }}
-              placeholder="e.g., https://faultmaven.acme.com"
-              disabled={selectedPreset !== 'custom'}
-              className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary"
+              placeholder="e.g., https://fm.acme.com  (or http://127.0.0.1:8090)"
+              disabled={!isCustom}
+              className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
-            {selectedPreset === 'custom' && (
-              <p className="mt-1 text-xs text-fm-text-tertiary">
-                Enter your enterprise Dashboard URL with SSL (HTTPS required). For remote servers without custom domains, use <strong className="text-fm-text-primary">Local Deployment</strong> with SSH tunnel instead.
-              </p>
-            )}
+            <p className="mt-1 text-xs text-fm-text-tertiary">
+              Non-localhost hosts must use <strong className="text-fm-text-primary">https://</strong> (browser secure-context requirement). Bring your own TLS / reverse proxy.
+            </p>
+          </div>
+
+          {/* Dashboard URL */}
+          <div className="mb-6">
+            <label htmlFor="dashboard-url" className="block text-sm font-medium text-fm-text-primary mb-2">
+              Dashboard URL <span className="text-fm-text-tertiary ml-1 font-normal">(OAuth login only)</span>
+            </label>
+            <input
+              type="text"
+              id="dashboard-url"
+              value={dashboardUrl}
+              onChange={(e) => {
+                setDashboardUrl(e.target.value);
+                if (!isCustom) setSelectedPreset('custom');
+                setStatusMessage(null);
+              }}
+              placeholder="e.g., https://dash.acme.com  (leave as-is for local username/password auth)"
+              disabled={!isCustom}
+              className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
+            />
           </div>
 
           {/* Deployment Mode Display */}
@@ -402,9 +302,6 @@ function OptionsApp() {
               }`}>
                 {capabilities.deploymentMode === 'self-hosted' ? 'Self-Hosted' : 'FaultMaven Cloud'}
               </div>
-              <p className="mt-2 text-sm text-fm-text-tertiary">
-                Dashboard: <a href={apiEndpoint} target="_blank" rel="noopener noreferrer" className="text-fm-accent hover:underline">{apiEndpoint}</a>
-              </p>
             </div>
           )}
 
@@ -446,20 +343,19 @@ function OptionsApp() {
           <div className="space-y-3 text-sm text-fm-text-tertiary">
             <div>
               <strong className="font-semibold text-fm-text-primary">FaultMaven Cloud:</strong>
-              <p className="mt-1">Connects to managed service at <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">https://app.faultmaven.ai</code> (default)</p>
+              <p className="mt-1">API <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">https://api.faultmaven.ai</code>, Dashboard <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">https://app.faultmaven.ai</code> (default)</p>
             </div>
             <div>
               <strong className="font-semibold text-fm-text-primary">Local Deployment:</strong>
-              <p className="mt-1">Dashboard runs on port <strong className="text-fm-text-primary">3333</strong>, API on port <strong className="text-fm-text-primary">8090</strong></p>
-              <p className="mt-1 text-xs">Use <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">docker compose up</code> to start locally</p>
+              <p className="mt-1">API on port <strong className="text-fm-text-primary">8090</strong>, Dashboard on port <strong className="text-fm-text-primary">3333</strong>. Use <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">docker compose up</code> to start locally.</p>
             </div>
             <div>
-              <strong className="font-semibold text-fm-text-primary">Custom Server:</strong>
-              <p className="mt-1">For self-hosted deployments with custom domains or ports</p>
+              <strong className="font-semibold text-fm-text-primary">Custom / self-hosted:</strong>
+              <p className="mt-1">Set your own API base URL (HTTPS for non-localhost). The Dashboard URL is only needed for OAuth login — leave it for local username/password auth. See the self-hosting guide.</p>
             </div>
             <div className="pt-2 border-t border-fm-border">
-              <p>Always click <strong className="text-fm-text-primary">"Test Connection"</strong> before saving</p>
-              <p>Reload the extension after changing settings</p>
+              <p>Click <strong className="text-fm-text-primary">"Test Connection"</strong> before saving.</p>
+              <p>Reload the extension after changing settings.</p>
             </div>
           </div>
         </div>

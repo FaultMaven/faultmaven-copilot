@@ -101,7 +101,9 @@ export function validateEndpointUrl(url: string): string | null {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return 'URL must start with http:// or https://';
   }
-  const isLoopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  const isLoopback = parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '0.0.0.0';
   if (parsed.protocol === 'http:' && !isLoopback) {
     return 'Non-localhost endpoints must use https:// (browser secure-context requirement)';
   }
@@ -119,7 +121,10 @@ function deriveLegacyApiUrl(dashboardUrl: string): string {
       dashboardUrl.includes(':3333')) {
     return dashboardUrl.replace(':3333', ':8090');
   }
-  return dashboardUrl.replace('app.', 'api.');
+  // Anchor to the host label so e.g. "myapp.example.com" is not mangled into
+  // "myapi.example.com". A custom domain with no "app." subdomain is returned
+  // unchanged — the user corrects it explicitly on the Options page.
+  return dashboardUrl.replace('://app.', '://api.');
 }
 
 /**
@@ -160,11 +165,18 @@ export async function getApiUrl(): Promise<string> {
       // new explicit keys once, then use them going forward.
       if (stored[LEGACY_ENDPOINT_KEY]) {
         const migratedApi = normalizeUrl(deriveLegacyApiUrl(stored[LEGACY_ENDPOINT_KEY]));
-        await browser.storage.local.set({
-          [API_BASE_URL_KEY]: migratedApi,
-          [DASHBOARD_URL_KEY]: normalizeUrl(stored[LEGACY_ENDPOINT_KEY]),
-        });
-        log.info('Migrated legacy apiEndpoint to explicit apiBaseUrl/dashboardUrl');
+        // Seed the new keys, but never let a transient write failure drop the
+        // already-computed endpoint — a self-hoster must not silently fall back
+        // to Cloud just because storage.set hiccupped.
+        try {
+          await browser.storage.local.set({
+            [API_BASE_URL_KEY]: migratedApi,
+            [DASHBOARD_URL_KEY]: normalizeUrl(stored[LEGACY_ENDPOINT_KEY]),
+          });
+          log.info('Migrated legacy apiEndpoint to explicit apiBaseUrl/dashboardUrl');
+        } catch (writeErr) {
+          log.warn('Legacy migration seed-write failed; using derived value for this call', writeErr);
+        }
         return migratedApi;
       }
     }
