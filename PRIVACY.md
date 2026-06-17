@@ -4,7 +4,7 @@
 **Applies to:** FaultMaven Copilot browser extension (Chrome / Edge / Firefox)
 
 FaultMaven Copilot ("the extension") is the browser interface for FaultMaven, an
-AI-powered troubleshooting assistant. This policy explains exactly what data the
+AI-powered troubleshooting copilot. This policy explains exactly what data the
 extension accesses, where that data goes, and what it does **not** do.
 
 We designed the extension to be a thin, transparent client: it does not have its
@@ -80,7 +80,7 @@ extension. You can also clear it via your browser's extension settings.
   history, monitor tabs in the background, or capture pages you have not asked
   it to capture.
 - **No use beyond the feature.** Data you submit is used solely to provide the
-  troubleshooting assistant. It is not used for advertising or for unrelated
+  troubleshooting copilot. It is not used for advertising or for unrelated
   purposes, and it is not used to train models except as separately disclosed
   and consented to by your FaultMaven backend operator.
 

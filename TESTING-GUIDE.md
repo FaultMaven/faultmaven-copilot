@@ -16,7 +16,7 @@
 
 **Expected Results**:
 - ✅ Welcome screen appears
-- ✅ Two deployment options shown: Cloud and Open Source
+- ✅ Two deployment options shown: Cloud and Standalone
 - ✅ No errors in console
 
 ### 2. Cloud Deployment Setup
@@ -43,7 +43,7 @@
 chrome.storage.local.get(null).then(data => console.log(data));
 ```
 
-### 3. Local Deployment Setup
+### 3. Standalone Deployment Setup
 
 **Prerequisite**: Clear storage first:
 ```javascript
@@ -51,7 +51,7 @@ chrome.storage.local.clear().then(() => location.reload());
 ```
 
 **Steps**:
-1. On Welcome screen, click "🏠 FaultMaven Open Source (Local)"
+1. On Welcome screen, click "🏠 FaultMaven Standalone (Self-Hosted)"
 2. Chrome prompts: "Allow FaultMaven Copilot to access localhost and 127.0.0.1?"
 3. Click "Allow"
 
@@ -97,11 +97,11 @@ chrome.storage.local.clear().then(() => location.reload());
    }
    ```
 
-### 5. OAuth Sign-In (Local)
+### 5. OAuth Sign-In (Standalone)
 
 **Prerequisite**:
-- Complete Local deployment setup first
-- Local Dashboard running at `http://127.0.0.1:3333`
+- Complete Standalone deployment setup first
+- Standalone Dashboard running at `http://127.0.0.1:3333`
 
 **Steps**: Same as Cloud OAuth, but with localhost URLs
 
@@ -114,7 +114,7 @@ chrome.storage.local.clear().then(() => location.reload());
 ### API Unreachable
 
 **Setup**:
-1. Complete setup (Cloud or Local)
+1. Complete setup (Cloud or Standalone)
 2. Stop backend services
 
 **Test**:
