@@ -12,7 +12,7 @@ const log = createLogger('Settings');
 // no longer derived from the Dashboard URL (see docs/SELF_HOSTING.md).
 const PRESETS = {
   cloud: { label: 'FaultMaven Cloud', apiBaseUrl: 'https://api.faultmaven.ai', dashboardUrl: 'https://app.faultmaven.ai' },
-  localhost: { label: 'Local (localhost)', apiBaseUrl: 'http://127.0.0.1:8090', dashboardUrl: 'http://127.0.0.1:3333' },
+  localhost: { label: 'Local (localhost)', apiBaseUrl: 'http://localhost:8090', dashboardUrl: 'http://localhost:3333' },
   custom: { label: 'Custom / self-hosted', apiBaseUrl: '', dashboardUrl: '' },
 } as const;
 
@@ -279,7 +279,7 @@ function OptionsApp() {
                 setCapabilities(null);
                 setStatusMessage(null);
               }}
-              placeholder="e.g., https://fm.acme.com  (or http://127.0.0.1:8090)"
+              placeholder="e.g., https://fm.acme.com  (or http://localhost:8090)"
               disabled={!isCustom}
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
@@ -366,7 +366,7 @@ function OptionsApp() {
             </div>
             <div>
               <strong className="font-semibold text-fm-text-primary">Local (this machine):</strong>
-              <p className="mt-1">FaultMaven running on your own computer — API on port <strong className="text-fm-text-primary">8090</strong>, Dashboard on port <strong className="text-fm-text-primary">3333</strong> (<code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">docker compose up</code>). For a server on another machine, use <strong className="text-fm-text-primary">Custom</strong> instead.</p>
+              <p className="mt-1">FaultMaven running on your own computer (<code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">docker compose up</code>) — API <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">http://localhost:8090</code>, Dashboard <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">http://localhost:3333</code> (matches <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">faultmaven.sh health</code>). For a server on another machine, use <strong className="text-fm-text-primary">Custom</strong> instead.</p>
             </div>
             <div>
               <strong className="font-semibold text-fm-text-primary">Custom / self-hosted:</strong>
