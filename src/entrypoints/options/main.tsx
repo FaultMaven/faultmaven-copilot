@@ -27,6 +27,26 @@ function originPattern(url: string): string | null {
   }
 }
 
+/**
+ * Ensure the extension holds host permission for the given URLs' origins,
+ * requesting it at runtime if needed. Must be called from a user gesture.
+ * Without this, a cross-origin fetch from this page is subject to CORS and
+ * fails even when the server is reachable.
+ */
+async function ensureOriginPermission(urls: string[]): Promise<boolean> {
+  const origins = Array.from(
+    new Set(urls.map(originPattern).filter((o): o is string => !!o))
+  );
+  if (origins.length === 0) return true;
+  try {
+    if (await browser.permissions.contains({ origins })) return true;
+    return await browser.permissions.request({ origins });
+  } catch (e) {
+    log.warn('Host permission request failed', e);
+    return false;
+  }
+}
+
 /** Ping an API base URL's capabilities/health endpoint with a timeout. */
 async function probeApi(apiBaseUrl: string): Promise<{ ok: boolean; error?: string }> {
   const base = apiBaseUrl.replace(/\/+$/, '');
@@ -116,6 +136,12 @@ function OptionsApp() {
     setTesting(true);
     showStatus('Testing connection…', 'info');
     try {
+      // Grant host permission first, else the cross-origin probe hits CORS.
+      const granted = await ensureOriginPermission([api]);
+      if (!granted) {
+        showStatus('✗ Permission to access the configured server was denied.', 'error');
+        return;
+      }
       const result = await probeApi(api);
       if (!result.ok) {
         showStatus(`✗ ${result.error}`, 'error');
@@ -156,19 +182,11 @@ function OptionsApp() {
     try {
       // Request host permission for the configured origin(s) at runtime. Cloud
       // origins are already in host_permissions and resolve without a prompt.
-      const origins = Array.from(
-        new Set([originPattern(api), dash ? originPattern(dash) : null].filter((o): o is string => !!o))
-      );
-      if (origins.length > 0) {
-        const hasAll = await browser.permissions.contains({ origins });
-        if (!hasAll) {
-          const granted = await browser.permissions.request({ origins });
-          if (!granted) {
-            showStatus('✗ Permission to access the configured server was denied.', 'error');
-            setSaving(false);
-            return;
-          }
-        }
+      const granted = await ensureOriginPermission(dash ? [api, dash] : [api]);
+      if (!granted) {
+        showStatus('✗ Permission to access the configured server was denied.', 'error');
+        setSaving(false);
+        return;
       }
 
       // Validate connectivity before persisting (no silent dead copilot).
@@ -266,6 +284,10 @@ function OptionsApp() {
             />
             <p className="mt-1 text-xs text-fm-text-tertiary">
               Non-localhost hosts must use <strong className="text-fm-text-primary">https://</strong> (browser secure-context requirement). Bring your own TLS / reverse proxy.
+            </p>
+            <p className="mt-1 text-xs text-fm-text-tertiary">
+              Connecting to a remote server that serves plain HTTP? Tunnel it to localhost and use <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://localhost:8090</code>:<br/>
+              <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">ssh -L 8090:localhost:8090 user@server</code>
             </p>
           </div>
 
