@@ -32,7 +32,7 @@ describe('config endpoints', () => {
     it('accepts http on loopback AND LAN/custom hosts (extension bypasses CORS, no mixed-content block)', () => {
       expect(validateEndpointUrl('http://localhost:8090')).toBeNull();
       expect(validateEndpointUrl('http://127.0.0.1:8090')).toBeNull();
-      expect(validateEndpointUrl('http://192.168.0.200:8090')).toBeNull();
+      expect(validateEndpointUrl('http://192.168.1.100:8090')).toBeNull();
       expect(validateEndpointUrl('http://fm.acme.com')).toBeNull();
     });
     it('rejects non-http(s) schemes and garbage', () => {

@@ -37,7 +37,7 @@ base URL is now set **explicitly**; there is no derivation.
 ## HTTP and HTTPS both work
 
 The copilot can connect to an `http://` backend on **any** host — `localhost`, a
-LAN IP (`http://192.168.0.200:8090`), or a custom domain — not just localhost.
+LAN IP (`http://192.168.1.100:8090`), or a custom domain — not just localhost.
 Two browser facts make this work:
 
 - **No mixed-content block.** A request from an extension page to a plain-HTTP

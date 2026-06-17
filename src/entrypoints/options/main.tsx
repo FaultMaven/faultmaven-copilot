@@ -255,11 +255,12 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary"
             >
               <option value="cloud">FaultMaven Cloud</option>
-              <option value="localhost">Local Deployment (localhost)</option>
-              <option value="custom">Custom / self-hosted</option>
+              <option value="localhost">Local — FaultMaven on this machine</option>
+              <option value="custom">Custom / self-hosted (LAN or remote)</option>
             </select>
             <p className="mt-1 text-xs text-fm-text-secondary">
-              The API base URL is what the copilot talks to. The Dashboard URL is only needed for OAuth login.
+              The API base URL is what the copilot talks to; the Dashboard URL is only needed for OAuth login.
+              {' '}<strong className="text-fm-text-primary">Local</strong> means FaultMaven running on <em>this</em> computer (or via an SSH tunnel). For a server elsewhere on your network, choose <strong className="text-fm-text-primary">Custom</strong> and use its address.
             </p>
           </div>
 
@@ -283,7 +284,7 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
             <p className="mt-1 text-xs text-fm-text-tertiary">
-              <strong className="text-fm-text-primary">http</strong> or <strong className="text-fm-text-primary">https</strong>, any host — e.g. <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.0.200:8090</code>. You'll be asked to grant access to the server on Save. https is recommended on untrusted networks (over http, tokens travel in cleartext).
+              Enter your server's full URL. <strong className="text-fm-text-primary">Both http and https work</strong>, on any host — a LAN IP or a domain. Example: <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.1.100:8090</code>. On <strong className="text-fm-text-primary">Save</strong> you'll approve a one-time access prompt for that server. Prefer <strong className="text-fm-text-primary">https</strong> on untrusted networks — over http, auth tokens travel in cleartext.
             </p>
           </div>
 
@@ -364,8 +365,8 @@ function OptionsApp() {
               <p className="mt-1">API <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">https://api.faultmaven.ai</code>, Dashboard <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">https://app.faultmaven.ai</code> (default)</p>
             </div>
             <div>
-              <strong className="font-semibold text-fm-text-primary">Local Deployment:</strong>
-              <p className="mt-1">API on port <strong className="text-fm-text-primary">8090</strong>, Dashboard on port <strong className="text-fm-text-primary">3333</strong>. Use <code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">docker compose up</code> to start locally.</p>
+              <strong className="font-semibold text-fm-text-primary">Local (this machine):</strong>
+              <p className="mt-1">FaultMaven running on your own computer — API on port <strong className="text-fm-text-primary">8090</strong>, Dashboard on port <strong className="text-fm-text-primary">3333</strong> (<code className="bg-fm-code-bg px-1 py-0.5 rounded text-fm-code font-mono border border-fm-code-border">docker compose up</code>). For a server on another machine, use <strong className="text-fm-text-primary">Custom</strong> instead.</p>
             </div>
             <div>
               <strong className="font-semibold text-fm-text-primary">Custom / self-hosted:</strong>
