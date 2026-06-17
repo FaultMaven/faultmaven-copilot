@@ -284,7 +284,7 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
             <p className="mt-1 text-xs text-fm-text-tertiary">
-              Enter your server's full URL. <strong className="text-fm-text-primary">Both http and https work</strong>, on any host — a LAN IP or a domain. Example: <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.1.100:8090</code>. On <strong className="text-fm-text-primary">Save</strong> you'll approve a one-time access prompt for that server. Prefer <strong className="text-fm-text-primary">https</strong> on untrusted networks — over http, auth tokens travel in cleartext.
+              Any host — a LAN IP or a domain. <strong className="text-fm-text-primary">http</strong> needs no certificate (e.g. <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.1.100:8090</code>). <strong className="text-fm-text-primary">https</strong> works only if the server presents a TLS certificate your browser already trusts — a CA cert for a domain, or a self-signed cert you've imported (self-signed certs are otherwise rejected). On <strong className="text-fm-text-primary">Save</strong> you'll approve a one-time access prompt. Prefer https on untrusted networks — over http, tokens travel in cleartext.
             </p>
           </div>
 
