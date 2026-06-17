@@ -49,13 +49,12 @@ export default defineConfig({
     side_panel: {
       default_path: "sidepanel_manual.html"
     },
-    content_scripts: process.env.VITE_DASHBOARD_URL ? [
-      {
-        matches: [`${process.env.VITE_DASHBOARD_URL.replace(/\/$/, '')}/*`],
-        js: ["content-scripts/auth-bridge.js"],
-        run_at: "document_end"
-      }
-    ] : undefined,
+    // NOTE: the auth-bridge content script is declared via its WXT entrypoint
+    // (src/entrypoints/auth-bridge.content.ts), not here. A previous manifest
+    // block gated on process.env.VITE_DASHBOARD_URL was dead — Vite .env vars
+    // populate import.meta.env, not process.env, at config-eval time — so it
+    // produced nothing. Removed to avoid implying custom dashboard domains are
+    // covered (they are not yet; see issue #71 for runtime registration).
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }
