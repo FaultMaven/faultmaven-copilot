@@ -15,7 +15,12 @@ import { isTrustedDashboardOrigin } from '../lib/auth/trusted-origin';
  */
 
 export default defineContentScript({
-  matches: ["*://app.faultmaven.ai/*", "*://localhost/*", "*://127.0.0.1/*"],
+  // Registered at RUNTIME by the background worker for the configured Dashboard
+  // origin only (see registerAuthBridge in background.ts). It is therefore NOT
+  // in the manifest, so it no longer injects on every localhost page, and it
+  // supports custom self-hosted OAuth dashboard domains. matches is supplied at
+  // registration time.
+  registration: 'runtime',
   runAt: "document_end",
   main() {
     const log = createLogger('AuthBridge');

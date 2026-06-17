@@ -3,6 +3,7 @@ import { createSession, deleteSession, authManager } from '../lib/api';
 import { PersistenceManager } from '../lib/utils/persistence-manager';
 import { browser } from 'wxt/browser';
 import config from '../config';
+import { reconcileAuthBridgeRegistration } from '../lib/auth/auth-bridge-registration';
 import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
 import { createLogger } from '../lib/utils/logger';
 
@@ -419,6 +420,21 @@ export default defineBackground({
       // Handle other actions...
       sendResponse({ status: "error", message: "Unknown action" });
     });
+
+    // === Auth-bridge runtime registration ===
+    // The auth bridge runs only on the CONFIGURED Dashboard origin (Cloud by
+    // default, or a self-hosted/custom dashboard) — registered at runtime, not
+    // via a static manifest match. Reconcile now, and whenever the configured
+    // dashboard URL or granted host permissions change.
+    reconcileAuthBridgeRegistration();
+    browser.storage.onChanged.addListener((changes: any, area: string) => {
+      if (area === 'local' && changes.dashboardUrl) {
+        reconcileAuthBridgeRegistration();
+      }
+    });
+    if (browser.permissions?.onAdded) {
+      browser.permissions.onAdded.addListener(() => reconcileAuthBridgeRegistration());
+    }
 
     // === OAuth Tab Monitor (registered top-level so it survives SW eviction) ===
     browser.tabs.onUpdated.addListener(handleOAuthTabUpdate);
