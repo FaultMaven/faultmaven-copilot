@@ -43,11 +43,12 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
         return;
       }
 
-      // Local self-host defaults: API on :8090, Dashboard on :3333.
-      // These are explicit and independently editable on the Options page.
+      // Local self-host defaults — match `faultmaven.sh health` output:
+      // API on localhost:8090, Dashboard on localhost:3333.
+      // Explicit and independently editable on the Options page.
       await setEndpoints({
-        apiBaseUrl: 'http://127.0.0.1:8090',
-        dashboardUrl: 'http://127.0.0.1:3333',
+        apiBaseUrl: 'http://localhost:8090',
+        dashboardUrl: 'http://localhost:3333',
       });
       await browser.storage.local.set({ hasCompletedFirstRun: true });
 
