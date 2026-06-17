@@ -36,8 +36,8 @@ export default defineConfig({
     optional_host_permissions: [
       "http://localhost/*",
       "http://127.0.0.1/*",
-      "http://*/*",  // Allow custom local deployments
-      "https://*/*"  // Allow custom enterprise deployments
+      "http://*/*",  // Allow custom self-hosted deployments (HTTP — LAN/localhost)
+      "https://*/*"  // Allow custom self-hosted deployments (HTTPS)
     ],
     action: {
       default_title: "Open FaultMaven Copilot",

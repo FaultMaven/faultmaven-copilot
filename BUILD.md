@@ -18,7 +18,7 @@ pnpm build
 This creates a single build that:
 
 - Defaults to Cloud deployment (safe for Chrome Web Store distribution)
-- Allows users to choose Local deployment via Welcome screen
+- Allows users to choose Standalone (self-hosted) deployment via Welcome screen
 - Stores user choice in browser extension storage
 
 ## How URL Configuration Works
@@ -27,7 +27,7 @@ This creates a single build that:
 
 1. **User Choice via Welcome Screen** - Stored in `browser.storage.local.apiEndpoint`
    - FaultMaven Cloud: `https://app.faultmaven.ai`
-   - Open Source Local: `http://127.0.0.1:3333`
+   - Standalone (Self-Hosted): `http://127.0.0.1:3333`
 
 2. **Build-Time Environment Variable** - `VITE_API_URL` from `.env.*` files
    - `.env.development`: `http://127.0.0.1:8090`
@@ -43,7 +43,7 @@ This creates a single build that:
 2. First run shows Welcome screen
 3. Choose deployment type:
    - **FaultMaven Cloud (SaaS)** - Sets `https://app.faultmaven.ai`
-   - **Open Source (Local)** - Sets `http://127.0.0.1:3333`
+   - **Standalone (Self-Hosted)** - Sets `http://127.0.0.1:3333`
 4. Extension stores choice, never uses fallback
 
 ### For Local Development
@@ -51,7 +51,7 @@ This creates a single build that:
 1. Build extension: `pnpm build`
 2. Load unpacked in Chrome from `.output/chrome-mv3`
 3. Welcome screen defaults to production (safe default)
-4. Choose "Open Source (Local)" to configure localhost
+4. Choose "Standalone (Self-Hosted)" to configure localhost
 5. Extension derives API URL from Dashboard URL:
    - `http://127.0.0.1:3333` → `http://127.0.0.1:8090`
 
@@ -64,7 +64,7 @@ This creates a single build that:
 pnpm build
 
 # Load unpacked extension from .output/chrome-mv3
-# Choose "Open Source (Local)" in Welcome screen
+# Choose "Standalone (Self-Hosted)" in Welcome screen
 # Should connect to http://127.0.0.1:3333 and http://127.0.0.1:8090
 ```
 
