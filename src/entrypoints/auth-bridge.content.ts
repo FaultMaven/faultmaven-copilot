@@ -1,26 +1,18 @@
 // src/entrypoints/auth-bridge.content.ts
 import { browser } from 'wxt/browser';
 import { createLogger } from '../lib/utils/logger';
+import { isTrustedDashboardOrigin } from '../lib/auth/trusted-origin';
 
 /**
  * Auth Bridge Content Script
- * 
+ *
  * Bridges the gap between the Dashboard web app and the Extension background script.
  * Listens for successful login events from the dashboard and forwards the token.
- * 
- * Security: Validates message origins to prevent malicious injection.
+ *
+ * Security: Validates message origins against the CONFIGURED Dashboard origin
+ * (Cloud default + the user's `dashboardUrl`), not a hardcoded port allowlist.
  * Token Rotation: Listens for storage events to detect token refreshes.
  */
-
-// Allowed origins for postMessage validation
-const ALLOWED_ORIGINS = [
-  'https://app.faultmaven.ai',
-  'http://localhost:3333',
-  'http://localhost:5173',  // Vite dev server
-  'http://127.0.0.1:3333',
-  'http://127.0.0.1:5173',
-  // Add more localhost ports as needed for self-hosted deployments
-];
 
 export default defineContentScript({
   matches: ["*://app.faultmaven.ai/*", "*://localhost/*", "*://127.0.0.1/*"],
@@ -62,15 +54,15 @@ export default defineContentScript({
      * CRITICAL: Validates origin to prevent malicious injection
      */
     window.addEventListener("message", async (event) => {
-      // Security check: Validate origin
-      if (!ALLOWED_ORIGINS.includes(event.origin)) {
-        log.warn('Rejected message from untrusted origin:', event.origin);
-        return;
-      }
-
       // Security check: Ensure message is from same window
       if (event.source !== window) {
         log.warn('Rejected message from different source');
+        return;
+      }
+
+      // Security check: Validate origin against the configured Dashboard origin
+      if (!(await isTrustedDashboardOrigin(event.origin))) {
+        log.warn('Rejected message from untrusted origin:', event.origin);
         return;
       }
 
