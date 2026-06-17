@@ -16,6 +16,7 @@ import { PersistenceManager } from "../../lib/utils/persistence-manager";
 
 const log = createLogger('SidePanelApp');
 import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation, getUserCases } from "../../lib/api";
+import { getApiUrl } from "../../config";
 import { caseCacheManager } from "../../lib/cache/case-cache";
 import { isOptimisticId, isRealId } from "../../lib/utils/data-integrity";
 import { OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
@@ -290,7 +291,7 @@ function SidePanelAppContent() {
     const initializeApp = async () => {
       try {
         // First, load first-run status from storage
-        const stored = await browser.storage.local.get(['hasCompletedFirstRun', 'apiEndpoint']);
+        const stored = await browser.storage.local.get(['hasCompletedFirstRun']);
         const completedFirstRun = stored.hasCompletedFirstRun || false;
 
         setHasCompletedFirstRun(completedFirstRun);
@@ -301,12 +302,8 @@ function SidePanelAppContent() {
           return;
         }
 
-        // Derive API URL from Dashboard URL for capabilities fetch
-        // Note: apiEndpoint now stores Dashboard URL, but capabilities endpoint is on API
-        const dashboardUrl = stored.apiEndpoint || 'https://app.faultmaven.ai';
-        const apiEndpoint = dashboardUrl.includes('localhost') || dashboardUrl.includes('127.0.0.1')
-          ? dashboardUrl.replace(':3333', ':8090')
-          : dashboardUrl.replace('app.', 'api.');
+        // Capabilities live on the API base URL (explicitly configured).
+        const apiEndpoint = await getApiUrl();
 
         // Load backend capabilities
         const caps = await capabilitiesManager.fetch(apiEndpoint);

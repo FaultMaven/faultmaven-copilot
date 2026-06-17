@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { browser } from 'wxt/browser';
 import { createLogger } from '~/lib/utils/logger';
+import { setEndpoints } from '~/config';
 
 const log = createLogger('WelcomeScreen');
 
@@ -13,12 +14,13 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
 
   const handleCloudSetup = async () => {
     try {
-      // Configure Dashboard URL for FaultMaven Cloud
-      // No additional permissions needed - already in host_permissions
-      await browser.storage.local.set({
-        apiEndpoint: 'https://app.faultmaven.ai',  // Dashboard URL, not API URL
-        hasCompletedFirstRun: true
+      // FaultMaven Cloud: set both endpoints explicitly (also the defaults).
+      // No additional permissions needed - already in host_permissions.
+      await setEndpoints({
+        apiBaseUrl: 'https://api.faultmaven.ai',
+        dashboardUrl: 'https://app.faultmaven.ai',
       });
+      await browser.storage.local.set({ hasCompletedFirstRun: true });
       onComplete();
     } catch (err) {
       setError('Failed to configure cloud deployment');
@@ -41,11 +43,13 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
         return;
       }
 
-      // Configure default Dashboard URL for local deployment
-      await browser.storage.local.set({
-        apiEndpoint: 'http://127.0.0.1:3333',  // Default local Dashboard URL
-        hasCompletedFirstRun: true
+      // Local self-host defaults: API on :8090, Dashboard on :3333.
+      // These are explicit and independently editable on the Options page.
+      await setEndpoints({
+        apiBaseUrl: 'http://127.0.0.1:8090',
+        dashboardUrl: 'http://127.0.0.1:3333',
       });
+      await browser.storage.local.set({ hasCompletedFirstRun: true });
 
       // Open settings page for verification/customization
       try {

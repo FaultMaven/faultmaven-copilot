@@ -1,5 +1,6 @@
 // src/config.ts
 
+import { browser } from 'wxt/browser';
 import { createLogger } from './lib/utils/logger';
 
 const log = createLogger('Config');
@@ -67,84 +68,143 @@ const config: Config = {
   }
 };
 
-// Default URLs
+// Default URLs (zero-config Cloud)
 const CLOUD_DASHBOARD_URL = 'https://app.faultmaven.ai';
 const CLOUD_API_URL = 'https://api.faultmaven.ai';
 
+// The two endpoints are configured EXPLICITLY and independently — the API URL is
+// no longer derived from the Dashboard URL (see docs/SELF_HOSTING.md).
+export const API_BASE_URL_KEY = 'apiBaseUrl';
+export const DASHBOARD_URL_KEY = 'dashboardUrl';
+// Legacy key (pre-explicit config): held the Dashboard URL; the API was derived.
+const LEGACY_ENDPOINT_KEY = 'apiEndpoint';
+
+/** Trim and strip any trailing slash. */
+function normalizeUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
 /**
- * Runtime Configuration: Get API URL derived from Dashboard URL
+ * Validate an endpoint URL against the deployment-tier rules:
+ * - must be a valid http(s) URL
+ * - non-localhost hosts must use https (browser secure-context requirement)
  *
- * IMPORTANT: Extension stores Dashboard URL (not API URL) because users
- * always interact with Dashboard first (for OAuth login).
+ * @returns an error message, or null if valid.
+ */
+export function validateEndpointUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(normalizeUrl(url));
+  } catch {
+    return 'Enter a valid URL, e.g. https://fm.example.com';
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return 'URL must start with http:// or https://';
+  }
+  const isLoopback = parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '0.0.0.0';
+  if (parsed.protocol === 'http:' && !isLoopback) {
+    return 'Non-localhost endpoints must use https:// (browser secure-context requirement)';
+  }
+  return null;
+}
+
+/**
+ * One-time migration helper: derive an API URL from a legacy Dashboard URL,
+ * mirroring the old app.->api. / :3333->:8090 rule. Used only to seed the new
+ * explicit keys for installs that predate explicit configuration.
+ */
+function deriveLegacyApiUrl(dashboardUrl: string): string {
+  if (dashboardUrl.includes('localhost') ||
+      dashboardUrl.includes('127.0.0.1') ||
+      dashboardUrl.includes(':3333')) {
+    return dashboardUrl.replace(':3333', ':8090');
+  }
+  // Anchor to the host label so e.g. "myapp.example.com" is not mangled into
+  // "myapi.example.com". A custom domain with no "app." subdomain is returned
+  // unchanged — the user corrects it explicitly on the Options page.
+  return dashboardUrl.replace('://app.', '://api.');
+}
+
+/**
+ * Persist the configured endpoint(s). Each is validated; values are normalized.
+ * Pass only the field(s) you want to change.
+ */
+export async function setEndpoints(opts: { apiBaseUrl?: string; dashboardUrl?: string }): Promise<void> {
+  const toWrite: Record<string, string> = {};
+  if (opts.apiBaseUrl !== undefined) {
+    const err = validateEndpointUrl(opts.apiBaseUrl);
+    if (err) throw new Error(err);
+    toWrite[API_BASE_URL_KEY] = normalizeUrl(opts.apiBaseUrl);
+  }
+  if (opts.dashboardUrl !== undefined) {
+    const err = validateEndpointUrl(opts.dashboardUrl);
+    if (err) throw new Error(err);
+    toWrite[DASHBOARD_URL_KEY] = normalizeUrl(opts.dashboardUrl);
+  }
+  if (Object.keys(toWrite).length > 0) {
+    await browser.storage.local.set(toWrite);
+  }
+}
+
+/**
+ * Get the API base URL the copilot talks to.
  *
- * This function derives the API URL from the Dashboard URL:
- * - Local: http://127.0.0.1:3333 → http://127.0.0.1:8090
- * - Cloud: https://app.faultmaven.ai → https://api.faultmaven.ai
- *
- * Priority order:
- * 1. User-configured Dashboard URL (stored in apiEndpoint key)
- * 2. Cloud default (safe for Chrome Web Store distribution)
- *
- * Performance: Uses browser.storage.local (NOT sync) for fast access
- *
- * @returns API endpoint URL
+ * Priority: explicit apiBaseUrl → one-time migration from the legacy
+ * apiEndpoint key → Cloud default (safe for zero-config distribution).
  */
 export async function getApiUrl(): Promise<string> {
   try {
-    // 1. Check storage (user override via Welcome screen or Settings)
     if (typeof browser !== 'undefined' && browser.storage) {
-      const stored = await browser.storage.local.get(['apiEndpoint']);
-      if (stored.apiEndpoint) {
-        const dashboardUrl = stored.apiEndpoint;
-
-        // Derive API URL from Dashboard URL
-        // Local deployment: Replace Dashboard port (3333) with API port (8090)
-        //
-        // TECHNICAL NOTE: While this code supports any URL with :3333 port,
-        // raw IP access (http://192.168.x.x:3333) faces browser security hurdles:
-        //   - NOT a Secure Context (Extension APIs may fail)
-        //   - Requires manual CORS configuration in backend .env
-        //   - Requires manual OAuth redirect URI patterns
-        //   - Network-specific (breaks when IP changes)
-        // Supported patterns: localhost, or HTTPS with proper SSL certificate.
-        // See: docs/working/ENTERPRISE_DEPLOYMENT_GUIDE.md
-        if (dashboardUrl.includes('localhost') ||
-            dashboardUrl.includes('127.0.0.1') ||
-            dashboardUrl.includes(':3333')) {
-          return dashboardUrl.replace(':3333', ':8090');
+      const stored = await browser.storage.local.get([API_BASE_URL_KEY, LEGACY_ENDPOINT_KEY]);
+      if (stored[API_BASE_URL_KEY]) {
+        return stored[API_BASE_URL_KEY];
+      }
+      // Legacy migration: the old apiEndpoint held the Dashboard URL. Seed the
+      // new explicit keys once, then use them going forward.
+      if (stored[LEGACY_ENDPOINT_KEY]) {
+        const migratedApi = normalizeUrl(deriveLegacyApiUrl(stored[LEGACY_ENDPOINT_KEY]));
+        // Seed the new keys, but never let a transient write failure drop the
+        // already-computed endpoint — a self-hoster must not silently fall back
+        // to Cloud just because storage.set hiccupped.
+        try {
+          await browser.storage.local.set({
+            [API_BASE_URL_KEY]: migratedApi,
+            [DASHBOARD_URL_KEY]: normalizeUrl(stored[LEGACY_ENDPOINT_KEY]),
+          });
+          log.info('Migrated legacy apiEndpoint to explicit apiBaseUrl/dashboardUrl');
+        } catch (writeErr) {
+          log.warn('Legacy migration seed-write failed; using derived value for this call', writeErr);
         }
-
-        // Cloud deployment: Replace app subdomain with api subdomain
-        // https://app.faultmaven.ai → https://api.faultmaven.ai
-        return dashboardUrl.replace('app.', 'api.');
+        return migratedApi;
       }
     }
   } catch (error) {
-    log.warn('Failed to read apiEndpoint from storage:', error);
+    log.warn('Failed to read apiBaseUrl from storage:', error);
   }
-
-  // 2. Fallback: Cloud deployment default (safe for Chrome Web Store distribution)
-  // Users choose deployment type via Welcome screen on first run
   return CLOUD_API_URL;
 }
 
 /**
- * Get Dashboard URL (for OAuth redirect)
+ * Get the Dashboard URL (OAuth redirect + dashboard deep-links).
  *
- * @returns Dashboard endpoint URL
+ * Priority: explicit dashboardUrl → legacy apiEndpoint → Cloud default.
  */
 export async function getDashboardUrl(): Promise<string> {
   try {
     if (typeof browser !== 'undefined' && browser.storage) {
-      const stored = await browser.storage.local.get(['apiEndpoint']);
-      if (stored.apiEndpoint) {
-        return stored.apiEndpoint;
+      const stored = await browser.storage.local.get([DASHBOARD_URL_KEY, LEGACY_ENDPOINT_KEY]);
+      if (stored[DASHBOARD_URL_KEY]) {
+        return stored[DASHBOARD_URL_KEY];
+      }
+      if (stored[LEGACY_ENDPOINT_KEY]) {
+        return normalizeUrl(stored[LEGACY_ENDPOINT_KEY]);
       }
     }
   } catch (error) {
-    log.warn('Failed to read apiEndpoint from storage:', error);
+    log.warn('Failed to read dashboardUrl from storage:', error);
   }
-
   return CLOUD_DASHBOARD_URL;
 }
 
