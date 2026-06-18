@@ -50,7 +50,8 @@ vi.mock('wxt/browser', () => ({
         get: vi.fn().mockResolvedValue({}),
         set: vi.fn().mockResolvedValue(undefined),
         remove: vi.fn().mockResolvedValue(undefined)
-      }
+      },
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() }
     },
     runtime: {
       openOptionsPage: vi.fn(),
