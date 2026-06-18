@@ -12,7 +12,7 @@ import React from 'react';
 import { browser } from 'wxt/browser';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import ConversationsList from '../components/ConversationsList';
-import { useBackendUrl } from '../hooks/useBackendUrl';
+import { useConfiguredEndpoint } from '../hooks/useConfiguredEndpoint';
 import { NAVIGATION_WIDTH, TRANSITION } from './constants';
 
 export interface CollapsibleNavigationProps {
@@ -75,7 +75,7 @@ export function CollapsibleNavigation({
 }: CollapsibleNavigationProps) {
 
   // Backend the copilot is talking to (a side panel has no URL bar to show it).
-  const backendUrl = useBackendUrl();
+  const backendUrl = useConfiguredEndpoint('api');
   let backendHost = '';
   try {
     backendHost = backendUrl ? new URL(backendUrl).host : '';
