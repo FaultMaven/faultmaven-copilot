@@ -16,7 +16,7 @@ import { PersistenceManager } from "../../lib/utils/persistence-manager";
 
 const log = createLogger('SidePanelApp');
 import { getKnowledgeDocument, createCase, CreateCaseRequest, updateCaseTitle, getCaseConversation, getUserCases } from "../../lib/api";
-import { getApiUrl } from "../../config";
+import { getApiUrl, getDashboardUrl } from "../../config";
 import { caseCacheManager } from "../../lib/cache/case-cache";
 import { isOptimisticId, isRealId } from "../../lib/utils/data-integrity";
 import { OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMappingManager } from "../../lib/optimistic";
@@ -588,7 +588,10 @@ function SidePanelAppContent() {
             dashboardUrl={capabilities?.dashboardUrl}
             onTabChange={setActiveTab}
             onOpenDashboard={async () => {
-              const baseUrl = capabilities?.dashboardUrl;
+              // Open the Dashboard URL the user CONFIGURED (Options), not the
+              // backend-reported one — a self-hosted backend reports its own
+              // localhost view, which is wrong from this browser's perspective.
+              const baseUrl = (await getDashboardUrl()).replace(/\/+$/, '');
               if (!baseUrl) return;
               // Route to the active case's detail page when there's an
               // active case in the side panel; otherwise fall back to

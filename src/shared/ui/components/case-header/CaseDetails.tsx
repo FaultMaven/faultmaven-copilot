@@ -48,7 +48,7 @@ import {
   formatFileSize,
 } from './shared';
 import { createLogger } from '~/lib/utils/logger';
-import { capabilitiesManager } from '~/lib/capabilities';
+import { useDashboardUrl } from '../../hooks/useDashboardUrl';
 
 const log = createLogger('CaseDetails');
 
@@ -180,6 +180,10 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   onToggleSection,
   onScrollToTurn,
 }) => {
+  // Configured Dashboard URL for deep-links (NOT the backend-reported one,
+  // which is localhost on a self-hosted server).
+  const dashboardUrl = useDashboardUrl();
+
   // ----- Files drill-down state (lazy-fetched) -----
   const [files, setFiles] = useState<UploadedFileWithEvidence[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -397,7 +401,6 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
       anyRunbookVerified = runbookEntries.some((r) => r.status === 'available');
     }
 
-    const dashboardUrl = capabilitiesManager.getDashboardUrl();
     const summaryHref = dashboardUrl
       ? `${dashboardUrl}/cases/${caseId}?tab=report`
       : null;
