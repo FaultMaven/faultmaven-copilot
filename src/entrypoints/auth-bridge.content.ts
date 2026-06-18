@@ -2,6 +2,7 @@
 import { browser } from 'wxt/browser';
 import { createLogger } from '../lib/utils/logger';
 import { isTrustedDashboardOrigin } from '../lib/auth/trusted-origin';
+import { announceCopilotPresence } from '../lib/auth/presence-marker';
 
 /**
  * Auth Bridge Content Script
@@ -25,6 +26,10 @@ export default defineContentScript({
   main() {
     const log = createLogger('AuthBridge');
     log.info("Auth bridge initialized");
+
+    // Tell the dashboard page the copilot is installed (it reads this to show
+    // an "open from your toolbar" hint instead of an install CTA).
+    announceCopilotPresence(browser.runtime.getManifest().version);
 
     /**
      * Forward auth state to extension background script
