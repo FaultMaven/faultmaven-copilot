@@ -2,9 +2,14 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
+import { authManager } from '../../lib/api';
+import type { User } from '../../lib/api/types';
 import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../config';
 import { createLogger } from '~/lib/utils/logger';
 import '../../assets/styles/globals.css';
+
+const APP_VERSION = browser.runtime.getManifest().version;
+const REPO_URL = 'https://github.com/FaultMaven/faultmaven-copilot';
 
 const log = createLogger('Settings');
 
@@ -84,10 +89,23 @@ function OptionsApp() {
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     loadSettings();
+    authManager.getCurrentUser().then(setUser).catch(() => setUser(null));
   }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await authManager.clearAuthState();
+      setUser(null);
+      showStatus('Signed out. Reload the side panel to sign in again.', 'info');
+    } catch (error) {
+      log.error('Sign out failed', error);
+      showStatus('✗ Sign out failed', 'error');
+    }
+  };
 
   const loadSettings = async () => {
     setLoading(true);
@@ -227,6 +245,12 @@ function OptionsApp() {
   }
 
   const isCustom = selectedPreset === 'custom';
+  let connectionHost = '';
+  try {
+    connectionHost = apiBaseUrl ? new URL(apiBaseUrl).host : '';
+  } catch {
+    connectionHost = '';
+  }
 
   return (
     <div className="min-h-screen bg-fm-canvas py-8 px-4">
@@ -308,18 +332,26 @@ function OptionsApp() {
             />
           </div>
 
-          {/* Deployment Mode Display */}
+          {/* Connection status (populated on load + after Test/Save) */}
           {capabilities && (
             <div className="mb-6">
               <label className="block text-sm font-medium text-fm-text-primary mb-2">
-                Detected Mode
+                Connection
               </label>
-              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-                capabilities.deploymentMode === 'self-hosted'
-                  ? 'bg-fm-success-bg text-fm-success'
-                  : 'bg-fm-accent-soft text-fm-accent'
-              }`}>
-                {capabilities.deploymentMode === 'self-hosted' ? 'Self-Hosted' : 'FaultMaven Cloud'}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-fm-success-bg text-fm-success">
+                  <span className="w-1.5 h-1.5 rounded-full bg-fm-success" /> Connected
+                </span>
+                {connectionHost && (
+                  <span className="text-sm text-fm-text-secondary font-mono">{connectionHost}</span>
+                )}
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  capabilities.deploymentMode === 'self-hosted'
+                    ? 'bg-fm-success-bg text-fm-success'
+                    : 'bg-fm-accent-soft text-fm-accent'
+                }`}>
+                  {capabilities.deploymentMode === 'self-hosted' ? 'Self-Hosted' : 'Cloud'}
+                </span>
               </div>
             </div>
           )}
@@ -356,6 +388,32 @@ function OptionsApp() {
           )}
         </div>
 
+        {/* Account */}
+        {user && (
+          <div className="bg-fm-surface rounded-lg border border-fm-border p-6 mb-4">
+            <h2 className="text-lg font-semibold text-fm-text-primary mb-3">Account</h2>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-sm text-fm-text-primary">
+                  Signed in as <strong>{user.display_name || user.username || user.email || 'user'}</strong>
+                </p>
+                {user.email && (user.display_name || user.username) && (
+                  <p className="text-xs text-fm-text-tertiary truncate">{user.email}</p>
+                )}
+                {user.roles && user.roles.length > 0 && (
+                  <p className="text-xs text-fm-text-tertiary mt-0.5">Roles: {user.roles.join(', ')}</p>
+                )}
+              </div>
+              <button
+                onClick={handleSignOut}
+                className="px-4 py-2 flex-shrink-0 bg-fm-elevated text-fm-text-primary border border-fm-border rounded-lg hover:bg-fm-border-strong font-medium text-sm"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Help Section */}
         <div className="bg-fm-surface rounded-lg border border-fm-border p-6">
           <h2 className="text-lg font-semibold text-fm-text-primary mb-3">Configuration Guide</h2>
@@ -376,6 +434,21 @@ function OptionsApp() {
               <p>Click <strong className="text-fm-text-primary">"Test Connection"</strong> before saving.</p>
               <p>Reload the extension after changing settings.</p>
             </div>
+          </div>
+        </div>
+
+        {/* About */}
+        <div className="bg-fm-surface rounded-lg border border-fm-border p-6 mt-4">
+          <h2 className="text-lg font-semibold text-fm-text-primary mb-3">About</h2>
+          <p className="text-sm text-fm-text-secondary mb-3">
+            FaultMaven Copilot <span className="text-fm-text-tertiary font-mono">v{APP_VERSION}</span>
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <a href="https://faultmaven.ai" target="_blank" rel="noopener noreferrer" className="text-fm-accent hover:underline">Website</a>
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="text-fm-accent hover:underline">GitHub</a>
+            <a href={`${REPO_URL}/blob/main/PRIVACY.md`} target="_blank" rel="noopener noreferrer" className="text-fm-accent hover:underline">Privacy Policy</a>
+            <a href={`${REPO_URL}/blob/main/docs/SELF_HOSTING.md`} target="_blank" rel="noopener noreferrer" className="text-fm-accent hover:underline">Self-hosting guide</a>
+            <a href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer" className="text-fm-accent hover:underline">Report an issue</a>
           </div>
         </div>
       </div>
