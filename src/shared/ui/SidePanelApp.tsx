@@ -23,7 +23,6 @@ import { OptimisticConversationItem, OptimisticUserCase, PendingOperation, idMap
 
 // Layouts
 import { CollapsibleNavigation, ContentArea } from "./layouts";
-import { useBackendUrl } from "./hooks/useBackendUrl";
 
 // Hooks
 import { useAuth } from "./hooks/useAuth";
@@ -49,20 +48,6 @@ export default function SidePanelApp() {
 function SidePanelAppContent() {
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
-
-  // Reflect the configured backend host in the document title. Chrome shows the
-  // page title in the native side-panel header bar (next to pin / close), so
-  // this surfaces "which server" up there — e.g. "FaultMaven Copilot — localhost:8090".
-  const backendUrl = useBackendUrl();
-  useEffect(() => {
-    let host = '';
-    try {
-      host = backendUrl ? new URL(backendUrl).host : '';
-    } catch {
-      host = '';
-    }
-    document.title = host ? `FaultMaven Copilot — ${host}` : 'FaultMaven Copilot';
-  }, [backendUrl]);
 
   // --- UI State ---
   const [activeTab, setActiveTab] = useState<'copilot'>('copilot');
