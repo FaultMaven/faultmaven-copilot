@@ -12,6 +12,7 @@ import React from 'react';
 import { browser } from 'wxt/browser';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import ConversationsList from '../components/ConversationsList';
+import { useBackendUrl } from '../hooks/useBackendUrl';
 import { NAVIGATION_WIDTH, TRANSITION } from './constants';
 
 export interface CollapsibleNavigationProps {
@@ -73,6 +74,15 @@ export function CollapsibleNavigation({
   onCasesLoaded,
 }: CollapsibleNavigationProps) {
 
+  // Backend the copilot is talking to (a side panel has no URL bar to show it).
+  const backendUrl = useBackendUrl();
+  let backendHost = '';
+  try {
+    backendHost = backendUrl ? new URL(backendUrl).host : '';
+  } catch {
+    backendHost = '';
+  }
+
   // --- Icon components (shared between collapsed and expanded) ---
   const NewCaseIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,6 +137,7 @@ export function CollapsibleNavigation({
             src="/icon/square-transparent.svg"
             alt="FM"
             className="w-7 h-7"
+            title={backendHost ? `Backend: ${backendUrl}` : undefined}
           />
           <button
             onClick={onToggleCollapse}
@@ -192,19 +203,30 @@ export function CollapsibleNavigation({
       className={`flex-shrink-0 bg-fm-base border-r border-fm-border flex flex-col h-full ${TRANSITION.ALL} ${TRANSITION.DURATION}`}
       style={{ width: NAVIGATION_WIDTH.EXPANDED, maxWidth: NAVIGATION_WIDTH.EXPANDED_MAX }}
     >
-      {/* Header: Logo + Collapse toggle */}
+      {/* Header: Logo + backend indicator + Collapse toggle */}
       <div className="flex-shrink-0 px-4 pt-3 pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <img
               src="/icon/design-transparent.svg"
               alt="FaultMaven"
-              className="h-6 w-auto"
+              className="h-6 w-auto flex-shrink-0"
             />
+            {backendHost && (
+              <span
+                className="inline-flex items-center gap-1 min-w-0 text-[10px] font-mono text-fm-text-tertiary"
+                title={`Backend: ${backendUrl}`}
+              >
+                <svg className="w-3 h-3 flex-shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-13-2h.01M7 16h.01" />
+                </svg>
+                <span className="truncate">{backendHost}</span>
+              </span>
+            )}
           </div>
           <button
             onClick={onToggleCollapse}
-            className="p-1.5 text-fm-text-tertiary hover:text-white transition-colors"
+            className="p-1.5 flex-shrink-0 text-fm-text-tertiary hover:text-white transition-colors"
             title="Collapse sidebar"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
