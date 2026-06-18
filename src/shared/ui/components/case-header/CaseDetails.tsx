@@ -48,7 +48,7 @@ import {
   formatFileSize,
 } from './shared';
 import { createLogger } from '~/lib/utils/logger';
-import { useDashboardUrl } from '../../hooks/useDashboardUrl';
+import { useConfiguredEndpoint } from '../../hooks/useConfiguredEndpoint';
 
 const log = createLogger('CaseDetails');
 
@@ -182,7 +182,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
 }) => {
   // Configured Dashboard URL for deep-links (NOT the backend-reported one,
   // which is localhost on a self-hosted server).
-  const dashboardUrl = useDashboardUrl();
+  const dashboardUrl = useConfiguredEndpoint('dashboard');
 
   // ----- Files drill-down state (lazy-fetched) -----
   const [files, setFiles] = useState<UploadedFileWithEvidence[]>([]);
