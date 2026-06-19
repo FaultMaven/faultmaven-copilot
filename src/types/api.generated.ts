@@ -382,14 +382,11 @@ export interface paths {
          * Get Available Scopes
          * @description Return KB scopes the calling user can target when publishing.
          *
-         *     Gated by the user's actual memberships, not AUTH_MODE — the picker
-         *     should omit any scope that would produce an unresolvable runbook
-         *     (e.g. TEAM when the user has no team membership).
-         *
-         *     Always returned: ``personal``, ``global`` (GLOBAL write is admin-gated
-         *     by the publish endpoint, not by this picker). ``team`` is added when
-         *     the user has any team membership; ``organization`` is added when the
-         *     user's org has 2+ members or the user is an org owner/admin.
+         *     Community Edition is single-tenant (one implicit operator, no teams,
+         *     no multi-member orgs), so only ``personal`` and ``global`` are
+         *     publishable here. The ``team`` / ``organization`` scopes are a cloud
+         *     collaboration feature — their gating lives with the org/team management
+         *     surface in faultmaven-cloud (ADR-006), not in the CE core.
          */
         get: operations["get_available_scopes_api_v1_auth_me_available_scopes_get"];
         put?: never;
@@ -2220,170 +2217,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List User Organizations
-         * @description List all organizations the authenticated user belongs to.
-         */
-        get: operations["list_user_organizations_api_v1_organizations_get"];
-        put?: never;
-        /**
-         * Create Organization
-         * @description Create a new organization. The creator becomes the organization owner.
-         */
-        post: operations["create_organization_api_v1_organizations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organization_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Organization
-         * @description Get organization details by ID. Requires organization membership.
-         */
-        get: operations["get_organization_api_v1_organizations__organization_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Organization
-         * @description Soft delete an organization. Requires owner permission.
-         */
-        delete: operations["delete_organization_api_v1_organizations__organization_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Organization
-         * @description Update organization details. Requires owner permission.
-         */
-        patch: operations["update_organization_api_v1_organizations__organization_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/organizations/by-slug/{slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Organization by Slug
-         * @description Get organization details by slug. Requires organization membership.
-         */
-        get: operations["get_organization_by_slug_api_v1_organizations_by_slug__slug__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organization_id}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Organization Members
-         * @description List all members of an organization. Requires organization membership.
-         */
-        get: operations["list_organization_members_api_v1_organizations__organization_id__members_get"];
-        put?: never;
-        /**
-         * Add Member
-         * @description Add user to organization by email. Requires owner or admin permission.
-         */
-        post: operations["add_member_api_v1_organizations__organization_id__members_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/organizations/{organization_id}/members/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove Member
-         * @description Remove user from organization. Owner can remove anyone except self, admin can remove members only.
-         */
-        delete: operations["remove_member_api_v1_organizations__organization_id__members__user_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Member Role
-         * @description Update user's role in organization. Requires owner permission.
-         */
-        patch: operations["update_member_role_api_v1_organizations__organization_id__members__user_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/organizations/{organization_id}/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Organization Settings
-         * @description Get organization settings and plan limits. Requires organization membership.
-         */
-        get: operations["get_organization_settings_api_v1_organizations__organization_id__settings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Organization Settings
-         * @description Update organization settings. Requires owner permission.
-         */
-        patch: operations["update_organization_settings_api_v1_organizations__organization_id__settings_patch"];
-        trace?: never;
-    };
-    "/api/v1/organizations/{organization_id}/permissions/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Check Permission
-         * @description Check if user has specific permission in organization.
-         */
-        post: operations["check_permission_api_v1_organizations__organization_id__permissions_check_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/reports/generate": {
         parameters: {
             query?: never;
@@ -2888,158 +2721,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Team
-         * @description Create a new team within an organization. The creator becomes the team lead.
-         */
-        post: operations["create_team_api_v1_teams_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/{team_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Team
-         * @description Get team details by ID.
-         */
-        get: operations["get_team_api_v1_teams__team_id__get"];
-        /**
-         * Update Team
-         * @description Update team details. Requires 'teams.write' permission.
-         */
-        put: operations["update_team_api_v1_teams__team_id__put"];
-        post?: never;
-        /**
-         * Delete Team
-         * @description Soft delete a team. Requires 'teams.manage' permission.
-         */
-        delete: operations["delete_team_api_v1_teams__team_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/organization/{organization_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Organization Teams
-         * @description List all teams in an organization.
-         */
-        get: operations["list_organization_teams_api_v1_teams_organization__organization_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/user/{target_user_id}/organization/{organization_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List User Teams
-         * @description List all teams a user belongs to in an organization.
-         */
-        get: operations["list_user_teams_api_v1_teams_user__target_user_id__organization__organization_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/{team_id}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Team Members
-         * @description List all members of a team.
-         */
-        get: operations["list_team_members_api_v1_teams__team_id__members_get"];
-        put?: never;
-        /**
-         * Add Team Member
-         * @description Add user to team. Requires 'teams.write' permission.
-         */
-        post: operations["add_team_member_api_v1_teams__team_id__members_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/{team_id}/members/{target_user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove Team Member
-         * @description Remove user from team. Requires 'teams.write' permission.
-         */
-        delete: operations["remove_team_member_api_v1_teams__team_id__members__target_user_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/teams/{team_id}/members/{target_user_id}/is-member": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Team Membership
-         * @description Check if user is member of team.
-         */
-        get: operations["is_team_member_api_v1_teams__team_id__members__target_user_id__is_member_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -3306,7 +2987,7 @@ export interface paths {
          *     status including health, connectivity, and available models. API keys
          *     are never exposed — only a boolean indicating whether one is configured.
          *
-         *     Available to any authenticated user (local deployment) or admin (cloud).
+         *     Available to any authenticated user (standalone deployment) or admin (cloud).
          *     Route-level access control is handled by the dashboard's LLMConfigRoute guard.
          *
          *     Returns:
@@ -3333,7 +3014,7 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: Local deployment (config is read-only)
+         *         403 Forbidden: Standalone deployment (config is read-only)
          *         422 Unprocessable Entity: Invalid provider name
          *         503 Service Unavailable: LLM provider not initialized
          */
@@ -5159,18 +4840,6 @@ export interface components {
             evidence?: string | null;
         };
         /**
-         * DeleteResponse
-         * @description Generic delete response
-         */
-        DeleteResponse: {
-            /** Message */
-            message: string;
-            /** Organization Id */
-            organization_id?: string | null;
-            /** User Id */
-            user_id?: string | null;
-        };
-        /**
          * DerivedEvidenceSummary
          * @description Summary of evidence derived from an uploaded file.
          */
@@ -5181,7 +4850,7 @@ export interface components {
             summary: string;
             /**
              * Category
-             * @description SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | RESOLUTION_EVIDENCE | OTHER
+             * @description SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | SYMPTOM_ABSENCE_EVIDENCE | CAUSAL_ABSENCE_EVIDENCE | OTHER
              */
             category: string;
             /** Collected At Turn */
@@ -5340,7 +5009,7 @@ export interface components {
             auth_mode: string;
             /**
              * Deployment
-             * @description 'local' or 'cloud' — derived from auth_mode
+             * @description 'standalone' or 'cloud' — from DEPLOYMENT_MODE (ADR-004)
              */
             deployment: string;
             /**
@@ -5455,7 +5124,7 @@ export interface components {
              * @description Unique evidence identifier
              */
             evidence_id?: string;
-            /** @description Claim-anchored category declared by the LLM: SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | MITIGATION_EVIDENCE | SOLUTION_EVIDENCE */
+            /** @description Claim-anchored category declared by the LLM (verification quartet): SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | SYMPTOM_ABSENCE_EVIDENCE | CAUSAL_ABSENCE_EVIDENCE */
             category: components["schemas"]["EvidenceCategory"];
             /**
              * Primary Purpose
@@ -5552,21 +5221,28 @@ export interface components {
          * EvidenceCategory
          * @description Evidence classification by investigation purpose.
          *
-         *     Six claim-attached categories: the presence/absence verification
-         *     quartet (``symptom_evidence``, ``causal_evidence``,
-         *     ``symptom_absence_evidence``, ``causal_absence_evidence``) plus two
-         *     legacy stage-completion categories (``mitigation_evidence``,
-         *     ``solution_evidence``) retained from the post-010 model and slated
-         *     for removal once prompts stop emitting them. Every row is the LLM's
-         *     deliberate decision to record a specific extract as evidence for a
-         *     specific claim, created only during INVESTIGATING. Contextual data
-         *     lives on ``uploaded_files`` — no evidence row is needed until the
-         *     agent extracts a claim-relevant slice. Rejection is expressed as the
-         *     absence of an evidence row; hypothesis-level refutation lives on
-         *     ``hypothesis_evidence.stance``.
+         *     Four claim-attached categories forming the presence/absence
+         *     verification quartet: ``symptom_evidence`` (symptom present),
+         *     ``causal_evidence`` (cause present), ``symptom_absence_evidence``
+         *     (symptom gone after a fix), ``causal_absence_evidence`` (cause gone
+         *     after a fix). Every row is the LLM's deliberate decision to record a
+         *     specific extract as evidence for a specific claim, created only during
+         *     INVESTIGATING. Contextual data lives on ``uploaded_files`` — no
+         *     evidence row is needed until the agent extracts a claim-relevant
+         *     slice. Rejection is expressed as the absence of an evidence row;
+         *     hypothesis-level refutation lives on ``hypothesis_evidence.stance``.
+         *
+         *     The verification gates (``mitigation_verified`` / ``solution_verified``)
+         *     are NOT driven by an evidence category — they are set by the LLM via the
+         *     User-Agent Handshake / compliance detection. The absence rows are the
+         *     durable audit trail that the readiness checks consult
+         *     (``assess_resolution_readiness`` via ``_has_causal_absence``) to decide
+         *     RESOLVED vs CLOSED. (The pre-migration ``mitigation_evidence`` /
+         *     ``solution_evidence`` stage-completion categories were removed in the
+         *     GAP-5 legacy→absence migration.)
          * @enum {string}
          */
-        EvidenceCategory: "symptom_evidence" | "causal_evidence" | "mitigation_evidence" | "solution_evidence" | "symptom_absence_evidence" | "causal_absence_evidence";
+        EvidenceCategory: "symptom_evidence" | "causal_evidence" | "symptom_absence_evidence" | "causal_absence_evidence";
         /**
          * EvidenceDetailsResponse
          * @description Detailed evidence information with source and hypothesis linkage.
@@ -5751,7 +5427,7 @@ export interface components {
             collected_at_turn: number;
             /**
              * Category
-             * @description Evidence purpose: SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | RESOLUTION_EVIDENCE | OTHER
+             * @description Evidence purpose: SYMPTOM_EVIDENCE | CAUSAL_EVIDENCE | SYMPTOM_ABSENCE_EVIDENCE | CAUSAL_ABSENCE_EVIDENCE | OTHER
              * @default OTHER
              */
             category: string;
@@ -6493,12 +6169,12 @@ export interface components {
         LLMConfigResponse: {
             /**
              * Deployment
-             * @description Deployment mode: 'local' or 'cloud'
+             * @description Deployment mode: 'standalone' or 'cloud'
              */
             deployment: string;
             /**
              * Config Readonly
-             * @description True in local mode (config managed via .env file)
+             * @description True in standalone mode (config managed via .env file)
              */
             config_readonly: boolean;
             /** Primary Provider */
@@ -6510,6 +6186,13 @@ export interface components {
             /** Providers */
             providers: {
                 [key: string]: components["schemas"]["LLMProviderDetail"];
+            };
+            /**
+             * Config Sources
+             * @description Provenance per overridable setting key: 'admin-override' (set via the dashboard, stored in the DB) or 'env-default' (.env / seed). Always 'env-default' in standalone (no DB overrides).
+             */
+            config_sources?: {
+                [key: string]: string;
             };
             /**
              * Timestamp
@@ -6703,112 +6386,6 @@ export interface components {
             revoked_tokens: number;
         };
         /**
-         * MemberAddRequest
-         * @description Request to add member to organization
-         */
-        MemberAddRequest: {
-            /**
-             * Email
-             * @description Email of user to invite
-             */
-            email: string;
-            /**
-             * Role
-             * @description Role to assign (member, admin)
-             * @default member
-             */
-            role: string | null;
-        };
-        /**
-         * MemberAddResponse
-         * @description Response for adding a member
-         */
-        MemberAddResponse: {
-            /** User Id */
-            user_id: string;
-            /** Email */
-            email: string;
-            /** Full Name */
-            full_name: string;
-            /** Role */
-            role: string;
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
-            /** Invitation Sent */
-            invitation_sent: boolean;
-        };
-        /**
-         * MemberListResponse
-         * @description Response for listing organization members
-         */
-        MemberListResponse: {
-            /** Members */
-            members: components["schemas"]["MemberResponse"][];
-            /** Total */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
-        };
-        /**
-         * MemberResponse
-         * @description Organization member response
-         */
-        MemberResponse: {
-            /** User Id */
-            user_id: string;
-            /** Email */
-            email: string;
-            /** Full Name */
-            full_name: string;
-            /** Role */
-            role: string;
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
-        };
-        /**
-         * MemberRoleUpdateRequest
-         * @description Request to update member role
-         */
-        MemberRoleUpdateRequest: {
-            /**
-             * Role
-             * @description New role to assign (member, admin)
-             */
-            role: string;
-        };
-        /**
-         * MemberRoleUpdateResponse
-         * @description Response for updating member role
-         */
-        MemberRoleUpdateResponse: {
-            /** User Id */
-            user_id: string;
-            /** Email */
-            email: string;
-            /** Full Name */
-            full_name: string;
-            /** Role */
-            role: string;
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
          * Message
          * @description Message model for conversation endpoints.
          *
@@ -6973,146 +6550,6 @@ export interface components {
             client_id: string;
             /** Scopes */
             scopes: string[];
-        };
-        /**
-         * OrganizationCreateRequest
-         * @description Request to create a new organization
-         */
-        OrganizationCreateRequest: {
-            /**
-             * Name
-             * @description Organization name
-             */
-            name: string;
-            /**
-             * Slug
-             * @description URL-friendly identifier
-             */
-            slug: string;
-            /**
-             * Description
-             * @description Organization description
-             */
-            description?: string | null;
-            /**
-             * Plan Tier
-             * @description Subscription plan tier
-             * @default free
-             */
-            plan_tier: string | null;
-        };
-        /**
-         * OrganizationListItem
-         * @description Organization list item with user role
-         */
-        OrganizationListItem: {
-            /** Organization Id */
-            organization_id: string;
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /** Plan Tier */
-            plan_tier: string;
-            /** Role */
-            role: string;
-            /**
-             * Member Since
-             * Format: date-time
-             */
-            member_since: string;
-        };
-        /**
-         * OrganizationListResponse
-         * @description Response for listing user's organizations
-         */
-        OrganizationListResponse: {
-            /** Organizations */
-            organizations: components["schemas"]["OrganizationListItem"][];
-            /** Total */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
-        };
-        /**
-         * OrganizationResponse
-         * @description Organization details response
-         */
-        OrganizationResponse: {
-            /** Organization Id */
-            organization_id: string;
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /** Description */
-            description: string | null;
-            /** Plan Tier */
-            plan_tier: string;
-            /** Max Members */
-            max_members: number;
-            /**
-             * Current Member Count
-             * @default 0
-             */
-            current_member_count: number;
-            /** Owner User Id */
-            owner_user_id?: string | null;
-            /** Settings */
-            settings?: Record<string, never>;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * OrganizationUpdateRequest
-         * @description Request to update organization details
-         */
-        OrganizationUpdateRequest: {
-            /**
-             * Name
-             * @description Updated organization name
-             */
-            name?: string | null;
-            /**
-             * Description
-             * @description Updated description
-             */
-            description?: string | null;
-        };
-        /**
-         * PermissionCheckRequest
-         * @description Request to check user permission
-         */
-        PermissionCheckRequest: {
-            /**
-             * Permission
-             * @description Permission to check (e.g., 'cases.write')
-             */
-            permission: string;
-        };
-        /**
-         * PermissionCheckResponse
-         * @description Permission check result
-         */
-        PermissionCheckResponse: {
-            /** Has Permission */
-            has_permission: boolean;
-            /** Permission */
-            permission: string;
-            /** User Id */
-            user_id: string;
-            /** Organization Id */
-            organization_id: string;
         };
         /**
          * PreliminaryUrgency
@@ -7851,31 +7288,34 @@ export interface components {
             /** Metadata */
             metadata?: Record<string, never> | null;
         };
+        /**
+         * SessionResponse
+         * @description Response payload for auth session operations - API spec compliance.
+         */
         SessionResponse: {
-            /** @description Unique session identifier */
-            session_id: string;
-            /** @description Associated user identifier */
-            user_id?: string | null;
-            /** @description Client/device identifier for session resumption */
-            client_id?: string | null;
             /**
-             * @description Current session status
+             * Schema Version
+             * @default 3.1.0
+             * @constant
              * @enum {string}
              */
-            status: "active" | "idle" | "expired";
-            /**
-             * Format: date-time
-             * @description Session creation timestamp
-             */
-            created_at?: string;
-            /** @description Indicates if this was an existing session resumed */
+            schema_version: "3.1.0";
+            /** Session Id */
+            session_id: string;
+            /** User Id */
+            user_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** @default active */
+            status: components["schemas"]["AuthSessionStatus"];
+            /** Created At */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
+            /** Session Resumed */
             session_resumed?: boolean | null;
-            /** @description Type of session (e.g., troubleshooting) */
-            session_type?: string;
-            /** @description Status message about session creation/resumption */
-            message?: string;
-            /** @description Session metadata and context */
-            metadata?: Record<string, never>;
         };
         /**
          * SessionRestoreRequest
@@ -7914,62 +7354,6 @@ export interface components {
             token_budget_limit?: number | null;
             /** Metadata */
             metadata?: Record<string, never> | null;
-        };
-        /**
-         * SettingsResponse
-         * @description Organization settings response
-         */
-        SettingsResponse: {
-            /** Organization Id */
-            organization_id: string;
-            /** Plan Tier */
-            plan_tier: string;
-            /** Max Members */
-            max_members: number;
-            /**
-             * Current Member Count
-             * @default 0
-             */
-            current_member_count: number;
-            /** Max Cases Per Month */
-            max_cases_per_month?: number | null;
-            /** Max Storage Gb */
-            max_storage_gb: number;
-            /** Features */
-            features: {
-                [key: string]: boolean;
-            };
-            /** Settings */
-            settings: Record<string, never>;
-        };
-        /**
-         * SettingsUpdateRequest
-         * @description Request to update organization settings
-         */
-        SettingsUpdateRequest: {
-            /** Allow Public Cases */
-            allow_public_cases?: boolean | null;
-            /** Require 2Fa */
-            require_2fa?: boolean | null;
-            /** Session Timeout Minutes */
-            session_timeout_minutes?: number | null;
-            /** Default Case Priority */
-            default_case_priority?: string | null;
-        };
-        /**
-         * SettingsUpdateResponse
-         * @description Response for updating organization settings
-         */
-        SettingsUpdateResponse: {
-            /** Organization Id */
-            organization_id: string;
-            /** Settings */
-            settings: Record<string, never>;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
         };
         /**
          * Solution
@@ -8133,101 +7517,6 @@ export interface components {
             intent?: Record<string, never> | null;
             /** Evidence Need Id */
             evidence_need_id?: string | null;
-        };
-        /**
-         * TeamCreateRequest
-         * @description Request to create a new team
-         */
-        TeamCreateRequest: {
-            /**
-             * Organization Id
-             * @description Organization ID
-             */
-            organization_id: string;
-            /**
-             * Name
-             * @description Team name
-             */
-            name: string;
-            /**
-             * Description
-             * @description Team description
-             */
-            description?: string | null;
-        };
-        /**
-         * TeamMemberAddRequest
-         * @description Request to add member to team
-         */
-        TeamMemberAddRequest: {
-            /**
-             * User Id
-             * @description User ID to add
-             */
-            user_id: string;
-            /**
-             * Team Role
-             * @description Team role ('lead' or 'member')
-             * @default member
-             */
-            team_role: string | null;
-        };
-        /**
-         * TeamMemberResponse
-         * @description Team member response
-         */
-        TeamMemberResponse: {
-            /** User Id */
-            user_id: string;
-            /** Team Id */
-            team_id: string;
-            /** Team Role */
-            team_role: string | null;
-            /**
-             * Joined At
-             * Format: date-time
-             */
-            joined_at: string;
-        };
-        /**
-         * TeamResponse
-         * @description Team details response
-         */
-        TeamResponse: {
-            /** Team Id */
-            team_id: string;
-            /** Organization Id */
-            organization_id: string;
-            /** Name */
-            name: string;
-            /** Description */
-            description: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * TeamUpdateRequest
-         * @description Request to update team details
-         */
-        TeamUpdateRequest: {
-            /**
-             * Name
-             * @description Updated team name
-             */
-            name?: string | null;
-            /**
-             * Description
-             * @description Updated description
-             */
-            description?: string | null;
         };
         /**
          * TemporalState
@@ -8925,198 +8214,11 @@ export interface components {
              */
             last_updated: string;
         };
-        /**
-         * @example {
-         *       "detail": "Invalid session ID provided",
-         *       "error_type": "ValidationError",
-         *       "correlation_id": "123e4567-e89b-12d3-a456-426614174000",
-         *       "timestamp": "2025-01-15T10:30:00Z",
-         *       "context": {
-         *         "session_id": "invalid_session_123",
-         *         "validation_errors": [
-         *           "Session ID format invalid"
-         *         ]
-         *       }
-         *     }
-         */
-        ErrorResponse: {
-            /** @description Human-readable error description */
-            detail: string;
-            /**
-             * @description Machine-readable error classification
-             * @enum {string}
-             */
-            error_type?: "ValidationError" | "AuthenticationError" | "AuthorizationError" | "NotFoundError" | "RateLimitError" | "ServiceUnavailableError" | "InternalServerError";
-            /**
-             * Format: uuid
-             * @description Unique identifier for request tracing and support
-             */
-            correlation_id?: string;
-            /**
-             * Format: date-time
-             * @description Error occurrence timestamp in ISO format
-             */
-            timestamp?: string;
-            /** @description Additional error context for debugging */
-            context?: Record<string, never>;
-        };
-        /**
-         * @example {
-         *       "investigation_id": "inv_789",
-         *       "status": "completed",
-         *       "findings": [
-         *         {
-         *           "type": "root_cause",
-         *           "message": "Database connection pool exhausted due to connection leak",
-         *           "severity": "high",
-         *           "confidence": 0.9,
-         *           "evidence": [
-         *             "Connection pool size: 20, Active connections: 20",
-         *             "No idle connections available",
-         *             "Long-running transactions detected"
-         *           ]
-         *         }
-         *       ],
-         *       "recommendations": [
-         *         {
-         *           "action": "Increase database connection pool size to 50",
-         *           "priority": "immediate",
-         *           "impact": "Should restore service within 5 minutes",
-         *           "effort": "low"
-         *         },
-         *         {
-         *           "action": "Review application code for connection leaks",
-         *           "priority": "high",
-         *           "impact": "Prevents future occurrences",
-         *           "effort": "medium"
-         *         }
-         *       ],
-         *       "session_id": "session_db_123",
-         *       "reasoning_trace": [
-         *         {
-         *           "step": "symptom_analysis",
-         *           "reasoning": "HTTP 500 errors correlate with database timeout errors",
-         *           "data_sources": [
-         *             "application_logs",
-         *             "database_metrics"
-         *           ]
-         *         },
-         *         {
-         *           "step": "hypothesis_formation",
-         *           "reasoning": "Connection pool exhaustion is most likely cause given metrics",
-         *           "data_sources": [
-         *             "connection_pool_metrics",
-         *             "transaction_logs"
-         *           ]
-         *         }
-         *       ]
-         *     }
-         */
-        TroubleshootingResponse: {
-            /** @description Unique identifier for this troubleshooting investigation */
-            investigation_id: string;
-            /**
-             * @description Current status of the investigation
-             * @enum {string}
-             */
-            status: "in_progress" | "completed" | "failed" | "requires_input";
-            /** @description List of findings from the investigation */
-            findings?: {
-                /**
-                 * @description Finding category
-                 * @enum {string}
-                 */
-                type?: "root_cause" | "contributing_factor" | "symptom" | "recommendation";
-                /** @description Finding description */
-                message?: string;
-                /**
-                 * @description Finding severity level
-                 * @enum {string}
-                 */
-                severity?: "critical" | "high" | "medium" | "low" | "info";
-                /** @description AI confidence in this finding (0.0 to 1.0) */
-                confidence?: number;
-                /** @description Supporting evidence for this finding */
-                evidence?: string[];
-            }[];
-            /** @description Recommended actions based on findings */
-            recommendations?: {
-                /** @description Recommended action to take */
-                action?: string;
-                /**
-                 * @description Action priority
-                 * @enum {string}
-                 */
-                priority?: "immediate" | "high" | "medium" | "low";
-                /** @description Expected impact of this action */
-                impact?: string;
-                /**
-                 * @description Estimated effort required
-                 * @enum {string}
-                 */
-                effort?: "low" | "medium" | "high";
-            }[];
-            /** @description Session ID for this troubleshooting session */
-            session_id: string;
-            /** @description AI reasoning process trace for transparency */
-            reasoning_trace?: {
-                step?: string;
-                reasoning?: string;
-                data_sources?: string[];
-            }[];
-        };
-        /**
-         * @example {
-         *       "ingestion_id": "ingest_456",
-         *       "status": "completed",
-         *       "file_info": {
-         *         "filename": "app.log",
-         *         "size_bytes": 1048576,
-         *         "file_type": "application/log",
-         *         "detected_format": "json_logs"
-         *       },
-         *       "processing_results": {
-         *         "lines_processed": 15420,
-         *         "errors_found": 23,
-         *         "insights_extracted": 8,
-         *         "processing_time_ms": 2340
-         *       }
-         *     }
-         */
-        DataIngestionResponse: {
-            /** @description Unique identifier for this data ingestion */
-            ingestion_id: string;
-            /**
-             * @description Current processing status
-             * @enum {string}
-             */
-            status: "processing" | "completed" | "failed";
-            /** @description Information about the uploaded file */
-            file_info?: {
-                filename?: string;
-                size_bytes?: number;
-                file_type?: string;
-                detected_format?: string;
-            };
-            /** @description Results of data processing */
-            processing_results?: {
-                lines_processed?: number;
-                errors_found?: number;
-                insights_extracted?: number;
-                processing_time_ms?: number;
-            };
-        };
     };
     responses: never;
     parameters: never;
     requestBodies: never;
-    headers: {
-        /**
-         * @description Unique identifier for request tracing and debugging
-         * @example 550e8400-e29b-41d4-a716-446655440000
-         */
-        "X-Correlation-ID": string;
-    };
+    headers: never;
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -12243,482 +11345,6 @@ export interface operations {
             };
         };
     };
-    list_user_organizations_api_v1_organizations_get: {
-        parameters: {
-            query?: {
-                /** @description Maximum results */
-                limit?: number;
-                /** @description Pagination offset */
-                offset?: number;
-            };
-            header?: {
-                Authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_organization_api_v1_organizations_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrganizationCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_organization_api_v1_organizations__organization_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_organization_api_v1_organizations__organization_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeleteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_organization_api_v1_organizations__organization_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrganizationUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_organization_by_slug_api_v1_organizations_by_slug__slug__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization slug */
-                slug: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_organization_members_api_v1_organizations__organization_id__members_get: {
-        parameters: {
-            query?: {
-                /** @description Filter by role: owner, admin, member */
-                role?: string | null;
-                /** @description Maximum results */
-                limit?: number;
-                /** @description Pagination offset */
-                offset?: number;
-            };
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_member_api_v1_organizations__organization_id__members_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MemberAddRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberAddResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_member_api_v1_organizations__organization_id__members__user_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-                /** @description User ID to remove */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeleteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_member_role_api_v1_organizations__organization_id__members__user_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-                /** @description User ID */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MemberRoleUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberRoleUpdateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_organization_settings_api_v1_organizations__organization_id__settings_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SettingsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_organization_settings_api_v1_organizations__organization_id__settings_patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SettingsUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SettingsUpdateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_permission_api_v1_organizations__organization_id__permissions_check_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PermissionCheckRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PermissionCheckResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     generate_report_api_v1_reports_generate_post: {
         parameters: {
             query: {
@@ -13468,359 +12094,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_team_api_v1_teams_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TeamCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_team_api_v1_teams__team_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_team_api_v1_teams__team_id__put: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TeamUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_team_api_v1_teams__team_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_organization_teams_api_v1_teams_organization__organization_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_user_teams_api_v1_teams_user__target_user_id__organization__organization_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description User ID */
-                target_user_id: string;
-                /** @description Organization ID */
-                organization_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_team_members_api_v1_teams__team_id__members_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamMemberResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_team_member_api_v1_teams__team_id__members_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TeamMemberAddRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamMemberResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_team_member_api_v1_teams__team_id__members__target_user_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-                /** @description User ID to remove */
-                target_user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    is_team_member_api_v1_teams__team_id__members__target_user_id__is_member_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                Authorization?: string | null;
-            };
-            path: {
-                /** @description Team ID */
-                team_id: string;
-                /** @description User ID */
-                target_user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
                 };
             };
             /** @description Validation Error */
