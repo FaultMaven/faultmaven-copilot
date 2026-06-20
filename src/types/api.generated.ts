@@ -382,11 +382,11 @@ export interface paths {
          * Get Available Scopes
          * @description Return KB scopes the calling user can target when publishing.
          *
-         *     Community Edition is single-tenant (one implicit operator, no teams,
-         *     no multi-member orgs), so only ``personal`` and ``global`` are
-         *     publishable here. The ``team`` / ``organization`` scopes are a cloud
-         *     collaboration feature — their gating lives with the org/team management
-         *     surface in faultmaven-cloud (ADR-006), not in the CE core.
+         *     A standalone (self-hosted) deployment is single-tenant — one implicit
+         *     operator, no teams, no multi-member orgs — so only ``personal`` and
+         *     ``global`` are publishable here. The ``team`` / ``organization`` scopes
+         *     are a Cloud collaboration feature, gated by the org/team management
+         *     surface that ships only in Cloud.
          */
         get: operations["get_available_scopes_api_v1_auth_me_available_scopes_get"];
         put?: never;
