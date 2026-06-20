@@ -136,10 +136,11 @@ function OptionsApp() {
 
   const handlePresetChange = (preset: PresetKey) => {
     setSelectedPreset(preset);
-    if (preset !== 'custom') {
-      setApiBaseUrl(PRESETS[preset].apiBaseUrl);
-      setDashboardUrl(PRESETS[preset].dashboardUrl);
-    }
+    // Apply the preset's endpoints unconditionally. For 'custom' both values are
+    // empty strings, so selecting it CLEARS the fields (no stale cloud/localhost
+    // values left behind) and the placeholders prompt the user for their own.
+    setApiBaseUrl(PRESETS[preset].apiBaseUrl);
+    setDashboardUrl(PRESETS[preset].dashboardUrl);
     setCapabilities(null);
     setStatusMessage(null);
   };
