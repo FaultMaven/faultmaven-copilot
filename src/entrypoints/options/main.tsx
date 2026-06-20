@@ -283,8 +283,8 @@ function OptionsApp() {
               <option value="custom">Custom / self-hosted (LAN or remote)</option>
             </select>
             <p className="mt-1 text-xs text-fm-text-secondary">
-              The API base URL is what the copilot talks to; the Dashboard URL is only needed for OAuth login.
-              {' '}<strong className="text-fm-text-primary">Local</strong> means FaultMaven running on <em>this</em> computer (or via an SSH tunnel). For a server elsewhere on your network, choose <strong className="text-fm-text-primary">Custom</strong> and use its address.
+              The API base URL is what the copilot talks to. The Dashboard URL is where browser sign-in (OAuth) and the “open in Dashboard” links (reports, runbooks) go.
+              {' '}<strong className="text-fm-text-primary">Standalone</strong> means FaultMaven running on <em>this</em> computer. For a server elsewhere on your network, choose <strong className="text-fm-text-primary">Custom</strong> and enter its address.
             </p>
           </div>
 
@@ -315,7 +315,7 @@ function OptionsApp() {
           {/* Dashboard URL */}
           <div className="mb-6">
             <label htmlFor="dashboard-url" className="block text-sm font-medium text-fm-text-primary mb-2">
-              Dashboard URL <span className="text-fm-text-tertiary ml-1 font-normal">(OAuth login only)</span>
+              Dashboard URL <span className="text-fm-text-tertiary ml-1 font-normal">(sign-in &amp; Dashboard links)</span>
             </label>
             <input
               type="text"
@@ -326,7 +326,7 @@ function OptionsApp() {
                 if (!isCustom) setSelectedPreset('custom');
                 setStatusMessage(null);
               }}
-              placeholder="e.g., https://dash.acme.com  (leave as-is for local username/password auth)"
+              placeholder="e.g., https://dash.acme.com  (the Dashboard you open from the copilot)"
               disabled={!isCustom}
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
@@ -428,7 +428,7 @@ function OptionsApp() {
             </div>
             <div>
               <strong className="font-semibold text-fm-text-primary">Custom / self-hosted:</strong>
-              <p className="mt-1">Set your own API base URL — http or https, any host (LAN IP or domain). Grant access when prompted on Save; no reverse proxy or backend CORS setup needed. The Dashboard URL is only needed for OAuth login. See the self-hosting guide.</p>
+              <p className="mt-1">Set your own API base URL — http or https, any host (LAN IP or domain). Grant access when prompted on Save; no reverse proxy or backend CORS setup needed. Set the Dashboard URL too if you use browser (OAuth) sign-in or the “open in Dashboard” links. See the self-hosting guide.</p>
             </div>
             <div className="pt-2 border-t border-fm-border">
               <p>Click <strong className="text-fm-text-primary">"Test Connection"</strong> before saving.</p>
