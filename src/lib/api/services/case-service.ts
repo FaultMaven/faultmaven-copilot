@@ -428,30 +428,70 @@ export async function updateCaseState(
   }
 }
 
+/**
+ * One page of the backend `/messages` response. Message objects are kept loose
+ * (Record) because their shape differs from the canonical `Message` type
+ * (they additionally carry turn_number / case_state / closure_reason) and the
+ * consumers read those fields directly.
+ */
+interface MessagesPage {
+  messages?: Record<string, unknown>[];
+  total_count?: number;
+  retrieved_count?: number;
+  has_more?: boolean;
+  debug_info?: unknown;
+}
+
 export async function getCaseConversation(
   caseId: string,
   options: { offset?: number; includeDebug?: boolean } = {}
 ): Promise<any> {
   const { offset = 0, includeDebug = false } = options;
-  const url = new URL(`${await getApiUrl()}/api/v1/cases/${caseId}/messages`);
-  if (offset > 0) url.searchParams.set('offset', String(offset));
-  if (includeDebug) url.searchParams.set('include_debug', 'true');
+  const apiBase = await getApiUrl();
+  const pageSize = 100; // backend per-request cap (le=100)
 
-  const response = await authenticatedFetchWithRetry(url.toString(), {
-    method: 'GET',
-    credentials: 'include'
-  });
+  // The backend `/messages` endpoint caps each request at limit<=100, so a
+  // single call from `offset` only returns up to one page. For a delta fetch
+  // that left newer turns unfetched until the next panel open (and on a cold
+  // open it truncated the history). Drain every page from `offset` to the end
+  // and return the merged delta so callers get the complete tail in one call.
+  const messages: Record<string, unknown>[] = [];
+  let lastData: MessagesPage = {};
 
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get case conversation: ${response.status}`);
+  for (let pageOffset = offset; ; pageOffset += pageSize) {
+    const url = new URL(`${apiBase}/api/v1/cases/${caseId}/messages`);
+    url.searchParams.set('limit', String(pageSize));
+    if (pageOffset > 0) url.searchParams.set('offset', String(pageOffset));
+    if (includeDebug) url.searchParams.set('include_debug', 'true');
+
+    const response = await authenticatedFetchWithRetry(url.toString(), {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData: APIError = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to get case conversation: ${response.status}`);
+    }
+
+    const page = (await response.json()) as MessagesPage;
+    lastData = page;
+    const pageMessages = page.messages ?? [];
+    messages.push(...pageMessages);
+
+    // Stop on a short page (last page) or once we've collected everything past
+    // the starting offset. The short-page guard also prevents an infinite loop
+    // if total_count is ever stale/larger than the real message count.
+    if (pageMessages.length < pageSize || offset + messages.length >= (page.total_count ?? 0)) {
+      break;
+    }
   }
 
-  const data = await response.json();
+  const data = { ...lastData, messages, retrieved_count: messages.length, has_more: false };
 
   // An empty result is only unexpected on a full fetch (offset=0). When fetching
   // a delta (offset>0), retrieved_count=0 simply means nothing new arrived.
-  if (offset === 0 && data.total_count > 0 && data.retrieved_count === 0) {
+  if (offset === 0 && (data.total_count ?? 0) > 0 && data.retrieved_count === 0) {
     log.error('Message retrieval failure detected', {
       caseId,
       totalCount: data.total_count,
