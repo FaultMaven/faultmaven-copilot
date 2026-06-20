@@ -23,7 +23,7 @@ const PRESETS = {
 
 type PresetKey = keyof typeof PRESETS;
 
-/** Build the host-permission origin pattern (e.g. https://fm.acme.com/*) for a URL. */
+/** Build the host-permission origin pattern (e.g. http://192.168.1.100:8090/*) for a URL. */
 function originPattern(url: string): string | null {
   try {
     return `${new URL(url).origin}/*`;
@@ -304,7 +304,7 @@ function OptionsApp() {
                 setCapabilities(null);
                 setStatusMessage(null);
               }}
-              placeholder="e.g., https://fm.acme.com  (or http://localhost:8090)"
+              placeholder="e.g., http://192.168.1.100:8090  (your server's IP and API port)"
               disabled={!isCustom}
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
@@ -327,7 +327,7 @@ function OptionsApp() {
                 if (!isCustom) setSelectedPreset('custom');
                 setStatusMessage(null);
               }}
-              placeholder="e.g., https://dash.acme.com  (the Dashboard you open from the copilot)"
+              placeholder="e.g., http://192.168.1.100:3333  (same server, dashboard port)"
               disabled={!isCustom}
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
