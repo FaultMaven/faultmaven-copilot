@@ -214,6 +214,79 @@ describe('Case Service', () => {
     });
   });
 
+  describe('getCaseConversation', () => {
+    const makeMessages = (start: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        message_id: `m${start + i}`,
+        role: (start + i) % 2 === 0 ? 'user' : 'assistant',
+        content: `msg ${start + i}`,
+        created_at: new Date(start + i).toISOString(),
+      }));
+
+    it('returns a single page unchanged for a short conversation', async () => {
+      (client.authenticatedFetchWithRetry as any).mockResolvedValueOnce(
+        mockResponse({ messages: makeMessages(0, 12), total_count: 12, retrieved_count: 12 })
+      );
+
+      const data = await caseService.getCaseConversation('case-123');
+
+      expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(1);
+      const url = (client.authenticatedFetchWithRetry as any).mock.calls[0][0] as string;
+      expect(url).toContain('/api/v1/cases/case-123/messages');
+      expect(url).toContain('limit=100');
+      expect(data.messages).toHaveLength(12);
+      expect(data.retrieved_count).toBe(12);
+      expect(data.has_more).toBe(false);
+    });
+
+    it('drains every page from offset=0 for a long conversation', async () => {
+      // 250 messages => 3 pages (100 + 100 + 50).
+      (client.authenticatedFetchWithRetry as any)
+        .mockResolvedValueOnce(mockResponse({ messages: makeMessages(0, 100), total_count: 250 }))
+        .mockResolvedValueOnce(mockResponse({ messages: makeMessages(100, 100), total_count: 250 }))
+        .mockResolvedValueOnce(mockResponse({ messages: makeMessages(200, 50), total_count: 250 }));
+
+      const data = await caseService.getCaseConversation('case-123');
+
+      expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(3);
+      const calls = (client.authenticatedFetchWithRetry as any).mock.calls.map((c: any[]) => c[0] as string);
+      expect(calls[0]).toContain('limit=100');
+      expect(calls[0]).not.toContain('offset='); // offset 0 is omitted
+      expect(calls[1]).toContain('offset=100');
+      expect(calls[2]).toContain('offset=200');
+      expect(data.messages).toHaveLength(250);
+      expect(data.messages.map((m: any) => m.message_id)).toEqual(makeMessages(0, 250).map((m) => m.message_id));
+      expect(data.retrieved_count).toBe(250);
+    });
+
+    it('drains the delta from a non-zero offset (subsequent panel open)', async () => {
+      // Already have 50 locally; backend has 174 total => fetch 124 in 2 pages.
+      (client.authenticatedFetchWithRetry as any)
+        .mockResolvedValueOnce(mockResponse({ messages: makeMessages(50, 100), total_count: 174 }))
+        .mockResolvedValueOnce(mockResponse({ messages: makeMessages(150, 24), total_count: 174 }));
+
+      const data = await caseService.getCaseConversation('case-123', { offset: 50 });
+
+      expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
+      const calls = (client.authenticatedFetchWithRetry as any).mock.calls.map((c: any[]) => c[0] as string);
+      expect(calls[0]).toContain('offset=50');
+      expect(calls[1]).toContain('offset=150');
+      expect(data.messages).toHaveLength(124);
+      expect(data.retrieved_count).toBe(124);
+    });
+
+    it('does not loop forever when total_count is overstated', async () => {
+      (client.authenticatedFetchWithRetry as any).mockResolvedValueOnce(
+        mockResponse({ messages: makeMessages(0, 30), total_count: 500 })
+      );
+
+      const data = await caseService.getCaseConversation('case-123');
+
+      expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(1);
+      expect(data.messages).toHaveLength(30);
+    });
+  });
+
   describe('Utility Functions', () => {
     it('should return valid transitions', () => {
       const transitions = caseService.getValidTransitions('inquiry');
