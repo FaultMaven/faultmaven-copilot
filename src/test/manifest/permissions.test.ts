@@ -8,7 +8,7 @@ describe('Manifest Permissions', () => {
     
     // Only run this test if the build output exists
     if (!fs.existsSync(manifestPath)) {
-      console.log('Skipping manifest test because .output/chrome-mv3/manifest.json does not exist. Run build first.');
+      console.warn('Skipping manifest test because .output/chrome-mv3/manifest.json does not exist. Run build first.');
       return;
     }
 

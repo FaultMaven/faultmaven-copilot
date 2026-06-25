@@ -8,7 +8,7 @@ describe('Manifest Locales', () => {
     
     // Only run this test if the build output exists
     if (!fs.existsSync(manifestPath)) {
-      console.log('Skipping manifest test because .output/chrome-mv3/manifest.json does not exist. Run build first.');
+      console.warn('Skipping manifest test because .output/chrome-mv3/manifest.json does not exist. Run build first.');
       return;
     }
 
@@ -24,7 +24,7 @@ describe('Manifest Locales', () => {
     const localesPath = path.resolve(__dirname, '../../../.output/chrome-mv3/_locales/en/messages.json');
     
     if (!fs.existsSync(localesPath)) {
-      console.log('Skipping locales test because .output/chrome-mv3/_locales/en/messages.json does not exist. Run build first.');
+      console.warn('Skipping locales test because .output/chrome-mv3/_locales/en/messages.json does not exist. Run build first.');
       return;
     }
 

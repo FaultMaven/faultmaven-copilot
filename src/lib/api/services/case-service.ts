@@ -566,7 +566,9 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
       const inner = errJson?.detail?.error?.message || errJson?.detail || errJson;
       if (typeof inner === 'string') detail = inner;
       else detail = JSON.stringify(inner);
-    } catch { }
+    } catch {
+      // Ignore JSON parsing errors for error body
+    }
     throw new Error(`422 Unprocessable Entity: ${detail}`);
   }
 

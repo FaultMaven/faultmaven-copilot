@@ -120,7 +120,7 @@ export const ProblemDetectedAlert: React.FC<ProblemDetectedAlertProps> = ({ prob
             Investigation Started
           </p>
           <p className="text-xs text-fm-text-primary mt-1">
-            I'll help you investigate this issue systematically. Let's gather information to understand the scope and find the root cause.
+            {"I'll help you investigate this issue systematically. Let's gather information to understand the scope and find the root cause."}
           </p>
         </div>
       </div>

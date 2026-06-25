@@ -75,6 +75,8 @@ export const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonPr
     );
   }
 );
+AccessibleButton.displayName = 'AccessibleButton';
+
 
 // Accessible Text Input
 interface AccessibleInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -124,6 +126,8 @@ export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps
     );
   }
 );
+AccessibleInput.displayName = 'AccessibleInput';
+
 
 // Accessible Textarea
 interface AccessibleTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -173,6 +177,8 @@ export const AccessibleTextarea = forwardRef<HTMLTextAreaElement, AccessibleText
     );
   }
 );
+AccessibleTextarea.displayName = 'AccessibleTextarea';
+
 
 // Accessible Modal/Dialog
 interface AccessibleModalProps {

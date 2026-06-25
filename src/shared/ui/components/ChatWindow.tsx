@@ -614,7 +614,8 @@ const ChatWindowComponent = function ChatWindow({
               Your AI troubleshooting partner.
             </p>
             <p className="text-sm text-fm-text-secondary bg-fm-elevated p-3 rounded-md max-w-sm">
-              Provide context using the options below or ask a question directly, like <em className="text-fm-text-tertiary">"What's the runbook for a database failover?"</em>
+              {"Provide context using the options below or ask a question directly, like "}
+              <em className="text-fm-text-tertiary">{`"What's the runbook for a database failover?"`}</em>
             </p>
           </div>
         )}

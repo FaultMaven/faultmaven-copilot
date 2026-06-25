@@ -84,7 +84,7 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
 
           <div className="bg-fm-accent-soft border-l-4 border-blue-400 p-3 rounded">
             <p className="text-sm text-fm-text-primary italic">
-              "{getMessage()}"
+              {`"${getMessage()}"`}
             </p>
           </div>
 

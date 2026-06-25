@@ -114,10 +114,11 @@ export class ErrorClassifier {
         );
       }
 
-      case 429:
+      case 429: {
         // Try to extract Retry-After header value
         const retryAfter = this.extractRetryAfter(error);
         return new RateLimitError(error.message, retryAfter, error, context);
+      }
 
       case 408: // Request Timeout
       case 504: // Gateway Timeout
