@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from "react";
+import React, { useRef } from "react";
 import { KnowledgeDocument } from "../../../lib/api";
 import { normalizeTags } from "../../../lib/utils/safe-tags";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface DocumentDetailsModalProps {
   document: KnowledgeDocument | null;
@@ -16,72 +17,9 @@ export default function DocumentDetailsModal({
   onEdit
 }: DocumentDetailsModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
 
-  // Focus management for accessibility
-  useEffect(() => {
-    if (isOpen && document) {
-      // Save current focus (only if it is outside the modal)
-      const activeEl = window.document.activeElement as HTMLElement;
-      if (activeEl && (!modalRef.current || !modalRef.current.contains(activeEl))) {
-        previousActiveElement.current = activeEl;
-      }
-
-      // Focus the modal
-      modalRef.current?.focus();
-
-      // Prevent body scroll
-      window.document.body.style.overflow = 'hidden';
-
-      return () => {
-        // Restore scroll
-        window.document.body.style.overflow = '';
-
-        // Restore focus (only if element still exists in DOM)
-        if (previousActiveElement.current && window.document.body.contains(previousActiveElement.current)) {
-          previousActiveElement.current.focus();
-        }
-
-        // Clear ref to prevent memory leak
-        previousActiveElement.current = null;
-      };
-    }
-  }, [isOpen, document]);
-
-  // Handle keyboard events
-  useEffect(() => {
-    if (!isOpen || !document) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Trap focus within modal
-      if (e.key === 'Tab') {
-        const focusableElements = modalRef.current?.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-
-        if (!focusableElements || focusableElements.length === 0) return;
-
-        const firstElement = focusableElements[0] as HTMLElement;
-        const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
-
-        if (e.shiftKey && window.document.activeElement === firstElement) {
-          e.preventDefault();
-          lastElement.focus();
-        } else if (!e.shiftKey && window.document.activeElement === lastElement) {
-          e.preventDefault();
-          firstElement.focus();
-        }
-      }
-
-      // ESC key
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    window.document.addEventListener('keydown', handleKeyDown);
-    return () => window.document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, document, onClose]);
+  // Accessibility: trap focus, lock body scroll, close on Escape while open.
+  useFocusTrap({ isActive: isOpen && !!document, containerRef: modalRef, onEscape: onClose });
 
   if (!isOpen || !document) return null;
 

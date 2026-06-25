@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Manifest Permissions', () => {
-  it('should not contain wildcard host permissions in the built manifest', () => {
+  it('should contain required host permissions and optional wildcard permissions in the built manifest', () => {
     const manifestPath = path.resolve(__dirname, '../../../.output/chrome-mv3/manifest.json');
     
     // Only run this test if the build output exists
@@ -19,10 +19,10 @@ describe('Manifest Permissions', () => {
     expect(manifest.host_permissions).toContain('https://app.faultmaven.ai/*');
     expect(manifest.host_permissions).toContain('https://api.faultmaven.ai/*');
     
-    // Verify optional_host_permissions does NOT contain wildcards
+    // Verify optional_host_permissions contains wildcards to allow runtime permissions.request() for self-hosted instances
     if (manifest.optional_host_permissions) {
-      expect(manifest.optional_host_permissions).not.toContain('http://*/*');
-      expect(manifest.optional_host_permissions).not.toContain('https://*/*');
+      expect(manifest.optional_host_permissions).toContain('http://*/*');
+      expect(manifest.optional_host_permissions).toContain('https://*/*');
       // Should still allow localhost for dev convenience
       expect(manifest.optional_host_permissions).toContain('http://localhost/*');
       expect(manifest.optional_host_permissions).toContain('http://127.0.0.1/*');
