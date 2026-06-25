@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useCaseManagement } from '../../shared/ui/hooks/useCaseManagement';
+import { useAppStore } from '../../lib/state/store';
 import { browser } from 'wxt/browser';
 import * as api from '../../lib/api';
 
@@ -37,6 +38,18 @@ describe('useCaseManagement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.setState({
+      activeCaseId: null,
+      activeCase: null,
+      isCreatingCase: false,
+      conversations: {},
+      conversationTitles: {},
+      titleSources: {},
+      optimisticCases: [],
+      pinnedCases: new Set(),
+      caseEvidence: {},
+      sessionId: null
+    });
   });
 
   describe('initialization', () => {

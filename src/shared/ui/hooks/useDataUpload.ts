@@ -18,43 +18,30 @@ import type { ErrorContext } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { TITLE_GENERATION_THRESHOLD } from './useMessageSubmission';
+import { useAppStore } from '../../../lib/state/store';
+import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
 
-interface UseDataUploadProps {
-  sessionId: string | null;
-  activeCaseId: string | undefined;
-  conversations: Record<string, OptimisticConversationItem[]>;
-  titleSources: Record<string, 'user' | 'backend' | 'system'>;
-  setActiveCaseId: (id: string) => void;
-  setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
-  setActiveCase: React.Dispatch<React.SetStateAction<UserCase | null>>;
-  setConversations: React.Dispatch<React.SetStateAction<Record<string, OptimisticConversationItem[]>>>;
-  setConversationTitles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
-  setCaseEvidence: React.Dispatch<React.SetStateAction<Record<string, AttachmentResult[]>>>;
-  setRefreshSessions: React.Dispatch<React.SetStateAction<number>>;
-  /** Global error surface (from useError()). Injected so this hook stays
-   *  context-agnostic and mirrors the shape of useMessageSubmission. */
-  showError: (error: unknown, context?: ErrorContext) => string;
-}
-
-export function useDataUpload({
-  sessionId,
-  activeCaseId,
-  conversations,
-  titleSources,
-  setActiveCaseId,
-  setHasUnsavedNewChat,
-  setActiveCase,
-  setConversations,
-  setConversationTitles,
-  setTitleSources,
-  setCaseEvidence,
-  setRefreshSessions,
-  showError
-}: UseDataUploadProps) {
+export function useDataUpload() {
   const [loading, setLoading] = useState(false);
+  const { showError } = useError();
+
+  // Selected store state
+  const sessionId = useAppStore((state) => state.sessionId);
+  const activeCaseId = useAppStore((state) => state.activeCaseId);
+  const conversations = useAppStore((state) => state.conversations);
+  const titleSources = useAppStore((state) => state.titleSources);
+
+  // Selected store actions
+  const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
+  const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
+  const setActiveCase = useAppStore((state) => state.setActiveCase);
+  const setConversations = useAppStore((state) => state.setConversations);
+  const setConversationTitles = useAppStore((state) => state.setConversationTitles);
+  const setTitleSources = useAppStore((state) => state.setTitleSources);
+  const setCaseEvidence = useAppStore((state) => state.setCaseEvidence);
+  const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   /**
    * Submit a turn with any combination of query, pasted content, and files.
@@ -98,10 +85,6 @@ export function useDataUpload({
 
           setActiveCaseId(newCaseId);
           setHasUnsavedNewChat(false);
-
-          // createCase already returns a normalized UserCase — pass it
-          // through instead of rebuilding it (a hand-built literal here
-          // previously wrote the state to a nonexistent `status` field).
           setActiveCase(caseData);
 
           setConversations(prev => ({
@@ -111,13 +94,10 @@ export function useDataUpload({
 
           if (caseData.title) {
             setConversationTitles(prev => ({ ...prev, [newCaseId]: caseData.title }));
-            // Don't set titleSources here — the initial title is the auto-format
-            // Case-MMDD-N pattern, not a smart title. Setting 'backend' would block
-            // smart title auto-generation when the turn threshold is reached.
           }
 
           await browser.storage.local.set({ faultmaven_current_case: targetCaseId });
-          setRefreshSessions(prev => prev + 1);
+          triggerRefreshSessions();
 
           log.info('Case created:', targetCaseId);
         } catch (error) {
@@ -177,7 +157,6 @@ export function useDataUpload({
       }
 
       if (payload.pastedContent?.trim()) {
-        // Mirror the filename pattern the backend will assign
         const ts = new Date().toISOString()
           .replace(/[-:]/g, '').replace('T', 'T').slice(0, 15);
         const isPage = payload.inputType === 'page_capture';
@@ -240,7 +219,6 @@ export function useDataUpload({
           }
         });
       } catch (error) {
-        // Update optimistic AI message to show error
         setConversations(prev => ({
           ...prev,
           [targetCaseId!]: (prev[targetCaseId!] || []).map(item =>
@@ -254,7 +232,6 @@ export function useDataUpload({
 
       log.info('Turn submitted successfully', { caseId: targetCaseId, turnNumber: turnResponse.turn_number });
 
-      // Update active case status from TurnResponse (e.g. INQUIRY → INVESTIGATING)
       if (turnResponse.case_state) {
         setActiveCase((prev: UserCase | null) => {
           if (prev && prev.state !== turnResponse.case_state) {
@@ -268,13 +245,9 @@ export function useDataUpload({
         });
       }
 
-      // Every turn can change what the case header displays — drop the
-      // cached case-UI snapshot so ChatWindow refetches it (mirrors
-      // useMessageSubmission).
       queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
       // Step 5: Update optimistic messages with real response data
-      // Prefer backend-processed attachments over local file info
       const attachments: AttachmentResult[] = turnResponse.attachments_processed.length > 0
         ? turnResponse.attachments_processed
         : localAttachments;
@@ -312,7 +285,6 @@ export function useDataUpload({
         })
       }));
 
-      // Track processed attachments as evidence
       if (turnResponse.attachments_processed.length > 0) {
         setCaseEvidence(prev => ({
           ...prev,
@@ -325,7 +297,6 @@ export function useDataUpload({
 
       setActiveCaseId(targetCaseId);
 
-      // Auto-generate smart title when turn count reaches threshold
       const currentTurn = turnResponse.turn_number ?? 0;
       if (currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSources[targetCaseId]) {
         log.info('Turn threshold reached, auto-generating smart title', {
@@ -349,12 +320,6 @@ export function useDataUpload({
 
     } catch (error) {
       log.error('Turn submission error:', error);
-
-      // Single classification path: showError → ErrorClassifier produces
-      // the user-facing title/message/action. No parallel classification
-      // here to avoid wording drift. UnifiedInputBar preserves staged
-      // query + attachments on failure, so re-clicking Send retries
-      // naturally — no separate retry button needed here.
       showError(error, { operation: 'turn_submit' });
 
       return {

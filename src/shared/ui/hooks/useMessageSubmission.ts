@@ -1,12 +1,8 @@
 /**
  * Message Submission Hook
  *
- * Handles query submission with session-based lazy case creation:
- * - Instant UI feedback (0ms response time)
- * - Lazy case creation on first query (uses session endpoint)
- * - No ID reconciliation needed (real UUIDs from start)
- * - Error handling and retry logic
- * - Conflict resolution for concurrent updates
+ * Handles query submission with session-based lazy case creation.
+ * Integrated with the centralized Zustand store.
  */
 
 import { useState } from 'react';
@@ -17,7 +13,9 @@ import {
   QueryIntent,
   authManager,
   generateCaseTitle,
-  getCaseConversation
+  getCaseConversation,
+  createCase,
+  CreateCaseRequest
 } from '../../../lib/api';
 import type { UserCase } from '../../../types/case';
 import {
@@ -27,7 +25,7 @@ import {
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import {
   OptimisticIdGenerator,
-  IdUtils,
+  idMappingManager,
   pendingOpsManager,
   OptimisticUserCase,
   OptimisticConversationItem,
@@ -37,39 +35,105 @@ import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
-import { classifyError, formatErrorForChat } from '../../../lib/utils/api-error-handler';
+import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
+import { useAppStore } from '../../../lib/state/store';
+import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
 
 // Minimum messages before auto-generating title (must match ConversationItem.tsx)
 export const TITLE_GENERATION_THRESHOLD = 5;
 
-export interface UseMessageSubmissionProps {
-  // Current state
-  sessionId: string | null;
-  activeCaseId: string | undefined;
-  hasUnsavedNewChat: boolean;
-  conversations: Record<string, OptimisticConversationItem[]>;
-  titleSources: Record<string, 'user' | 'backend' | 'system'>;
-
-  // State setters (sessionId managed by useSessionManagement hook, not needed here)
-  setActiveCaseId: (id: string | undefined) => void;
-  setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
-  setConversations: React.Dispatch<React.SetStateAction<Record<string, OptimisticConversationItem[]>>>;
-  setActiveCase: React.Dispatch<React.SetStateAction<UserCase | null>>;
-  setOptimisticCases: React.Dispatch<React.SetStateAction<OptimisticUserCase[]>>;
-  setConversationTitles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  setTitleSources: React.Dispatch<React.SetStateAction<Record<string, 'user' | 'backend' | 'system'>>>;
-
-  // Callbacks
-  createOptimisticCaseInBackground: (optimisticCaseId: string, title: string | null) => Promise<string>;
-  refreshSession: () => Promise<string>;
-  showError: (error: any, context?: any) => void;
-  showErrorWithRetry: (error: any, retryFn: () => Promise<void>, context?: any) => void;
-}
-
-export function useMessageSubmission(props: UseMessageSubmissionProps) {
+export function useMessageSubmission() {
   const [submitting, setSubmitting] = useState(false);
+  const { showError } = useError();
+
+  // Selected store state
+  const sessionId = useAppStore((state) => state.sessionId);
+  const activeCaseId = useAppStore((state) => state.activeCaseId);
+  const titleSources = useAppStore((state) => state.titleSources);
+  const conversations = useAppStore((state) => state.conversations);
+
+  // Selected store actions
+  const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
+  const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
+  const setConversations = useAppStore((state) => state.setConversations);
+  const setActiveCase = useAppStore((state) => state.setActiveCase);
+  const setOptimisticCases = useAppStore((state) => state.setOptimisticCases);
+  const setConversationTitles = useAppStore((state) => state.setConversationTitles);
+  const setTitleSources = useAppStore((state) => state.setTitleSources);
+  const refreshSession = useAppStore((state) => state.refreshSession);
+  const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
+
+  // Reconcile optimistic case ID with backend ID
+  const createOptimisticCaseInBackground = async (optimisticId: string, title: string | null) => {
+    try {
+      log.info('Creating case on backend', { optimisticId, title });
+
+      const caseRequest: CreateCaseRequest = {
+        title: title || null,
+        priority: 'low'
+      };
+
+      const newCase = await createCase(caseRequest);
+      const realCaseId = newCase.case_id;
+
+      log.info('Case created on backend', { optimisticId, realCaseId });
+      idMappingManager.addMapping(optimisticId, realCaseId, 'case');
+
+      await setActiveCaseId(realCaseId);
+
+      setConversations(prev => {
+        const optimisticConversation = prev[optimisticId];
+        if (!optimisticConversation) return prev;
+
+        const updated = { ...prev };
+        delete updated[optimisticId];
+        updated[realCaseId] = optimisticConversation;
+        return updated;
+      });
+
+      setConversationTitles(prev => {
+        const updated = { ...prev };
+        updated[realCaseId] = newCase.title;
+        if (optimisticId !== realCaseId && updated[optimisticId]) {
+          delete updated[optimisticId];
+        }
+        return updated;
+      });
+
+      setTitleSources(prev => {
+        const optimisticSource = prev[optimisticId];
+        if (!optimisticSource) return prev;
+
+        const updated = { ...prev };
+        delete updated[optimisticId];
+        if (optimisticSource === 'user') {
+          updated[realCaseId] = optimisticSource;
+        }
+        return updated;
+      });
+
+      setOptimisticCases(prev => {
+        return prev.filter(c => c.case_id !== optimisticId);
+      });
+
+      setActiveCase(newCase);
+
+      await browser.storage.local.set({
+        faultmaven_current_case: realCaseId
+      });
+
+      log.info('Case ID reconciliation completed', { optimisticId, realCaseId });
+
+      triggerRefreshSessions();
+
+      return realCaseId;
+    } catch (error) {
+      log.error('Failed to create case on backend', error);
+      throw error;
+    }
+  };
 
   // Background query submission function
   const submitOptimisticQueryInBackground = async (
@@ -84,9 +148,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
         operation: async () => {
           log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
 
-          // Submit turn to case (caseId is already the real UUID)
-          log.info('Submitting turn to case via API', { caseId });
-
           const turnRequest: TurnRequest = {
             query: query.trim(),
             intentType: intent?.type,
@@ -96,9 +157,8 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
           const response = await submitTurn(caseId, turnRequest);
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 
-          // Update active case status from TurnResponse
           if (response.case_state) {
-            props.setActiveCase((prev: UserCase | null) => {
+            setActiveCase((prev: UserCase | null) => {
               if (prev && prev.state !== response.case_state) {
                 log.info('Updating active case status from backend', {
                   oldStatus: prev.state,
@@ -110,11 +170,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
             });
           }
 
-          // Every turn can change what the case header displays (milestones,
-          // evidence counts, hypotheses, state) — drop the cached case-UI
-          // snapshot so ChatWindow refetches it. State divergence alone is
-          // not a sufficient trigger: most turns mutate header content
-          // without a state transition.
           queryClient.invalidateQueries({ queryKey: ['caseUI', caseId] });
 
           return response;
@@ -130,15 +185,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
         onFailure: (error) => {
           log.error('All submission attempts failed', error);
 
-          // 409: case version conflict. ErrorClassifier maps the
-          // upstream HttpError(409) → CaseVersionConflictError; recovery
-          // is manual_retry so resilientOperation already did NOT
-          // auto-retry. Two extra steps here:
-          //   1) Telemetry — record the version drift for debugging.
-          //   2) Background refresh — refetch the case conversation so
-          //      the user sees the latest state on retry without
-          //      having to switch cases. We fire-and-forget so the
-          //      error UI stays responsive.
           const classified = ErrorClassifier.classify(error);
           if (classified instanceof CaseVersionConflictError) {
             log.warn('Case version conflict on turn submission', {
@@ -154,10 +200,9 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                   closure_reason?: string | null;
                   closed_at?: string | null;
                 }>;
-                // Sync activeCase status from the latest message's snapshot.
                 const last = fresh[fresh.length - 1];
                 if (last?.case_state) {
-                  props.setActiveCase((prev: UserCase | null) => {
+                  setActiveCase((prev: UserCase | null) => {
                     if (prev && prev.state !== last.case_state) {
                       log.info('activeCase status refreshed after 409', {
                         oldStatus: prev.state,
@@ -170,17 +215,13 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
                 }
               })
               .catch(refreshErr => {
-                // Non-critical — the retry button still works without
-                // a fresh state snapshot.
                 log.debug('Post-409 case refresh failed', refreshErr);
               });
           }
 
-          // Mark operation as failed in pendingOpsManager
           pendingOpsManager.fail(aiMessageId, error.message);
 
-          // Update AI message to show error state
-          props.setConversations(prev => {
+          setConversations(prev => {
             const currentConversation = prev[caseId] || [];
             const userMessage = formatErrorForChat(error);
             
@@ -202,114 +243,92 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
             };
           });
 
-          // Show global error UI if needed
           const plan = getRecoveryPlan(error, {
             onRetry: async () => {
               await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, intent);
             },
-            onLogout: () => {
-               // Auth handling is typically global, but we can signal it
-            }
+            onLogout: () => {}
           });
 
           if (plan.strategy === 'manual_retry' || plan.strategy === 'retry_with_backoff') {
-             // For manual retry (like 500 error), show the retry UI
-             // Even if strategy is retry_with_backoff, if we are in onFailure, it means auto-retries exhausted
-             props.showErrorWithRetry(
-              error,
-              async () => {
-                await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, intent);
-              },
-              { operation: 'message_submission' }
-             );
+             showError(error);
           } else if (plan.strategy === 'logout_and_redirect') {
-             props.showError('Session expired. Please sign in again.');
+             showError('Session expired. Please sign in again.');
           } else {
-             props.showError(error.userMessage);
+             showError(error.userMessage);
           }
         }
       });
 
       // SUCCESS HANDLER
-      // Update conversations: replace optimistic messages with real data
-      props.setConversations(prev => {
-           const conv = prev[caseId] || [];
-           return {
-             ...prev,
-             [caseId]: conv.map(item => {
-               if (item.id === userMessageId) {
-                 return {
-                   ...item,
-                   optimistic: false,
-                   originalId: userMessageId
-                 } as OptimisticConversationItem;
-               } else if (item.id === aiMessageId) {
-                 return {
-                   ...item,
-                   response: response.agent_response,
-                   turn_number: response.turn_number,
-                   caseStatus: response.case_state,
-                   suggestedActions: response.suggested_actions ?? null,
-                   optimistic: false,
-                   loading: false,
-                   originalId: aiMessageId,
-                   metadata: {
-                     milestones_completed: response.milestones_completed,
-                     progress_made: response.progress_made,
-                     attachments_processed: response.attachments_processed,
-                   }
-                 } as OptimisticConversationItem;
-               }
-               return item;
-             })
-           };
-         });
+      setConversations(prev => {
+        const conv = prev[caseId] || [];
+        return {
+          ...prev,
+          [caseId]: conv.map(item => {
+            if (item.id === userMessageId) {
+              return {
+                ...item,
+                optimistic: false,
+                originalId: userMessageId
+              } as OptimisticConversationItem;
+            } else if (item.id === aiMessageId) {
+              return {
+                ...item,
+                response: response.agent_response,
+                turn_number: response.turn_number,
+                caseStatus: response.case_state,
+                suggestedActions: response.suggested_actions ?? null,
+                optimistic: false,
+                loading: false,
+                originalId: aiMessageId,
+                metadata: {
+                  milestones_completed: response.milestones_completed,
+                  progress_made: response.progress_made,
+                  attachments_processed: response.attachments_processed,
+                }
+              } as OptimisticConversationItem;
+            }
+            return item;
+          })
+        };
+      });
 
-         // Mark operation as completed
-         pendingOpsManager.complete(aiMessageId);
-         log.info('Message submission completed and UI updated');
+      pendingOpsManager.complete(aiMessageId);
+      log.info('Message submission completed and UI updated');
 
-         // Auto-generate smart title when turn count reaches threshold.
-         // Use response.turn_number (backend-authoritative) instead of counting
-         // conversation items — props.conversations is a stale closure that
-         // doesn't include the optimistic items added in this submission.
-         const currentTurn = response.turn_number ?? 0;
-         const titleSource = props.titleSources[caseId];
-         const shouldAutoGenerateTitle =
-           currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSource;
+      const currentTurn = response.turn_number ?? 0;
+      const titleSource = titleSources[caseId];
+      const shouldAutoGenerateTitle =
+        currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSource;
 
-         if (shouldAutoGenerateTitle) {
-           log.info('Turn threshold reached, auto-generating smart title', {
-             caseId,
-             turn: currentTurn,
-             threshold: TITLE_GENERATION_THRESHOLD
-           });
-           try {
-             const titleResult = await generateCaseTitle(caseId, { max_words: 6 });
-             if (titleResult.title) {
-               props.setConversationTitles(prev => ({
-                 ...prev,
-                 [caseId]: titleResult.title
-               }));
-               props.setTitleSources(prev => ({
-                 ...prev,
-                 [caseId]: 'backend'
-               }));
-               log.info('Smart title auto-generated', { caseId, title: titleResult.title });
-             }
-           } catch (error) {
-             log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
-             // Non-critical - silently ignore, user can manually request later
-           }
-         } else if (currentTurn >= TITLE_GENERATION_THRESHOLD && titleSource) {
-           log.debug('Title already set, skipping auto-generation', { turn: currentTurn, titleSource });
-         }
+      if (shouldAutoGenerateTitle) {
+        log.info('Turn threshold reached, auto-generating smart title', {
+          caseId,
+          turn: currentTurn,
+          threshold: TITLE_GENERATION_THRESHOLD
+        });
+        try {
+          const titleResult = await generateCaseTitle(caseId, { max_words: 6 });
+          if (titleResult.title) {
+            setConversationTitles(prev => ({
+              ...prev,
+              [caseId]: titleResult.title
+            }));
+            setTitleSources(prev => ({
+              ...prev,
+              [caseId]: 'backend'
+            }));
+            log.info('Smart title auto-generated', { caseId, title: titleResult.title });
+          }
+        } catch (error) {
+          log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
+        }
+      }
 
     } catch (error) {
-       // We rely on onFailure for the UI updates.
-       log.debug('Caught error from resilientOperation (handled in onFailure)', error);
+      log.debug('Caught error from resilientOperation (handled in onFailure)', error);
     } finally {
-      // UNLOCK INPUT: Always unlock input when submission completes
       setSubmitting(false);
       log.debug('Input unlocked - submission completed');
     }
@@ -318,13 +337,11 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
   const handleQuerySubmit = async (query: string, intent?: QueryIntent) => {
     if (!query.trim()) return;
 
-    // Prevent multiple submissions
     if (submitting) {
       log.warn('Query submission blocked - already submitting');
       return;
     }
 
-    // Check authentication first
     const isAuth = await authManager.isAuthenticated();
     if (!isAuth) {
       log.error('User not authenticated, cannot submit query');
@@ -333,70 +350,53 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
 
     log.debug('OPTIMISTIC MESSAGE SUBMISSION START');
 
-    // LOCK INPUT: Prevent multiple submissions (immediate feedback)
     setSubmitting(true);
 
-    // OPTIMISTIC MESSAGE SUBMISSION: Immediate UI updates (0ms response)
-
-    // Generate optimistic message IDs
     const userMessageId = OptimisticIdGenerator.generateMessageId();
     const aiMessageId = OptimisticIdGenerator.generateMessageId();
-    const messageTimestamp = new Date().toISOString(); // ISO 8601 format to match backend
+    const messageTimestamp = new Date().toISOString();
 
-    // Step 1: Ensure case exists using session-based lazy creation
-    let targetCaseId = props.activeCaseId;
+    let targetCaseId = activeCaseId;
 
     if (!targetCaseId) {
       log.debug('No active case, creating case via createOptimisticCaseInBackground');
 
       try {
-        // Generate optimistic case ID
         const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
 
-        // Update UI with optimistic ID immediately (for instant feedback)
-        props.setActiveCaseId(optimisticCaseId);
-        props.setHasUnsavedNewChat(false);
+        setActiveCaseId(optimisticCaseId);
+        setHasUnsavedNewChat(false);
 
-        // Store in localStorage for persistence (frontend state management v2.0)
         await browser.storage.local.set({ faultmaven_current_case: optimisticCaseId });
 
-        // Create actual case on backend (will reconcile ID and update state)
-        // This function creates the case, gets the real UUID, updates all state, and returns the real ID
-        // Pass null to trigger backend auto-generation of Case-MMDD-N format
-        const realCaseId = await props.createOptimisticCaseInBackground(optimisticCaseId, null);
+        const realCaseId = await createOptimisticCaseInBackground(optimisticCaseId, null);
 
-        // Use the real case ID for query submission
         targetCaseId = realCaseId;
 
         log.info('Case created and ID reconciled', { optimisticId: optimisticCaseId, realId: targetCaseId });
       } catch (error) {
         log.error('Failed to create case', error);
-        props.showError('Failed to create case. Please try again.');
+        showError('Failed to create case. Please try again.');
         setSubmitting(false);
         return;
       }
     }
 
-    // Safety check
     if (!targetCaseId) {
       log.error('CRITICAL: No case ID available');
-      props.showError('No active case. Please try again.');
+      showError('No active case. Please try again.');
       setSubmitting(false);
       return;
     }
 
     log.debug('Creating optimistic messages', { userMessageId, aiMessageId, targetCaseId });
 
-    // Calculate turn_number for optimistic messages
-    // Per API contract: "Turn number in conversation (user messages increment turn)"
-    // Each turn = one user message + one agent response
-    const existingMessages = props.conversations[targetCaseId] || [];
+    const existingMessages = conversations[targetCaseId] || [];
     const highestTurn = existingMessages.reduce((max, msg) =>
       Math.max(max, msg.turn_number || 0), 0
     );
     const nextTurnNumber = highestTurn + 1;
 
-    // IMMEDIATE UI UPDATE 1: Add user message to conversation (0ms)
     const userMessage: OptimisticConversationItem = {
       id: userMessageId,
       question: query,
@@ -411,8 +411,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       originalId: userMessageId
     } as OptimisticConversationItem;
 
-    // IMMEDIATE UI UPDATE 2: Add AI "thinking" message (0ms)
-    // Same turn_number as user message (they're part of the same turn)
     const aiThinkingMessage: OptimisticConversationItem = {
       id: aiMessageId,
       question: '',
@@ -427,18 +425,15 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       originalId: aiMessageId
     } as OptimisticConversationItem;
 
-    // Update conversation immediately
-    props.setConversations(prev => ({
+    setConversations(prev => ({
       ...prev,
       [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiThinkingMessage]
     }));
 
-    // Focus/highlight the active case in the sidebar
-    props.setActiveCaseId(targetCaseId);
+    setActiveCaseId(targetCaseId);
 
     log.info('Messages added to UI immediately - 0ms response time');
 
-    // Create pending operation for tracking
     const pendingOperation: PendingOperation = {
       id: aiMessageId,
       type: 'submit_query',
@@ -446,7 +441,7 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
       optimisticData: { userMessage, aiThinkingMessage, query, caseId: targetCaseId },
       rollbackFn: () => {
         log.debug('Rolling back failed message submission');
-        props.setConversations(prev => ({
+        setConversations(prev => ({
           ...prev,
           [targetCaseId!]: (prev[targetCaseId!] || []).filter(
             item => item.id !== userMessageId && item.id !== aiMessageId
@@ -462,7 +457,6 @@ export function useMessageSubmission(props: UseMessageSubmissionProps) {
 
     pendingOpsManager.add(pendingOperation);
 
-    // Background API submission (non-blocking)
     submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, intent);
   };
 
