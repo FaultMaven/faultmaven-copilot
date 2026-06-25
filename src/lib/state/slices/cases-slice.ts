@@ -276,7 +276,12 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
         return;
       }
 
-      const offset = get().conversations[caseId]?.length ?? 0;
+      // Offset must count only committed messages — optimistic (uncommitted)
+      // items do not exist on the backend, so including them would skip real
+      // messages in the delta fetch.
+      const offset = (get().conversations[caseId] ?? []).filter(
+        (m: OptimisticConversationItem) => !m.optimistic
+      ).length;
 
       getCaseConversation(resolvedCaseId, { offset })
         .then(data => {

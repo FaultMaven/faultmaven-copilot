@@ -37,14 +37,20 @@ export const debouncedPersist = debounce(
 
       if (Object.keys(stateToSave.conversationTitles).length > 0) {
         storageData.conversationTitles = stateToSave.conversationTitles;
+      } else {
+        keysToRemove.push('conversationTitles');
       }
 
       if (Object.keys(stateToSave.titleSources).length > 0) {
         storageData.titleSources = stateToSave.titleSources;
+      } else {
+        keysToRemove.push('titleSources');
       }
 
       if (Object.keys(stateToSave.conversations).length > 0) {
         storageData.conversations = stateToSave.conversations;
+      } else {
+        keysToRemove.push('conversations');
       }
 
       if (Object.keys(stateToSave.pendingOperations).length > 0) {
