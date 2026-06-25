@@ -194,7 +194,7 @@ export function LocalLoginForm({ authConfig, onAuthSuccess }: LocalLoginFormProp
                 disabled={isLoading}
                 className="text-sm text-fm-accent hover:opacity-80 hover:underline disabled:text-fm-text-tertiary disabled:cursor-not-allowed"
               >
-                Don't have an account? Register
+                {"Don't have an account? Register"}
               </button>
             </div>
           )}

@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useRef } from "react";
 import { KnowledgeDocument } from "../../../lib/api";
 import { normalizeTags } from "../../../lib/utils/safe-tags";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface DocumentDetailsModalProps {
   document: KnowledgeDocument | null;
@@ -15,6 +16,11 @@ export default function DocumentDetailsModal({
   onClose,
   onEdit
 }: DocumentDetailsModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Accessibility: trap focus, lock body scroll, close on Escape while open.
+  useFocusTrap({ isActive: isOpen && !!document, containerRef: modalRef, onEscape: onClose });
+
   if (!isOpen || !document) return null;
 
   const formatDate = (dateString?: string) => {
@@ -31,19 +37,21 @@ export default function DocumentDetailsModal({
       .join(' ');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" onKeyDown={handleKeyDown}>
+    <div
+      ref={modalRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 overflow-y-auto focus:outline-none"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="doc-modal-title"
+    >
       <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
         {/* Backdrop */}
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
           onClick={onClose}
+          aria-hidden="true"
         ></div>
 
         {/* Modal */}
@@ -70,7 +78,7 @@ export default function DocumentDetailsModal({
               <div className="flex items-center space-x-2 ml-4">
                 <button
                   onClick={() => onEdit(document)}
-                  className="inline-flex items-center px-3 py-1.5 border border-fm-border text-sm font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-3 py-1.5 border border-fm-border text-sm font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-accent focus:ring-offset-fm-surface"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -79,7 +87,8 @@ export default function DocumentDetailsModal({
                 </button>
                 <button
                   onClick={onClose}
-                  className="rounded-md bg-fm-surface text-fm-text-secondary hover:text-fm-text-tertiary focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2"
+                  className="rounded-md bg-fm-surface text-fm-text-secondary hover:text-fm-text-tertiary focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2 focus:ring-offset-fm-surface"
+                  aria-label="Close"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -207,7 +216,7 @@ export default function DocumentDetailsModal({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex w-full justify-center rounded-md bg-fm-surface px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-fm-border hover:bg-fm-surface sm:w-auto"
+              className="inline-flex w-full justify-center rounded-md bg-fm-surface px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-fm-border hover:bg-fm-surface sm:w-auto focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2 focus:ring-offset-fm-surface"
             >
               Close
             </button>

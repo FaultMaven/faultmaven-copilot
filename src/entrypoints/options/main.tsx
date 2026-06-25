@@ -309,7 +309,7 @@ function OptionsApp() {
               className="w-full px-3 py-2 border border-fm-border rounded-lg focus:outline-none focus:ring-2 focus:ring-fm-accent focus:border-transparent bg-fm-base text-fm-text-primary disabled:bg-fm-surface disabled:text-fm-text-tertiary font-mono text-sm"
             />
             <p className="mt-1 text-xs text-fm-text-tertiary">
-              Any host — a LAN IP or a domain. <strong className="text-fm-text-primary">http</strong> needs no certificate (e.g. <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.1.100:8090</code>). <strong className="text-fm-text-primary">https</strong> works only if the server presents a TLS certificate your browser already trusts — a CA cert for a domain, or a self-signed cert you've imported (self-signed certs are otherwise rejected). On <strong className="text-fm-text-primary">Save</strong> you'll approve a one-time access prompt. Prefer https on untrusted networks — over http, tokens travel in cleartext.
+              Any host — a LAN IP or a domain. <strong className="text-fm-text-primary">http</strong> needs no certificate (e.g. <code className="bg-fm-code-bg px-1 rounded text-fm-code font-mono border border-fm-code-border">http://192.168.1.100:8090</code>). <strong className="text-fm-text-primary">https</strong> works only if the server presents a TLS certificate your browser already trusts — a CA cert for a domain, or a self-signed cert you&apos;ve imported (self-signed certs are otherwise rejected). On <strong className="text-fm-text-primary">Save</strong> you&apos;ll approve a one-time access prompt. Prefer https on untrusted networks — over http, tokens travel in cleartext.
             </p>
           </div>
 
@@ -432,7 +432,7 @@ function OptionsApp() {
               <p className="mt-1">Set your own API base URL — http or https, any host (LAN IP or domain). Grant access when prompted on Save; no reverse proxy or backend CORS setup needed. Set the Dashboard URL too if you use browser (OAuth) sign-in or the “open in Dashboard” links. See the self-hosting guide.</p>
             </div>
             <div className="pt-2 border-t border-fm-border">
-              <p>Click <strong className="text-fm-text-primary">"Test Connection"</strong> before saving.</p>
+              <p>Click <strong className="text-fm-text-primary">&ldquo;Test Connection&rdquo;</strong> before saving.</p>
               <p>Reload the extension after changing settings.</p>
             </div>
           </div>

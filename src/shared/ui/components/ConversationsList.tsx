@@ -320,7 +320,9 @@ export function ConversationsList({
       // Notify parent and handle navigation
       const remaining = cases.filter(c => c.case_id !== caseId);
       try {
-        onAfterDelete && onAfterDelete(caseId, remaining);
+        if (onAfterDelete) {
+          onAfterDelete(caseId, remaining);
+        }
       } catch (err) {
         log.warn('onAfterDelete callback failed', { error: err, caseId });
       }
@@ -332,10 +334,14 @@ export function ConversationsList({
           const next = sorted[0];
           if (next && next.case_id) {
             log.info('Auto-switching to next case after delete', { nextCaseId: next.case_id });
-            onCaseSelect && onCaseSelect(next.case_id);
+            if (onCaseSelect) {
+              onCaseSelect(next.case_id);
+            }
           } else {
             log.info('No remaining cases, starting new session');
-            onNewSession && onNewSession('');
+            if (onNewSession) {
+              onNewSession('');
+            }
           }
         }
       } catch (err) {
@@ -569,7 +575,7 @@ export function ConversationsList({
         {mergedCases.length === 0 && !error?.includes('Failed to fetch') ? (
           <div className="text-center py-8 px-4">
             <p className="text-sm text-fm-text-tertiary mb-3">No cases yet</p>
-            <p className="text-xs text-fm-text-secondary">Click "New Case" to start your first case</p>
+            <p className="text-xs text-fm-text-secondary">{`Click "New Case" to start your first case`}</p>
           </div>
         ) : (
           <div className="space-y-3 pb-6">

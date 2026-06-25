@@ -57,9 +57,9 @@ describe('Authentication Integration Flow', () => {
     // Simulate the logic in auth-bridge.content.ts
     it('forwards FM_AUTH_SUCCESS message to background script', async () => {
       // Mock window.addEventListener
-      const listeners: Record<string, Function> = {};
+      const listeners: Record<string, (...args: any[]) => any> = {};
       const mockWindow = {
-        addEventListener: (type: string, callback: Function) => {
+        addEventListener: (type: string, callback: (...args: any[]) => any) => {
           listeners[type] = callback;
         },
         location: { origin: 'http://localhost' }

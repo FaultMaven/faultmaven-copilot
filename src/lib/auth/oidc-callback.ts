@@ -65,13 +65,24 @@ async function handleCallback() {
 
     // Show success and close window
     if (loadingEl) {
-      loadingEl.innerHTML = `
-        <svg style="width: 48px; height: 48px; margin: 0 auto 1rem; color: #10b981;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-        </svg>
-        <h2>Sign-in successful!</h2>
-        <p>You can close this window.</p>
-      `;
+      // Clear loading element content safely
+      loadingEl.textContent = '';
+
+      const parser = new DOMParser();
+      const successDoc = parser.parseFromString(`
+        <div>
+          <svg style="width: 48px; height: 48px; margin: 0 auto 1rem; color: #10b981;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          <h2>Sign-in successful!</h2>
+          <p>You can close this window.</p>
+        </div>
+      `, 'text/html');
+
+      const contentNode = successDoc.body.firstElementChild;
+      if (contentNode) {
+        loadingEl.appendChild(contentNode);
+      }
     }
 
     // Close window after 2 seconds

@@ -1,6 +1,7 @@
 // src/shared/ui/components/ErrorModal.tsx
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useRef, useCallback } from 'react';
 import { ActiveError } from '../../../lib/errors/useErrorHandler';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface ErrorModalProps {
   activeError: ActiveError | null;
@@ -9,76 +10,16 @@ interface ErrorModalProps {
 
 export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction }) => {
   const modalRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
 
-  // Stable dismiss handler
+  // Stable dismiss handler — only dismisses when the error allows it.
   const handleDismiss = useCallback(() => {
     if (activeError && activeError.displayOptions.dismissible && onAction) {
       onAction(activeError.id);
     }
   }, [activeError, onAction]);
 
-  // Focus management for accessibility
-  useEffect(() => {
-    if (activeError) {
-      // Save current focus
-      previousActiveElement.current = document.activeElement as HTMLElement;
-
-      // Focus the modal
-      modalRef.current?.focus();
-
-      // Prevent body scroll
-      document.body.style.overflow = 'hidden';
-
-      return () => {
-        // Restore scroll
-        document.body.style.overflow = '';
-
-        // Restore focus (only if element still exists in DOM)
-        if (previousActiveElement.current && document.body.contains(previousActiveElement.current)) {
-          previousActiveElement.current.focus();
-        }
-
-        // Clear ref to prevent memory leak
-        previousActiveElement.current = null;
-      };
-    }
-  }, [activeError]);
-
-  // Handle keyboard events
-  useEffect(() => {
-    if (!activeError) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Trap focus within modal
-      if (e.key === 'Tab') {
-        const focusableElements = modalRef.current?.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-
-        if (!focusableElements || focusableElements.length === 0) return;
-
-        const firstElement = focusableElements[0] as HTMLElement;
-        const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
-
-        if (e.shiftKey && document.activeElement === firstElement) {
-          e.preventDefault();
-          lastElement.focus();
-        } else if (!e.shiftKey && document.activeElement === lastElement) {
-          e.preventDefault();
-          firstElement.focus();
-        }
-      }
-
-      // ESC key only works if modal is dismissible
-      if (e.key === 'Escape') {
-        handleDismiss();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeError, handleDismiss]);
+  // Accessibility: trap focus, lock body scroll, dismiss on Escape.
+  useFocusTrap({ isActive: !!activeError, containerRef: modalRef, onEscape: handleDismiss });
 
   if (!activeError) return null;
 
@@ -178,7 +119,6 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
                     : 'bg-fm-surface text-fm-text-primary hover:bg-fm-elevated focus:ring-2 focus:ring-fm-accent focus:ring-offset-2'
                   }
                 `}
-                autoFocus={idx === 0}
               >
                 {action.label}
               </button>
@@ -187,7 +127,6 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
             <button
               onClick={handleAction}
               className="w-full px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-              autoFocus
             >
               OK
             </button>

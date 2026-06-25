@@ -1,4 +1,3 @@
-// /Users/sterlanyu/Projects/faultmaven-copilot/tsconfig.json
 {
   "compilerOptions": {
     "target": "ESNext",

@@ -94,7 +94,7 @@ function formatDiagnosticKeywords(text: string): string {
   // Match keyword at start of line, optionally bold-wrapped, followed by text on the same line.
   // [\*:]+ handles all colon/bold orderings: "KEYWORD:", "**KEYWORD:**", "**KEYWORD**:"
   return text.replace(
-    /^\*{0,2}(OBSERVATION|ANALYSIS|CONCLUSION|EXPECTED OUTCOME)[\*:]+[ \t]+(.+)$/gm,
+    /^\*{0,2}(OBSERVATION|ANALYSIS|CONCLUSION|EXPECTED OUTCOME)[*:]+[ \t]+(.+)$/gm,
     (_, keyword, rest) => {
       return `**${keyword}:**\n${rest}`;
     }

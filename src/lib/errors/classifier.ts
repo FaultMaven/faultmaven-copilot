@@ -90,7 +90,7 @@ export class ErrorClassifier {
 
       case 400:
       case 422:
-        return new ValidationError(error.message, {}, error, context);
+        return new ValidationError(error.message, this.extractFieldErrors(error), error, context);
 
       case 409: {
         // Case version conflict — backend OCC rejected the save because
@@ -114,10 +114,11 @@ export class ErrorClassifier {
         );
       }
 
-      case 429:
+      case 429: {
         // Try to extract Retry-After header value
         const retryAfter = this.extractRetryAfter(error);
         return new RateLimitError(error.message, retryAfter, error, context);
+      }
 
       case 408: // Request Timeout
       case 504: // Gateway Timeout

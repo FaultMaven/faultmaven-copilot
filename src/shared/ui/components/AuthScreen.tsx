@@ -141,7 +141,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           {(authConfig.provider === 'oidc' || authConfig.provider === 'saml') && (
             <>
               <p className="text-fm-text-tertiary mb-4 text-center">
-                Sign in using your organization's SSO
+                {"Sign in using your organization's SSO"}
               </p>
               <button
                 onClick={handleSSOLogin}

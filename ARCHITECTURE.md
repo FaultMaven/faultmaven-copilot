@@ -42,7 +42,6 @@ The codebase follows a modular, domain-driven structure:
 src/
 ├── entrypoints/              # WXT entry points
 │   ├── background.ts         # Service worker (session, auth events)
-│   ├── page-content.content.ts # Content script (page analysis)
 │   ├── sidepanel_manual/     # Main Side Panel UI entry
 │   └── auth-bridge.content.ts # Bridge for Dashboard authentication
 ├── lib/                      # Core Logic & Infrastructure
