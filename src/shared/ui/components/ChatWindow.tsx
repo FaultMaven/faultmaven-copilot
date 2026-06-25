@@ -312,7 +312,7 @@ const ChatWindowComponent = function ChatWindow({
   }, [conversation]);
 
   return (
-    <div className={`flex flex-col h-full min-h-0 bg-fm-canvas ${className}`}>
+    <div className={`flex flex-col h-full min-h-0 bg-fm-canvas ${className}`} role="main" aria-label="Chat Interface">
       {/* Case Header — dark themed */}
       {activeCase && (
         <EnhancedCaseHeader
@@ -335,7 +335,7 @@ const ChatWindowComponent = function ChatWindow({
       )}
 
       {/* Conversation History — dark themed */}
-      <div id="conversation-history" ref={conversationHistoryRef} className="flex-1 overflow-y-auto min-h-0">
+      <div id="conversation-history" ref={conversationHistoryRef} className="flex-1 overflow-y-auto min-h-0" role="log" aria-live="polite" aria-atomic="false" aria-label="Conversation History">
         <div className="max-w-fm-content mx-auto w-full">
         <div className="h-4" />
         {Array.isArray(conversation) && conversation.map((item) => (

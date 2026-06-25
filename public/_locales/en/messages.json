@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "FaultMaven Copilot",
+    "description": "Extension name shown in browser and CWS"
+  },
+  "appDescription": {
+    "message": "AI-powered troubleshooting copilot embedded in your browser",
+    "description": "Extension description shown in browser and CWS"
+  }
+}

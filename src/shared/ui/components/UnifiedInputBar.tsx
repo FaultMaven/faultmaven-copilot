@@ -460,6 +460,8 @@ export function UnifiedInputBar({
     <div
       ref={dropZoneRef}
       className={`flex-shrink-0 bg-fm-surface border-t border-fm-border-subtle px-5 py-3 pb-4 relative transition-colors ${isDragging ? 'border-fm-accent border-2' : ''}`}
+      role="form"
+      aria-label="Message Input"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

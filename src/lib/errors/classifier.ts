@@ -90,7 +90,7 @@ export class ErrorClassifier {
 
       case 400:
       case 422:
-        return new ValidationError(error.message, {}, error, context);
+        return new ValidationError(error.message, this.extractFieldErrors(error), error, context);
 
       case 409: {
         // Case version conflict — backend OCC rejected the save because

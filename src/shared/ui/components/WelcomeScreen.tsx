@@ -69,7 +69,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
   };
 
   return (
-    <div className="flex items-center justify-center h-screen bg-fm-canvas relative overflow-hidden">
+    <div className="flex items-center justify-center h-screen bg-fm-canvas relative overflow-hidden" role="main" aria-label="Welcome Setup">
       <div className="max-w-2xl mx-auto p-8">
         {/* Header */}
         <div className="text-center mb-8">
@@ -93,20 +93,22 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
           {/* FaultMaven Cloud */}
           <button
             onClick={handleCloudSetup}
+            aria-labelledby="cloud-title"
+            aria-describedby="cloud-desc"
             className="group bg-fm-surface border-2 border-fm-accent-border rounded-xl p-6 hover:border-fm-accent hover:shadow-lg transition-all text-left"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-fm-accent-soft rounded-lg flex items-center justify-center group-hover:bg-fm-accent transition-colors">
+              <div className="w-12 h-12 bg-fm-accent-soft rounded-lg flex items-center justify-center group-hover:bg-fm-accent transition-colors" aria-hidden="true">
                 <svg className="w-6 h-6 text-fm-accent group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-fm-text-primary">
+              <h3 id="cloud-title" className="text-xl font-semibold text-fm-text-primary">
                 FaultMaven Cloud (SaaS)
               </h3>
             </div>
 
-            <p className="text-fm-text-tertiary mb-4">
+            <p id="cloud-desc" className="text-fm-text-tertiary mb-4">
               Best for teams. Immediate value with managed infrastructure.
             </p>
 
@@ -148,20 +150,22 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
           {/* Self-Hosted */}
           <button
             onClick={handleSelfHostedSetup}
+            aria-labelledby="standalone-title"
+            aria-describedby="standalone-desc"
             className="group bg-fm-surface border-2 border-fm-border rounded-xl p-6 hover:border-fm-text-tertiary hover:shadow-lg transition-all text-left"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-fm-elevated rounded-lg flex items-center justify-center group-hover:bg-fm-text-tertiary transition-colors">
+              <div className="w-12 h-12 bg-fm-elevated rounded-lg flex items-center justify-center group-hover:bg-fm-text-tertiary transition-colors" aria-hidden="true">
                 <svg className="w-6 h-6 text-fm-text-tertiary group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-fm-text-primary">
+              <h3 id="standalone-title" className="text-xl font-semibold text-fm-text-primary">
                 FaultMaven Standalone (Self-Hosted)
               </h3>
             </div>
 
-            <p className="text-fm-text-tertiary mb-4">
+            <p id="standalone-desc" className="text-fm-text-tertiary mb-4">
               Best for individuals and air-gapped environments. Run the full stack on your own hardware.
             </p>
 

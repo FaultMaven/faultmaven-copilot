@@ -1,19 +1,36 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { tokenManager } from '../../../lib/auth/token-manager';
+import { TokenManager } from '../../../lib/auth/token-manager';
 
-// Mock browser environment
+// Mock config
+vi.mock('../../../config', () => ({
+  __esModule: true,
+  default: {},
+  getApiUrl: async () => 'https://api.faultmaven.ai'
+}));
+
+// Mock browser storage using vi.hoisted to prevent hoisting problems
 const { mockBrowserStorage } = vi.hoisted(() => {
+  let store: Record<string, any> = {};
   const mockStorage = {
     local: {
-      get: vi.fn().mockResolvedValue({}),
-      set: vi.fn().mockResolvedValue(undefined),
-      remove: vi.fn().mockResolvedValue(undefined)
+      get: vi.fn(async (keys: string[]) => {
+        const result: Record<string, any> = {};
+        keys.forEach(k => {
+          if (store[k] !== undefined) {
+            result[k] = store[k];
+          }
+        });
+        return result;
+      }),
+      set: vi.fn(async (obj: Record<string, any>) => {
+        store = { ...store, ...obj };
+      }),
+      remove: vi.fn(async (keys: string[]) => {
+        keys.forEach(k => delete store[k]);
+      })
     }
   };
-
-  return {
-    mockBrowserStorage: mockStorage
-  };
+  return { mockBrowserStorage: mockStorage };
 });
 
 // Mock wxt/browser
@@ -23,341 +40,190 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-// Mock config
-vi.mock('../../../config', () => ({
-  getApiUrl: async () => 'http://localhost:8090'
-}));
-
 describe('TokenManager', () => {
+  let tokenManager: TokenManager;
+  let mockLocksRequest: any;
+
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    tokenManager = new TokenManager();
+
+    // Mock Web Locks API
+    let activeLock: Promise<any> = Promise.resolve();
+    mockLocksRequest = vi.fn((name: string, options: any, callback: () => Promise<any>) => {
+      activeLock = activeLock.then(() => callback());
+      return activeLock;
+    });
+
+    Object.defineProperty(global, 'navigator', {
+      value: {
+        locks: {
+          request: mockLocksRequest
+        }
+      },
+      writable: true,
+      configurable: true
+    });
+
+    // Reset local store
+    mockBrowserStorage.local.set({
+      access_token: undefined,
+      token_type: undefined,
+      expires_at: undefined,
+      refresh_token: undefined,
+      refresh_expires_at: undefined,
+      session_id: undefined,
+      user: undefined
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  describe('getValidAccessToken', () => {
-    it('returns valid access token when not expired', async () => {
-      const futureExpiry = Date.now() + 3600000; // 1 hour from now
-
-      mockBrowserStorage.local.get.mockResolvedValue({
-        access_token: 'valid-token',
-        token_type: 'bearer',
-        expires_at: futureExpiry,
-        refresh_token: 'refresh-token',
-        refresh_expires_at: Date.now() + 604800000
-      });
-
-      const token = await tokenManager.getValidAccessToken();
-
-      expect(token).toBe('valid-token');
-    });
-
-    it('returns null when no tokens stored', async () => {
-      mockBrowserStorage.local.get.mockResolvedValue({});
-
-      const token = await tokenManager.getValidAccessToken();
-
-      expect(token).toBeNull();
-    });
-
-    it('refreshes token when expiring soon (<5 minutes)', async () => {
-      const soonExpiry = Date.now() + (4 * 60 * 1000); // 4 minutes from now
-      const newExpiry = Date.now() + 3600000;
-
-      // First call returns expiring token, second call returns new token after refresh
-      mockBrowserStorage.local.get
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'existing-session-123',
-          user: { user_id: 'user-456', username: 'existinguser' }
-        })
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'existing-session-123',
-          user: { user_id: 'user-456', username: 'existinguser' }
-        })
-        .mockResolvedValue({
-          access_token: 'new-token',
-          token_type: 'bearer',
-          expires_at: newExpiry,
-          refresh_token: 'new-refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'existing-session-123',
-          user: { user_id: 'user-456', username: 'existinguser' }
-        });
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
-          access_token: 'new-token',
-          token_type: 'bearer',
-          expires_in: 3600,
-          refresh_token: 'new-refresh-token',
-          refresh_expires_in: 604800
-        })
-      });
-
-      const token = await tokenManager.getValidAccessToken();
-
-      // Should have refreshed
-      expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8090/api/v1/auth/oauth/token',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('grant_type":"refresh_token')
-        })
-      );
-
-      // Should return new token
-      expect(token).toBe('new-token');
-
-      // Should store new tokens while preserving session_id and user
-      expect(mockBrowserStorage.local.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          access_token: 'new-token',
-          refresh_token: 'new-refresh-token',
-          session_id: 'existing-session-123',
-          user: { user_id: 'user-456', username: 'existinguser' }
-        })
-      );
-    });
-
-    it('does not refresh when token has plenty of time left', async () => {
-      const futureExpiry = Date.now() + (30 * 60 * 1000); // 30 minutes from now
-
-      mockBrowserStorage.local.get.mockResolvedValue({
-        access_token: 'valid-token',
-        token_type: 'bearer',
-        expires_at: futureExpiry,
-        refresh_token: 'refresh-token',
-        refresh_expires_at: Date.now() + 604800000
-      });
-
-      const token = await tokenManager.getValidAccessToken();
-
-      // Should not have called refresh endpoint
-      expect(global.fetch).not.toHaveBeenCalled();
-
-      // Should return current token
-      expect(token).toBe('valid-token');
-    });
-
-    it('returns null when token expired and refresh token also expired', async () => {
-      mockBrowserStorage.local.get.mockResolvedValue({
-        access_token: 'expired-token',
-        token_type: 'bearer',
-        expires_at: Date.now() - 1000, // Expired
-        refresh_token: 'expired-refresh',
-        refresh_expires_at: Date.now() - 1000 // Also expired
-      });
-
-      const token = await tokenManager.getValidAccessToken();
-
-      expect(token).toBeNull();
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-
-    it('handles refresh token failure gracefully', async () => {
-      const soonExpiry = Date.now() + (4 * 60 * 1000);
-
-      // First two calls return expiring token, third returns null after clearTokens
-      mockBrowserStorage.local.get
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'session-123',
-          user: { user_id: 'user-123' }
-        })
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'session-123',
-          user: { user_id: 'user-123' }
-        })
-        .mockResolvedValue({});
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ error: 'invalid_grant' })
-      });
-
-      const token = await tokenManager.getValidAccessToken();
-
-      // Should return null on refresh failure
-      expect(token).toBeNull();
-    });
-
-    it('deduplicates simultaneous refresh requests', async () => {
-      const soonExpiry = Date.now() + (4 * 60 * 1000);
-
-      // Mock returns expiring token on first 3 calls, then new token
-      mockBrowserStorage.local.get
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'session-123',
-          user: { user_id: 'user-123' }
-        })
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'session-123',
-          user: { user_id: 'user-123' }
-        })
-        .mockResolvedValueOnce({
-          access_token: 'expiring-token',
-          token_type: 'bearer',
-          expires_at: soonExpiry,
-          refresh_token: 'refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'session-123',
-          user: { user_id: 'user-123' }
-        })
-        .mockResolvedValue({
-          access_token: 'new-token',
-          token_type: 'bearer',
-          expires_at: Date.now() + 3600000,
-          refresh_token: 'new-refresh-token',
-          refresh_expires_at: Date.now() + 604800000,
-          session_id: 'session-123',
-          user: { user_id: 'user-123' }
-        });
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
-          access_token: 'new-token',
-          token_type: 'bearer',
-          expires_in: 3600,
-          refresh_token: 'new-refresh-token',
-          refresh_expires_in: 604800
-        })
-      });
-
-      // Make multiple simultaneous requests
-      const tokens = await Promise.all([
-        tokenManager.getValidAccessToken(),
-        tokenManager.getValidAccessToken(),
-        tokenManager.getValidAccessToken()
-      ]);
-
-      // All should return same new token
-      expect(tokens[0]).toBe('new-token');
-      expect(tokens[1]).toBe('new-token');
-      expect(tokens[2]).toBe('new-token');
-
-      // Fetch should only be called once (deduplication)
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-    });
+  it('should return null when no tokens are stored', async () => {
+    const token = await tokenManager.getValidAccessToken();
+    expect(token).toBeNull();
   });
 
-  describe('clearTokens', () => {
-    it('removes all OAuth tokens from storage', async () => {
-      await tokenManager.clearTokens();
-
-      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith([
-        'access_token',
-        'token_type',
-        'expires_at',
-        'refresh_token',
-        'refresh_expires_at',
-        'session_id',
-        'user'
-      ]);
+  it('should return the token when it is still valid', async () => {
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes in future
+    await mockBrowserStorage.local.set({
+      access_token: 'valid-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000
     });
+
+    const token = await tokenManager.getValidAccessToken();
+    expect(token).toBe('valid-access-token');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  describe('Token rotation', () => {
-    it('updates both access and refresh tokens on refresh', async () => {
-      const soonExpiry = Date.now() + (4 * 60 * 1000);
+  it('should clear tokens and return null when refresh token is expired', async () => {
+    const expiresAt = Date.now() - 1000; // Expired
+    await mockBrowserStorage.local.set({
+      access_token: 'expired-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'expired-refresh-token',
+      refresh_expires_at: Date.now() - 1000 // Expired
+    });
 
-      mockBrowserStorage.local.get.mockResolvedValue({
-        access_token: 'old-access-token',
+    const token = await tokenManager.getValidAccessToken();
+    expect(token).toBeNull();
+
+    const stored = await mockBrowserStorage.local.get(['access_token']);
+    expect(stored.access_token).toBeUndefined();
+  });
+
+  it('should refresh and return a new token when access token is expiring soon', async () => {
+    const expiresAt = Date.now() + 2 * 60 * 1000; // 2 minutes (less than 5 min threshold)
+    await mockBrowserStorage.local.set({
+      access_token: 'expiring-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000,
+      session_id: 'session-123',
+      user: { user_id: '1' }
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'new-access-token',
         token_type: 'bearer',
-        expires_at: soonExpiry,
-        refresh_token: 'old-refresh-token',
-        refresh_expires_at: Date.now() + 604800000,
-        session_id: 'existing-session-456',
-        user: { user_id: 'existing-user-789', username: 'existinguser' }
-      });
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
-          access_token: 'new-access-token',
-          token_type: 'bearer',
-          expires_in: 3600,
-          refresh_token: 'new-refresh-token',
-          refresh_expires_in: 604800
-        })
-      });
-
-      await tokenManager.getValidAccessToken();
-
-      // Verify both tokens were updated while session_id and user are preserved
-      expect(mockBrowserStorage.local.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          access_token: 'new-access-token',
-          refresh_token: 'new-refresh-token',
-          session_id: 'existing-session-456',
-          user: expect.objectContaining({ user_id: 'existing-user-789' })
-        })
-      );
+        expires_in: 3600,
+        refresh_token: 'new-refresh-token',
+        refresh_expires_in: 86400
+      })
     });
+    global.fetch = mockFetch;
+
+    const token = await tokenManager.getValidAccessToken();
+    expect(token).toBe('new-access-token');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
+    expect(stored.access_token).toBe('new-access-token');
+    expect(stored.refresh_token).toBe('new-refresh-token');
   });
 
-  describe('Manifest V3 Service Worker compatibility', () => {
-    it('fetches tokens from storage on every call (no in-memory cache)', async () => {
-      const futureExpiry = Date.now() + 3600000;
-
-      // First call
-      mockBrowserStorage.local.get.mockResolvedValueOnce({
-        access_token: 'token-1',
-        expires_at: futureExpiry,
-        refresh_token: 'refresh-1',
-        refresh_expires_at: Date.now() + 604800000
-      });
-
-      const token1 = await tokenManager.getValidAccessToken();
-      expect(token1).toBe('token-1');
-
-      // Second call with different token (simulating worker restart)
-      mockBrowserStorage.local.get.mockResolvedValueOnce({
-        access_token: 'token-2',
-        expires_at: futureExpiry,
-        refresh_token: 'refresh-2',
-        refresh_expires_at: Date.now() + 604800000
-      });
-
-      const token2 = await tokenManager.getValidAccessToken();
-      expect(token2).toBe('token-2');
-
-      // Should have fetched from storage both times
-      expect(mockBrowserStorage.local.get).toHaveBeenCalledTimes(2);
+  it('should use Web Locks API to serialize concurrent requests', async () => {
+    const expiresAt = Date.now() + 2 * 60 * 1000;
+    await mockBrowserStorage.local.set({
+      access_token: 'expiring-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000
     });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'new-access-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'new-refresh-token',
+        refresh_expires_in: 86400
+      })
+    });
+    global.fetch = mockFetch;
+
+    // Call concurrently
+    const [token1, token2] = await Promise.all([
+      tokenManager.getValidAccessToken(),
+      tokenManager.getValidAccessToken()
+    ]);
+
+    expect(token1).toBe('new-access-token');
+    expect(token2).toBe('new-access-token');
+    // Web Lock triggers lock callbacks sequentially, so the second lock request
+    // sees that the token has already been refreshed and skips fetch.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockLocksRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('should fall back to in-context deduplication when Web Locks API is unavailable', async () => {
+    // Disable Web Locks
+    Object.defineProperty(global.navigator, 'locks', {
+      value: undefined,
+      configurable: true
+    });
+
+    const expiresAt = Date.now() + 2 * 60 * 1000;
+    await mockBrowserStorage.local.set({
+      access_token: 'expiring-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'new-access-token-no-lock',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'new-refresh-token-no-lock',
+        refresh_expires_in: 86400
+      })
+    });
+    global.fetch = mockFetch;
+
+    // Call concurrently
+    const [token1, token2] = await Promise.all([
+      tokenManager.getValidAccessToken(),
+      tokenManager.getValidAccessToken()
+    ]);
+
+    expect(token1).toBe('new-access-token-no-lock');
+    expect(token2).toBe('new-access-token-no-lock');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

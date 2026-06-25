@@ -178,7 +178,6 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
                     : 'bg-fm-surface text-fm-text-primary hover:bg-fm-elevated focus:ring-2 focus:ring-fm-accent focus:ring-offset-2'
                   }
                 `}
-                autoFocus={idx === 0}
               >
                 {action.label}
               </button>
@@ -187,7 +186,6 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ activeError, onAction })
             <button
               onClick={handleAction}
               className="w-full px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-              autoFocus
             >
               OK
             </button>

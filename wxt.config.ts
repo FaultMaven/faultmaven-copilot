@@ -1,4 +1,3 @@
-// /Users/sterlanyu/Projects/faultmaven-copilot/wxt.config.ts
 import { defineConfig } from 'wxt';
 import path from 'node:path';
 
@@ -16,9 +15,10 @@ export default defineConfig({
     },
   }),
   manifest: {
-    name: "FaultMaven Copilot",
+    name: "__MSG_appName__",
     version: "0.4.0",
-    description: "AI-powered troubleshooting copilot embedded in your browser",
+    description: "__MSG_appDescription__",
+    default_locale: 'en',
     icons: {
       "16": "icon/px16-square-dark.png",
       "32": "icon/px32-square-dark.png",
@@ -35,9 +35,7 @@ export default defineConfig({
     ],
     optional_host_permissions: [
       "http://localhost/*",
-      "http://127.0.0.1/*",
-      "http://*/*",  // Allow custom self-hosted deployments (HTTP — LAN/localhost)
-      "https://*/*"  // Allow custom self-hosted deployments (HTTPS)
+      "http://127.0.0.1/*"
     ],
     action: {
       default_title: "Open FaultMaven Copilot",
@@ -55,6 +53,11 @@ export default defineConfig({
     // populate import.meta.env, not process.env, at config-eval time — so it
     // produced nothing. Removed to avoid implying custom dashboard domains are
     // covered (they are not yet; see issue #71 for runtime registration).
+    // connect-src allows http: and https: because the extension communicates
+    // with a user-configured backend that may be self-hosted on any origin.
+    // The specific origin is set by the user in Settings; this CSP allows
+    // the fetch without requiring a manifest permission for every possible
+    // self-hosted domain.
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }

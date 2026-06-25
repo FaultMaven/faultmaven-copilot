@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { KnowledgeDocument } from "../../../lib/api";
 import { normalizeTags } from "../../../lib/utils/safe-tags";
 
@@ -15,6 +15,74 @@ export default function DocumentDetailsModal({
   onClose,
   onEdit
 }: DocumentDetailsModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  // Focus management for accessibility
+  useEffect(() => {
+    if (isOpen && document) {
+      // Save current focus (only if it is outside the modal)
+      const activeEl = window.document.activeElement as HTMLElement;
+      if (activeEl && (!modalRef.current || !modalRef.current.contains(activeEl))) {
+        previousActiveElement.current = activeEl;
+      }
+
+      // Focus the modal
+      modalRef.current?.focus();
+
+      // Prevent body scroll
+      window.document.body.style.overflow = 'hidden';
+
+      return () => {
+        // Restore scroll
+        window.document.body.style.overflow = '';
+
+        // Restore focus (only if element still exists in DOM)
+        if (previousActiveElement.current && window.document.body.contains(previousActiveElement.current)) {
+          previousActiveElement.current.focus();
+        }
+
+        // Clear ref to prevent memory leak
+        previousActiveElement.current = null;
+      };
+    }
+  }, [isOpen, document]);
+
+  // Handle keyboard events
+  useEffect(() => {
+    if (!isOpen || !document) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Trap focus within modal
+      if (e.key === 'Tab') {
+        const focusableElements = modalRef.current?.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+
+        if (!focusableElements || focusableElements.length === 0) return;
+
+        const firstElement = focusableElements[0] as HTMLElement;
+        const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+        if (e.shiftKey && window.document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        } else if (!e.shiftKey && window.document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+
+      // ESC key
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.document.addEventListener('keydown', handleKeyDown);
+    return () => window.document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, document, onClose]);
+
   if (!isOpen || !document) return null;
 
   const formatDate = (dateString?: string) => {
@@ -31,19 +99,21 @@ export default function DocumentDetailsModal({
       .join(' ');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" onKeyDown={handleKeyDown}>
+    <div
+      ref={modalRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 overflow-y-auto focus:outline-none"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="doc-modal-title"
+    >
       <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
         {/* Backdrop */}
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
           onClick={onClose}
+          aria-hidden="true"
         ></div>
 
         {/* Modal */}
@@ -70,7 +140,7 @@ export default function DocumentDetailsModal({
               <div className="flex items-center space-x-2 ml-4">
                 <button
                   onClick={() => onEdit(document)}
-                  className="inline-flex items-center px-3 py-1.5 border border-fm-border text-sm font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-3 py-1.5 border border-fm-border text-sm font-medium rounded text-fm-text-primary bg-fm-surface hover:bg-fm-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fm-accent focus:ring-offset-fm-surface"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -79,7 +149,8 @@ export default function DocumentDetailsModal({
                 </button>
                 <button
                   onClick={onClose}
-                  className="rounded-md bg-fm-surface text-fm-text-secondary hover:text-fm-text-tertiary focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2"
+                  className="rounded-md bg-fm-surface text-fm-text-secondary hover:text-fm-text-tertiary focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2 focus:ring-offset-fm-surface"
+                  aria-label="Close"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -207,7 +278,7 @@ export default function DocumentDetailsModal({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex w-full justify-center rounded-md bg-fm-surface px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-fm-border hover:bg-fm-surface sm:w-auto"
+              className="inline-flex w-full justify-center rounded-md bg-fm-surface px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-fm-border hover:bg-fm-surface sm:w-auto focus:outline-none focus:ring-2 focus:ring-fm-accent focus:ring-offset-2 focus:ring-offset-fm-surface"
             >
               Close
             </button>
