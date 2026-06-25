@@ -2,8 +2,7 @@
  * Data Recovery Hook
  *
  * Manages intelligent persistence loading with automatic backend recovery.
- * Handles extension reload detection and conversation restoration.
- * Extracted from SidePanelApp to reduce component complexity.
+ * Hydrates the centralized Zustand store.
  */
 
 import { useEffect, useCallback, useState, useRef } from 'react';
@@ -11,6 +10,7 @@ import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
 import { pendingOpsManager, IdMappingState, idMappingManager } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
+import { useAppStore } from '../../../lib/state/store';
 
 const log = createLogger('DataRecovery');
 
@@ -31,8 +31,8 @@ interface RecoveryStatus {
 }
 
 export function useDataRecovery(
-  onDataRecovered: (data: RecoveredData) => void,
-  onError: (message: string) => void
+  onDataRecovered?: (data: RecoveredData) => void,
+  onError?: (message: string) => void
 ) {
   const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus>({
     isRecovering: false,
@@ -40,11 +40,9 @@ export function useDataRecovery(
     recoveredCases: 0
   });
 
-  // Store stable references to callbacks to prevent useEffect from re-running
   const onDataRecoveredRef = useRef(onDataRecovered);
   const onErrorRef = useRef(onError);
 
-  // Update refs when callbacks change (without triggering useEffect)
   useEffect(() => {
     onDataRecoveredRef.current = onDataRecovered;
     onErrorRef.current = onError;
@@ -55,19 +53,16 @@ export function useDataRecovery(
       try {
         log.info('Starting intelligent persistence loading');
 
-        // Step 1: Check if recovery is already in progress
         const recoveryInProgress = await PersistenceManager.isRecoveryInProgress();
         if (recoveryInProgress) {
           log.info('Recovery already in progress, waiting');
           return;
         }
 
-        // Step 2: Detect if extension was reloaded
         const reloadDetected = await PersistenceManager.detectExtensionReload();
         log.info('Reload detection result', { reloadDetected });
 
         if (reloadDetected) {
-          // Extension was reloaded - attempt recovery from backend
           log.info('Extension reload detected - starting conversation recovery');
           setRecoveryStatus(prev => ({ ...prev, isRecovering: true }));
 
@@ -96,13 +91,12 @@ export function useDataRecovery(
               recoveredCases: 0
             });
 
-            if (recoveryResult.errors.length > 0) {
+            if (recoveryResult.errors.length > 0 && onErrorRef.current) {
               onErrorRef.current(`Failed to recover conversations: ${recoveryResult.errors[0]}`);
             }
           }
         }
 
-        // Step 3: Load data from storage (either original or recovered)
         log.debug('Loading data from browser storage');
         const stored = await browser.storage.local.get([
           'conversationTitles',
@@ -121,7 +115,6 @@ export function useDataRecovery(
           hasIdMappings: !!stored.idMappings
         });
 
-        // Prepare recovered data
         const recoveredData: RecoveredData = {
           conversationTitles: stored.conversationTitles || {},
           titleSources: stored.titleSources || {},
@@ -132,7 +125,6 @@ export function useDataRecovery(
           idMappings: undefined
         };
 
-        // Load ID mappings
         if (stored.idMappings) {
           const mappings = stored.idMappings;
           if (mappings.optimisticToReal && mappings.realToOptimistic) {
@@ -145,7 +137,6 @@ export function useDataRecovery(
           }
         }
 
-        // Update pending operations manager
         if (stored.pendingOperations) {
           pendingOpsManager.updateOperations(stored.pendingOperations);
           log.debug('Pending operations loaded', {
@@ -153,10 +144,20 @@ export function useDataRecovery(
           });
         }
 
-        // Notify parent component
-        onDataRecoveredRef.current(recoveredData);
+        // Hydrate the Zustand store
+        useAppStore.setState({
+          conversationTitles: recoveredData.conversationTitles,
+          titleSources: recoveredData.titleSources,
+          conversations: recoveredData.conversations,
+          pendingOperations: recoveredData.pendingOperations,
+          optimisticCases: recoveredData.optimisticCases,
+          pinnedCases: recoveredData.pinnedCases
+        });
 
-        // Mark persistence loading complete
+        if (onDataRecoveredRef.current) {
+          onDataRecoveredRef.current(recoveredData);
+        }
+
         await PersistenceManager.markSyncComplete();
         log.info('Persistence loading completed successfully');
 
@@ -168,12 +169,14 @@ export function useDataRecovery(
           error: errorMessage,
           recoveredCases: 0
         });
-        onErrorRef.current(errorMessage);
+        if (onErrorRef.current) {
+          onErrorRef.current(errorMessage);
+        }
       }
     };
 
     loadPersistedDataWithRecovery();
-  }, []); // Empty dependency array - run only once on mount
+  }, []);
 
   const forceRecovery = useCallback(async () => {
     try {

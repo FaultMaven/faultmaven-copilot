@@ -1,215 +1,43 @@
 /**
  * Authentication Hook
  *
- * Manages authentication state and operations.
- * Extracted from SidePanelApp to reduce component complexity.
+ * Manages authentication state and operations using the centralized Zustand store.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { browser } from 'wxt/browser';
-import { devLogin, logoutAuth, authManager, User } from '../../../lib/api';
-import { clientSessionManager } from '../../../lib/session/client-session-manager';
-import { AuthenticationError } from '../../../lib/errors/types';
-import { createLogger } from '../../../lib/utils/logger';
-import { hasRole, isAdmin, ROLES } from '../../../lib/utils/roles';
-import { EventBus, AuthStateChangedEvent } from '../../../lib/utils/messaging';
-
-const log = createLogger('Auth');
-
-interface AuthState {
-  isAuthenticated: boolean;
-  currentUser: User | null;
-  loginUsername: string;
-  loggingIn: boolean;
-  error: string | null;
-}
+import { useEffect } from 'react';
+import { useAppStore } from '../../../lib/state/store';
 
 export function useAuth() {
-  const [authState, setAuthState] = useState<AuthState>({
-    isAuthenticated: false,
-    currentUser: null,
-    loginUsername: '',
-    loggingIn: false,
-    error: null
-  });
+  const isAuthenticated = useAppStore((state) => state.isAuthenticated);
+  const currentUser = useAppStore((state) => state.currentUser);
+  const loginUsername = useAppStore((state) => state.loginUsername);
+  const loggingIn = useAppStore((state) => state.loggingIn);
+  const error = useAppStore((state) => state.authError);
 
-  // Check authentication status and load user on mount
+  const login = useAppStore((state) => state.login);
+  const logout = useAppStore((state) => state.logout);
+  const setLoginUsername = useAppStore((state) => state.setLoginUsername);
+  const clearAuthError = useAppStore((state) => state.clearAuthError);
+  const checkRole = useAppStore((state) => state.checkRole);
+  const checkIsAdmin = useAppStore((state) => state.checkIsAdmin);
+  const initializeAuth = useAppStore((state) => state.initializeAuth);
+
+  // Initialize auth listeners and check status on mount
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const isAuth = await authManager.isAuthenticated();
-        const user = await authManager.getCurrentUser();
-        setAuthState(prev => ({
-          ...prev,
-          isAuthenticated: isAuth,
-          currentUser: user
-        }));
-        log.debug('Auth status checked', { isAuthenticated: isAuth, user });
-      } catch (error) {
-        log.error('Auth check failed', error);
-      }
-    };
-
-    checkAuth();
-  }, []);
-
-  // Listen for authentication errors from Event Bus and storage changes
-  useEffect(() => {
-    // Handler for EventBus
-    const unsubscribe = EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
-      if (!event.authState) {
-        // Logged out
-        log.warn('Auth state cleared via EventBus - logging out user');
-        setAuthState({
-          isAuthenticated: false,
-          currentUser: null,
-          loginUsername: '',
-          loggingIn: false,
-          error: 'Your session has expired. Please log in again.'
-        });
-      } else {
-        // Logged in
-        setAuthState(prev => ({
-          ...prev,
-          isAuthenticated: event.authState!.isAuthenticated,
-          currentUser: event.authState!.user,
-          error: null
-        }));
-      }
-    });
-
-    // Handler for Storage (fallback/cross-tab)
-    const handleStorageChange = (changes: any) => {
-      // Check if authState was removed (user logged out or session expired)
-      if (changes.authState && !changes.authState.newValue && changes.authState.oldValue) {
-        log.warn('Auth state cleared via Storage - logging out user');
-
-        setAuthState({
-          isAuthenticated: false,
-          currentUser: null,
-          loginUsername: '',
-          loggingIn: false,
-          error: 'Your session has expired. Please log in again.'
-        });
-      }
-    };
-
-    // Listen for storage changes
-    if (typeof browser !== 'undefined' && browser.storage) {
-      browser.storage.onChanged.addListener(handleStorageChange);
-    }
-
-    return () => {
-      unsubscribe();
-      if (typeof browser !== 'undefined' && browser.storage) {
-        browser.storage.onChanged.removeListener(handleStorageChange);
-      }
-    };
-  }, []);
-
-  const login = useCallback(async (username: string) => {
-    setAuthState(prev => ({ ...prev, loggingIn: true, error: null }));
-
-    try {
-      log.info('Attempting login', { username });
-      await devLogin(username);
-
-      // Clear old session so a fresh one is created with the authenticated user
-      // This prevents requests from using an old anonymous session's user_id
-      await clientSessionManager.clearClientId();
-      await browser.storage.local.remove(['sessionId']);
-      log.info('Cleared old session for authenticated user');
-
-      // Load user data after successful login
-      const user = await authManager.getCurrentUser();
-
-      setAuthState({
-        isAuthenticated: true,
-        currentUser: user,
-        loginUsername: '',
-        loggingIn: false,
-        error: null
-      });
-
-      log.info('Login successful', { user });
-      
-      // Notify other components
-      EventBus.emit({
-        type: 'auth_state_changed',
-        authState: { isAuthenticated: true, user }
-      });
-      
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof AuthenticationError
-        ? error.message
-        : 'Login failed. Please try again.';
-
-      log.error('Login failed', error);
-      setAuthState(prev => ({
-        ...prev,
-        loggingIn: false,
-        error: errorMessage
-      }));
-      return false;
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      log.info('Attempting logout');
-      await logoutAuth();
-
-      setAuthState({
-        isAuthenticated: false,
-        currentUser: null,
-        loginUsername: '',
-        loggingIn: false,
-        error: null
-      });
-
-      log.info('Logout successful');
-      
-      // Notify other components
-      EventBus.emit({
-        type: 'auth_state_changed',
-        authState: null
-      });
-    } catch (error) {
-      log.error('Logout failed', error);
-      throw error;
-    }
-  }, []);
-
-  const setLoginUsername = useCallback((username: string) => {
-    setAuthState(prev => ({ ...prev, loginUsername: username }));
-  }, []);
-
-  const clearAuthError = useCallback(() => {
-    setAuthState(prev => ({ ...prev, error: null }));
-  }, []);
-
-  // Role checking helpers
-  const checkRole = useCallback((role: string): boolean => {
-    return hasRole(authState.currentUser, role);
-  }, [authState.currentUser]);
-
-  const checkIsAdmin = useCallback((): boolean => {
-    return isAdmin(authState.currentUser);
-  }, [authState.currentUser]);
+    initializeAuth();
+  }, [initializeAuth]);
 
   return {
-    isAuthenticated: authState.isAuthenticated,
-    currentUser: authState.currentUser,
-    loginUsername: authState.loginUsername,
-    loggingIn: authState.loggingIn,
-    authError: authState.error,
+    isAuthenticated,
+    currentUser,
+    loginUsername,
+    loggingIn,
+    error: error || null,
     login,
     logout,
     setLoginUsername,
     clearAuthError,
     hasRole: checkRole,
-    isAdmin: checkIsAdmin,
-    ROLES, // Export ROLES constant for convenience
+    isAdmin: checkIsAdmin
   };
 }
