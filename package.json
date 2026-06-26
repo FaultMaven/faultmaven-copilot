@@ -2,7 +2,7 @@
   "name": "faultmaven-copilot",
   "description": "AI-powered troubleshooting copilot embedded in your browser (WXT Version)",
   "private": true,
-  "version": "0.4.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",

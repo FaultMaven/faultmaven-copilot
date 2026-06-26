@@ -147,9 +147,8 @@ background. Optional host permissions are requested per-site at capture time.
 | Small promo tile | 440×280 PNG (needed for any featuring) | ❌ to create |
 | Marquee promo tile | 1400×560 PNG (optional) | ❌ optional |
 
-Suggested screenshots: (1) side panel with a chat answer, (2) page capture in
-action, (3) a resolved case with a runbook offer, (4) settings showing Cloud /
-self-hosted toggle.
+See **`docs/cws/SCREENSHOTS.md`** for the step-by-step capture checklist (which
+screen, what to show, exact dimensions, and a pre-upload quality gate).
 
 ---
 
