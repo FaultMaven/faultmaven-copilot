@@ -49,6 +49,7 @@ export type ErrorCategory =
   | 'server'
   | 'validation'
   | 'rate_limit'
+  | 'billing'
   | 'optimistic_rollback'
   | 'unknown';
 
@@ -356,6 +357,37 @@ export class CaseVersionConflictError extends UserFacingError {
           // Will be set by error handler
         }
       }]
+    };
+  }
+}
+
+/**
+ * Quota / credits exhausted (HTTP 402, x-error-code: QUOTA_EXHAUSTED).
+ *
+ * The FaultMaven AI provider account is out of quota or credits — a permanent,
+ * operator-actionable condition. Unlike a transient rate limit (429), retrying
+ * cannot help until an administrator adds credits or updates the provider's
+ * billing plan, so recovery is `graceful_degradation` (no auto-retry, no retry
+ * button). The user's typed input is preserved so they can resend once billing
+ * is sorted.
+ */
+export class QuotaExhaustedError extends UserFacingError {
+  readonly userTitle = 'AI Provider Out of Credits';
+  readonly userMessage =
+    "⚠️ FaultMaven's AI provider is out of quota or credits, so the " +
+    "investigation can't continue right now. An administrator needs to add " +
+    "credits or update the provider's billing plan — then resend your message " +
+    'to pick up where you left off.';
+  readonly userAction = 'Add credits or update billing, then resend your message.';
+  readonly category: ErrorCategory = 'billing';
+  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'banner',
+      duration: 0, // Persistent — the condition won't clear on its own
+      dismissible: true,
+      icon: 'warning'
     };
   }
 }

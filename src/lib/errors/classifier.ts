@@ -9,6 +9,7 @@ import {
   ValidationError,
   RateLimitError,
   CaseVersionConflictError,
+  QuotaExhaustedError,
   OptimisticUpdateError,
   UnknownError,
   ErrorContext
@@ -83,6 +84,16 @@ export class ErrorClassifier {
    * Classifies errors based on HTTP status code
    */
   private static classifyHttpError(status: number, error: Error, context?: ErrorContext): UserFacingError {
+    // Billing / quota exhaustion. Backend signals it with 402 Payment Required
+    // and an x-error-code: QUOTA_EXHAUSTED header. Check both: the error code is
+    // the authoritative signal when headers survive (direct HttpError path),
+    // while 402 covers the enriched-Error path from the API client wrapper,
+    // which drops headers but preserves status.
+    const errorCode = (error as HttpError).headers?.['x-error-code'];
+    if (status === 402 || errorCode === 'QUOTA_EXHAUSTED') {
+      return new QuotaExhaustedError(error.message, error, context);
+    }
+
     switch (status) {
       case 401:
       case 403:
