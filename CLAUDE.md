@@ -304,8 +304,11 @@ Use the `UserFacingError` class hierarchy for consistent error handling:
 | `ServerError` | server | manual_retry |
 | `ValidationError` | validation | user_fix_required |
 | `RateLimitError` | rate_limit | auto_retry_with_delay |
+| `QuotaExhaustedError` | billing | graceful_degradation |
 | `OptimisticUpdateError` | optimistic_rollback | rollback_and_retry |
 | `UnknownError` | unknown | manual_retry |
+
+`QuotaExhaustedError` is raised for **HTTP 402 / `x-error-code: QUOTA_EXHAUSTED`** — the AI provider is out of quota/credits. Recovery is `graceful_degradation` (no auto-retry, no retry button); the chat surfaces an operator-actionable "add credits / update billing" message and preserves the user's input so they can resend once billing is fixed.
 
 Each error provides:
 - `userTitle`, `userMessage`, `userAction` - User-facing strings
