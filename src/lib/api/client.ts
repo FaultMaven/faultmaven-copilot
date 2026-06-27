@@ -167,6 +167,13 @@ export async function authenticatedFetch(
       error.name = 'HTTPError';
       error.status = response.status;
       error.response = { data: errorData };
+      // Preserve the backend's typed error code so the classifier can map it
+      // independently of status (e.g. x-error-code: QUOTA_EXHAUSTED → billing).
+      // Guard against responses/mocks that omit a real Headers object.
+      if (response.headers && typeof response.headers.get === 'function') {
+        const errCode = response.headers.get('x-error-code');
+        if (errCode) error.headers = { 'x-error-code': errCode };
+      }
       throw error;
     }
 
