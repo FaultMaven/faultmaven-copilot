@@ -75,8 +75,40 @@ describe('ErrorClassifier', () => {
     const originalError = new Error('API Error');
     (originalError as any).status = 401;
     const classifiedFirst = ErrorClassifier.classify(originalError);
-    
+
     const classifiedSecond = ErrorClassifier.classify(classifiedFirst);
     expect(classifiedSecond).toBe(classifiedFirst);
+  });
+
+  // Billing / quota exhaustion (case_b639fac38fe0): the AI provider is out of
+  // credits — a permanent, operator-actionable condition. It must NOT be shown
+  // as a generic server error with a futile "Retry" button.
+  it('should map 402 to QuotaExhausted (billing) error with no auto-retry', () => {
+    const error = new Error('AI provider is out of quota or credits');
+    (error as any).status = 402;
+    const classified = ErrorClassifier.classify(error);
+
+    expect(classified.category).toBe('billing');
+    expect(classified.recovery).toBe('graceful_degradation');
+    expect(classified.userMessage.toLowerCase()).toContain('credit');
+  });
+
+  it('should map x-error-code QUOTA_EXHAUSTED to billing error regardless of status', () => {
+    // Direct HttpError path preserves the x-error-code header.
+    const error: any = new Error('quota exhausted');
+    error.status = 500; // even if status is generic, the code is authoritative
+    error.headers = { 'x-error-code': 'QUOTA_EXHAUSTED' };
+    const classified = ErrorClassifier.classify(error);
+
+    expect(classified.category).toBe('billing');
+    expect(classified.recovery).toBe('graceful_degradation');
+  });
+
+  it('should not classify a plain 429 as billing', () => {
+    const error = new Error('Too Many Requests');
+    (error as any).status = 429;
+    const classified = ErrorClassifier.classify(error);
+
+    expect(classified.category).toBe('rate_limit');
   });
 });
