@@ -29,7 +29,11 @@ Whether you're an on-call engineer, SRE, or DevOps practitioner, FaultMaven Copi
 *   Requires runtime host permissions only for the specific backend URL you configure.
 
 ## Privacy Policy URL
-`https://faultmaven.ai/privacy` (To be confirmed/configured by the team)
+`https://faultmaven.ai/privacy`
+
+Publish `PRIVACY.md` (repo root) at this URL before submitting and enter it in the
+listing's "Privacy policy" field. A public GitHub-hosted page is also acceptable
+if the website page is not yet live. See `docs/CHROME_STORE_SUBMISSION.md`.
 
 ## Screenshot Requirements
 The `docs/cws/screenshots/` directory should contain the following captures (1280x800 or 640x400):
