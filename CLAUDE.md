@@ -57,7 +57,8 @@ All configuration is done via environment variables (set before build). Copy `.e
 | `VITE_POLL_INITIAL_MS` | Initial polling interval | `1500` |
 | `VITE_POLL_BACKOFF` | Polling backoff multiplier | `1.5` |
 | `VITE_POLL_MAX_MS` | Maximum polling interval | `10000` |
-| `VITE_POLL_MAX_TOTAL_MS` | Maximum total polling time | `300000` (5 min) |
+| `VITE_POLL_MAX_TOTAL_MS` | Maximum total polling time | `600000` (10 min) |
+| `VITE_HEARTBEAT_INTERVAL_MS` | Session keep-alive ping interval (keep below the server session TTL) | `600000` (10 min) |
 
 **Input Limits:**
 | Variable | Description | Default |
@@ -488,7 +489,7 @@ For async operations returning 202 Accepted:
 const POLL_INITIAL_MS = 1500;    // Initial delay
 const POLL_BACKOFF = 1.5;        // Exponential multiplier
 const POLL_MAX_MS = 10000;       // Max interval cap
-const POLL_MAX_TOTAL_MS = 300000; // 5 min timeout
+const POLL_MAX_TOTAL_MS = 600000; // 10 min timeout
 ```
 
 ### Cross-Context Communication

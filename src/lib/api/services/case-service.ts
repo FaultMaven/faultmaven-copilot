@@ -4,6 +4,7 @@ import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
 import { HttpError, createHttpErrorFromResponse } from "../../errors/http-error";
+import { isRetryableError } from "../../utils/retry";
 import {
   APIError,
   CaseUpdateRequest,
@@ -592,7 +593,10 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
   const POLL_INITIAL_MS = Number(import.meta.env.VITE_POLL_INITIAL_MS ?? 1500);
   const POLL_BACKOFF = Number(import.meta.env.VITE_POLL_BACKOFF ?? 1.5);
   const POLL_MAX_MS = Number(import.meta.env.VITE_POLL_MAX_MS ?? 10000);
-  const POLL_MAX_TOTAL_MS = Number(import.meta.env.VITE_POLL_MAX_TOTAL_MS ?? 300000);
+  // Total async-poll budget. Matches the outermost ingress read ceiling (600s)
+  // so a long-running async (202) turn is waited out to the same wall the sync
+  // path allows, rather than giving up early.
+  const POLL_MAX_TOTAL_MS = Number(import.meta.env.VITE_POLL_MAX_TOTAL_MS ?? 600000);
 
   // Handle async 202 Accepted with polling
   if (response.status === 202) {
@@ -602,11 +606,28 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
     let delay = POLL_INITIAL_MS;
     let elapsed = 0;
     while (elapsed <= POLL_MAX_TOTAL_MS) {
-      const res = await authenticatedFetchWithRetry(jobUrl, { method: 'GET', credentials: 'include' });
-      if (res.status >= 500) {
-        throw new Error(`Server error while polling job (${res.status})`);
+      let json: any;
+      try {
+        // authenticatedFetchWithRetry throws an enriched HTTPError on any non-OK
+        // response, so `res` here is always OK — no `res.status >= 500` branch is
+        // reachable (that check was dead). The throw is what we must handle.
+        const res = await authenticatedFetchWithRetry(jobUrl, { method: 'GET', credentials: 'include' });
+        json = await res.json().catch(() => ({}));
+      } catch (err: any) {
+        // A transient failure on a SINGLE poll (5xx / network blip during a pod
+        // rollout) must not abandon the whole async turn — the background job may
+        // still complete well within the budget. Keep polling; only a definitive
+        // failure (4xx, or a terminal auth/session error) aborts.
+        const terminal =
+          err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
+        if (!terminal && isRetryableError(err)) {
+          await new Promise(r => setTimeout(r, delay));
+          elapsed += delay;
+          delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
+          continue;
+        }
+        throw err;
       }
-      const json = await res.json().catch(() => ({}));
       if (isTurnResponse(json)) return json;
       if (json?.status === 'completed' && json?.result && isTurnResponse(json.result)) return json.result;
       if (json?.status === 'failed') throw new Error(json?.error?.message || 'Turn processing failed');

@@ -49,11 +49,15 @@ describe('TokenManager', () => {
     global.fetch = vi.fn();
     tokenManager = new TokenManager();
 
-    // Mock Web Locks API
+    // Mock Web Locks API. Serialize like a real exclusive lock, but each
+    // request() is INDEPENDENT: a rejected holder must not prevent the next
+    // waiter's callback from running (the refresh path now acquires the lock
+    // once per retry attempt, so a failed attempt must not poison the next).
     let activeLock: Promise<any> = Promise.resolve();
     mockLocksRequest = vi.fn((name: string, options: any, callback: () => Promise<any>) => {
-      activeLock = activeLock.then(() => callback());
-      return activeLock;
+      const result = activeLock.then(() => callback(), () => callback());
+      activeLock = result.then(() => {}, () => {});
+      return result;
     });
 
     Object.defineProperty(global, 'navigator', {
@@ -187,6 +191,100 @@ describe('TokenManager', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockLocksRequest).toHaveBeenCalledTimes(2);
   });
+
+  it('preserves tokens and returns the still-valid access token on a TRANSIENT refresh failure', async () => {
+    // Access token is within the 5-min refresh window but NOT yet expired, and
+    // every refresh attempt fails with a network error. The user must NOT be
+    // logged out: tokens stay, and the still-valid access token is returned.
+    const expiresAt = Date.now() + 2 * 60 * 1000; // expiring soon, still valid
+    await mockBrowserStorage.local.set({
+      access_token: 'still-valid-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000,
+      session_id: 'session-123',
+      user: { user_id: '1' }
+    });
+
+    const mockFetch = vi.fn().mockRejectedValue(new Error('network down'));
+    global.fetch = mockFetch;
+
+    const token = await tokenManager.getValidAccessToken();
+
+    // Fell back to the current token instead of returning null / logging out.
+    expect(token).toBe('still-valid-access-token');
+    // Retried before giving up.
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // Tokens PRESERVED (not cleared) so a later call can retry the refresh.
+    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
+    expect(stored.access_token).toBe('still-valid-access-token');
+    expect(stored.refresh_token).toBe('valid-refresh-token');
+  }, 10000);
+
+  it('clears tokens and returns null on a DEFINITIVE (401) refresh rejection', async () => {
+    const expiresAt = Date.now() + 2 * 60 * 1000;
+    await mockBrowserStorage.local.set({
+      access_token: 'expiring-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'revoked-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000,
+      session_id: 'session-123',
+      user: { user_id: '1' }
+    });
+
+    // Server rejects the refresh token as invalid/revoked → HTTP 401.
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ detail: 'Invalid or expired refresh token' })
+    });
+    global.fetch = mockFetch;
+
+    const token = await tokenManager.getValidAccessToken();
+
+    expect(token).toBeNull();
+    // Definitive → no retry.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Tokens cleared → the user re-authenticates.
+    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
+    expect(stored.access_token).toBeUndefined();
+    expect(stored.refresh_token).toBeUndefined();
+  });
+
+  it('does NOT overwrite stored tokens when a 200 response has an invalid token payload', async () => {
+    const expiresAt = Date.now() + 2 * 60 * 1000; // expiring soon, still valid
+    await mockBrowserStorage.local.set({
+      access_token: 'still-valid-access-token',
+      token_type: 'bearer',
+      expires_at: expiresAt,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000,
+      session_id: 'session-123',
+      user: { user_id: '1' }
+    });
+
+    // 200 OK but the body is NOT a well-formed token payload (e.g. an ingress
+    // interstitial or cached proxy JSON). Must not clobber storage with
+    // access_token: undefined / expires_at: NaN.
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ not: 'a token' })
+    });
+    global.fetch = mockFetch;
+
+    const token = await tokenManager.getValidAccessToken();
+
+    // Treated as transient → retried, then fell back to the existing valid token.
+    expect(token).toBe('still-valid-access-token');
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // Storage NOT corrupted.
+    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
+    expect(stored.access_token).toBe('still-valid-access-token');
+    expect(stored.refresh_token).toBe('valid-refresh-token');
+  }, 10000);
 
   it('should fall back to in-context deduplication when Web Locks API is unavailable', async () => {
     // Disable Web Locks
