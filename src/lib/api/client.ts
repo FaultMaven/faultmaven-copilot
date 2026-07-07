@@ -12,7 +12,14 @@ const log = createLogger('APIClient');
 // that would otherwise leave a promise pending forever — which is especially
 // damaging on the token-refresh / poll paths. Generous enough for the 10 MB
 // max file upload on a slow link; callers may override per request.
-const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+//
+// Sized as the MIDDLE rung of the turn timeout ladder: server per-turn ceiling
+// (240s) < this client timeout (300s) < ingress proxy-read (600s). Keeping the
+// client ABOVE the server ceiling means a slow investigation turn surfaces the
+// server's real error/partial instead of a bare client-side "Request timed out"
+// abort. It was previously 120_000, equal to the old server ceiling — the two
+// raced, and the client usually won, producing exactly that opaque timeout.
+const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
  * Prepares a request body for JSON serialization.

@@ -12,6 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_POLL_BACKOFF?: string;
   readonly VITE_POLL_MAX_MS?: string;
   readonly VITE_POLL_MAX_TOTAL_MS?: string;
+  readonly VITE_HEARTBEAT_INTERVAL_MS?: string;
   readonly DEV?: boolean;
 }
 

@@ -1,9 +1,23 @@
 import { StateCreator } from 'zustand';
 import { browser } from 'wxt/browser';
 import { createSession } from '../../../lib/api';
+import { heartbeatSession } from '../../api/services/session-service';
+import { tokenManager } from '../../auth/token-manager';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('SessionSlice');
+
+// Keep-alive ping interval. The server reaps an investigation session after N
+// min of inactivity (redis_session_store default_ttl, 30 min by default). Real
+// requests already refresh that TTL; this ping only covers long panel-open-but-
+// idle stretches (e.g. reading a report) so the session isn't reaped mid-read.
+// The 10-min default is the largest interval that still tolerates one missed
+// beat within the default 30-min TTL (2 × 10 < 30) — MV3 timers can be throttled,
+// so leave that margin. Overridable via VITE_HEARTBEAT_INTERVAL_MS for operators
+// who tune the server TTL (mirrors the VITE_POLL_* knobs).
+const HEARTBEAT_INTERVAL_MS = Number(
+  import.meta.env.VITE_HEARTBEAT_INTERVAL_MS ?? 10 * 60 * 1000
+);
 
 export interface SessionSlice {
   sessionId: string | null;
@@ -76,17 +90,24 @@ export const createSessionSlice: StateCreator<any, [], [], SessionSlice> = (set,
           });
         }
 
-        // Start heartbeat (every 5 minutes)
+        // Start keep-alive heartbeat. Pings the server so an open-but-idle panel
+        // keeps its investigation session warm. Fully non-fatal: heartbeatSession
+        // does not route through the auto-logout fetch wrapper, the isAuthenticated
+        // check skips pointless pings when logged out, and any error is swallowed —
+        // if the session is already gone the next real request recreates it
+        // (SESSION_EXPIRED).
         heartbeatInterval = setInterval(async () => {
           try {
+            if (!(await tokenManager.isAuthenticated())) return;
             const stored = await browser.storage.local.get(['sessionId']);
             if (stored.sessionId) {
-              log.debug('Session heartbeat', { sessionId: stored.sessionId });
+              await heartbeatSession(stored.sessionId);
+              log.debug('Session heartbeat sent', { sessionId: stored.sessionId });
             }
           } catch (error) {
-            log.error('Heartbeat failed', error);
+            log.warn('Session heartbeat failed (non-fatal)', error);
           }
-        }, 5 * 60 * 1000);
+        }, HEARTBEAT_INTERVAL_MS);
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
