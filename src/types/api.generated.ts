@@ -7141,6 +7141,17 @@ export interface components {
              * @description Severity: critical | high | medium | low
              */
             severity: string;
+            /**
+             * Cause Assurance
+             * @description Engine-derived assurance grade behind this cause (no_root | mechanistic | confirmed), recomputed from the causal graph. The read-time label #572/INV-28 requires beside the cause text: only 'confirmed' is counterfactually verified; 'mechanistic' is identified but unconfirmed; 'no_root' was stated by the assistant without graph validation.
+             */
+            cause_assurance: string;
+            /**
+             * Cause Overclaim
+             * @description True when the conclusion claims 'verified' certainty while the assurance grade is below 'confirmed' (conclusion_overclaims seam). The frontend should surface a caution affordance when set.
+             * @default false
+             */
+            cause_overclaim: boolean;
         };
         /** RunbookCreateRequest */
         RunbookCreateRequest: {
@@ -7702,6 +7713,16 @@ export interface components {
             suggested_actions?: components["schemas"]["SuggestedActionResponse"][];
             /** @description Progress transparency state. Present when investigation has stalled and agent is surfacing milestone dependencies. */
             progress_transparency?: components["schemas"]["ProgressTransparencyInfo"] | null;
+            /**
+             * Cause Assurance
+             * @description Engine-derived assurance grade behind the case's identified cause (no_root | mechanistic | confirmed), recomputed from the causal graph. Present whenever the case has stated a root cause. Lets a narration-only client (e.g. Slack) show the #572/INV-28 read-time label beside the cause claim carried in agent_response, rather than presenting every conclusion at equal certainty.
+             */
+            cause_assurance?: string | null;
+            /**
+             * Cause Overclaim
+             * @description True when the case's conclusion claims 'verified' certainty while the assurance grade is below 'confirmed' (conclusion_overclaims seam). None when no cause is stated.
+             */
+            cause_overclaim?: boolean | null;
         };
         /**
          * UploadedFile

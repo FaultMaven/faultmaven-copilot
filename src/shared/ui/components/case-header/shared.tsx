@@ -132,6 +132,75 @@ export const SeverityChip: React.FC<{ severity: string | null }> = ({ severity }
   );
 };
 
+// ==================== Assurance grade ====================
+
+/**
+ * Read-time label for the engine's cause-assurance grade (#572 / INV-28). The
+ * cause text (RCC) is LLM-authored and may over-claim certainty; the grade is
+ * the graph-derived truth. Shown beside the cause so a confident-sounding
+ * conclusion is never presented above its actual assurance. `confirmed` is the
+ * clean top grade and renders no chip — only the held-back grades are labeled.
+ */
+export const ASSURANCE_CONFIG: Record<
+  string,
+  { label: string; colorClass: string; dotClass: string; title: string }
+> = {
+  mechanistic: {
+    label: 'Mechanistic',
+    colorClass: 'text-fm-info',
+    dotClass: 'bg-fm-info',
+    title:
+      'Identified from the investigation’s evidence, but not counterfactually ' +
+      'confirmed — removing this cause was never tied to the problem disappearing.',
+  },
+  no_root: {
+    label: 'Unvalidated',
+    colorClass: 'text-fm-warning',
+    dotClass: 'bg-fm-warning',
+    title:
+      'Stated by the assistant; this conclusion was not validated in the causal ' +
+      'analysis.',
+  },
+};
+
+/**
+ * Whether a grade renders a visible chip. `confirmed` (the clean top grade) and
+ * any unknown value render nothing, so callers can avoid wrapping an empty chip
+ * in a spacing element. Single source of truth: the ASSURANCE_CONFIG keys.
+ */
+export const hasAssuranceLabel = (grade: string | null | undefined): boolean =>
+  !!grade && !!ASSURANCE_CONFIG[grade];
+
+/**
+ * Assurance chip: colored dot + grade label, with an optional caution marker
+ * when the conclusion over-claims (`cause_overclaim`) — the RCC asserts
+ * "verified" certainty the grade does not support.
+ */
+export const AssuranceChip: React.FC<{
+  grade: string | null | undefined;
+  overclaim?: boolean | null;
+}> = ({ grade, overclaim }) => {
+  if (!grade) return null;
+  const config = ASSURANCE_CONFIG[grade];
+  // `confirmed` (and any unknown grade) needs no read-time qualifier.
+  if (!config) return null;
+
+  const title = overclaim
+    ? `${config.title} Note: the stated conclusion claims a higher certainty than the evidence supports.`
+    : config.title;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-fm-xs font-medium ${config.colorClass}`}
+      title={title}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${config.dotClass}`} />
+      {config.label}
+      {overclaim && <span aria-label="over-claim caution">⚠</span>}
+    </span>
+  );
+};
+
 // ==================== DetailRow ====================
 
 interface DetailRowProps {
