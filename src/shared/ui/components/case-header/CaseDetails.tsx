@@ -44,6 +44,7 @@ import {
   FilledCircleIcon,
   EmptyCircleIcon,
   CheckCircleIcon,
+  AssuranceChip,
   formatDuration,
   formatFileSize,
 } from './shared';
@@ -293,6 +294,12 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
             {isCaseResolved(caseData) && (
               <CheckCircleIcon className="w-3.5 h-3.5 text-fm-success flex-shrink-0" />
             )}
+            {/* Read-time assurance label (#572/INV-28): the RCC text is
+                LLM-authored; the grade is the graph-derived truth beside it. */}
+            <AssuranceChip
+              grade={caseData.root_cause?.cause_assurance}
+              overclaim={caseData.root_cause?.cause_overclaim}
+            />
           </span>
         </DetailRow>
       );

@@ -1,5 +1,10 @@
 import React from 'react';
-import { CheckCircleIcon, LockClosedIcon, formatDuration } from './case-header/shared';
+import {
+  CheckCircleIcon,
+  LockClosedIcon,
+  AssuranceChip,
+  formatDuration,
+} from './case-header/shared';
 import type { UserCase } from '../../../types/case';
 import type { CaseUIResponse } from '../../../types/case';
 
@@ -27,6 +32,8 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
 
   const resolvedData = caseData && caseData.state === 'resolved' ? caseData : null;
   const rootCauseDescription = resolvedData?.root_cause?.description ?? null;
+  const causeAssurance = resolvedData?.root_cause?.cause_assurance ?? null;
+  const causeOverclaim = resolvedData?.root_cause?.cause_overclaim ?? null;
   const totalDurationMinutes = resolvedData?.resolution_summary?.total_duration_minutes ?? null;
   const currentTurn = resolvedData?.current_turn ?? (caseData as any)?.current_turn ?? null;
 
@@ -60,6 +67,12 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
           {rootCauseDescription && (
             <p className="text-fm-text-tertiary text-fm-xs line-clamp-1 mt-0.5">
               {rootCauseDescription}
+            </p>
+          )}
+          {/* Read-time assurance label (#572/INV-28) beside the cause text. */}
+          {rootCauseDescription && causeAssurance && (
+            <p className="mt-0.5">
+              <AssuranceChip grade={causeAssurance} overclaim={causeOverclaim} />
             </p>
           )}
           {statsParts.length > 0 && (
