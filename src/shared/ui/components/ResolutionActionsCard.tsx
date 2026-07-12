@@ -3,6 +3,7 @@ import {
   CheckCircleIcon,
   LockClosedIcon,
   AssuranceChip,
+  hasAssuranceLabel,
   formatDuration,
 } from './case-header/shared';
 import type { UserCase } from '../../../types/case';
@@ -69,8 +70,10 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
               {rootCauseDescription}
             </p>
           )}
-          {/* Read-time assurance label (#572/INV-28) beside the cause text. */}
-          {rootCauseDescription && causeAssurance && (
+          {/* Read-time assurance label (#572/INV-28) beside the cause text.
+              Gated on a labeled grade so a confirmed cause (no chip) leaves no
+              empty spacer paragraph. */}
+          {rootCauseDescription && hasAssuranceLabel(causeAssurance) && (
             <p className="mt-0.5">
               <AssuranceChip grade={causeAssurance} overclaim={causeOverclaim} />
             </p>

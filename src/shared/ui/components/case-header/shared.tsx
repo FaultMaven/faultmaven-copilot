@@ -164,6 +164,14 @@ export const ASSURANCE_CONFIG: Record<
 };
 
 /**
+ * Whether a grade renders a visible chip. `confirmed` (the clean top grade) and
+ * any unknown value render nothing, so callers can avoid wrapping an empty chip
+ * in a spacing element. Single source of truth: the ASSURANCE_CONFIG keys.
+ */
+export const hasAssuranceLabel = (grade: string | null | undefined): boolean =>
+  !!grade && !!ASSURANCE_CONFIG[grade];
+
+/**
  * Assurance chip: colored dot + grade label, with an optional caution marker
  * when the conclusion over-claims (`cause_overclaim`) — the RCC asserts
  * "verified" certainty the grade does not support.
