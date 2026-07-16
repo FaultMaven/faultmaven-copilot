@@ -1,8 +1,14 @@
 /**
- * IdMappingManager - Manages mapping between optimistic and real IDs
+ * IdMappingManager - Manages mapping between optimistic and real CASE IDs
  *
- * Handles the reconciliation between temporary optimistic IDs and the
- * real IDs returned from the backend API.
+ * Reconciles a temporary optimistic case id (`opt_case_*`) with the real case id
+ * the backend returns when the case is created.
+ *
+ * NOTE: this maps CASE ids only. Message ids are NOT reconciled — a turn response
+ * carries no message id (see TurnResponse), so an optimistic message keeps its
+ * local `opt_msg_*` id after it commits and backend message truth is restored via
+ * the delta fetch on case open, not by an id swap. (This is why message-id
+ * reconciliation "never happens": there is nothing to reconcile against.)
  */
 
 import { createLogger } from '~/lib/utils/logger';
@@ -12,7 +18,6 @@ const log = createLogger('IdMappingManager');
 export interface IdMapping {
   optimisticId: string;
   realId: string;
-  type: 'case' | 'message';
   createdAt: number;
 }
 
@@ -32,31 +37,23 @@ export class IdMappingManager {
   constructor(private cleanupIntervalMs: number = 600000) {} // 10 minutes
 
   /**
-   * Add a mapping between optimistic and real ID
+   * Add a mapping between an optimistic id and its real id.
    */
-  addMapping(optimisticId: string, realId: string, type?: 'case' | 'message'): void {
-    // Auto-detect type if not provided
-    if (!type) {
-      if (optimisticId.startsWith('opt_case_')) {
-        type = 'case';
-      } else if (optimisticId.startsWith('opt_msg_')) {
-        type = 'message';
-      } else {
-        throw new Error(`Cannot auto-detect type for ID: ${optimisticId}`);
-      }
+  addMapping(optimisticId: string, realId: string): void {
+    if (!optimisticId.startsWith('opt_')) {
+      throw new Error(`Not an optimistic id: ${optimisticId}`);
     }
 
     const mapping: IdMapping = {
       optimisticId,
       realId,
-      type,
       createdAt: Date.now()
     };
 
     const wasEmpty = this.mappings.size === 0;
     this.mappings.set(optimisticId, mapping);
     if (wasEmpty) this.startCleanupTimer();
-    log.debug('Added mapping', { optimisticId, realId, type });
+    log.debug('Added mapping', { optimisticId, realId });
   }
 
   /**
@@ -65,18 +62,6 @@ export class IdMappingManager {
   getRealId(optimisticId: string): string | undefined {
     const mapping = this.mappings.get(optimisticId);
     return mapping?.realId;
-  }
-
-  /**
-   * Get optimistic ID for a real ID (reverse lookup)
-   */
-  getOptimisticId(realId: string): string | undefined {
-    for (const mapping of this.mappings.values()) {
-      if (mapping.realId === realId) {
-        return mapping.optimisticId;
-      }
-    }
-    return undefined;
   }
 
   /**
@@ -127,13 +112,6 @@ export class IdMappingManager {
   }
 
   /**
-   * Get mappings by type
-   */
-  getMappingsByType(type: 'case' | 'message'): IdMapping[] {
-    return Array.from(this.mappings.values()).filter(mapping => mapping.type === type);
-  }
-
-  /**
    * Resolve ID (return real ID if mapped, otherwise return original)
    * This is useful for functions that need to work with either optimistic or real IDs
    */
@@ -164,33 +142,6 @@ export class IdMappingManager {
     if (toRemove.length > 0) {
       log.info('Cleaned up old mappings', { count: toRemove.length });
     }
-  }
-
-  /**
-   * Get statistics about mappings
-   */
-  getStats(): {
-    total: number;
-    cases: number;
-    messages: number;
-    oldestMapping?: number;
-  } {
-    const mappings = Array.from(this.mappings.values());
-    const now = Date.now();
-
-    const stats = {
-      total: mappings.length,
-      cases: mappings.filter(m => m.type === 'case').length,
-      messages: mappings.filter(m => m.type === 'message').length,
-      oldestMapping: undefined as number | undefined
-    };
-
-    if (mappings.length > 0) {
-      const oldest = Math.min(...mappings.map(m => m.createdAt));
-      stats.oldestMapping = now - oldest;
-    }
-
-    return stats;
   }
 
   /**

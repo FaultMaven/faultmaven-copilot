@@ -11,8 +11,13 @@ describe('IdMappingManager', () => {
     m.addMapping('opt_case_1', 'real_1');
 
     expect(m.resolveId('opt_case_1')).toBe('real_1');
-    expect(m.getOptimisticId('real_1')).toBe('opt_case_1');
+    expect(m.getRealId('opt_case_1')).toBe('real_1');
     expect(m.resolveId('real_already')).toBe('real_already');
+  });
+
+  it('rejects a non-optimistic id (guards against mapping a real id by mistake)', () => {
+    const m = new IdMappingManager();
+    expect(() => m.addMapping('real_1', 'real_2')).toThrow(/Not an optimistic id/);
   });
 
   it('evicts mappings older than the max age (prevents unbounded growth)', () => {

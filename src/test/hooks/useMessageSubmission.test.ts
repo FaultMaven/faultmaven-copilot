@@ -179,7 +179,9 @@ describe('useMessageSubmission', () => {
     useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
     const { result } = renderHook(() => useMessageSubmission());
 
-    (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt-case-id');
+    // Must be a well-formed optimistic id (opt_ prefix) — IdMappingManager
+    // rejects anything else when reconciling to the real case id.
+    (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_test');
     (api.createCase as any).mockResolvedValue({
       case_id: 'real-case-id',
       title: 'Case-0625-1',

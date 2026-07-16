@@ -92,7 +92,7 @@ export function useMessageSubmission() {
       const realCaseId = newCase.case_id;
 
       log.info('Case created on backend', { optimisticId, realCaseId });
-      idMappingManager.addMapping(optimisticId, realCaseId, 'case');
+      idMappingManager.addMapping(optimisticId, realCaseId);
 
       await setActiveCaseId(realCaseId);
 
