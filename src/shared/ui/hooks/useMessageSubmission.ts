@@ -243,12 +243,16 @@ export function useMessageSubmission() {
               });
           }
 
-          pendingOpsManager.fail(aiMessageId, error.message);
+          // Mark the op failed WITHOUT rolling back: the default rollback would
+          // delete the user + AI messages, so the mark-failed below would find
+          // nothing and the whole turn would silently vanish. Keep both messages
+          // and render the AI item as failed (red) so the user can retry.
+          pendingOpsManager.fail(aiMessageId, error.message, false);
 
           setConversations(prev => {
             const currentConversation = prev[caseId] || [];
             const userMessage = formatErrorForChat(error);
-            
+
             return {
               ...prev,
               [caseId]: currentConversation.map(item => {
