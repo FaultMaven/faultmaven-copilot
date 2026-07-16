@@ -71,12 +71,20 @@ export class MemoryManager {
    * Produce the storage-safe form of the conversation map for persistence:
    *   1. Drop transient (optimistic / loading / failed) messages, and drop any
    *      conversation left empty by that filtering.
-   *   2. Cap the message count per conversation (`cleanupConversation`).
-   *   3. Cap the number of conversations (`cleanupConversations`).
+   *   2. Cap the NUMBER of conversations (`cleanupConversations`).
    *
    * This is the single choke point that both prevents unbounded growth in
    * `browser.storage.local` and guarantees a reload never rehydrates a stuck
    * spinner or a to-be-duplicated optimistic turn.
+   *
+   * NOTE: we deliberately do NOT cap the message count *within* a conversation.
+   * The delta fetch on case open (`cases-slice.handleCaseSelect`) uses the local
+   * committed-message count as a head offset and assumes the local copy is the
+   * backend PREFIX. Trimming a conversation to its most-recent N messages (a
+   * suffix) would make that offset skip real messages and re-append overlapping
+   * ones as duplicates — reintroducing the very duplicate-turn bug at N. Bounding
+   * a single very long conversation needs an id/turn-based delta fetch instead
+   * (tracked separately).
    */
   sanitizeAndCapForPersistence(
     conversations: Record<string, OptimisticConversationItem[]>,
@@ -91,13 +99,10 @@ export class MemoryManager {
       }
     }
 
-    // 2. Cap messages within each conversation.
-    for (const caseId of Object.keys(committed)) {
-      committed[caseId] = this.cleanupConversation(committed[caseId]);
-    }
-
-    // 3. Cap the number of conversations. No optimistic/failed items survive
-    //    step 1, so there are no failed-op cases to protect beyond the active one.
+    // 2. Cap the number of conversations. Dropping a whole old case is offset-safe:
+    //    reopening it delta-fetches from offset 0 (empty local) — no duplication.
+    //    No optimistic/failed items survive step 1, so only the active case needs
+    //    protecting beyond the most-recent set.
     return this.cleanupConversations(committed, activeCaseId, new Set());
   }
 

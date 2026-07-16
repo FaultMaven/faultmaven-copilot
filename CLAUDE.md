@@ -392,6 +392,15 @@ try {
 }
 ```
 
+### Persistence Contract (what reaches `browser.storage.local`)
+
+The Zustand store persists via a debounced subscribe in `lib/state/store.ts`. Two rules keep a reload from corrupting state:
+
+1. **Committed conversation data only.** Conversations are run through `memoryManager.sanitizeAndCapForPersistence()` before writing: transient items (`optimistic` / `loading` / `failed` / `error` — see `isCommittedMessage`) are dropped, and empty conversations are removed. A reload therefore never rehydrates a stuck "thinking" spinner or an optimistic turn that would duplicate once the real turn is delta-fetched. In-flight/failed turns are reconciled from the backend on case open, not from storage.
+2. **`pendingOperations` is never persisted.** Its `retryFn`/`rollbackFn` are closures that can't survive JSON serialization, so a restored pending op could never function. `pendingOpsManager` is the single in-session source of truth.
+
+Growth is bounded by dropping transient items and capping the **number** of conversations. The message count *within* a conversation is deliberately **not** capped: `cases-slice.handleCaseSelect` delta-fetches using the local committed-message count as a head offset and assumes the local copy is the backend **prefix** — trimming to a most-recent suffix would make the offset skip real messages and re-append overlapping ones as duplicates. Bounding a single very long conversation requires an id/turn-based delta fetch (tracked separately).
+
 ### API Request Serialization (prepareBody)
 
 All API service functions use `prepareBody()` for JSON serialization. This utility converts `undefined` → `null` to ensure consistent backend behavior:

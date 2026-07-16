@@ -41,14 +41,32 @@ describe('MemoryManager', () => {
       expect(result).toHaveProperty('kept');
     });
 
-    it('caps message count per conversation, keeping the most recent', () => {
+    it('does NOT trim messages within a conversation (would break the delta-fetch offset)', () => {
+      // The local copy must remain the backend PREFIX: capping to a suffix would
+      // make the offset-based delta fetch re-append overlapping messages as dups.
       const manager = new MemoryManager({ maxMessagesPerConversation: 3, minMessagesToKeep: 1 });
       const many = Array.from({ length: 10 }).map((_, i) =>
         committedMsg({ id: `m${i}`, optimistic: false, timestamp: new Date(1000 + i).toISOString() })
       );
       const result = manager.sanitizeAndCapForPersistence({ 'case-1': many }, undefined);
-      expect(result['case-1'].length).toBeLessThanOrEqual(3);
-      expect(result['case-1'].map(m => m.id)).toContain('m9');
+      // All 10 committed messages preserved, in order.
+      expect(result['case-1'].map(m => m.id)).toEqual(
+        Array.from({ length: 10 }).map((_, i) => `m${i}`)
+      );
+    });
+
+    it('caps the NUMBER of conversations while protecting the active case', () => {
+      const manager = new MemoryManager({ maxOldConversations: 1 });
+      const conversations: Record<string, OptimisticConversationItem[]> = {};
+      for (let i = 0; i < 5; i++) {
+        conversations[`case-${i}`] = [
+          committedMsg({ id: `m${i}`, optimistic: false, timestamp: new Date(1000 + i).toISOString() })
+        ];
+      }
+      const result = manager.sanitizeAndCapForPersistence(conversations, 'case-0');
+      // active (case-0) + maxOldConversations (1) most-recent → 2 kept.
+      expect(Object.keys(result)).toContain('case-0');
+      expect(Object.keys(result).length).toBe(2);
     });
   });
 
