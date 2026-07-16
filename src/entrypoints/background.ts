@@ -135,6 +135,15 @@ export default defineBackground({
     // common case), silently stranding the OAuth flow.
     const OAUTH_PENDING_KEY = 'oauth_pending';
 
+    // Single-flight guard for OAuth callback processing, keyed by authorization
+    // code. Both ingress paths — the tab monitor (handleOAuthTabUpdate) and the
+    // callback.html AUTH_CALLBACK message — fire for the same redirect. Without
+    // this they race to exchange the SAME single-use code: one wins, the other
+    // gets "code already used" / "no pending request". Both ingresses are kept
+    // (each covers cases the other misses, e.g. a slept service worker); the
+    // dedup makes running both harmless.
+    const inFlightAuthCallbacks = new Map<string, Promise<{ success: boolean; user?: any; error?: string }>>();
+
     async function handleOAuthTabUpdate(tabId: number, changeInfo: any, tab: any) {
       // Only navigation events can carry the OAuth redirect; skip the frequent
       // status/title/favicon updates to avoid needless storage reads.
@@ -239,15 +248,14 @@ export default defineBackground({
     }
 
     // === OAuth Callback Handler ===
-    async function handleAuthCallback(payload: { code: string; state: string }, sendResponse: (response?: any) => void) {
-      log.info('Handling OAuth callback', { state: payload.state });
-
+    // Exchange the authorization code for tokens exactly once. Returns a result
+    // object (never throws) so the single-flight wrapper can share it with both
+    // ingress paths.
+    async function exchangeCodeForTokens(
+      code: string,
+      state: string
+    ): Promise<{ success: boolean; user?: any; error?: string }> {
       try {
-        // Validate input
-        if (!payload.code || !payload.state) {
-          throw new Error('Invalid callback: missing code or state');
-        }
-
         // Retrieve stored PKCE verifier and state
         const storage = await browser.storage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
 
@@ -256,8 +264,8 @@ export default defineBackground({
         }
 
         // Verify state parameter (CSRF protection)
-        if (payload.state !== storage.auth_state) {
-          log.error('State mismatch', { expected: storage.auth_state, received: payload.state });
+        if (state !== storage.auth_state) {
+          log.error('State mismatch', { expected: storage.auth_state, received: state });
           throw new Error('State parameter mismatch - possible CSRF attack');
         }
 
@@ -272,7 +280,7 @@ export default defineBackground({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             grant_type: 'authorization_code',
-            code: payload.code,
+            code,
             code_verifier: storage.pkce_verifier,
             client_id: 'faultmaven-copilot',
             redirect_uri: storage.redirect_uri || browser.runtime.getURL('/callback.html')
@@ -342,7 +350,7 @@ export default defineBackground({
           log.debug('Could not broadcast auth state change:', e);
         }
 
-        sendResponse({ success: true, user: tokens.user });
+        return { success: true, user: tokens.user };
       } catch (error: any) {
         log.error('OAuth callback failed:', error);
 
@@ -354,8 +362,41 @@ export default defineBackground({
         }
 
         const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-        sendResponse({ success: false, error: errorMessage });
+        return { success: false, error: errorMessage };
       }
+    }
+
+    async function handleAuthCallback(payload: { code: string; state: string }, sendResponse: (response?: any) => void) {
+      log.info('Handling OAuth callback', { state: payload.state });
+
+      // Validate input
+      if (!payload.code || !payload.state) {
+        sendResponse({ success: false, error: 'Invalid callback: missing code or state' });
+        return;
+      }
+
+      // Single-flight on the authorization code: the tab-monitor and callback.html
+      // ingress both fire for the same redirect. Dedup so the single-use code is
+      // exchanged exactly once; the loser awaits and receives the same result
+      // instead of racing a second (doomed) token exchange.
+      //
+      // Keyed on code alone: the sharer's `state` is intentionally not re-validated
+      // here — both ingresses parse code+state from the SAME redirect URL, and the
+      // listener already rejects any sender that isn't one of this extension's own
+      // contexts (sender.id check), so there is no untrusted second `state` to guard.
+      // The first caller's state IS validated against auth_state inside the exchange.
+      let promise = inFlightAuthCallbacks.get(payload.code);
+      if (promise) {
+        log.info('OAuth callback already in flight for this code; sharing its result');
+      } else {
+        promise = exchangeCodeForTokens(payload.code, payload.state);
+        inFlightAuthCallbacks.set(payload.code, promise);
+        // Evict once settled — both ingresses fire together at redirect time, so
+        // the entry only needs to survive the in-flight exchange.
+        promise.finally(() => inFlightAuthCallbacks.delete(payload.code));
+      }
+
+      sendResponse(await promise);
     }
 
     // === OAuth Error Handler ===
