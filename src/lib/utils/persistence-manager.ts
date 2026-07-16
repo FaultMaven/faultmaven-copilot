@@ -445,6 +445,7 @@ export class PersistenceManager {
         'pendingOperations',
         'optimisticCases',
         'idMappings',
+        'faultmaven_current_case',
         PersistenceManager.SYNC_TIMESTAMP_KEY,
         PersistenceManager.VERSION_KEY,
         PersistenceManager.RECOVERY_FLAG_KEY,

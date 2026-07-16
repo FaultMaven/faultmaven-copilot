@@ -50,6 +50,29 @@ describe('PersistenceManager', () => {
     vi.clearAllMocks();
   });
 
+  describe('clearAllPersistenceData', () => {
+    it('purges the active-case pointer so it cannot leak across logout', async () => {
+      await PersistenceManager.clearAllPersistenceData();
+
+      const removedKeys = mockBrowser.storage.local.remove.mock.calls.flatMap(
+        (c: any[]) => (Array.isArray(c[0]) ? c[0] : [c[0]])
+      );
+      // Regression: faultmaven_current_case was absent from the purge list, so
+      // the previous session's active case id survived a logout.
+      expect(removedKeys).toContain('faultmaven_current_case');
+      expect(removedKeys).toContain('conversations');
+      expect(removedKeys).toContain('idMappings');
+    });
+
+    it('preserves pinnedCases only when asked', async () => {
+      await PersistenceManager.clearAllPersistenceData({ preservePinnedCases: true });
+      const kept = mockBrowser.storage.local.remove.mock.calls.flatMap(
+        (c: any[]) => (Array.isArray(c[0]) ? c[0] : [c[0]])
+      );
+      expect(kept).not.toContain('pinnedCases');
+    });
+  });
+
   describe('detectExtensionReload', () => {
     it('should detect reload when explicit reload flag is set', async () => {
       // Mock authenticated user with reload flag set (deterministic signal)
