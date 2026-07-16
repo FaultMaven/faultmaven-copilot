@@ -225,8 +225,23 @@ export function usePageContent() {
                 }
               }
 
-              // Preamble (fixed header)
-              const preamble: string[] = [`[captured_at: ${new Date().toISOString()}]`];
+              // Preamble (fixed header). Include the source URL so captured
+              // evidence is traceable back to the page it came from — without
+              // it, an operator reviewing the case can't tell which dashboard /
+              // console the numbers were pulled from. Drop the fragment (#…):
+              // SPA dashboards and OAuth implicit flows routinely carry tokens
+              // and signed params there (e.g. #access_token=…), and it must not
+              // land in case evidence. origin + path + query are kept (query is
+              // often the dashboard/time-range context).
+              let srcUrl = window.location.href;
+              try {
+                const u = new URL(window.location.href);
+                srcUrl = `${u.origin}${u.pathname}${u.search}`;
+              } catch { /* non-standard URL — fall back to href */ }
+              const preamble: string[] = [
+                `[captured_at: ${new Date().toISOString()}]`,
+                `[source_url: ${srcUrl}]`
+              ];
               const title = pgTitle || document.querySelector('h1')?.textContent?.trim();
               if (title) preamble.push(`# ${title}`);
               const meta = document.querySelector('meta[name="description"]')?.getAttribute('content')?.trim();
