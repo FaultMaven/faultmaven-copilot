@@ -120,7 +120,17 @@ export function usePageContent() {
                   return Array.from((el as HTMLSelectElement).selectedOptions).map(o => o.text).join(', ');
                 if (tag === 'TEXTAREA') return (el as HTMLTextAreaElement).value.trim();
                 const inp = el as HTMLInputElement;
-                if (inp.type === 'checkbox' || inp.type === 'radio')
+                // Never capture sensitive input VALUES into case evidence: passwords,
+                // hidden fields (CSRF/session tokens), and inputs the page marks as
+                // secret via autocomplete (current/new-password, one-time-code,
+                // cc-number/cc-csc). The label/field still appears; only the value is
+                // dropped. (Backend PII redaction is cloud-only, so this is the last
+                // line of defense for self-hosted.)
+                const type = (inp.type || '').toLowerCase();
+                if (type === 'password' || type === 'hidden') return null;
+                const ac = (inp.getAttribute('autocomplete') || '').toLowerCase();
+                if (/(^|\s)(current-password|new-password|one-time-code|cc-number|cc-csc)(\s|$)/.test(ac)) return null;
+                if (type === 'checkbox' || type === 'radio')
                   return inp.checked ? (inp.value || 'checked') : null;
                 return inp.value?.trim() || null;
               }
