@@ -434,6 +434,33 @@ describe('LocalAuthClient', () => {
       // Tokens should still be cleared
       expect(browser.storage.local.remove).toHaveBeenCalled();
     });
+
+    it('broadcasts a contract-shaped auth_state_changed (never a raw user object)', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+      await client.signOut();
+
+      // signOut clears `user` first, so the broadcast is the null logout signal —
+      // and never a raw user payload whose `isAuthenticated` would be undefined.
+      const call = (browser.runtime.sendMessage as any).mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m?.type === 'auth_state_changed');
+      expect(call).toBeDefined();
+      expect(call.authState).toBeNull();
+    });
+  });
+
+  describe('broadcastAuthStateChange (shape)', () => {
+    it('wraps a present user in the { isAuthenticated, user } contract shape', async () => {
+      const user = { user_id: 'u1', username: 'alice' };
+      (browser.storage.local.get as any).mockResolvedValueOnce({ user });
+
+      await (client as any).broadcastAuthStateChange();
+
+      expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'auth_state_changed',
+        authState: { isAuthenticated: true, user }
+      });
+    });
   });
 
   describe('getAccessToken', () => {

@@ -317,9 +317,14 @@ export class LocalAuthClient {
     try {
       const storage = await browser.storage.local.get(['user']);
 
+      // Match the AuthStateChangedEvent contract: { isAuthenticated, user } | null.
+      // Previously this sent the raw `user` object as `authState`, whose
+      // `isAuthenticated` is undefined; it was only benign because the sole
+      // caller (signOut) runs after clearTokens removes `user`, so it always
+      // sent null. Make it correct regardless of call ordering.
       await browser.runtime.sendMessage({
         type: 'auth_state_changed',
-        authState: storage.user || null
+        authState: storage.user ? { isAuthenticated: true, user: storage.user } : null
       });
 
       log.debug('Auth state change broadcasted');
