@@ -43,4 +43,24 @@ describe('usePageContent — capture provenance', () => {
     expect(content).toMatch(/\[source_url: https?:\/\/[^\]]+\]/);
     expect(content).toContain('[captured_at:');
   });
+
+  it('strips the URL fragment so tokens in the hash are not captured', async () => {
+    // Simulate an OAuth-implicit / SPA hash carrying a secret.
+    const orig = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { href: 'https://grafana.example/dash?panel=1#access_token=supersecret&state=abc' },
+      writable: true,
+      configurable: true
+    });
+
+    const { result } = renderHook(() => usePageContent());
+    const content = await result.current.handlePageInject();
+
+    expect(content).not.toContain('access_token');
+    expect(content).not.toContain('supersecret');
+    // Origin + path + query are still present for traceability.
+    expect(content).toContain('[source_url: https://grafana.example/dash?panel=1]');
+
+    Object.defineProperty(window, 'location', { value: orig, writable: true, configurable: true });
+  });
 });
