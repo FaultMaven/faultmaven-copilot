@@ -239,10 +239,11 @@ describe('Authentication API', () => {
 
       const result = await devLogin('newuser', 'new@example.com', 'New User');
 
-      // Verify API call
+      // Verify API call. devLogin now goes through fetchWithTimeout, which
+      // injects an AbortSignal, so match the options loosely.
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/auth/dev-login',
-        {
+        expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -251,7 +252,7 @@ describe('Authentication API', () => {
             display_name: 'New User'
           }),
           credentials: 'include'
-        }
+        })
       );
 
       // Verify auth state is saved

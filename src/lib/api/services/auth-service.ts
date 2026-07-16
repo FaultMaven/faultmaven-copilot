@@ -4,6 +4,7 @@ import { authManager } from "../../auth/auth-manager";
 import { authenticatedFetch, prepareBody } from "../client";
 import { APIError, AuthState, AuthTokenResponse, UserProfile } from "../types";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
+import { fetchWithTimeout } from "../../utils/fetch-timeout";
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('AuthService');
@@ -14,7 +15,7 @@ export async function devLogin(
   displayName?: string
 ): Promise<AuthTokenResponse> {
   try {
-    const response = await fetch(`${await getApiUrl()}/api/v1/auth/dev-login`, {
+    const response = await fetchWithTimeout(`${await getApiUrl()}/api/v1/auth/dev-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: prepareBody({

@@ -10,6 +10,7 @@
 import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
+import { fetchWithTimeout } from '../utils/fetch-timeout';
 import type { AuthTokenResponse, APIError } from '../api/types';
 
 const log = createLogger('LocalAuthClient');
@@ -60,7 +61,7 @@ export class LocalAuthClient {
       log.info('Initiating local auth login', { username: credentials.username });
 
       const apiUrl = await getApiUrl();
-      const response = await fetch(`${apiUrl}/api/v1/auth/login`, {
+      const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,7 +136,7 @@ export class LocalAuthClient {
       log.info('Initiating local auth registration', { username: request.username });
 
       const apiUrl = await getApiUrl();
-      const response = await fetch(`${apiUrl}/api/v1/auth/register`, {
+      const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -208,7 +209,7 @@ export class LocalAuthClient {
 
       // Call logout endpoint (best effort - don't block on errors)
       try {
-        await fetch(`${apiUrl}/api/v1/auth/logout`, {
+        await fetchWithTimeout(`${apiUrl}/api/v1/auth/logout`, {
           method: 'POST',
           credentials: 'include'
         });
