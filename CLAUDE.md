@@ -300,6 +300,7 @@ Use the `UserFacingError` class hierarchy for consistent error handling:
 |-------------|----------|-------------------|
 | `SessionExpiredError` | authentication | auto_retry_with_delay |
 | `AuthenticationError` | authentication | show_modal |
+| `PermissionError` | authorization | graceful_degradation |
 | `NetworkError` | network | retry_with_backoff |
 | `TimeoutError` | timeout | manual_retry |
 | `ServerError` | server | manual_retry |

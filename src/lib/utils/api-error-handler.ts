@@ -35,11 +35,14 @@ export function classifyError(error: unknown, context?: string): ErrorInfo {
   if (error instanceof UserFacingError) {
     return {
       type: error.category === 'authentication' ? ErrorType.AUTH :
+            error.category === 'authorization' ? ErrorType.PERMISSION :
             error.category === 'network' ? ErrorType.NETWORK :
             ErrorType.SERVER,
       userMessage: error.userMessage,
       technicalMessage: error.message,
       shouldRetry: error.recovery === 'retry_with_backoff' || error.recovery === 'auto_retry_with_delay',
+      // Only true authentication failures (401) log the user out. A 403
+      // authorization failure must never force a logout.
       shouldLogout: error.category === 'authentication'
     };
   }
