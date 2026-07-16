@@ -337,8 +337,14 @@ export default defineBackground({
 
         const tokens = await tokenResponse.json();
 
-        // Validate token response (per AuthTokenResponse in backend)
-        if (!tokens.access_token || !tokens.user) {
+        // Validate token response (per AuthTokenResponse in backend). Require a
+        // numeric expires_in so we never store `expires_at: NaN` (which reads as
+        // never-expiring / corrupt), matching the guard in TokenManager.
+        if (
+          typeof tokens.access_token !== 'string' ||
+          typeof tokens.expires_in !== 'number' ||
+          !tokens.user
+        ) {
           throw new Error('Invalid token response: missing required fields');
         }
 
@@ -356,15 +362,26 @@ export default defineBackground({
           roles: tokens.user.roles || ['user']
         };
 
-        // Store tokens and user info
-        await browser.storage.local.set({
+        // Store tokens and user info. storage.set MERGES — it never removes keys —
+        // so clear a stale refresh_expires_at from a prior session rather than
+        // writing `undefined` (which set() drops, leaving the old value). A stale
+        // past value reads as an expired refresh window → TokenManager clears
+        // everything → logout. Mirrors handleStoreAuth / LocalAuthClient.storeTokens.
+        const oauthTokenData: Record<string, any> = {
           access_token: tokens.access_token,
           token_type: tokens.token_type,
           expires_at: Date.now() + (tokens.expires_in * 1000),
           refresh_token: tokens.refresh_token,
-          refresh_expires_at: tokens.refresh_expires_in ? Date.now() + (tokens.refresh_expires_in * 1000) : undefined,
           user: user
-        });
+        };
+        await browser.storage.local.set(oauthTokenData);
+        if (typeof tokens.refresh_expires_in === 'number') {
+          await browser.storage.local.set({
+            refresh_expires_at: Date.now() + (tokens.refresh_expires_in * 1000),
+          });
+        } else {
+          await browser.storage.local.remove(['refresh_expires_at']);
+        }
 
         // Create auth state for compatibility with existing auth system
         const authState = {
@@ -464,7 +481,11 @@ export default defineBackground({
         sendResponse({ status: "error", message: "Unauthorized sender" });
         return false;
       }
-      log.info("Message received:", request);
+      // Log only the message discriminator — NEVER the payload. storeAuth carries
+      // access_token + refresh_token and AUTH_CALLBACK carries the auth code; even
+      // though log.info is dev-gated, dumping the whole request leaked those to the
+      // dev console (and contradicted handleStoreAuth's own redaction).
+      log.info("Message received:", { action: request?.action, type: request?.type });
 
       if (request.action === "storeAuth") {
         handleStoreAuth(request.payload, sendResponse);
