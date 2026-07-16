@@ -62,6 +62,18 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Refs to store latest callbacks (prevent stale closures in timeouts)
   const dismissErrorRef = useRef<((errorId: string) => void) | null>(null);
 
+  // Ref mirrors of state kept current on every render. showError must keep a
+  // stable identity (useError.handleError and many consumers depend on it), so
+  // it can't take `errors` as a dep — it reads the live value via this ref
+  // instead. The timeout maps are mirrored so the unmount cleanup can clear
+  // whatever timers exist WITHOUT re-subscribing on every map change.
+  const errorsRef = useRef<ActiveError[]>([]);
+  const timeoutIdsRef = useRef<Map<string, NodeJS.Timeout>>(timeoutIds);
+  const dismissalTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(dismissalTimeouts);
+  errorsRef.current = errors;
+  timeoutIdsRef.current = timeoutIds;
+  dismissalTimeoutsRef.current = dismissalTimeouts;
+
   // Maximum number of simultaneous toast notifications
   const MAX_TOASTS = 3;
 
@@ -80,8 +92,12 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       icon: 'error' as const
     };
 
-    // Check if we should aggregate with existing errors
-    const existingErrors = errors.filter(e => !e.dismissed && e.displayOptions.displayType === displayOptions.displayType);
+    // Check if we should aggregate with existing errors. Read the live errors
+    // via ref — showError has empty deps to keep a stable identity, so the
+    // captured `errors` would otherwise be frozen at the first (empty) render
+    // and aggregation would never fire.
+    const currentErrors = errorsRef.current;
+    const existingErrors = currentErrors.filter(e => !e.dismissed && e.displayOptions.displayType === displayOptions.displayType);
     const shouldAggregate = existingErrors.some(existing =>
       ErrorClassifier.shouldAggregate(existing.error, userFacingError)
     );
@@ -258,15 +274,17 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     });
   }, [errors, timeoutIds]);
 
-  // Cleanup all timeouts on unmount (prevent memory leaks)
+  // Cleanup all timeouts on unmount (prevent memory leaks). Empty deps so this
+  // runs ONLY on unmount — reading the maps through refs. With [timeoutIds,
+  // dismissalTimeouts] deps the cleanup fired on every map change, clearing
+  // live auto-dismiss timers each time a new one was registered, so errors
+  // never auto-dismissed.
   useEffect(() => {
     return () => {
-      // Clear all auto-dismiss timeouts
-      timeoutIds.forEach(timeoutId => clearTimeout(timeoutId));
-      // Clear all dismissal animation timeouts
-      dismissalTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+      timeoutIdsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+      dismissalTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
     };
-  }, [timeoutIds, dismissalTimeouts]);
+  }, []);
 
   const value: ErrorHandlerContextValue = {
     errors,
