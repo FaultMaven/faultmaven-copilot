@@ -165,12 +165,15 @@ We wrap critical actions (like sending a message) in a `resilientOperation` wrap
 await resilientOperation({
   operation: async () => api.submitQuery(...),
   context: { operation: 'send_message' },
+  idempotent: false, // a turn submission is a non-idempotent POST — see below
   onFailure: (error) => {
     // Mark message as failed in UI
     pendingOpsManager.fail(optimisticId, error);
   }
 });
 ```
+
+**Idempotency & ambiguous failures.** A network error on a POST is *ambiguous* — the request may already have reached the server and committed. Auto-retrying it would silently **duplicate** the write (a second turn, a second case). So non-idempotent writes pass `idempotent: false`, which makes `resilientOperation` **not** auto-retry `network`-category failures (they surface with a manual-retry affordance instead). Rejections that were provably *not* processed (429, 401) are still retried; timeouts and 5xx are already non-retryable. Restoring safe auto-retry for writes requires backend **idempotency keys** (tracked follow-up).
 
 ### ID Reconciliation (case ids only)
 

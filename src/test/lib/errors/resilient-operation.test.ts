@@ -76,6 +76,51 @@ describe('resilientOperation', () => {
     expect(errorPassedToOnFailure.category).toBe('authentication');
   });
 
+  it('does NOT retry a NetworkError for a non-idempotent write (avoids duplicate POST)', async () => {
+    // A network error on a POST is ambiguous — the request may already have
+    // reached the server and committed. Retrying would duplicate the turn.
+    const operation = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const onFailure = vi.fn();
+
+    const promise = resilientOperation({
+      operation,
+      context: { operation: 'turn_submit' },
+      idempotent: false,
+      retryOptions: { maxAttempts: 3, initialDelay: 10 },
+      onFailure
+    });
+    const resultPromise = promise.catch(e => e);
+    await vi.runAllTimersAsync();
+    const caught = await resultPromise;
+
+    expect(caught).toBeDefined();
+    expect(operation).toHaveBeenCalledTimes(1); // NOT retried
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(onFailure.mock.calls[0][0].category).toBe('network');
+  });
+
+  it('STILL retries a rejection (429) for a non-idempotent write (request was not processed)', async () => {
+    // A 429 means the server rejected the request without processing it, so a
+    // retry cannot duplicate — non-idempotent ops must still retry these.
+    const rateLimit = new Error('Too Many Requests');
+    (rateLimit as any).status = 429;
+    const operation = vi.fn()
+      .mockRejectedValueOnce(rateLimit)
+      .mockResolvedValueOnce('ok');
+
+    const promise = resilientOperation({
+      operation,
+      context: { operation: 'turn_submit' },
+      idempotent: false,
+      retryOptions: { maxAttempts: 3, initialDelay: 10 }
+    });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result).toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
   it('should fail after max retries and call onFailure', async () => {
     const networkError = new TypeError('Failed to fetch');
     const operation = vi.fn().mockRejectedValue(networkError);

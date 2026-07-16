@@ -15,9 +15,21 @@ export interface ResilientOperationOptions<T> {
   
   /** Callback for when an error occurs (even if retried) */
   onError?: (error: UserFacingError, attempt: number) => void;
-  
+
   /** Callback for when the operation ultimately fails after all retries */
   onFailure?: (error: UserFacingError) => void;
+
+  /**
+   * Whether the operation is safe to auto-retry after an AMBIGUOUS failure — a
+   * network error where the request may already have reached the server and
+   * committed. Reads and idempotent writes are `true` (the default). A
+   * non-idempotent write (submitting a turn, creating a case) MUST set `false`:
+   * retrying an ambiguous network failure would re-send a POST that may have
+   * already succeeded, silently DUPLICATING it. (Rejections like 429/401 mean the
+   * request was not processed, so those are still retried; timeouts and 5xx are
+   * already non-retryable via the recovery-strategy map below.)
+   */
+  idempotent?: boolean;
 }
 
 /**
@@ -26,7 +38,7 @@ export interface ResilientOperationOptions<T> {
 export async function resilientOperation<T>(
   options: ResilientOperationOptions<T>
 ): Promise<T> {
-  const { operation, context, retryOptions = {}, onError, onFailure } = options;
+  const { operation, context, retryOptions = {}, onError, onFailure, idempotent = true } = options;
 
   const performOperation = async () => {
     return await operation();
@@ -52,6 +64,15 @@ export async function resilientOperation<T>(
         // Check explicit retry options first
         if (retryOptions.shouldRetry) {
           return retryOptions.shouldRetry(error, attempt);
+        }
+
+        // Non-idempotent writes must NOT auto-retry an ambiguous network failure:
+        // the request may already have reached the server and committed, so a
+        // retry would duplicate it (e.g. a second turn / a second case). Surface
+        // it instead — the user gets a manual retry affordance and can see whether
+        // it landed.
+        if (!idempotent && classifiedError.category === 'network') {
+          return false;
         }
 
         // Use the recovery strategy from the error
