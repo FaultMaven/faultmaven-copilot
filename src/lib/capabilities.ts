@@ -1,8 +1,18 @@
 // src/lib/capabilities.ts
 
 import { createLogger } from '~/lib/utils/logger';
+import { fetchWithTimeout } from '~/lib/utils/fetch-timeout';
 
 const log = createLogger('CapabilitiesManager');
+
+/**
+ * Where the currently-held capabilities came from. Only `network` is
+ * authoritative; `cache`/`fallback` are degraded results served because the
+ * fetch failed. Tracked so a degraded result does NOT short-circuit the next
+ * fetch (a recovered backend must be re-detected rather than serving a stale
+ * fabricated fallback forever).
+ */
+type CapabilitiesSource = 'network' | 'cache' | 'fallback';
 
 export interface BackendCapabilities {
   deploymentMode: 'self-hosted' | 'cloud';
@@ -27,24 +37,28 @@ export interface BackendCapabilities {
   };
 }
 
-class CapabilitiesManager {
+export class CapabilitiesManager {
   private capabilities: BackendCapabilities | null = null;
+  private source: CapabilitiesSource | null = null;
   private fetchPromise: Promise<BackendCapabilities> | null = null;
 
   async fetch(apiUrl: string): Promise<BackendCapabilities> {
-    // Return cached if available
-    if (this.capabilities) {
+    // Only an authoritative (network) result short-circuits future fetches.
+    // A cached / fabricated fallback must NOT poison the cache: the backend may
+    // be temporarily unreachable and then recover, so a degraded result has to
+    // leave the door open for the next call to re-detect a live backend.
+    if (this.capabilities && this.source === 'network') {
       return this.capabilities;
     }
 
-    // Prevent duplicate requests
+    // Prevent duplicate in-flight requests
     if (this.fetchPromise) {
       return this.fetchPromise;
     }
 
     this.fetchPromise = (async () => {
       try {
-        const response = await fetch(`${apiUrl}/v1/meta/capabilities`, {
+        const response = await fetchWithTimeout(`${apiUrl}/v1/meta/capabilities`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -55,6 +69,7 @@ class CapabilitiesManager {
 
         const caps = await response.json();
         this.capabilities = caps;
+        this.source = 'network';
 
         // Cache in storage for offline access
         if (typeof browser !== 'undefined' && browser.storage) {
@@ -65,13 +80,14 @@ class CapabilitiesManager {
         return caps;
 
       } catch (error) {
-        log.warn('Fetch failed, trying cache', error);
+        log.warn('Capabilities fetch failed; serving degraded capabilities', error);
 
         // Try cache
         if (typeof browser !== 'undefined' && browser.storage) {
           const cached = await browser.storage.local.get(['backendCapabilities']);
           if (cached.backendCapabilities) {
             this.capabilities = cached.backendCapabilities;
+            this.source = 'cache';
             return this.capabilities;
           }
         }
@@ -95,6 +111,7 @@ class CapabilitiesManager {
         };
 
         this.capabilities = fallback;
+        this.source = 'fallback';
         return fallback;
       } finally {
         this.fetchPromise = null;
