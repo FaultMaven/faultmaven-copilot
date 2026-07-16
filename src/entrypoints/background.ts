@@ -17,12 +17,42 @@ export default defineBackground({
       // Never log the token-bearing payload; record only non-secret fields.
       log.info("storing auth state from bridge", {
         hasToken: !!payload?.access_token,
+        hasRefresh: !!payload?.refresh_token,
         expiresAt: payload?.expires_at,
       });
       try {
-        // Use AuthManager to save state
+        // Persist the TokenManager keys (not just the composite authState) so a
+        // bridge-established session can auto-refresh like an OAuth-established one.
+        // Previously only saveAuthState() ran, which writes the `authState` key but
+        // NOT `refresh_token`, so getAuthHeaders/TokenManager had no refresh material
+        // and the session silently logged out at access-token expiry. The dashboard's
+        // fm_auth_state payload carries `refresh_token` (verified against the
+        // dashboard's AuthState); mirror the OAuth-callback storage format here.
+        if (payload?.access_token) {
+          const tokenData: Record<string, any> = {
+            access_token: payload.access_token,
+            token_type: payload.token_type ?? 'bearer',
+            expires_at: payload.expires_at, // bridge payload carries an absolute epoch-ms expiry
+            user: payload.user,
+          };
+          if (payload.refresh_token) {
+            tokenData.refresh_token = payload.refresh_token;
+            // The dashboard AuthState has no refresh expiry; derive one only if the
+            // raw payload happens to carry it, else leave it undefined — TokenManager
+            // then refreshes until the backend definitively rejects the refresh token
+            // (identical to the OAuth-callback path).
+            if (typeof payload.refresh_expires_at === 'number') {
+              tokenData.refresh_expires_at = payload.refresh_expires_at;
+            } else if (typeof payload.refresh_expires_in === 'number') {
+              tokenData.refresh_expires_at = Date.now() + payload.refresh_expires_in * 1000;
+            }
+          }
+          await browser.storage.local.set(tokenData);
+        }
+
+        // Keep the composite authState for the getAuthHeaders fallback path.
         await authManager.saveAuthState(payload);
-        
+
         // Also broadcast to side panel if open
         try {
           await browser.runtime.sendMessage({
