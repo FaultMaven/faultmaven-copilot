@@ -6,14 +6,13 @@ import { fetchWithTimeout } from '~/lib/utils/fetch-timeout';
 const log = createLogger('CapabilitiesManager');
 
 /**
- * Where the currently-held capabilities came from:
- * - `network`: an authoritative live response from the backend.
- * - `cache`:   a previously-persisted response, served because the network
- *              fetch failed (degraded — the backend may have changed since).
- * - `fallback`: a fabricated self-hosted default, served because the fetch
- *              failed and no cache existed (degraded — connectivity unknown).
+ * Where the currently-held capabilities came from. Only `network` is
+ * authoritative; `cache`/`fallback` are degraded results served because the
+ * fetch failed. Tracked so a degraded result does NOT short-circuit the next
+ * fetch (a recovered backend must be re-detected rather than serving a stale
+ * fabricated fallback forever).
  */
-export type CapabilitiesSource = 'network' | 'cache' | 'fallback';
+type CapabilitiesSource = 'network' | 'cache' | 'fallback';
 
 export interface BackendCapabilities {
   deploymentMode: 'self-hosted' | 'cloud';
@@ -120,26 +119,6 @@ export class CapabilitiesManager {
     })();
 
     return this.fetchPromise;
-  }
-
-  /** How the currently-held capabilities were obtained (null before any fetch). */
-  getSource(): CapabilitiesSource | null {
-    return this.source;
-  }
-
-  /** True when the held capabilities came from a live backend response. */
-  isLive(): boolean {
-    return this.source === 'network';
-  }
-
-  /**
-   * True when serving cached / fabricated capabilities because the fetch
-   * failed. Callers that must not silently treat a degraded fallback as a real
-   * backend response (e.g. gating destructive or mode-specific UI) can check
-   * this instead of assuming success.
-   */
-  isDegraded(): boolean {
-    return this.capabilities !== null && this.source !== 'network';
   }
 
   getCapabilities(): BackendCapabilities | null {

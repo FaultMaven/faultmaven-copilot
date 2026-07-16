@@ -34,53 +34,44 @@ describe('CapabilitiesManager', () => {
 
     const caps = await mgr.fetch('https://api.example');
     expect(caps.deploymentMode).toBe('cloud');
-    expect(mgr.getSource()).toBe('network');
-    expect(mgr.isLive()).toBe(true);
-    expect(mgr.isDegraded()).toBe(false);
 
-    // Second call short-circuits — no second network request.
+    // Second call short-circuits an authoritative result — no second network request.
     await mgr.fetch('https://api.example');
     expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
   });
 
-  it('surfaces a fabricated fallback as degraded when the fetch fails with no cache', async () => {
+  it('serves a fabricated fallback when the fetch fails with no cache', async () => {
     fetchWithTimeout.mockRejectedValue(new Error('network down'));
     const mgr = new CapabilitiesManager();
 
     const caps = await mgr.fetch('https://api.example');
     expect(caps.deploymentMode).toBe('self-hosted'); // fabricated default
-    expect(mgr.getSource()).toBe('fallback');
-    expect(mgr.isLive()).toBe(false);
-    expect(mgr.isDegraded()).toBe(true);
   });
 
-  it('serves cached capabilities as degraded (not network) when the fetch fails', async () => {
+  it('serves cached capabilities when the fetch fails', async () => {
     fetchWithTimeout.mockRejectedValue(new Error('network down'));
     (global as any).browser.storage.local.get.mockResolvedValue({ backendCapabilities: liveCaps });
     const mgr = new CapabilitiesManager();
 
     const caps = await mgr.fetch('https://api.example');
     expect(caps.deploymentMode).toBe('cloud'); // from cache
-    expect(mgr.getSource()).toBe('cache');
-    expect(mgr.isDegraded()).toBe(true);
   });
 
   // Regression: a transient failure previously cached the fabricated fallback as
   // `this.capabilities`, so the short-circuit at the top of fetch() returned it
-  // forever — a recovered backend was never re-detected until reload.
+  // forever — a recovered backend was never re-detected until reload. Only an
+  // authoritative (network) result may short-circuit future fetches.
   it('re-detects a live backend on the next call after a degraded fallback', async () => {
     const mgr = new CapabilitiesManager();
 
     fetchWithTimeout.mockRejectedValueOnce(new Error('network down'));
-    await mgr.fetch('https://api.example');
-    expect(mgr.getSource()).toBe('fallback');
+    const degraded = await mgr.fetch('https://api.example');
+    expect(degraded.deploymentMode).toBe('self-hosted'); // fabricated fallback
 
-    // Backend recovers.
+    // Backend recovers — the degraded result must NOT have poisoned the cache.
     fetchWithTimeout.mockResolvedValueOnce(okResponse(liveCaps));
     const caps = await mgr.fetch('https://api.example');
     expect(caps.deploymentMode).toBe('cloud');
-    expect(mgr.getSource()).toBe('network');
-    expect(mgr.isLive()).toBe(true);
     expect(fetchWithTimeout).toHaveBeenCalledTimes(2);
   });
 });
