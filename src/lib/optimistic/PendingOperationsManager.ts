@@ -104,9 +104,18 @@ export class PendingOperationsManager {
 
       try {
         await operation.retryFn();
-        this.complete(id);
+        // The retry function (a re-submission) self-manages this op's status —
+        // it calls complete() on success and fail() on failure. Only mark it
+        // completed if it is STILL pending; otherwise a re-run that already failed
+        // would be wrongly flipped to completed (losing the failed state + retry
+        // affordance), because the re-run swallows its own error so retryFn resolves.
+        if (this.operations.get(id)?.status === 'pending') {
+          this.complete(id);
+        }
       } catch (error) {
-        this.fail(id, error instanceof Error ? error.message : 'Retry failed');
+        // Don't roll back on a retry failure — the re-submission's own failure
+        // handler already updated the UI; a rollback would delete the messages.
+        this.fail(id, error instanceof Error ? error.message : 'Retry failed', false);
       }
     }
   }

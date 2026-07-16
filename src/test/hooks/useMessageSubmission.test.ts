@@ -219,7 +219,8 @@ describe('useMessageSubmission', () => {
 
     // Wait for retries to complete and failure to be handled
     await waitFor(() => {
-      expect(pendingOpsManager.fail).toHaveBeenCalledWith('ai-msg-id', expect.stringContaining('Network Error'));
+      // Must fail WITHOUT rollback (third arg false) so the failed turn stays visible.
+      expect(pendingOpsManager.fail).toHaveBeenCalledWith('ai-msg-id', expect.stringContaining('Network Error'), false);
     });
 
     expect(mockShowError).toHaveBeenCalled();
