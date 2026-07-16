@@ -607,5 +607,26 @@ describe('Background Service Worker', () => {
       expect(stored.refresh_token).toBe('bridge-refresh');
       expect(stored.refresh_expires_at).toBeUndefined();
     });
+
+    it('broadcasts auth_state_changed in the { isAuthenticated, user } contract shape', async () => {
+      mockBrowser.runtime.sendMessage.mockClear();
+      await storeAuth(bridgePayload);
+
+      // Regression: it previously broadcast the raw token payload, whose
+      // `isAuthenticated` is undefined, so the side-panel listener set
+      // isAuthenticated: undefined.
+      expect(mockBrowser.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'auth_state_changed',
+          authState: { isAuthenticated: true, user: bridgePayload.user }
+        })
+      );
+      // Must NOT leak the access/refresh tokens into the broadcast.
+      const broadcast = mockBrowser.runtime.sendMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m?.type === 'auth_state_changed');
+      expect(broadcast.authState.access_token).toBeUndefined();
+      expect(broadcast.authState.refresh_token).toBeUndefined();
+    });
   });
 });
