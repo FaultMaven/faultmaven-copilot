@@ -11,6 +11,7 @@ import { ErrorScreen } from "./components/ErrorScreen";
 import { AuthScreen } from "./components/AuthScreen";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
+import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { getDashboardUrl } from "../../config";
@@ -129,7 +130,14 @@ function SidePanelAppContent() {
     // 2. Clear persistent storage immediately
     await PersistenceManager.clearAllPersistenceData({ preservePinnedCases: true });
 
-    // 3. Reset local store states
+    // 3. Reset the in-memory optimistic singletons. These are module-level and
+    //    outlive the session (the side panel is not reloaded on logout), so the
+    //    previous user's id-mappings and pending operations would otherwise leak
+    //    into the next session's optimistic state.
+    idMappingManager.clear();
+    pendingOpsManager.clear();
+
+    // 4. Reset local store states
     useAppStore.setState({
       conversationTitles: {},
       titleSources: {},

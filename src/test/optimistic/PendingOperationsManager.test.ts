@@ -70,4 +70,17 @@ describe('PendingOperationsManager', () => {
       expect(rollback).not.toHaveBeenCalled();
     });
   });
+
+  describe('clear', () => {
+    it('drops all tracked operations (logout must not leak them into the next session)', () => {
+      const m = new PendingOperationsManager();
+      m.add(makeOp({ id: 'a' }));
+      m.add(makeOp({ id: 'b' }));
+      expect(Object.keys(m.getAll())).toHaveLength(2);
+
+      m.clear();
+
+      expect(Object.keys(m.getAll())).toHaveLength(0);
+    });
+  });
 });

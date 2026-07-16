@@ -264,6 +264,18 @@ export class PendingOperationsManager {
   }
 
   /**
+   * Clear all tracked operations and stop the cleanup timer.
+   *
+   * Used on logout: this manager is a module singleton that outlives a session
+   * (the side panel is not reloaded on logout), so without this the previous
+   * user's pending optimistic operations would leak into the next session.
+   */
+  clear(): void {
+    this.operations.clear();
+    this.stopCleanupTimer();
+  }
+
+  /**
    * Stop automatic cleanup timer and clear all operations
    */
   destroy(): void {
