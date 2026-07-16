@@ -8,6 +8,11 @@ vi.mock('../../../config', () => ({
   getApiUrl: async () => 'https://api.faultmaven.ai'
 }));
 
+// Mock auth-config so the mode-aware refresh doesn't fetch /auth/config. Default
+// to OAuth ('oidc' provider) so the existing refresh tests keep using /oauth/token.
+const { mockGetAuthConfig } = vi.hoisted(() => ({ mockGetAuthConfig: vi.fn() }));
+vi.mock('../../../lib/auth/auth-config', () => ({ getAuthConfig: mockGetAuthConfig }));
+
 // Mock browser storage using vi.hoisted to prevent hoisting problems
 const { mockBrowserStorage } = vi.hoisted(() => {
   let store: Record<string, any> = {};
@@ -47,6 +52,7 @@ describe('TokenManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    mockGetAuthConfig.mockResolvedValue({ provider: 'oidc' }); // OAuth mode by default
     tokenManager = new TokenManager();
 
     // Mock Web Locks API. Serialize like a real exclusive lock, but each
@@ -154,6 +160,45 @@ describe('TokenManager', () => {
     const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
     expect(stored.access_token).toBe('new-access-token');
     expect(stored.refresh_token).toBe('new-refresh-token');
+  });
+
+  it('refreshes via the LOCAL /auth/refresh endpoint in local mode', async () => {
+    mockGetAuthConfig.mockResolvedValue({ provider: 'local' });
+    await mockBrowserStorage.local.set({
+      access_token: 'expiring-access-token',
+      token_type: 'bearer',
+      expires_at: Date.now() + 2 * 60 * 1000, // expiring soon
+      refresh_token: 'local-refresh-token',
+      // No refresh_expires_at (local sessions have none) — must not force a logout.
+      session_id: 'session-123',
+      user: { user_id: '1' }
+    });
+
+    // Local /auth/refresh response: NO refresh_expires_in.
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'local-new-access',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'local-new-refresh'
+      })
+    });
+    global.fetch = mockFetch;
+
+    const token = await tokenManager.getValidAccessToken();
+
+    expect(token).toBe('local-new-access');
+    // Hit the local endpoint with the local body (no grant_type/client_id).
+    const [calledUrl, calledInit] = mockFetch.mock.calls[0];
+    expect(calledUrl).toBe('https://api.faultmaven.ai/api/v1/auth/refresh');
+    expect(JSON.parse(calledInit.body)).toEqual({ refresh_token: 'local-refresh-token' });
+
+    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token', 'refresh_expires_at']);
+    expect(stored.access_token).toBe('local-new-access');
+    expect(stored.refresh_token).toBe('local-new-refresh'); // rotated
+    // No refresh expiry persisted for local sessions.
+    expect(stored.refresh_expires_at).toBeUndefined();
   });
 
   it('should use Web Locks API to serialize concurrent requests', async () => {

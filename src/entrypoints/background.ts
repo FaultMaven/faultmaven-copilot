@@ -35,19 +35,32 @@ export default defineBackground({
             expires_at: payload.expires_at, // bridge payload carries an absolute epoch-ms expiry
             user: payload.user,
           };
+          // storage.set MERGES — it never removes keys. Clear stale refresh material
+          // from a previous session so it can't (a) log the user out via a past/null
+          // refresh_expires_at (TokenManager treats `<= now` as an expired refresh
+          // window and clears everything), or (b) pair a PREVIOUS user's refresh_token
+          // with this login's access token.
+          const keysToRemove: string[] = [];
           if (payload.refresh_token) {
             tokenData.refresh_token = payload.refresh_token;
             // The dashboard AuthState has no refresh expiry; derive one only if the
-            // raw payload happens to carry it, else leave it undefined — TokenManager
-            // then refreshes until the backend definitively rejects the refresh token
-            // (identical to the OAuth-callback path).
+            // raw payload happens to carry it, else drop any stale value — an absent
+            // refresh_expires_at makes TokenManager refresh until the backend
+            // definitively rejects (identical to the OAuth-callback path).
             if (typeof payload.refresh_expires_at === 'number') {
               tokenData.refresh_expires_at = payload.refresh_expires_at;
             } else if (typeof payload.refresh_expires_in === 'number') {
               tokenData.refresh_expires_at = Date.now() + payload.refresh_expires_in * 1000;
+            } else {
+              keysToRemove.push('refresh_expires_at');
             }
+          } else {
+            keysToRemove.push('refresh_token', 'refresh_expires_at');
           }
           await browser.storage.local.set(tokenData);
+          if (keysToRemove.length > 0) {
+            await browser.storage.local.remove(keysToRemove);
+          }
         }
 
         // Keep the composite authState for the getAuthHeaders fallback path.

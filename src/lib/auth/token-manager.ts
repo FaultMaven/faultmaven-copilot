@@ -14,6 +14,7 @@ import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { retryWithBackoff, isRetryableError } from '../utils/retry';
+import { getAuthConfig } from './auth-config';
 
 const log = createLogger('TokenManager');
 
@@ -174,21 +175,38 @@ export class TokenManager {
       throw err;
     }
 
-    log.info('Refreshing access token...');
     const apiUrl = await getApiUrl();
+
+    // Mode-aware refresh endpoint. Bridge/standalone sessions run in LOCAL mode,
+    // where the OAuth token endpoint (/oauth/token) is NOT mounted — refreshing
+    // there 404s and forces a re-login. Local mode exposes POST /auth/refresh
+    // ({refresh_token} -> {access_token, token_type, expires_in, refresh_token};
+    // no refresh_expires_in). OAuth/cloud mode uses the RFC 6749 refresh grant.
+    const isLocal = await this.isLocalAuthMode();
+    log.info('Refreshing access token...', { mode: isLocal ? 'local' : 'oauth' });
+
+    const { url, body } = isLocal
+      ? {
+          url: `${apiUrl}/api/v1/auth/refresh`,
+          body: { refresh_token: tokens.refresh_token },
+        }
+      : {
+          url: `${apiUrl}/api/v1/auth/oauth/token`,
+          body: {
+            grant_type: 'refresh_token',
+            refresh_token: tokens.refresh_token,
+            client_id: 'faultmaven-copilot',
+          },
+        };
 
     // Network/timeout errors from fetchWithTimeout propagate as-is; isRetryableError
     // treats TimeoutError/NetworkError (and unknown errors) as retryable.
     const response = await fetchWithTimeout(
-      `${apiUrl}/api/v1/auth/oauth/token`,
+      url,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          grant_type: 'refresh_token',
-          refresh_token: tokens.refresh_token,
-          client_id: 'faultmaven-copilot'
-        })
+        body: JSON.stringify(body)
       },
       TokenManager.REFRESH_TIMEOUT_MS
     );
@@ -212,13 +230,14 @@ export class TokenManager {
     // well-formed token response (e.g. an ingress interstitial / cached proxy
     // body) must not clobber storage with `access_token: undefined` /
     // `expires_at: NaN`. Treat it as retryable so we retry instead of corrupting.
+    // Note: `refresh_expires_in` is OAuth-only — local /auth/refresh omits it, so
+    // it is NOT part of the well-formed-payload check.
     const newTokens = await response.json().catch(() => null);
     if (
       !newTokens ||
       typeof newTokens.access_token !== 'string' ||
       typeof newTokens.refresh_token !== 'string' ||
-      typeof newTokens.expires_in !== 'number' ||
-      typeof newTokens.refresh_expires_in !== 'number'
+      typeof newTokens.expires_in !== 'number'
     ) {
       const err: any = new Error('Token refresh returned an invalid token payload');
       err.status = 502; // synthetic, retryable
@@ -226,17 +245,42 @@ export class TokenManager {
     }
 
     // Store new tokens (refresh token is rotated)
+    const now = Date.now();
     await browser.storage.local.set({
       access_token: newTokens.access_token,
       token_type: newTokens.token_type,
-      expires_at: Date.now() + (newTokens.expires_in * 1000),
+      expires_at: now + (newTokens.expires_in * 1000),
       refresh_token: newTokens.refresh_token,
-      refresh_expires_at: Date.now() + (newTokens.refresh_expires_in * 1000),
       // Keep existing session_id and user
       session_id: tokens.session_id,
       user: tokens.user
     });
-    log.info('Access token refreshed successfully');
+    if (typeof newTokens.refresh_expires_in === 'number') {
+      await browser.storage.local.set({
+        refresh_expires_at: now + (newTokens.refresh_expires_in * 1000),
+      });
+    } else {
+      // Local mode has no refresh expiry. Drop any stale refresh_expires_at so a
+      // past value can't be read as an expired refresh window on the next check.
+      await browser.storage.local.remove(['refresh_expires_at']);
+    }
+    log.info('Access token refreshed successfully', { mode: isLocal ? 'local' : 'oauth' });
+  }
+
+  /**
+   * Which refresh endpoint to use. The auth mode is established at login and
+   * cached (in-memory + storage, surviving SW restarts), so this is a cheap
+   * lookup during refresh. Defaults to OAuth (the cloud default) if the config
+   * can't be resolved.
+   */
+  private async isLocalAuthMode(): Promise<boolean> {
+    try {
+      const config = await getAuthConfig();
+      return config.provider === 'local';
+    } catch (error) {
+      log.warn('Could not resolve auth mode for refresh; defaulting to OAuth', error);
+      return false;
+    }
   }
 
   /**
