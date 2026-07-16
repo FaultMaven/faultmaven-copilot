@@ -297,6 +297,8 @@ const response = await authenticatedFetch('/api/endpoint');
 const response = await authenticatedFetchWithRetry('/api/endpoint');
 ```
 
+On a `401 SESSION_EXPIRED`, `authenticatedFetchWithRetry` calls `refreshSession()` (in `session-core.ts`). That refresh is **single-flighted** — N parallel failing requests trigger **one** `/sessions` POST, not a herd — via the Web Locks API (cross-context, matching `TokenManager`) with an in-context promise fallback, and it **persists the new `session_id`** to `browser.storage.local` so the retried request (and everything after) attaches `X-Session-Id`. Do not go back to calling `createSession()` directly on this path: it returns a session but does not persist it, so the retry would go out session-less.
+
 **Services** - Define API services in `src/lib/api/services/`.
 
 ### Error Handling
