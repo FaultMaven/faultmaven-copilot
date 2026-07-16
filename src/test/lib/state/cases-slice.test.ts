@@ -74,6 +74,53 @@ describe('cases-slice', () => {
 
       expect(api.getCaseConversation).toHaveBeenCalledWith('case-2', { offset: 0 });
     });
+
+    it('does NOT count failed (non-optimistic) items in the offset', async () => {
+      // A failed turn's AI item is optimistic:false but has NO backend row —
+      // counting it (the old `!optimistic` filter) would skip a real message.
+      useAppStore.setState({
+        conversations: {
+          'case-3': [
+            { id: 'm1', optimistic: false } as any,
+            { id: 'm2', optimistic: false, failed: true, error: true } as any
+          ]
+        }
+      });
+
+      useAppStore.getState().handleCaseSelect('case-3');
+      await Promise.resolve();
+
+      expect(api.getCaseConversation).toHaveBeenCalledWith('case-3', { offset: 1 });
+    });
+
+    it('does not fire a second delta fetch while one is in flight', async () => {
+      let resolveFetch: (v: any) => void = () => {};
+      (api.getCaseConversation as any).mockReturnValue(new Promise((r) => { resolveFetch = r; }));
+      useAppStore.setState({ conversations: { 'case-4': [{ id: 'm1', optimistic: false } as any] } });
+
+      useAppStore.getState().handleCaseSelect('case-4');
+      useAppStore.getState().handleCaseSelect('case-4'); // while the first is in flight
+
+      expect(api.getCaseConversation).toHaveBeenCalledTimes(1);
+      resolveFetch({ messages: [] });
+      await new Promise((r) => setTimeout(r, 0)); // let .finally clear the guard
+    });
+
+    it('dedups a message_id already present locally (no duplicate append)', async () => {
+      useAppStore.setState({ conversations: { 'case-5': [{ id: 'real-1', optimistic: false } as any] } });
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'real-1', role: 'user', content: 'dup' },   // already present locally
+          { message_id: 'real-2', role: 'agent', content: 'new' }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-5');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-5'];
+      expect(conv.map((m: any) => m.id)).toEqual(['real-1', 'real-2']);
+    });
   });
 
   describe('togglePinnedCase', () => {

@@ -15,6 +15,7 @@ import {
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { caseCacheManager } from '../../../lib/cache/case-cache';
 import { createLogger } from '../../../lib/utils/logger';
+import { isCommittedMessage } from '../../../lib/utils/memory-manager';
 
 const log = createLogger('CasesSlice');
 
@@ -48,6 +49,10 @@ export interface CasesSlice {
 
 export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get) => {
   let caseCreationPromise: Promise<string> | null = null;
+  // Cases with a delta fetch currently in flight — guards against a double-click /
+  // rapid A→B→A firing two fetches for the same case with the same offset (which
+  // would append the same rows twice and PERSIST the duplicates).
+  const inFlightDeltaFetches = new Set<string>();
 
   const createNewCaseViaAPI = async (sessionId: string | null): Promise<string> => {
     log.debug('Creating new case via /api/v1/cases (v2.0)');
@@ -276,13 +281,18 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
         return;
       }
 
-      // Offset must count only committed messages — optimistic (uncommitted)
-      // items do not exist on the backend, so including them would skip real
-      // messages in the delta fetch.
-      const offset = (get().conversations[caseId] ?? []).filter(
-        (m: OptimisticConversationItem) => !m.optimistic
-      ).length;
+      if (inFlightDeltaFetches.has(caseId)) {
+        log.debug('Delta fetch already in flight for case; skipping', { caseId });
+        return;
+      }
 
+      // Offset must count only COMMITTED messages (those that exist on the backend).
+      // `!optimistic` is wrong: a failed turn's AI item is non-optimistic but has NO
+      // backend row, so it would inflate the offset and skip a real message. Use
+      // isCommittedMessage (drops optimistic / loading / failed / error).
+      const offset = (get().conversations[caseId] ?? []).filter(isCommittedMessage).length;
+
+      inFlightDeltaFetches.add(caseId);
       getCaseConversation(resolvedCaseId, { offset })
         .then(data => {
           const incoming: OptimisticConversationItem[] = (data.messages || []).map((msg: any) => ({
@@ -300,6 +310,12 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
           if (incoming.length > 0) {
             set((state: any) => {
               const existing = state.conversations[caseId] || [];
+              // id-dedup (belt-and-suspenders vs offset drift / races): never append
+              // a message_id already present locally.
+              const existingIds = new Set(existing.map((m: OptimisticConversationItem) => m.id));
+              const fresh = incoming.filter(m => !existingIds.has(m.id));
+              if (fresh.length === 0) return state;
+
               let splitAt = existing.length;
               for (let i = existing.length - 1; i >= 0; i--) {
                 if (existing[i].optimistic) {
@@ -313,14 +329,15 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
               return {
                 conversations: {
                   ...state.conversations,
-                  [caseId]: [...committed, ...incoming, ...trailingOptimistic]
+                  [caseId]: [...committed, ...fresh, ...trailingOptimistic]
                 }
               };
             });
             log.info('Conversation delta applied', { caseId, added: incoming.length, offset });
           }
         })
-        .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }));
+        .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))
+        .finally(() => inFlightDeltaFetches.delete(caseId));
     },
 
     reconcileActiveCaseState: async () => {
