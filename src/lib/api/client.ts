@@ -102,7 +102,9 @@ export async function authenticatedFetchWithRetry(url: string, options: RequestI
         // Retry the request with the same options
         return await authenticatedFetch(url, options);
       } catch (refreshError) {
-        log.error('Session refresh failed:', refreshError);
+        // Covers both a failed refresh and a retry that 401s again (no second
+        // retry — the error propagates rather than looping).
+        log.error('Session refresh/retry failed:', refreshError);
         throw refreshError;
       }
     }

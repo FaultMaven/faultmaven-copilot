@@ -86,4 +86,30 @@ describe('refreshSession', () => {
     await refreshSession();
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(2);
   });
+
+  it('resets the in-context guard even when the refresh fails', async () => {
+    createSessionWithRecovery.mockRejectedValueOnce(new Error('network down'));
+    await expect(refreshSession()).rejects.toThrow('network down');
+
+    // Guard must be cleared so a later refresh can retry.
+    createSessionWithRecovery.mockResolvedValueOnce(sessionResponse());
+    await expect(refreshSession()).resolves.toBeUndefined();
+    expect(createSessionWithRecovery).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the Web Locks mutex when available (production path)', async () => {
+    // Provide a fake Web Locks impl so the actual extension code path runs.
+    const request = vi.fn(async (_name: string, _opts: any, cb: () => Promise<void>) => cb());
+    (navigator as any).locks = { request };
+
+    await refreshSession();
+
+    expect(request).toHaveBeenCalledWith(
+      'faultmaven-session-refresh',
+      { mode: 'exclusive' },
+      expect.any(Function)
+    );
+    expect(createSessionWithRecovery).toHaveBeenCalledTimes(1);
+    expect(storageSet).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-new' }));
+  });
 });
