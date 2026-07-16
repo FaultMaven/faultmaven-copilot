@@ -8,9 +8,10 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
-import { pendingOpsManager, IdMappingState, idMappingManager } from '../../../lib/optimistic';
+import { IdMappingState, idMappingManager } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
 import { useAppStore } from '../../../lib/state/store';
+import { memoryManager } from '../../../lib/utils/memory-manager';
 
 const log = createLogger('DataRecovery');
 
@@ -18,7 +19,6 @@ interface RecoveredData {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   conversations: Record<string, any[]>;
-  pendingOperations: Record<string, any>;
   optimisticCases: any[];
   pinnedCases: Set<string>;
   idMappings?: IdMappingState;
@@ -102,7 +102,6 @@ export function useDataRecovery(
           'conversationTitles',
           'titleSources',
           'conversations',
-          'pendingOperations',
           'optimisticCases',
           'idMappings',
           'pinnedCases'
@@ -111,15 +110,16 @@ export function useDataRecovery(
         log.debug('Retrieved from storage', {
           titleCount: stored.conversationTitles ? Object.keys(stored.conversationTitles).length : 0,
           conversationCount: stored.conversations ? Object.keys(stored.conversations).length : 0,
-          hasPendingOps: !!stored.pendingOperations,
           hasIdMappings: !!stored.idMappings
         });
 
         const recoveredData: RecoveredData = {
           conversationTitles: stored.conversationTitles || {},
           titleSources: stored.titleSources || {},
-          conversations: stored.conversations || {},
-          pendingOperations: stored.pendingOperations || {},
+          // Defensive re-sanitize: storage written before this fix (or by an
+          // interrupted flush) may still hold transient optimistic/loading items.
+          // Drop them here too so a reload can't rehydrate a stuck spinner.
+          conversations: memoryManager.sanitizeAndCapForPersistence(stored.conversations || {}, undefined),
           optimisticCases: stored.optimisticCases || [],
           pinnedCases: new Set(stored.pinnedCases || []),
           idMappings: undefined
@@ -137,19 +137,16 @@ export function useDataRecovery(
           }
         }
 
-        if (stored.pendingOperations) {
-          pendingOpsManager.updateOperations(stored.pendingOperations);
-          log.debug('Pending operations loaded', {
-            count: Object.keys(stored.pendingOperations).length
-          });
-        }
+        // pendingOperations is intentionally not rehydrated: its retry/rollback
+        // closures cannot survive serialization (see store.ts), so pendingOpsManager
+        // starts each session empty and in-flight/failed turns are reconciled from
+        // the backend on case open.
 
         // Hydrate the Zustand store
         useAppStore.setState({
           conversationTitles: recoveredData.conversationTitles,
           titleSources: recoveredData.titleSources,
           conversations: recoveredData.conversations,
-          pendingOperations: recoveredData.pendingOperations,
           optimisticCases: recoveredData.optimisticCases,
           pinnedCases: recoveredData.pinnedCases
         });

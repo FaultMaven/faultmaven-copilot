@@ -1,8 +1,57 @@
 import { describe, it, expect } from 'vitest';
-import { MemoryManager } from '~lib/utils/memory-manager';
+import { MemoryManager, isCommittedMessage } from '~lib/utils/memory-manager';
 import { OptimisticConversationItem } from '~lib/optimistic/types';
 
+const committedMsg = (over: Partial<OptimisticConversationItem>): OptimisticConversationItem => ({
+  id: 'm', timestamp: new Date(1000).toISOString(), optimistic: false, ...over
+});
+
 describe('MemoryManager', () => {
+  describe('isCommittedMessage', () => {
+    it('accepts only non-optimistic, non-loading, non-failed, non-error items', () => {
+      expect(isCommittedMessage(committedMsg({ optimistic: false }))).toBe(true);
+      expect(isCommittedMessage(committedMsg({ optimistic: true }))).toBe(false);
+      expect(isCommittedMessage(committedMsg({ optimistic: false, loading: true }))).toBe(false);
+      expect(isCommittedMessage(committedMsg({ optimistic: false, failed: true }))).toBe(false);
+      expect(isCommittedMessage(committedMsg({ optimistic: false, error: true }))).toBe(false);
+    });
+  });
+
+  describe('sanitizeAndCapForPersistence', () => {
+    it('drops transient messages and keeps committed ones', () => {
+      const manager = new MemoryManager();
+      const result = manager.sanitizeAndCapForPersistence({
+        'case-1': [
+          committedMsg({ id: 'ok', optimistic: false }),
+          committedMsg({ id: 'opt', optimistic: true }),
+          committedMsg({ id: 'spin', optimistic: false, loading: true }),
+          committedMsg({ id: 'fail', optimistic: false, failed: true })
+        ]
+      }, undefined);
+      expect(result['case-1'].map(m => m.id)).toEqual(['ok']);
+    });
+
+    it('drops conversations that become empty after stripping', () => {
+      const manager = new MemoryManager();
+      const result = manager.sanitizeAndCapForPersistence({
+        'gone': [committedMsg({ optimistic: true, loading: true })],
+        'kept': [committedMsg({ id: 'c', optimistic: false })]
+      }, undefined);
+      expect(result).not.toHaveProperty('gone');
+      expect(result).toHaveProperty('kept');
+    });
+
+    it('caps message count per conversation, keeping the most recent', () => {
+      const manager = new MemoryManager({ maxMessagesPerConversation: 3, minMessagesToKeep: 1 });
+      const many = Array.from({ length: 10 }).map((_, i) =>
+        committedMsg({ id: `m${i}`, optimistic: false, timestamp: new Date(1000 + i).toISOString() })
+      );
+      const result = manager.sanitizeAndCapForPersistence({ 'case-1': many }, undefined);
+      expect(result['case-1'].length).toBeLessThanOrEqual(3);
+      expect(result['case-1'].map(m => m.id)).toContain('m9');
+    });
+  });
+
   describe('cleanupConversation', () => {
     it('should not cleanup if messages are under the limit', () => {
       const manager = new MemoryManager({ maxMessagesPerConversation: 10 });
