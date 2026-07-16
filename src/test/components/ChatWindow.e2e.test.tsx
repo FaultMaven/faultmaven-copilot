@@ -199,6 +199,59 @@ describe('ChatInterface e2e', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(mockedGetCaseUI).toHaveBeenCalledTimes(1);
   });
+
+  it('re-renders ResolutionActionsCard when the case transitions to a terminal state (same case_id)', async () => {
+    // Regression: the ChatWindow memo comparator previously compared only
+    // activeCase.case_id, so an investigating → resolved transition that keeps
+    // the same id and conversation reference was suppressed and the terminal
+    // ResolutionActionsCard never appeared. The comparator must also watch
+    // state/closure fields.
+    //
+    // A stable conversation array reference isolates the state comparison:
+    // if `conversation` changed identity, React.memo would re-render anyway and
+    // the test would pass even against the buggy comparator. setActiveCase is
+    // intentionally omitted so the backend-sync effect cannot mutate state.
+    const convo: any[] = [];
+    const baseProps = {
+      activeCaseId: caseId,
+      conversations: { [caseId]: convo },
+      loading: false,
+      submitting: false,
+      sessionId,
+      onQuerySubmit: vi.fn(),
+      onTurnSubmit: vi.fn(),
+      failedOperations: [],
+      onRetryFailedOperation: vi.fn(),
+      onDismissFailedOperation: vi.fn(),
+      getErrorMessageForOperation: () => ({ title: '', message: '', recoveryHint: '' }),
+    };
+    const caseAt = (state: 'investigating' | 'resolved') => ({
+      case_id: caseId,
+      title: 'Test Case',
+      state,
+      created_at: new Date().toISOString(),
+      owner_id: 'user-1',
+      organization_id: 'org-1',
+      closure_reason: null,
+      closed_at: null,
+    });
+
+    const { rerender } = renderWithQueryClient(
+      <ChatInterface {...baseProps} activeCase={caseAt('investigating')} />
+    );
+
+    // Non-terminal: the resolution card must not be present.
+    expect(screen.queryByText('Case Resolved')).not.toBeInTheDocument();
+
+    // Transition to resolved with the SAME case_id and SAME conversation ref.
+    rerender(
+      <ChatInterface {...baseProps} activeCase={caseAt('resolved')} />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText('Case Resolved')).toBeInTheDocument()
+    );
+  });
 });
 
 

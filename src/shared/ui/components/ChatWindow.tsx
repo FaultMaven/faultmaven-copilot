@@ -628,9 +628,18 @@ const ChatWindowComponent = function ChatWindow({
 };
 
 export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
+  // Compare the render-affecting fields of activeCase, not just its id.
+  // A state transition (e.g. investigating → resolved) or closure keeps the
+  // same case_id, so comparing case_id alone would suppress the re-render that
+  // surfaces ResolutionActionsCard and the terminal-state UI. Callbacks are
+  // intentionally excluded: the parent does not memoize them and the submission
+  // hooks read live state from the store, so their identity is not meaningful.
   return (
     prevProps.conversation === nextProps.conversation &&
     prevProps.activeCase?.case_id === nextProps.activeCase?.case_id &&
+    prevProps.activeCase?.state === nextProps.activeCase?.state &&
+    prevProps.activeCase?.closure_reason === nextProps.activeCase?.closure_reason &&
+    prevProps.activeCase?.closed_at === nextProps.activeCase?.closed_at &&
     prevProps.loading === nextProps.loading &&
     prevProps.sessionId === nextProps.sessionId &&
     prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat
