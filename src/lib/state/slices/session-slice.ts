@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { browser } from 'wxt/browser';
 import { createSession } from '../../../lib/api';
+import { refreshSession as coreRefreshSession } from '../../api/session-core';
 import { heartbeatSession } from '../../api/services/session-service';
 import { tokenManager } from '../../auth/token-manager';
 import { createLogger } from '../../../lib/utils/logger';
@@ -123,22 +124,28 @@ export const createSessionSlice: StateCreator<any, [], [], SessionSlice> = (set,
     refreshSession: async (): Promise<string> => {
       try {
         log.info('Refreshing session');
-        const session = await createSession();
 
-        await browser.storage.local.set({
-          sessionId: session.session_id,
-          sessionCreatedAt: Date.now(),
-          sessionResumed: session.session_resumed || false,
-          clientId: session.client_id
-        });
+        // Route through session-core's refresh, which is single-flighted across
+        // contexts via the Web Locks API and persists the new session_id.
+        // Calling createSession() directly here bypassed that mutex, so
+        // concurrent callers (this slice's refresh + the 401-retry path in
+        // client.ts, or two panels) herded parallel /sessions POSTs; it also
+        // duplicated the persistence logic that could drift from session-core.
+        await coreRefreshSession();
+
+        const stored = await browser.storage.local.get(['sessionId']);
+        const sessionId = stored.sessionId as string | undefined;
+        if (!sessionId) {
+          throw new Error('Session refresh did not persist a session_id');
+        }
 
         set({
-          sessionId: session.session_id,
+          sessionId,
           isSessionInitialized: true,
           sessionError: null
         });
 
-        return session.session_id;
+        return sessionId;
       } catch (error) {
         log.error('Session refresh failed', error);
         throw error;
