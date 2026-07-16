@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { authManager } from '../auth/auth-manager';
 import { AuthenticationError, SessionExpiredError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
-import { createSession } from './session-core';
+import { refreshSession } from './session-core';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 
@@ -79,8 +79,11 @@ async function handleSessionExpired(): Promise<void> {
  * Session Expiration Handling (Option C):
  * 1. If backend returns 401 with SESSION_EXPIRED error code
  * 2. Clear stale session_id from storage
- * 3. Call createSession() to get fresh session (uses client_id for resumption)
- * 4. Retry the request once with new session_id
+ * 3. refreshSession() gets a fresh session (uses client_id for resumption),
+ *    single-flighted across concurrent requests/contexts, and PERSISTS the new
+ *    session_id to storage
+ * 4. Retry the request once — getAuthHeaders now reads the persisted session_id
+ *    and attaches X-Session-Id
  */
 export async function authenticatedFetchWithRetry(url: string, options: RequestInit = {}): Promise<Response> {
   try {
@@ -92,9 +95,9 @@ export async function authenticatedFetchWithRetry(url: string, options: RequestI
       log.info('Session expired, attempting refresh and retry...');
 
       try {
-        // Get fresh session (this will call createSession which uses client_id)
-        const newSession = await createSession();
-        log.info('Fresh session obtained:', newSession.session_id);
+        // Single-flighted refresh: N parallel 401s trigger ONE /sessions POST,
+        // and the new session_id is persisted so the retry carries X-Session-Id.
+        await refreshSession();
 
         // Retry the request with the same options
         return await authenticatedFetch(url, options);
