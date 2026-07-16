@@ -6,6 +6,7 @@ import config from '../config';
 import { reconcileAuthBridgeRegistration } from '../lib/auth/auth-bridge-registration';
 import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
 import { createLogger } from '../lib/utils/logger';
+import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
 
 export default defineBackground({
   main() {
@@ -66,11 +67,15 @@ export default defineBackground({
         // Keep the composite authState for the getAuthHeaders fallback path.
         await authManager.saveAuthState(payload);
 
-        // Also broadcast to side panel if open
+        // Also broadcast to side panel if open. The auth_state_changed contract
+        // (AuthStateChangedEvent) is { isAuthenticated, user } — NOT the raw
+        // token payload. Broadcasting `payload` sent {access_token, …, user},
+        // whose `isAuthenticated` is undefined, so the listener set
+        // isAuthenticated: undefined and the panel's auth flag was wrong.
         try {
           await browser.runtime.sendMessage({
             type: "auth_state_changed",
-            authState: payload
+            authState: { isAuthenticated: true, user: payload.user }
           });
         } catch (e) {
           // Ignore if no listener
@@ -318,7 +323,7 @@ export default defineBackground({
         const { getApiUrl } = await import('../config');
         const apiUrl = await getApiUrl();
 
-        const tokenResponse = await fetch(`${apiUrl}/api/v1/auth/oauth/token`, {
+        const tokenResponse = await fetchWithTimeout(`${apiUrl}/api/v1/auth/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -399,11 +404,12 @@ export default defineBackground({
 
         log.info('OAuth authentication completed successfully');
 
-        // Broadcast auth state change
+        // Broadcast auth state change. Send the { isAuthenticated, user }
+        // contract shape, not the raw token AuthState (see handleStoreAuth).
         try {
           await browser.runtime.sendMessage({
             type: "auth_state_changed",
-            authState: authState
+            authState: { isAuthenticated: true, user: authState.user }
           });
         } catch (e) {
           // Ignore if no listener (side panel may not be open)
