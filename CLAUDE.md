@@ -492,6 +492,19 @@ const POLL_MAX_MS = 10000;       // Max interval cap
 const POLL_MAX_TOTAL_MS = 600000; // 10 min timeout
 ```
 
+`POLL_MAX_TOTAL_MS` is a **wall-clock** budget measured with `Date.now()` from the
+first poll — it counts both the time spent inside each poll request and the
+backoff sleeps. (Do not re-introduce the old `elapsed += delay` accounting: it
+counted only sleeps, so a poll stalled up to the client timeout contributed
+nothing and the real ceiling became effectively unbounded.)
+
+`submitTurn(caseId, request, { signal })` accepts an optional `AbortSignal`.
+Passing it lets a caller cancel an in-flight turn — including its async polling —
+so a detached poll loop stops instead of hammering the job endpoint. The
+side-panel hooks (`useMessageSubmission`, `useDataUpload`) abort their in-flight
+turns on unmount; abort surfaces as an `AbortError` (non-retryable) and is
+treated as a **silent cancellation**, not a failed turn.
+
 ### Cross-Context Communication
 
 Use EventBus for Background ↔ Sidepanel communication:

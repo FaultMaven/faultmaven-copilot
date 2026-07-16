@@ -212,6 +212,48 @@ describe('Case Service', () => {
         caseService.submitTurn('case-123', { query: 'test' })
       ).rejects.toThrow('Case not found: Please refresh and try again');
     });
+
+    it('rejects immediately with AbortError if the signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        caseService.submitTurn('case-123', { query: 'test' }, { signal: controller.signal })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      // No request should have been issued for an already-cancelled turn.
+      expect(client.authenticatedFetchWithRetry).not.toHaveBeenCalled();
+    });
+
+    it('stops async (202) polling and rejects when the caller aborts mid-flight', async () => {
+      const controller = new AbortController();
+      const acceptedHeaders = { get: (k: string) => (k === 'Location' ? '/api/v1/jobs/job-1' : null) };
+
+      (client.authenticatedFetchWithRetry as any)
+        // POST -> 202 Accepted with a job Location to poll.
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 202,
+          headers: acceptedHeaders,
+          json: vi.fn().mockResolvedValue({})
+        })
+        // First poll -> still processing; abort during the call so the
+        // subsequent backoff sleep must short-circuit instead of waiting it out.
+        .mockImplementationOnce(async () => {
+          controller.abort();
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: vi.fn() },
+            json: vi.fn().mockResolvedValue({ status: 'processing' })
+          };
+        });
+
+      await expect(
+        caseService.submitTurn('case-123', { query: 'test' }, { signal: controller.signal })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      // POST + exactly one poll — polling must not continue after the abort.
+      expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('getCaseConversation', () => {

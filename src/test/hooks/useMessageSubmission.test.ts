@@ -143,10 +143,13 @@ describe('useMessageSubmission', () => {
     expect(useAppStore.getState().conversations['case-123']).toHaveLength(2);
     expect(pendingOpsManager.add).toHaveBeenCalled();
 
-    // 2. API Call - now uses submitTurn with TurnRequest
-    expect(api.submitTurn).toHaveBeenCalledWith('case-123', expect.objectContaining({
-      query: 'test query',
-    }));
+    // 2. API Call - now uses submitTurn with TurnRequest + an abort signal
+    // (so an unmount cancels the turn's async polling).
+    expect(api.submitTurn).toHaveBeenCalledWith(
+      'case-123',
+      expect.objectContaining({ query: 'test query' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
 
     // 3. Success handling
     expect(pendingOpsManager.complete).toHaveBeenCalledWith('ai-msg-id');
