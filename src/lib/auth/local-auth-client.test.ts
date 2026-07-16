@@ -133,6 +133,49 @@ describe('LocalAuthClient', () => {
       // The caller (useAuth) broadcasts after clearing the old session.
     });
 
+    it('never writes a NaN/null refresh_expires_at when the login has no refresh token', async () => {
+      // Local login responses carry no refresh_expires_in. Deriving
+      // Date.now() + undefined*1000 = NaN (→ null on Chrome) reads as an EXPIRED
+      // refresh window and force-logs-out the user at first expiry. Must not happen.
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: 'a', token_type: 'bearer', expires_in: 3600,
+          session_id: 's', user: { user_id: 'u', username: 'x', roles: ['user'] }
+        })
+      });
+
+      await client.signIn({ username: 'x', password: 'p' });
+
+      const setArg = (browser.storage.local.set as any).mock.calls.at(-1)[0];
+      expect('refresh_expires_at' in setArg).toBe(false);
+      expect('refresh_token' in setArg).toBe(false);
+      // Stale refresh material from a prior session is explicitly removed.
+      expect(browser.storage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['refresh_token', 'refresh_expires_at'])
+      );
+    });
+
+    it('persists a refresh_token when the login response carries one (no NaN expiry)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: 'a', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
+          session_id: 's', user: { user_id: 'u', username: 'x', roles: ['user'] }
+        })
+      });
+
+      await client.signIn({ username: 'x', password: 'p' });
+
+      const setArg = (browser.storage.local.set as any).mock.calls.at(-1)[0];
+      expect(setArg.refresh_token).toBe('r');
+      // No refresh_expires_in in a local response → no derived (NaN) window.
+      expect('refresh_expires_at' in setArg).toBe(false);
+      expect(browser.storage.local.remove).toHaveBeenCalledWith(['refresh_expires_at']);
+    });
+
     it('should successfully sign in with only username (no password)', async () => {
       const mockTokenResponse = {
         access_token: 'test-access-token',

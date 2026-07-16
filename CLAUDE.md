@@ -213,6 +213,15 @@ The extension supports two authentication modes, determined by backend configura
 
 Auth mode is auto-detected via `GET /api/v1/auth/config`.
 
+**Token refresh is mode-aware.** `TokenManager.performRefreshOnce` picks the refresh endpoint by auth mode (from the cached `getAuthConfig()`):
+
+- **Local mode** (standalone / dashboard-bridge sessions): `POST /api/v1/auth/refresh` with `{ refresh_token }` → `{ access_token, token_type, expires_in, refresh_token }` (rotated; **no** `refresh_expires_in`). The OAuth `/oauth/token` endpoint is **not mounted** in local mode, so refreshing there 404s and forces a re-login — don't hardcode it.
+- **OAuth/cloud mode**: `POST /api/v1/auth/oauth/token` (RFC 6749 refresh grant) → includes `refresh_expires_in`.
+
+`refresh_expires_in` is OAuth-only, so it is **not** part of the well-formed-payload check; when absent, `refresh_expires_at` is cleared (an undefined refresh window means "refresh until the backend definitively rejects").
+
+**Dashboard-bridge sessions** (`handleStoreAuth`) persist the TokenManager keys — including `refresh_token` — from the dashboard's `fm_auth_state` payload, not just the composite `authState`; otherwise a bridge session has no refresh material and silently logs out at access-token expiry.
+
 **Auth teardown — two variants (do not confuse):**
 
 - `authManager.clearAuthState()` — **token-preserving**. Clears only the composite `authState` key (+ case cache). Used inside the normal access-token-expiry path (`getAuthState()`), where the `refresh_token` managed by `TokenManager` must survive so the session can be silently refreshed.

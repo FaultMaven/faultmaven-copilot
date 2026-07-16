@@ -248,17 +248,13 @@ export class LocalAuthClient {
    */
   private async storeTokens(tokenResponse: AuthTokenResponse): Promise<void> {
     const expiresAt = Date.now() + (tokenResponse.expires_in * 1000);
+    const refreshToken = (tokenResponse as any).refresh_token;
+    const refreshExpiresIn = (tokenResponse as any).refresh_expires_in;
 
-    await browser.storage.local.set({
+    const data: Record<string, any> = {
       access_token: tokenResponse.access_token,
       token_type: tokenResponse.token_type,
       expires_at: expiresAt,
-      // Local mode tokens don't have refresh tokens by default
-      // Backend may add refresh_token support in the future
-      refresh_token: (tokenResponse as any).refresh_token || null,
-      refresh_expires_at: (tokenResponse as any).refresh_token
-        ? Date.now() + ((tokenResponse as any).refresh_expires_in * 1000)
-        : null,
       session_id: tokenResponse.session_id,
       user: tokenResponse.user,
       // Store composite authState for authManager compatibility
@@ -268,7 +264,30 @@ export class LocalAuthClient {
         expires_at: expiresAt,
         user: tokenResponse.user
       }
-    });
+    };
+
+    // Persist refresh material ONLY when the response actually carries it. Local
+    // login responses have no refresh_expires_in, so NEVER derive
+    // `Date.now() + undefined*1000` (= NaN, which serializes to null on Chrome and
+    // reads as an expired refresh window → TokenManager clears tokens → logout at
+    // first expiry). An absent refresh_expires_at means "refresh until the backend
+    // definitively rejects" — matching TokenManager's mode-aware local refresh.
+    const keysToRemove: string[] = [];
+    if (refreshToken) {
+      data.refresh_token = refreshToken;
+      if (typeof refreshExpiresIn === 'number') {
+        data.refresh_expires_at = Date.now() + refreshExpiresIn * 1000;
+      } else {
+        keysToRemove.push('refresh_expires_at');
+      }
+    } else {
+      keysToRemove.push('refresh_token', 'refresh_expires_at');
+    }
+
+    await browser.storage.local.set(data);
+    if (keysToRemove.length > 0) {
+      await browser.storage.local.remove(keysToRemove);
+    }
 
     log.debug('Tokens stored in chrome.storage.local');
   }

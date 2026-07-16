@@ -7,8 +7,15 @@
 
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
+import { fetchWithTimeout } from '../utils/fetch-timeout';
 
 const log = createLogger('AuthConfig');
+
+// Bound the /auth/config fetch: getAuthConfig() is called from TokenManager while
+// it holds the 'faultmaven-token-refresh' Web Lock, so a hung request here would
+// pin that mutex and stall every other context's refresh. On timeout/failure the
+// caller falls back to the last-known-good cached config.
+const AUTH_CONFIG_TIMEOUT_MS = 10_000;
 
 /**
  * Backend auth config response (from /api/v1/auth/config)
@@ -97,12 +104,12 @@ export async function getAuthConfig(): Promise<AuthConfig> {
 
   try {
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/api/v1/auth/config`, {
+    const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/config`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
       }
-    });
+    }, AUTH_CONFIG_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(`Auth config failed: ${response.status}`);

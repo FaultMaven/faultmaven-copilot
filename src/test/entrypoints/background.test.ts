@@ -503,4 +503,67 @@ describe('Background Service Worker', () => {
       expect(mockBrowser.tabs.remove).not.toHaveBeenCalled();
     });
   });
+
+  describe('Auth Bridge storeAuth', () => {
+    const bridgePayload = {
+      access_token: 'bridge-access',
+      token_type: 'bearer',
+      expires_at: Date.now() + 3600_000,
+      refresh_token: 'bridge-refresh',
+      user: { user_id: 'u1', username: 'alice', roles: ['user'] }
+    };
+
+    const storeAuth = (payload: any) => new Promise<any>((resolve) => {
+      listeners['message']({ action: 'storeAuth', payload }, { id: 'test-copilot-id' }, resolve);
+    });
+
+    it('persists the refresh_token (TokenManager keys) so a bridge session can auto-refresh', async () => {
+      const res = await storeAuth(bridgePayload);
+
+      expect(res).toEqual({ status: 'success' });
+      // The whole point: refresh material must land in the TokenManager keys, not
+      // just the composite authState.
+      const stored = await mockStorage.local.get([
+        'access_token', 'refresh_token', 'token_type', 'expires_at'
+      ]);
+      expect(stored.access_token).toBe('bridge-access');
+      expect(stored.refresh_token).toBe('bridge-refresh');
+      expect(stored.token_type).toBe('bearer');
+      expect(stored.expires_at).toBe(bridgePayload.expires_at);
+      // Composite authState still saved for the fallback path.
+      expect(mockAuthSaveState).toHaveBeenCalledWith(bridgePayload);
+    });
+
+    it('derives refresh_expires_at from refresh_expires_in when present', async () => {
+      const before = Date.now();
+      await storeAuth({ ...bridgePayload, refresh_expires_in: 604800 });
+
+      const stored = await mockStorage.local.get(['refresh_expires_at']);
+      expect(stored.refresh_expires_at).toBeGreaterThanOrEqual(before + 604800 * 1000);
+    });
+
+    it('handles a payload without refresh_token and clears stale refresh material', async () => {
+      // Seed a PREVIOUS session's refresh material.
+      await mockStorage.local.set({ refresh_token: 'stale-refresh', refresh_expires_at: 123 });
+
+      const { refresh_token, ...noRefresh } = bridgePayload;
+      await storeAuth(noRefresh);
+
+      const stored = await mockStorage.local.get(['access_token', 'refresh_token', 'refresh_expires_at']);
+      expect(stored.access_token).toBe('bridge-access');
+      // Stale refresh material must be removed — not left to pair with the new
+      // access token or to trigger a spurious logout.
+      expect(stored.refresh_token).toBeUndefined();
+      expect(stored.refresh_expires_at).toBeUndefined();
+    });
+
+    it('clears a stale refresh_expires_at when the new payload has none', async () => {
+      await mockStorage.local.set({ refresh_expires_at: 123 }); // past → would force logout
+      await storeAuth(bridgePayload); // has refresh_token but no expiry field
+
+      const stored = await mockStorage.local.get(['refresh_token', 'refresh_expires_at']);
+      expect(stored.refresh_token).toBe('bridge-refresh');
+      expect(stored.refresh_expires_at).toBeUndefined();
+    });
+  });
 });
