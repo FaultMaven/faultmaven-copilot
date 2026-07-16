@@ -98,7 +98,7 @@ function OptionsApp() {
 
   const handleSignOut = async () => {
     try {
-      await authManager.clearAuthState();
+      await authManager.clearAllAuthData();
       setUser(null);
       showStatus('Signed out. Reload the side panel to sign in again.', 'info');
     } catch (error) {

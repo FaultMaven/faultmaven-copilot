@@ -155,6 +155,31 @@ describe('Authentication API', () => {
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
     });
 
+    it('clearAuthState is token-PRESERVING (does not remove token keys)', async () => {
+      await authManager.clearAuthState();
+
+      // Only the composite authState is removed — the refresh_token must survive
+      // the normal access-token-expiry path so the session can be refreshed.
+      const removedKeySets = mockBrowserStorage.local.remove.mock.calls.map((c: any[]) => c[0]);
+      expect(removedKeySets).toContainEqual(['authState']);
+      const clearedTokenKeys = removedKeySets.some(
+        (keys: string[]) => Array.isArray(keys) && keys.includes('refresh_token')
+      );
+      expect(clearedTokenKeys).toBe(false);
+    });
+
+    it('clearAllAuthData clears BOTH the authState and all token keys', async () => {
+      await authManager.clearAllAuthData();
+
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          'access_token', 'token_type', 'expires_at',
+          'refresh_token', 'refresh_expires_at', 'session_id', 'user'
+        ])
+      );
+    });
+
     it('checks authentication status correctly', async () => {
       // Test authenticated state
       mockBrowserStorage.local.get.mockResolvedValue({
@@ -327,6 +352,13 @@ describe('Authentication API', () => {
       // Verify auth state is cleared
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
 
+      // Verify the OAuth token keys are ALSO cleared — otherwise a stale
+      // refresh_token survives and TokenManager silently re-authenticates the
+      // "logged out" user (the bug this PR fixes).
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      );
+
       // Verify cross-tab message is sent
       expect(mockBrowserRuntime.sendMessage).toHaveBeenCalledWith({
         type: 'auth_state_changed',
@@ -352,8 +384,11 @@ describe('Authentication API', () => {
 
       await expect(logoutAuth()).rejects.toThrow('Server error');
 
-      // Auth state should still be cleared even on API failure
+      // Auth state AND tokens should still be cleared even on API failure.
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      );
     });
   });
 

@@ -50,8 +50,10 @@ export function prepareBody(body: unknown): string | undefined {
  * Handles authentication errors and triggers re-authentication
  */
 async function handleAuthError(): Promise<void> {
-  // Clear stored auth data
-  await authManager.clearAuthState();
+  // A hard 401 auth failure (not a recoverable SESSION_EXPIRED) means the
+  // credential itself is no longer valid — clear ALL local auth data, including
+  // the token keys, so a stale refresh_token can't silently re-authenticate.
+  await authManager.clearAllAuthData();
 
   // Trigger re-authentication flow
   // This will be handled by the UI components

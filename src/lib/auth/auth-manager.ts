@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { AuthState, User } from '../api/types';
 import { createLogger } from '../utils/logger';
 import { caseCacheManager } from '../cache/case-cache';
+import { tokenManager } from './token-manager';
 
 const log = createLogger('AuthManager');
 
@@ -37,12 +38,35 @@ class AuthManager {
     return null;
   }
 
+  /**
+   * Token-PRESERVING teardown: clears only the composite `authState` (and the
+   * case cache). Used inside the normal access-token-expiry path, where the
+   * `refresh_token` (managed separately by TokenManager) MUST survive so the
+   * session can be silently refreshed.
+   *
+   * Do NOT call this for logout / hard auth failure — see clearAllAuthData().
+   */
   async clearAuthState(): Promise<void> {
     if (typeof browser !== 'undefined' && browser.storage) {
       await browser.storage.local.remove(['authState']);
       // Also clear case cache on logout to prevent data leaks or stale data
       await caseCacheManager.invalidateCache();
     }
+  }
+
+  /**
+   * Full local auth teardown for logout and hard (401) auth failures: clears the
+   * composite `authState` (+ case cache) AND every token key managed by
+   * TokenManager (`access_token`, `refresh_token`, `refresh_expires_at`, …).
+   *
+   * clearAuthState() alone is NOT sufficient for logout: it leaves the token
+   * keys in storage, so `getAuthHeaders` keeps attaching a live Bearer and
+   * TokenManager will silently re-mint a session from the surviving
+   * `refresh_token` — the previous user stays authenticated on a shared machine.
+   */
+  async clearAllAuthData(): Promise<void> {
+    await this.clearAuthState();
+    await tokenManager.clearTokens();
   }
 
   async isAuthenticated(): Promise<boolean> {
