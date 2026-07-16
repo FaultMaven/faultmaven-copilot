@@ -270,8 +270,9 @@ export class TokenManager {
   /**
    * Which refresh endpoint to use. The auth mode is established at login and
    * cached (in-memory + storage, surviving SW restarts), so this is a cheap
-   * lookup during refresh. Defaults to OAuth (the cloud default) if the config
-   * can't be resolved.
+   * lookup during refresh. getAuthConfig() has its own fallback ladder
+   * (network → last-known-good storage → 'local'), so it effectively never
+   * throws; the catch here is a last-resort guard only.
    */
   private async isLocalAuthMode(): Promise<boolean> {
     try {
@@ -331,8 +332,20 @@ export class TokenManager {
       return false;
     }
 
-    // Check if refresh token is still valid
-    return tokens.refresh_expires_at > Date.now();
+    // A still-valid access token means authenticated.
+    if (tokens.expires_at > Date.now()) {
+      return true;
+    }
+
+    // Otherwise we're authenticated iff we hold a usable refresh token. Local
+    // sessions have NO refresh_expires_at (no refresh window) — a present
+    // refresh_token is sufficient; the backend is the authority on its validity.
+    // (Without this, local sessions read as unauthenticated and the keep-alive
+    // heartbeat never runs.)
+    if (!tokens.refresh_token) {
+      return false;
+    }
+    return typeof tokens.refresh_expires_at !== 'number' || tokens.refresh_expires_at > Date.now();
   }
 }
 

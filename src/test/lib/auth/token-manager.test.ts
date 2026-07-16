@@ -162,6 +162,33 @@ describe('TokenManager', () => {
     expect(stored.refresh_token).toBe('new-refresh-token');
   });
 
+  it('treats a local session (refresh_token, no refresh window) as authenticated', async () => {
+    // Local sessions have no refresh_expires_at; a present refresh_token is enough.
+    // Without this the keep-alive heartbeat (its only caller) never runs for them.
+    await mockBrowserStorage.local.set({
+      access_token: 'x',
+      token_type: 'bearer',
+      expires_at: Date.now() - 1000, // access token already expired
+      refresh_token: 'local-refresh',
+      session_id: 's',
+      user: { user_id: '1' }
+    });
+
+    expect(await tokenManager.isAuthenticated()).toBe(true);
+  });
+
+  it('is not authenticated once the access token expired and there is no refresh token', async () => {
+    await mockBrowserStorage.local.set({
+      access_token: 'x',
+      token_type: 'bearer',
+      expires_at: Date.now() - 1000,
+      session_id: 's',
+      user: { user_id: '1' }
+    });
+
+    expect(await tokenManager.isAuthenticated()).toBe(false);
+  });
+
   it('refreshes via the LOCAL /auth/refresh endpoint in local mode', async () => {
     mockGetAuthConfig.mockResolvedValue({ provider: 'local' });
     await mockBrowserStorage.local.set({
