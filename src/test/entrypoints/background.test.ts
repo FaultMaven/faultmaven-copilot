@@ -356,6 +356,52 @@ describe('Background Service Worker', () => {
       expect(stored.oauth_pending).toBeUndefined();
     });
 
+    it('exchanges the code exactly once when both ingress paths fire for the same redirect', async () => {
+      await mockStorage.local.set({
+        oauth_pending: {
+          tabId: 999,
+          expectedState: 'state-123',
+          deadline: Date.now() + 5 * 60 * 1000
+        },
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123',
+        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-token-abc',
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: 'refresh-abc',
+          refresh_expires_in: 86400,
+          user: { user_id: 'user-789', username: 'alice', email: 'a@b.c', display_name: 'Alice', roles: ['user'] }
+        })
+      });
+      global.fetch = mockFetch;
+
+      // Fire BOTH ingress paths for the same authorization code, concurrently:
+      // the tab monitor AND the callback.html AUTH_CALLBACK message.
+      const p1 = listeners['tabUpdate'](
+        999,
+        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
+        { id: 999 }
+      );
+      const p2 = new Promise<void>((resolve) => {
+        listeners['message'](
+          { type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' },
+          () => resolve()
+        );
+      });
+      await Promise.all([p1, p2]);
+
+      // The single-use code must be exchanged exactly ONCE (not raced twice).
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockAuthSaveState).toHaveBeenCalledTimes(1);
+    });
+
     it('should ignore URLs when state parameter does not match expectedState (CSRF protection)', async () => {
       await mockStorage.local.set({
         oauth_pending: {
