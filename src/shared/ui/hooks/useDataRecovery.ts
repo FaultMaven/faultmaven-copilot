@@ -8,6 +8,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
+import { authManager } from '../../../lib/api';
 import { IdMappingState, idMappingManager } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
 import { useAppStore } from '../../../lib/state/store';
@@ -150,6 +151,29 @@ export function useDataRecovery(
           optimisticCases: recoveredData.optimisticCases,
           pinnedCases: recoveredData.pinnedCases
         });
+
+        // Restore the case that was open before the reload. faultmaven_current_case
+        // persists the active-case id, but nothing re-selected it on load — it was
+        // only lazily restored by ensureCaseExists on the NEXT user action. So a
+        // reload dropped the user onto an empty view even though the case data was
+        // already hydrated above. handleCaseSelect rebuilds the activeCase object
+        // from the hydrated conversations/titles and delta-fetches its messages.
+        try {
+          // Only restore when authenticated. handleCaseSelect delta-fetches the
+          // conversation, so restoring for an unauthenticated panel (a leftover
+          // pointer after an auto-logout path that didn't run handleLogout) would
+          // fire a doomed request → 401 → handleAuthError storage writes + noise.
+          if (await authManager.isAuthenticated()) {
+            const { faultmaven_current_case: restoredCaseId } =
+              await browser.storage.local.get(['faultmaven_current_case']);
+            if (restoredCaseId && typeof restoredCaseId === 'string') {
+              useAppStore.getState().handleCaseSelect(restoredCaseId);
+              log.info('Restored active case after reload', { caseId: restoredCaseId });
+            }
+          }
+        } catch (e) {
+          log.warn('Failed to restore active case after reload', e);
+        }
 
         if (onDataRecoveredRef.current) {
           onDataRecoveredRef.current(recoveredData);
