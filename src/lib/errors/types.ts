@@ -44,6 +44,7 @@ export abstract class UserFacingError extends Error {
  */
 export type ErrorCategory =
   | 'authentication'
+  | 'authorization'
   | 'network'
   | 'timeout'
   | 'server'
@@ -160,6 +161,37 @@ export class AuthenticationError extends UserFacingError {
         },
         primary: true
       }]
+    };
+  }
+}
+
+/**
+ * Authorization / permission error (403 Forbidden).
+ *
+ * The request WAS authenticated, but the account lacks permission for this
+ * action — an RBAC scope it doesn't hold, a cross-tenant boundary, or an
+ * admin-only feature. This is not an authentication failure: re-authenticating
+ * as the same user cannot help, so it must never trigger the blocking sign-in
+ * modal or a forced logout (the bug this class exists to prevent — a 403 was
+ * previously classified as `AuthenticationError` and logged the user out).
+ *
+ * Recovery is `graceful_degradation`: surface a non-blocking notice and let
+ * the user continue with the rest of the app.
+ */
+export class PermissionError extends UserFacingError {
+  readonly userTitle = 'Access Denied';
+  readonly userMessage = "You don't have permission to perform this action.";
+  readonly userAction =
+    'This may require a different role or account. Contact your administrator if you believe this is an error.';
+  readonly category: ErrorCategory = 'authorization';
+  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 8000,
+      dismissible: true,
+      icon: 'warning'
     };
   }
 }

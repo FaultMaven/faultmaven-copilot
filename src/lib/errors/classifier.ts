@@ -3,6 +3,7 @@
 import {
   UserFacingError,
   AuthenticationError,
+  PermissionError,
   NetworkError,
   TimeoutError,
   ServerError,
@@ -44,15 +45,19 @@ export class ErrorClassifier {
     // Convert to Error object if it's not
     const err = error instanceof Error ? error : new Error(String(error));
 
-    // API Authentication Error
-    // Since we now use the same class everywhere, we can just check the name or message
-    if (err.name === 'AuthenticationError' || err.message.includes('Authentication required')) {
-      return new AuthenticationError(err.message, err, context);
-    }
-
-    // HTTP Status-based classification
+    // HTTP Status-based classification takes precedence: a numeric status is
+    // the authoritative signal. This must run before the name/message heuristic
+    // below, otherwise a 403 whose body message happens to contain
+    // "Authentication required" would be mis-classified as AuthenticationError
+    // (blocking sign-in modal + forced logout) instead of PermissionError.
     if (this.isHttpError(err)) {
       return this.classifyHttpError(err.status, err, context);
+    }
+
+    // API Authentication Error (non-HTTP errors only, e.g. an AuthenticationError
+    // whose class identity was lost crossing an extension context boundary).
+    if (err.name === 'AuthenticationError' || err.message.includes('Authentication required')) {
+      return new AuthenticationError(err.message, err, context);
     }
 
     // Network errors (fetch failures)
@@ -96,8 +101,13 @@ export class ErrorClassifier {
 
     switch (status) {
       case 401:
-      case 403:
         return new AuthenticationError(error.message, error, context);
+
+      // 403 is authorization, not authentication — the user is signed in but
+      // lacks permission. Must NOT force a logout / sign-in modal (see
+      // PermissionError). 401 alone drives re-authentication.
+      case 403:
+        return new PermissionError(error.message, error, context);
 
       case 400:
       case 422:

@@ -12,6 +12,32 @@ describe('ErrorClassifier', () => {
     expect(classified.recovery).toBe('show_modal');
   });
 
+  // 403 is authorization, not authentication. It must NOT be classified as an
+  // AuthenticationError (which drives a blocking sign-in modal + forced logout).
+  it('should map 403 to a non-logout Permission error', () => {
+    const error = new Error('Forbidden');
+    (error as any).status = 403;
+    const classified = ErrorClassifier.classify(error);
+
+    expect(classified.category).toBe('authorization');
+    expect(classified.recovery).toBe('graceful_degradation');
+    // Not blocking, not a modal — a 403 should never look like "session expired".
+    const display = (classified as any).getDisplayOptions();
+    expect(display.displayType).not.toBe('modal');
+    expect(display.blocking).not.toBe(true);
+  });
+
+  // A numeric status is authoritative: a 403 must classify as PermissionError
+  // even when its message contains an auth-sounding phrase, otherwise the
+  // message heuristic would shadow it back into a forced-logout AuthenticationError.
+  it('should classify a 403 by status even if its message mentions authentication', () => {
+    const error = new Error('Authentication required: insufficient permissions');
+    (error as any).status = 403;
+    const classified = ErrorClassifier.classify(error);
+
+    expect(classified.category).toBe('authorization');
+  });
+
   it('should map 429 to Rate Limit error', () => {
     const error = new Error('Too Many Requests');
     (error as any).status = 429;
