@@ -379,6 +379,12 @@ export default defineBackground({
       // ingress both fire for the same redirect. Dedup so the single-use code is
       // exchanged exactly once; the loser awaits and receives the same result
       // instead of racing a second (doomed) token exchange.
+      //
+      // Keyed on code alone: the sharer's `state` is intentionally not re-validated
+      // here — both ingresses parse code+state from the SAME redirect URL, and the
+      // listener already rejects any sender that isn't one of this extension's own
+      // contexts (sender.id check), so there is no untrusted second `state` to guard.
+      // The first caller's state IS validated against auth_state inside the exchange.
       let promise = inFlightAuthCallbacks.get(payload.code);
       if (promise) {
         log.info('OAuth callback already in flight for this code; sharing its result');

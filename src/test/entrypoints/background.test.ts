@@ -402,6 +402,81 @@ describe('Background Service Worker', () => {
       expect(mockAuthSaveState).toHaveBeenCalledTimes(1);
     });
 
+    it('gives BOTH racing ingress paths the same success result (loser shares, not errors)', async () => {
+      await mockStorage.local.set({
+        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123',
+        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+      });
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 't', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
+          refresh_expires_in: 86400, user: { user_id: 'u1', username: 'a', roles: ['user'] }
+        })
+      });
+
+      const p1 = listeners['tabUpdate'](999,
+        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' }, { id: 999 });
+      const messageResult = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+      await p1;
+
+      // The AUTH_CALLBACK ingress (whichever raced second) must receive the shared
+      // success — never a "code already used" error.
+      expect(messageResult).toEqual(expect.objectContaining({ success: true }));
+    });
+
+    it('AUTH_CALLBACK with a mismatched state is rejected without exchanging (CSRF)', async () => {
+      await mockStorage.local.set({ pkce_verifier: 'verifier-123', auth_state: 'state-123' });
+      const mockFetch = vi.fn();
+      global.fetch = mockFetch;
+
+      const result = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'attacker-state' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({ success: false }));
+      expect(result.error).toMatch(/state parameter mismatch/i);
+    });
+
+    it('does not re-exchange the same code after a completed flow (replay rejected)', async () => {
+      await mockStorage.local.set({
+        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123',
+        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 't', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
+          refresh_expires_in: 86400, user: { user_id: 'u1', username: 'a', roles: ['user'] }
+        })
+      });
+      global.fetch = mockFetch;
+
+      // First, complete the flow (evicts the in-flight entry, clears pkce_verifier).
+      await new Promise<void>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' }, () => resolve());
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Replay the same code: must be rejected with no additional token exchange.
+      const replay = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(replay).toEqual(expect.objectContaining({ success: false }));
+    });
+
     it('should ignore URLs when state parameter does not match expectedState (CSRF protection)', async () => {
       await mockStorage.local.set({
         oauth_pending: {
