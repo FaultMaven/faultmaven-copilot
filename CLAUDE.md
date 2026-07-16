@@ -118,8 +118,6 @@ src/
 │   │   ├── OptimisticIdGenerator.ts     # Generate optimistic IDs (opt_*)
 │   │   ├── IdMappingManager.ts          # Map optimistic → real IDs
 │   │   ├── PendingOperationsManager.ts  # Track pending operations
-│   │   ├── ConflictResolver.ts          # Conflict detection/resolution
-│   │   ├── MergeStrategies.ts           # Data merge strategies
 │   │   ├── IdUtils.ts                   # ID utilities
 │   │   └── types.ts                     # Optimistic type definitions
 │   │
@@ -144,8 +142,7 @@ src/
 │   │   ├── ConversationsList.tsx        # Case list sidebar
 │   │   ├── AuthScreen.tsx               # Login screen
 │   │   ├── LocalLoginForm.tsx           # Local auth form
-│   │   ├── HypothesisTracker.tsx        # Hypothesis tracking display
-│   │   ├── case-header/                 # Case header components
+│   │   ├── case-header/                 # Case header components (incl. hypothesis rows in CaseDetails.tsx)
 │   │   │   ├── shared.tsx               # SVG icons, DetailRow, SeverityChip, helpers
 │   │   │   ├── EnhancedCaseHeader.tsx   # Wrapper: HeaderSummary + CaseDetails + modal
 │   │   │   ├── HeaderSummary.tsx        # Collapsed 2-line status bar
@@ -187,7 +184,7 @@ Example: `import { createLogger } from '~/lib/utils/logger'`
 
 ### Key Patterns
 
-1. **State Management**: React `useState` in `SidePanelApp.tsx` plus the `shared/ui/hooks/*` family (`useCaseManagement`, `useSessionManagement`, `useMessageSubmission`, `useDataUpload`, `usePendingOperations`, `useBatchedPersistence`). Server state via TanStack Query
+1. **State Management**: Global state lives in a **Zustand** store (`lib/state/store.ts`, slices: `app`/`auth`/`session`/`cases`/`pending-ops`); `SidePanelApp.tsx` reads it via `useAppStore` selectors (no local `useState`). The `shared/ui/hooks/*` family (`useCaseManagement`, `useSessionManagement`, `useMessageSubmission`, `useDataUpload`, `usePendingOperations`) wraps the store + lifecycle. Server state via TanStack Query
 2. **Optimistic UI**: Immediate feedback with background reconciliation and rollback
 3. **Data Integrity**: Strict separation between optimistic (`opt_*`) and real IDs
 4. **Event Bus**: Typed `EventBus` for Background ↔ Sidepanel ↔ Content script communication
@@ -554,6 +551,7 @@ Key permissions (Manifest v3):
 - `activeTab`, `tabs` - Tab access for content capture
 - `scripting` - Content script injection
 
-Host permissions:
-- Production: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
-- Optional: `http://localhost/*` for local development
+Host permissions (see `wxt.config.ts` for the authoritative list):
+- Static `host_permissions`: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
+- `optional_host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`, **and `http://*/*`, `https://*/*`** (user-granted at runtime — needed for page capture on arbitrary sites and self-hosted backends on any origin; justification in `docs/cws/PERMISSION_JUSTIFICATION.md`)
+- CSP `connect-src 'self' http: https:` — the side panel can connect to any origin (self-hosted backend URLs)
