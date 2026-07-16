@@ -4,29 +4,27 @@
 
 import type { UploadedFileMetadata, UploadedFileDetailsResponse } from '../../types/case';
 import { getApiUrl } from '../../config';
-import { getAuthHeaders } from './fetch-utils';
+import { authenticatedFetchWithRetry } from './client';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('FilesService');
+
+// These reads go through authenticatedFetchWithRetry (not a raw `fetch`) so they
+// get the request timeout, 401 session-refresh-and-retry, and status-enriched
+// errors. authenticatedFetchWithRetry throws on any non-OK response, so the
+// `response` below is always OK.
 
 /**
  * Fetch uploaded files list for a case
  * GET /api/v1/cases/{case_id}/uploaded-files
  */
 async function getUploadedFiles(caseId: string): Promise<UploadedFileMetadata[]> {
-  const headers = await getAuthHeaders();
   const apiUrl = await getApiUrl();
 
-  const response = await fetch(`${apiUrl}/api/v1/cases/${caseId}/uploaded-files`, {
+  const response = await authenticatedFetchWithRetry(`${apiUrl}/api/v1/cases/${caseId}/uploaded-files`, {
     method: 'GET',
-    headers,
     credentials: 'include',
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch uploaded files' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
-  }
 
   const data = await response.json();
   log.debug('Fetched uploaded files', { caseId, fileCount: data.files?.length ?? 0 });
@@ -41,22 +39,15 @@ async function getUploadedFileDetails(
   caseId: string,
   fileId: string
 ): Promise<UploadedFileDetailsResponse> {
-  const headers = await getAuthHeaders();
   const apiUrl = await getApiUrl();
 
-  const response = await fetch(
+  const response = await authenticatedFetchWithRetry(
     `${apiUrl}/api/v1/cases/${caseId}/uploaded-files/${fileId}`,
     {
       method: 'GET',
-      headers,
       credentials: 'include',
     }
   );
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch file details' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
-  }
 
   const data = await response.json();
   log.debug('Fetched file details', { caseId, fileId });

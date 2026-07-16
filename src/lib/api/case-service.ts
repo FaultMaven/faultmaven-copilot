@@ -4,10 +4,15 @@
 
 import type { CaseUIResponse } from '../../types/case';
 import { getApiUrl } from '../../config';
-import { getAuthHeaders } from './fetch-utils';
+import { authenticatedFetchWithRetry } from './client';
 
 /**
  * Fetch UI-optimized case data
+ *
+ * Routed through `authenticatedFetchWithRetry` so it gets the request timeout,
+ * 401 session-refresh-and-retry, and status-enriched errors that a raw `fetch`
+ * bypassed (a bare `fetch` here left the classifier unable to route failures and
+ * could hang forever on a stalled connection).
  *
  * Pass `signal` (e.g. from TanStack Query's queryFn context) to allow the
  * fetch to be aborted when the consumer switches cases mid-flight.
@@ -17,20 +22,15 @@ async function getCaseUI(
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<CaseUIResponse> {
-  const headers = await getAuthHeaders();
   const apiUrl = await getApiUrl();
 
-  const response = await fetch(`${apiUrl}/api/v1/cases/${caseId}/ui`, {
+  // authenticatedFetchWithRetry throws a status-enriched error on any non-OK
+  // response, so `response` here is always OK.
+  const response = await authenticatedFetchWithRetry(`${apiUrl}/api/v1/cases/${caseId}/ui`, {
     method: 'GET',
-    headers,
     credentials: 'include',
     signal,
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Failed to fetch case UI data' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
-  }
 
   return response.json();
 }
