@@ -24,10 +24,19 @@ class AuthManager {
 
         if (!authState) return null;
 
-        // Check if token is expired
+        // authState.expires_at is the ACCESS-token expiry captured at login — it is
+        // NOT the session lifetime. TokenManager refreshes the access token in the
+        // background (and keeps this composite in sync on refresh), so a passed
+        // expires_at does not mean "logged out". Only end the session when
+        // TokenManager has no usable/refreshable token. Deleting authState here on
+        // the frozen expiry would fire the storage listener and force a SPURIOUS
+        // logout ~1 access-token-lifetime after login despite a valid refresh token.
         if (Date.now() >= authState.expires_at) {
-          await this.clearAuthState();
-          return null;
+          const stillAuthenticated = await tokenManager.isAuthenticated();
+          if (!stillAuthenticated) {
+            await this.clearAuthState();
+            return null;
+          }
         }
 
         return authState;

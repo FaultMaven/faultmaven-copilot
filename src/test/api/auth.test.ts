@@ -141,6 +141,24 @@ describe('Authentication API', () => {
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
     });
 
+    it('keeps an expired authState when TokenManager still has a refreshable token (no spurious logout)', async () => {
+      // The composite expiry is the ACCESS-token expiry frozen at login; a valid
+      // refresh_token means the session is alive. getAuthState must NOT delete it
+      // (which would fire the storage listener and force a logout ~1h in).
+      const expiredAuthState = { ...mockAuthState, expires_at: Date.now() - 1000 };
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: expiredAuthState,
+        access_token: 'stale-access',
+        expires_at: Date.now() - 1000,     // access token also expired...
+        refresh_token: 'valid-refresh'     // ...but still refreshable
+      });
+
+      const result = await authManager.getAuthState();
+
+      expect(result).toEqual(expiredAuthState); // kept, not deleted
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
+    });
+
     it('returns null when no auth state exists', async () => {
       mockBrowserStorage.local.get.mockResolvedValue({});
 

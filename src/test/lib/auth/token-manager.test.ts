@@ -157,9 +157,13 @@ describe('TokenManager', () => {
     expect(token).toBe('new-access-token');
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
+    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token', 'authState']);
     expect(stored.access_token).toBe('new-access-token');
     expect(stored.refresh_token).toBe('new-refresh-token');
+    // The composite authState is kept in sync so its expires_at doesn't go stale
+    // and force a spurious logout.
+    expect(stored.authState).toMatchObject({ access_token: 'new-access-token' });
+    expect(stored.authState.expires_at).toBeGreaterThan(Date.now());
   });
 
   it('treats a local session (refresh_token, no refresh window) as authenticated', async () => {
