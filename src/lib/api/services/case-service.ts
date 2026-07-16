@@ -534,7 +534,13 @@ export async function getCaseConversation(
  * });
  * ```
  */
-export async function submitTurn(caseId: string, request: TurnRequest): Promise<TurnResponse> {
+export async function submitTurn(
+  caseId: string,
+  request: TurnRequest,
+  options?: { signal?: AbortSignal }
+): Promise<TurnResponse> {
+  const signal = options?.signal;
+  if (signal?.aborted) throw createAbortError();
   const hasQuery = request.query && request.query.trim();
   const hasFiles = request.files && request.files.length > 0;
   const hasPasted = request.pastedContent && request.pastedContent.trim();
@@ -557,7 +563,8 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/turns`, {
     method: 'POST',
     body: form,
-    credentials: 'include'
+    credentials: 'include',
+    signal
   });
 
   if (response.status === 422) {
@@ -604,16 +611,27 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
     if (!location) throw new Error('Missing Location header for async turn');
     const jobUrl = new URL(location, await getApiUrl()).toString();
     let delay = POLL_INITIAL_MS;
-    let elapsed = 0;
-    while (elapsed <= POLL_MAX_TOTAL_MS) {
+    // Budget is measured as WALL-CLOCK from the first poll, counting both the
+    // time spent inside each poll request and the backoff sleeps. Previously
+    // only the sleeps were counted (`elapsed += delay`), so a stalled poll —
+    // which can hang up to the 300s client timeout — contributed nothing to the
+    // budget and the real ceiling was effectively unbounded (many multiples of
+    // POLL_MAX_TOTAL_MS). Using Date.now() bounds the loop to the intended wall.
+    const startedAt = Date.now();
+    while (Date.now() - startedAt <= POLL_MAX_TOTAL_MS) {
+      // Caller cancelled (e.g. the side panel unmounted) — stop polling now
+      // rather than continuing to hammer the job endpoint for up to 10 minutes.
+      if (signal?.aborted) throw createAbortError();
       let json: any;
       try {
         // authenticatedFetchWithRetry throws an enriched HTTPError on any non-OK
         // response, so `res` here is always OK — no `res.status >= 500` branch is
         // reachable (that check was dead). The throw is what we must handle.
-        const res = await authenticatedFetchWithRetry(jobUrl, { method: 'GET', credentials: 'include' });
+        const res = await authenticatedFetchWithRetry(jobUrl, { method: 'GET', credentials: 'include', signal });
         json = await res.json().catch(() => ({}));
       } catch (err: any) {
+        // Caller-initiated cancellation is terminal — never keep polling.
+        if (signal?.aborted || err?.name === 'AbortError') throw err;
         // A transient failure on a SINGLE poll (5xx / network blip during a pod
         // rollout) must not abandon the whole async turn — the background job may
         // still complete well within the budget. Keep polling; only a definitive
@@ -621,8 +639,7 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
         const terminal =
           err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
         if (!terminal && isRetryableError(err)) {
-          await new Promise(r => setTimeout(r, delay));
-          elapsed += delay;
+          await abortableDelay(delay, signal);
           delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
           continue;
         }
@@ -631,8 +648,7 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
       if (isTurnResponse(json)) return json;
       if (json?.status === 'completed' && json?.result && isTurnResponse(json.result)) return json.result;
       if (json?.status === 'failed') throw new Error(json?.error?.message || 'Turn processing failed');
-      await new Promise(r => setTimeout(r, delay));
-      elapsed += delay;
+      await abortableDelay(delay, signal);
       delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
     }
     throw new Error(`Async turn polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
@@ -651,6 +667,34 @@ export async function submitTurn(caseId: string, request: TurnRequest): Promise<
 
 function isTurnResponse(obj: any): obj is TurnResponse {
   return obj && typeof obj.agent_response === 'string' && typeof obj.turn_number === 'number';
+}
+
+/** An AbortError whose name matches the DOMException fetch raises on abort, so
+ *  the classifier / retry layer treats a cancellation as non-retryable. */
+function createAbortError(): Error {
+  const err = new Error('Turn submission was cancelled');
+  err.name = 'AbortError';
+  return err;
+}
+
+/** setTimeout wrapped so a mid-backoff cancellation resolves immediately with
+ *  an AbortError instead of waiting out the (up to 10s) delay. */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createAbortError());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 export async function generateCaseTitle(

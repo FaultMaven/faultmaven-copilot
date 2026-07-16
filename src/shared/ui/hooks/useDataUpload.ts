@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { browser } from 'wxt/browser';
 import {
   createCase,
@@ -26,6 +26,18 @@ const log = createLogger('useDataUpload');
 export function useDataUpload() {
   const [loading, setLoading] = useState(false);
   const { showError } = useError();
+
+  // Abort in-flight turn submissions (which may poll for up to POLL_MAX_TOTAL_MS)
+  // when this hook unmounts, so a detached poll loop doesn't keep hitting the
+  // backend. Aborts are treated as silent cancellations, not upload failures.
+  const inFlightControllers = useRef<Set<AbortController>>(new Set());
+  useEffect(() => {
+    const controllers = inFlightControllers.current;
+    return () => {
+      controllers.forEach(c => c.abort());
+      controllers.clear();
+    };
+  }, []);
 
   // Selected store state
   const sessionId = useAppStore((state) => state.sessionId);
@@ -202,11 +214,13 @@ export function useDataUpload() {
       }));
 
       // Step 4: Submit via unified /turns endpoint
+      const controller = new AbortController();
+      inFlightControllers.current.add(controller);
       let turnResponse: TurnResponse;
       try {
         turnResponse = await resilientOperation({
           operation: async () => {
-            return await submitTurn(targetCaseId!, turnRequest);
+            return await submitTurn(targetCaseId!, turnRequest, { signal: controller.signal });
           },
           context: {
             operation: 'turn_submit',
@@ -219,6 +233,12 @@ export function useDataUpload() {
           }
         });
       } catch (error) {
+        // Caller-initiated cancellation (hook unmounted): return silently.
+        // Don't mark the upload failed and don't rethrow — rethrowing would hit
+        // the outer catch and pop an error toast for a turn nobody is waiting on.
+        if (controller.signal.aborted) {
+          return { success: false, message: '' };
+        }
         setConversations(prev => ({
           ...prev,
           [targetCaseId!]: (prev[targetCaseId!] || []).map(item =>
@@ -228,6 +248,8 @@ export function useDataUpload() {
           )
         }));
         throw error;
+      } finally {
+        inFlightControllers.current.delete(controller);
       }
 
       log.info('Turn submitted successfully', { caseId: targetCaseId, turnNumber: turnResponse.turn_number });

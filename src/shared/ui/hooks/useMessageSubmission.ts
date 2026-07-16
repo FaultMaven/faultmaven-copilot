@@ -5,7 +5,7 @@
  * Integrated with the centralized Zustand store.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { browser } from 'wxt/browser';
 import {
   submitTurn,
@@ -47,6 +47,19 @@ export const TITLE_GENERATION_THRESHOLD = 5;
 export function useMessageSubmission() {
   const [submitting, setSubmitting] = useState(false);
   const { showError } = useError();
+
+  // Controllers for in-flight turn submissions. A submitted turn can poll the
+  // backend for up to POLL_MAX_TOTAL_MS; if this hook unmounts (side panel
+  // closed) we abort so the detached poll loop stops instead of hammering the
+  // job endpoint. Aborts are treated as silent cancellations, not failures.
+  const inFlightControllers = useRef<Set<AbortController>>(new Set());
+  useEffect(() => {
+    const controllers = inFlightControllers.current;
+    return () => {
+      controllers.forEach(c => c.abort());
+      controllers.clear();
+    };
+  }, []);
 
   // Selected store state
   const sessionId = useAppStore((state) => state.sessionId);
@@ -143,6 +156,8 @@ export function useMessageSubmission() {
     aiMessageId: string,
     intent?: QueryIntent
   ) => {
+    const controller = new AbortController();
+    inFlightControllers.current.add(controller);
     try {
       const response = await resilientOperation({
         operation: async () => {
@@ -154,7 +169,7 @@ export function useMessageSubmission() {
             intentData: intent ? { ...intent } : undefined,
           };
 
-          const response = await submitTurn(caseId, turnRequest);
+          const response = await submitTurn(caseId, turnRequest, { signal: controller.signal });
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 
           if (response.case_state) {
@@ -183,6 +198,12 @@ export function useMessageSubmission() {
           log.warn(`Submission attempt ${attempt} failed`, error);
         },
         onFailure: (error) => {
+          // Caller-initiated cancellation (hook unmounted): silently stop, don't
+          // mark the message failed or surface an error the user can't act on.
+          if (controller.signal.aborted) {
+            log.debug('Turn submission aborted (unmount) — skipping failure UI');
+            return;
+          }
           log.error('All submission attempts failed', error);
 
           const classified = ErrorClassifier.classify(error);
@@ -329,6 +350,7 @@ export function useMessageSubmission() {
     } catch (error) {
       log.debug('Caught error from resilientOperation (handled in onFailure)', error);
     } finally {
+      inFlightControllers.current.delete(controller);
       setSubmitting(false);
       log.debug('Input unlocked - submission completed');
     }
