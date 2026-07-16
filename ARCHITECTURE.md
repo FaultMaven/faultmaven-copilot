@@ -118,7 +118,7 @@ We use **Zustand** for global state management, replacing complex prop drilling.
 2.  **Hook**: `useMessageSubmission` calls `CasesSlice.submitQuery`.
 3.  **Optimistic Update**: Store updates `conversations` state immediately with a temporary ID.
 4.  **Background Operation**: `resilientOperation` triggers API call via `case-service`.
-5.  **Reconciliation**: On success, Store updates the message with real ID and data. On failure, Store marks it as failed (red state).
+5.  **Reconciliation**: On success, the Store fills in the message's response/turn data and clears its optimistic flag. On failure, the Store marks it as failed (red state). Note: only **case** ids are swapped optimistic→real; a message keeps its local `opt_msg_*` id (a turn response carries no message id), and backend message truth is restored via the delta fetch on case open.
 
 ---
 
@@ -172,12 +172,17 @@ await resilientOperation({
 });
 ```
 
-### ID Reconciliation
+### ID Reconciliation (case ids only)
 
-1.  **Generate**: `opt_123` (Client)
-2.  **Submit**: API receives query.
-3.  **Respond**: API returns real ID `uuid_456`.
-4.  **Reconcile**: Store swaps `opt_123` -> `uuid_456` transparently.
+1.  **Generate**: `opt_case_123` (Client)
+2.  **Submit**: API creates the case.
+3.  **Respond**: API returns the real case id `uuid_456`.
+4.  **Reconcile**: `IdMappingManager` swaps `opt_case_123` -> `uuid_456` transparently.
+
+This applies to **case** ids only. Message ids are not reconciled — the turn
+response carries no message id, so an optimistic message keeps its `opt_msg_*` id
+locally after it commits; the authoritative message list is delta-fetched from the
+backend when the case is opened.
 
 ---
 
