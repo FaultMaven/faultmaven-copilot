@@ -78,8 +78,10 @@ export async function logoutAuth(): Promise<void> {
       throw await createHttpErrorFromResponse(response);
     }
   } finally {
-    // Clear auth state regardless of response status
-    await authManager.clearAuthState();
+    // Clear ALL local auth data (authState + tokens) regardless of response
+    // status. clearAuthState() alone would leave the token keys behind, so the
+    // "logged out" user would keep a live Bearer and silently auto-refresh.
+    await authManager.clearAllAuthData();
 
     // Broadcast auth state change to other tabs
     if (typeof browser !== 'undefined' && browser.runtime) {

@@ -213,6 +213,13 @@ The extension supports two authentication modes, determined by backend configura
 
 Auth mode is auto-detected via `GET /api/v1/auth/config`.
 
+**Auth teardown — two variants (do not confuse):**
+
+- `authManager.clearAuthState()` — **token-preserving**. Clears only the composite `authState` key (+ case cache). Used inside the normal access-token-expiry path (`getAuthState()`), where the `refresh_token` managed by `TokenManager` must survive so the session can be silently refreshed.
+- `authManager.clearAllAuthData()` — **full teardown**. Clears `authState` **and** every `TokenManager` key (`access_token`, `refresh_token`, `refresh_expires_at`, …). Use for logout and hard (401) auth failures. `clearAuthState()` alone is NOT a valid logout: it leaves the token keys, so `getAuthHeaders` keeps attaching a live Bearer and `TokenManager` silently re-mints a session from the surviving `refresh_token`. Real logout sites — `logoutAuth()`, `client.ts handleAuthError()` (hard 401), options `handleSignOut()` — all route through `clearAllAuthData()`.
+
+> Note: `logoutAuth()` POSTs `/api/v1/auth/logout`, which revokes the **access** token server-side; the **refresh** token is not yet revoked on logout (tracked as a backend follow-up). The in-browser copy is destroyed by `clearAllAuthData()`.
+
 ### Deployment Modes
 
 **Cloud Deployment** (default):
