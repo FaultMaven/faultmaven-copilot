@@ -356,6 +356,48 @@ describe('Background Service Worker', () => {
       expect(stored.oauth_pending).toBeUndefined();
     });
 
+    it('clears a stale refresh_expires_at when the OAuth token response has none', async () => {
+      await mockStorage.local.set({
+        pkce_verifier: 'v', auth_state: 's',
+        redirect_uri: 'chrome-extension://test-copilot-id/callback.html',
+        refresh_expires_at: 123 // stale value from a previous session
+      });
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'a', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
+          // NO refresh_expires_in
+          user: { user_id: 'u', username: 'x', roles: ['user'] }
+        })
+      });
+
+      const res = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'c-stale', state: 's' }, { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(res.success).toBe(true);
+      const stored = await mockStorage.local.get(['refresh_token', 'refresh_expires_at']);
+      expect(stored.refresh_token).toBe('r');
+      // Stale value must be REMOVED (a past refresh_expires_at forces a logout).
+      expect(stored.refresh_expires_at).toBeUndefined();
+    });
+
+    it('rejects an OAuth token response with a non-numeric expires_in (no NaN expires_at stored)', async () => {
+      await mockStorage.local.set({ pkce_verifier: 'v', auth_state: 's' });
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'a', token_type: 'bearer', refresh_token: 'r', user: { user_id: 'u' } })
+      });
+
+      const res = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'c-invalid', state: 's' }, { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(res.success).toBe(false);
+      const stored = await mockStorage.local.get(['access_token']);
+      expect(stored.access_token).toBeUndefined();
+    });
+
     it('exchanges the code exactly once when both ingress paths fire for the same redirect', async () => {
       await mockStorage.local.set({
         oauth_pending: {

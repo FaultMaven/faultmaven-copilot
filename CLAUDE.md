@@ -80,8 +80,7 @@ src/
 │   ├── background.ts                    # Service worker (auth, sessions, messages)
 │   ├── auth-bridge.content.ts           # OAuth bridge content script
 │   ├── sidepanel_manual/main.tsx        # React side panel entry
-│   ├── options/main.tsx                 # Extension options page
-│   └── oidc-callback.html               # OIDC callback handler
+│   └── options/main.tsx                 # Extension options page
 │
 ├── lib/                       # Core business logic
 │   ├── api/                             # API layer
@@ -99,13 +98,11 @@ src/
 │   │
 │   ├── auth/                            # Authentication
 │   │   ├── auth-manager.ts              # Centralized auth state
-│   │   ├── auth-config.ts               # Auth mode detection (local/OIDC)
-│   │   ├── auth-client.ts               # Auth client interface
+│   │   ├── auth-config.ts               # Auth mode detection (local/oauth)
 │   │   ├── dashboard-oauth.ts           # OAuth flow (PKCE)
 │   │   ├── local-auth-client.ts         # Local username/password auth
-│   │   ├── oauth-client.ts              # OAuth client implementation
-│   │   ├── oidc-callback.ts             # OIDC callback handler
-│   │   └── token-manager.ts             # Token storage & refresh
+│   │   ├── trusted-origin.ts            # Dashboard-origin validation for the auth bridge
+│   │   └── token-manager.ts             # Token storage & mode-aware refresh
 │   │
 │   ├── errors/                          # Error handling
 │   │   ├── types.ts                     # UserFacingError class hierarchy
