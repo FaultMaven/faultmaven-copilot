@@ -65,20 +65,6 @@ export class IdMappingManager {
   }
 
   /**
-   * Get mapping details
-   */
-  getMapping(optimisticId: string): IdMapping | undefined {
-    return this.mappings.get(optimisticId);
-  }
-
-  /**
-   * Check if an optimistic ID has been mapped to a real ID
-   */
-  isMapped(optimisticId: string): boolean {
-    return this.mappings.has(optimisticId);
-  }
-
-  /**
    * Remove a mapping
    */
   removeMapping(optimisticId: string): boolean {
@@ -102,25 +88,6 @@ export class IdMappingManager {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = undefined;
     }
-  }
-
-  /**
-   * Get all mappings
-   */
-  getAllMappings(): IdMapping[] {
-    return Array.from(this.mappings.values());
-  }
-
-  /**
-   * Resolve ID (return real ID if mapped, otherwise return original)
-   * This is useful for functions that need to work with either optimistic or real IDs
-   */
-  resolveId(id: string): string {
-    if (id.startsWith('opt_')) {
-      const realId = this.getRealId(id);
-      return realId || id; // Return real ID if mapped, otherwise keep optimistic
-    }
-    return id; // Already a real ID
   }
 
   /**
