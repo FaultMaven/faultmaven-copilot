@@ -1,5 +1,52 @@
-import { describe, it, expect } from 'vitest';
-import { prepareBody } from '../../lib/api/client';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { prepareBody, authenticatedFetch } from '../../lib/api/client';
+import { AuthenticationError } from '../../lib/errors/types';
+
+// --- Mocks for the authenticatedFetch catch-path test ---
+const clearAllAuthData = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../lib/auth/auth-manager', () => ({
+  authManager: { clearAllAuthData: () => clearAllAuthData() }
+}));
+vi.mock('../../lib/api/fetch-utils', () => ({
+  getAuthHeaders: vi.fn().mockResolvedValue({})
+}));
+vi.mock('../../lib/api/session-core', () => ({
+  refreshSession: vi.fn().mockResolvedValue(undefined)
+}));
+const fetchWithTimeout = vi.fn();
+vi.mock('../../lib/utils/fetch-timeout', () => ({
+  fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
+}));
+vi.mock('wxt/browser', () => ({
+  browser: { storage: { local: { remove: vi.fn().mockResolvedValue(undefined) } } }
+}));
+
+describe('authenticatedFetch — error branding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Regression: a hard 401 threw AuthenticationError inside the try, which the
+  // catch then rebranded to 'NetworkError' (no `status`, not a TimeoutError).
+  // The async-turn poll loop keys its terminal check on err.name, so the
+  // mislabelled error looked retryable and a hard 401 was retried instead of
+  // aborting. UserFacingError instances must propagate with name intact.
+  it('preserves AuthenticationError on a hard 401 (does not rebrand to NetworkError)', async () => {
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+      json: async () => ({ detail: 'Unauthorized' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toMatchObject({
+      name: 'AuthenticationError'
+    });
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
+      AuthenticationError
+    );
+  });
+});
 
 describe('prepareBody', () => {
   describe('undefined → null conversion (Safety Net)', () => {

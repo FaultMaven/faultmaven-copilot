@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { authManager } from '../auth/auth-manager';
-import { AuthenticationError, SessionExpiredError } from '../errors/types';
+import { AuthenticationError, SessionExpiredError, UserFacingError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
 import { refreshSession } from './session-core';
 import { createLogger } from '../utils/logger';
@@ -199,6 +199,16 @@ export async function authenticatedFetch(
       throw error;
     }
     if (options.signal?.aborted) {
+      throw error;
+    }
+
+    // Already-classified errors (AuthenticationError, SessionExpiredError, …
+    // thrown from the auth/session branches above) must propagate with their
+    // real name/category intact. Rebranding them as 'NetworkError' below would
+    // make a hard 401 look retryable — the async-turn poll loop keys its
+    // terminal check on err.name, so a mislabelled auth failure would be
+    // retried instead of aborted.
+    if (error instanceof UserFacingError) {
       throw error;
     }
 

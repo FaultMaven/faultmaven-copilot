@@ -217,8 +217,17 @@ export class ErrorClassifier {
    * Extracts retry-after value from error (if available)
    */
   private static extractRetryAfter(error: any): number {
-    // Check if error has response headers
-    if (error.response?.headers) {
+    // The API client (client.ts 429 branch) already parses the Retry-After
+    // header and exposes it as `error.retryAfter` in SECONDS. Prefer it — the
+    // client attaches `error.response = { data }` with no `headers`, so the
+    // header-based path below never fires for a real 429 and the backend's
+    // Retry-After would otherwise be silently dropped for the hardcoded default.
+    if (typeof error.retryAfter === 'number' && Number.isFinite(error.retryAfter)) {
+      return error.retryAfter * 1000; // seconds → ms
+    }
+
+    // Fall back to a raw Response-style headers object if one is attached.
+    if (error.response?.headers && typeof error.response.headers.get === 'function') {
       const retryAfter = error.response.headers.get('Retry-After');
       if (retryAfter) {
         const seconds = parseInt(retryAfter, 10);
