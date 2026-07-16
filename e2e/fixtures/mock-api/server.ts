@@ -10,7 +10,13 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 8091;
 
-app.use(cors());
+// The extension makes credentialed requests (`credentials: 'include'`). A
+// browser REJECTS a wildcard `Access-Control-Allow-Origin: *` for credentialed
+// requests ("must not be the wildcard '*' when the request's credentials mode is
+// 'include'"), which failed every /cases and /turns call with net::ERR_FAILED and
+// surfaced as an "Unexpected Error" in the UI. Reflect the caller's Origin and
+// send `Access-Control-Allow-Credentials: true` so credentialed CORS passes.
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 // Serve static HTML fixtures for testing injection rules on localhost
