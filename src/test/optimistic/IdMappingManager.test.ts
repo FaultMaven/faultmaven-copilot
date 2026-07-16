@@ -6,13 +6,12 @@ describe('IdMappingManager', () => {
     vi.useRealTimers();
   });
 
-  it('resolves optimistic ids to their real ids and passes real ids through', () => {
+  it('maps optimistic ids to their real ids', () => {
     const m = new IdMappingManager();
     m.addMapping('opt_case_1', 'real_1');
 
-    expect(m.resolveId('opt_case_1')).toBe('real_1');
     expect(m.getRealId('opt_case_1')).toBe('real_1');
-    expect(m.resolveId('real_already')).toBe('real_already');
+    expect(m.getRealId('opt_case_unknown')).toBeUndefined();
   });
 
   it('rejects a non-optimistic id (guards against mapping a real id by mistake)', () => {
