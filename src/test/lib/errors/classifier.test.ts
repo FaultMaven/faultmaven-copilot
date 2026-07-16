@@ -42,9 +42,31 @@ describe('ErrorClassifier', () => {
     const error = new Error('Too Many Requests');
     (error as any).status = 429;
     const classified = ErrorClassifier.classify(error);
-    
+
     expect(classified.category).toBe('rate_limit');
     expect(classified.recovery).toBe('auto_retry_with_delay');
+  });
+
+  // The API client parses the Retry-After header and exposes it as
+  // `error.retryAfter` in SECONDS. The classifier must honour it rather than
+  // silently falling back to the 5s default (regression: it previously only
+  // read `error.response.headers`, which the client never populates on a 429).
+  it('should honour the client-parsed Retry-After for a 429', () => {
+    const error = new Error('Too Many Requests');
+    (error as any).status = 429;
+    (error as any).retryAfter = 30; // seconds, as set by client.ts
+    const classified = ErrorClassifier.classify(error) as any;
+
+    expect(classified.category).toBe('rate_limit');
+    expect(classified.retryAfterMs).toBe(30000);
+  });
+
+  it('falls back to the 5s default when no Retry-After is present', () => {
+    const error = new Error('Too Many Requests');
+    (error as any).status = 429;
+    const classified = ErrorClassifier.classify(error) as any;
+
+    expect(classified.retryAfterMs).toBe(5000);
   });
 
   it('should map 500 to Server error', () => {
