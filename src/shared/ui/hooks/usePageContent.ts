@@ -225,8 +225,14 @@ export function usePageContent() {
                 }
               }
 
-              // Preamble (fixed header)
-              const preamble: string[] = [`[captured_at: ${new Date().toISOString()}]`];
+              // Preamble (fixed header). Include the source URL so captured
+              // evidence is traceable back to the page it came from — without
+              // it, an operator reviewing the case can't tell which dashboard /
+              // console the numbers were pulled from.
+              const preamble: string[] = [
+                `[captured_at: ${new Date().toISOString()}]`,
+                `[source_url: ${window.location.href}]`
+              ];
               const title = pgTitle || document.querySelector('h1')?.textContent?.trim();
               if (title) preamble.push(`# ${title}`);
               const meta = document.querySelector('meta[name="description"]')?.getAttribute('content')?.trim();
