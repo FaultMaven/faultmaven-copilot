@@ -194,6 +194,9 @@ export function useMessageSubmission() {
           caseId,
           metadata: { query: query.substring(0, 50) }
         },
+        // A turn submission is a non-idempotent POST: never auto-retry an
+        // ambiguous network failure (the turn may already have committed).
+        idempotent: false,
         onError: (error, attempt) => {
           log.warn(`Submission attempt ${attempt} failed`, error);
         },

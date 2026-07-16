@@ -230,7 +230,10 @@ export function useDataUpload() {
               hasFiles: !!turnRequest.files?.length,
               hasPasted: !!turnRequest.pastedContent
             }
-          }
+          },
+          // A turn submission is a non-idempotent POST: never auto-retry an
+          // ambiguous network failure (the turn may already have committed).
+          idempotent: false
         });
       } catch (error) {
         // Caller-initiated cancellation (hook unmounted): return silently.
