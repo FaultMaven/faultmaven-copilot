@@ -8,6 +8,7 @@ import { debounce } from '../utils/debounce';
 import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
 import { idMappingManager } from '../optimistic';
+import { memoryManager } from '../utils/memory-manager';
 
 const log = createLogger('Store');
 
@@ -27,7 +28,6 @@ export const debouncedPersist = debounce(
     conversationTitles: Record<string, string>;
     titleSources: Record<string, 'user' | 'backend' | 'system'>;
     conversations: Record<string, any[]>;
-    pendingOperations: Record<string, any>;
     optimisticCases: any[];
     pinnedCases: string[];
   }) => {
@@ -47,17 +47,25 @@ export const debouncedPersist = debounce(
         keysToRemove.push('titleSources');
       }
 
-      if (Object.keys(stateToSave.conversations).length > 0) {
-        storageData.conversations = stateToSave.conversations;
+      // Persist committed conversation data only: drop transient (optimistic /
+      // loading / failed) messages and cap growth, so a reload never rehydrates
+      // a stuck "thinking" spinner or a soon-to-be-duplicated optimistic turn,
+      // and storage cannot grow without bound across a long-lived side panel.
+      const safeConversations = memoryManager.sanitizeAndCapForPersistence(
+        stateToSave.conversations,
+        useAppStore.getState().activeCaseId ?? undefined
+      );
+      if (Object.keys(safeConversations).length > 0) {
+        storageData.conversations = safeConversations;
       } else {
         keysToRemove.push('conversations');
       }
 
-      if (Object.keys(stateToSave.pendingOperations).length > 0) {
-        storageData.pendingOperations = stateToSave.pendingOperations;
-      } else {
-        keysToRemove.push('pendingOperations');
-      }
+      // NOTE: pendingOperations is deliberately NOT persisted. Its retry/rollback
+      // functions are closures that cannot survive JSON serialization, so a
+      // "restored" pending operation could never actually retry or roll back.
+      // pendingOpsManager is the single in-session source of truth; after a
+      // reload, in-flight/failed turns are reconciled from the backend instead.
 
       if (stateToSave.optimisticCases.length > 0) {
         storageData.optimisticCases = stateToSave.optimisticCases;
@@ -107,7 +115,6 @@ useAppStore.subscribe((state) => {
     state.conversationTitles !== previousState.conversationTitles ||
     state.titleSources !== previousState.titleSources ||
     state.conversations !== previousState.conversations ||
-    state.pendingOperations !== previousState.pendingOperations ||
     state.optimisticCases !== previousState.optimisticCases ||
     state.pinnedCases !== previousState.pinnedCases
   ) {
@@ -116,7 +123,6 @@ useAppStore.subscribe((state) => {
       conversationTitles: state.conversationTitles,
       titleSources: state.titleSources,
       conversations: state.conversations,
-      pendingOperations: state.pendingOperations,
       optimisticCases: state.optimisticCases,
       pinnedCases: Array.from(state.pinnedCases)
     });

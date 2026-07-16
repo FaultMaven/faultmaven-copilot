@@ -45,11 +45,65 @@ export const DEFAULT_CONFIG: MemoryManagerConfig = {
   minMessagesToKeep: 50 // Always keep at least 50 messages for context
 };
 
+/**
+ * A conversation item is "committed" — safe to persist and to rehydrate — only
+ * when it is not optimistic, not mid-flight (`loading`), and not in a
+ * failed/error state.
+ *
+ * Transient items must never reach storage: their in-flight request dies with
+ * the page, so a rehydrated `loading` item becomes a permanent spinner, and a
+ * rehydrated optimistic/failed item duplicates the turn once the real one is
+ * delta-fetched from the backend. Backend truth is restored on case open, so
+ * dropping these on persist/rehydrate loses nothing recoverable.
+ */
+export function isCommittedMessage(msg: OptimisticConversationItem): boolean {
+  return !msg.optimistic && !msg.loading && !msg.failed && !msg.error;
+}
+
 export class MemoryManager {
   private config: MemoryManagerConfig;
 
   constructor(config: Partial<MemoryManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * Produce the storage-safe form of the conversation map for persistence:
+   *   1. Drop transient (optimistic / loading / failed) messages, and drop any
+   *      conversation left empty by that filtering.
+   *   2. Cap the NUMBER of conversations (`cleanupConversations`).
+   *
+   * This is the single choke point that both prevents unbounded growth in
+   * `browser.storage.local` and guarantees a reload never rehydrates a stuck
+   * spinner or a to-be-duplicated optimistic turn.
+   *
+   * NOTE: we deliberately do NOT cap the message count *within* a conversation.
+   * The delta fetch on case open (`cases-slice.handleCaseSelect`) uses the local
+   * committed-message count as a head offset and assumes the local copy is the
+   * backend PREFIX. Trimming a conversation to its most-recent N messages (a
+   * suffix) would make that offset skip real messages and re-append overlapping
+   * ones as duplicates — reintroducing the very duplicate-turn bug at N. Bounding
+   * a single very long conversation needs an id/turn-based delta fetch instead
+   * (tracked separately).
+   */
+  sanitizeAndCapForPersistence(
+    conversations: Record<string, OptimisticConversationItem[]>,
+    activeCaseId: string | undefined
+  ): Record<string, OptimisticConversationItem[]> {
+    // 1. Keep only committed messages; drop conversations that become empty.
+    const committed: Record<string, OptimisticConversationItem[]> = {};
+    for (const [caseId, msgs] of Object.entries(conversations)) {
+      const kept = (msgs || []).filter(isCommittedMessage);
+      if (kept.length > 0) {
+        committed[caseId] = kept;
+      }
+    }
+
+    // 2. Cap the number of conversations. Dropping a whole old case is offset-safe:
+    //    reopening it delta-fetches from offset 0 (empty local) — no duplication.
+    //    No optimistic/failed items survive step 1, so only the active case needs
+    //    protecting beyond the most-recent set.
+    return this.cleanupConversations(committed, activeCaseId, new Set());
   }
 
   /**

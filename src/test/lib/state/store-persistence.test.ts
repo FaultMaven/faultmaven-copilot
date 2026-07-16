@@ -33,7 +33,6 @@ const emptyState = () => ({
   conversationTitles: {},
   titleSources: {},
   conversations: {},
-  pendingOperations: {},
   optimisticCases: [],
   pinnedCases: [] as string[]
 });
@@ -59,7 +58,6 @@ describe('store debouncedPersist', () => {
         'conversationTitles',
         'titleSources',
         'conversations',
-        'pendingOperations',
         'optimisticCases'
       ])
     );
@@ -80,6 +78,59 @@ describe('store debouncedPersist', () => {
     const removedKeys = (storageRemove.mock.calls[0]?.[0] ?? []) as string[];
     expect(removedKeys).not.toContain('conversations');
     expect(removedKeys).not.toContain('conversationTitles');
+  });
+
+  it('never persists pendingOperations (closures cannot survive serialization)', async () => {
+    // Even when the caller passes pending operations, they must not be written or
+    // tracked for removal — the key is out of the persistence contract entirely.
+    debouncedPersist({
+      ...emptyState(),
+      conversations: { 'case-1': [{ id: 'm1', optimistic: false }] as any },
+      // @ts-expect-error pendingOperations is intentionally not part of the persist contract
+      pendingOperations: { op1: { id: 'op1', status: 'failed' } }
+    });
+    await drain();
+
+    const saved = (storageSet.mock.calls[0]?.[0] ?? {}) as Record<string, unknown>;
+    expect(saved).not.toHaveProperty('pendingOperations');
+    const removedKeys = (storageRemove.mock.calls[0]?.[0] ?? []) as string[];
+    expect(removedKeys).not.toContain('pendingOperations');
+  });
+
+  it('strips transient (optimistic/loading/failed) messages before persisting', async () => {
+    debouncedPersist({
+      ...emptyState(),
+      conversations: {
+        'case-1': [
+          { id: 'committed', optimistic: false },
+          { id: 'optimistic', optimistic: true },
+          { id: 'thinking', optimistic: false, loading: true },
+          { id: 'failed', optimistic: false, failed: true }
+        ] as any
+      }
+    });
+    await drain();
+
+    const saved = storageSet.mock.calls[0][0] as Record<string, any>;
+    const persistedIds = saved.conversations['case-1'].map((m: any) => m.id);
+    expect(persistedIds).toEqual(['committed']);
+  });
+
+  it('drops conversations left empty after stripping transient messages', async () => {
+    debouncedPersist({
+      ...emptyState(),
+      conversations: {
+        'only-optimistic': [{ id: 'x', optimistic: true, loading: true }] as any
+      }
+    });
+    await drain();
+
+    const saved = (storageSet.mock.calls[0]?.[0] ?? {}) as Record<string, any>;
+    // The whole conversation had nothing committed → it must not be persisted,
+    // and the (now-empty) conversations map should be marked for removal.
+    expect(saved.conversations).toBeUndefined();
+    const removedKeys = (storageRemove.mock.calls[0]?.[0] ?? []) as string[];
+    expect(removedKeys).toContain('conversations');
   });
 
   it('always persists pinnedCases as an array', async () => {
