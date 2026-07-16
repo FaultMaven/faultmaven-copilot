@@ -151,6 +151,23 @@ export function useDataRecovery(
           pinnedCases: recoveredData.pinnedCases
         });
 
+        // Restore the case that was open before the reload. faultmaven_current_case
+        // persists the active-case id, but nothing re-selected it on load — it was
+        // only lazily restored by ensureCaseExists on the NEXT user action. So a
+        // reload dropped the user onto an empty view even though the case data was
+        // already hydrated above. handleCaseSelect rebuilds the activeCase object
+        // from the hydrated conversations/titles and delta-fetches its messages.
+        try {
+          const { faultmaven_current_case: restoredCaseId } =
+            await browser.storage.local.get(['faultmaven_current_case']);
+          if (restoredCaseId && typeof restoredCaseId === 'string') {
+            useAppStore.getState().handleCaseSelect(restoredCaseId);
+            log.info('Restored active case after reload', { caseId: restoredCaseId });
+          }
+        } catch (e) {
+          log.warn('Failed to restore active case after reload', e);
+        }
+
         if (onDataRecoveredRef.current) {
           onDataRecoveredRef.current(recoveredData);
         }
