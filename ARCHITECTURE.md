@@ -12,11 +12,10 @@ FaultMaven Copilot is a browser extension providing AI-powered troubleshooting a
     *   Automatic reconciliation of optimistic IDs with real backend UUIDs.
 2.  **Robust State Management**: Centralized Zustand stores for predictable state.
     *   Separation of concerns: UI components only render data; logic resides in Stores and Hooks.
-    *   `AuthSlice`, `SessionSlice`, `CasesSlice`, `UISlice`.
+    *   Slices: `AppSlice`, `AuthSlice`, `SessionSlice`, `CasesSlice`, `PendingOpsSlice`.
 3.  **Resilience & Offline Handling**: "Resilient Operation" pattern.
-    *   Queues actions if the network is flaky.
-    *   Automatic retries with exponential backoff.
-    *   Conflict resolution strategies for concurrent data updates.
+    *   Retries transient failures with exponential backoff; non-idempotent writes are NOT auto-retried on ambiguous failures (see the Resilient Operation section).
+    *   Concurrent-write drift is handled by optimistic-concurrency (409) detection + last-write-wins precedence on merge (there is no field-level conflict-resolution engine).
 4.  **Session Persistence**: Client-based session management (`ClientSessionManager`).
     *   Recovers sessions automatically after browser crashes or reloads.
     *   Preserves chat history and user context.
@@ -30,7 +29,7 @@ FaultMaven Copilot is a browser extension providing AI-powered troubleshooting a
 *   **Data Fetching**: TanStack Query (React Query) + Custom `authenticatedFetch`
 *   **Build**: Vite-based with hot module reloading
 *   **Testing**: Vitest, React Testing Library (100% pass rate)
-*   **Storage**: `browser.storage.local` with `BatchedStorage` optimization
+*   **Storage**: `browser.storage.local`, written via a debounced persistence subscription in `state/store.ts`
 
 ---
 
@@ -48,7 +47,7 @@ src/
 │   ├── api/                  # API Layer
 │   │   ├── services/         # Domain services (auth, case, session, knowledge)
 │   │   ├── client.ts         # Base HTTP client with interceptors
-│   │   └── types.ts          # API type definitions
+│   │   └── types/            # API type definitions
 │   ├── auth/                 # Auth logic (OIDC, tokens)
 │   ├── errors/               # Error handling system (classifiers, types)
 │   ├── optimistic/           # Optimistic UI logic (ID generation, conflict resolution)
@@ -56,8 +55,7 @@ src/
 │   ├── state/                # Zustand Stores (slices)
 │   │   ├── store.ts          # Main store configuration
 │   │   └── slices/           # Individual state slices
-│   └── utils/                # Shared utilities (logger, messaging, retry)
-│       └── html-to-structured-text.ts  # Semantic DOM → markdown extraction
+│   └── utils/                # Shared utilities (logger, messaging, retry, memory-manager)
 ├── shared/                   # UI Components & Hooks
 │   ├── ui/
 │   │   ├── components/       # Reusable UI atoms/molecules
@@ -73,14 +71,13 @@ src/
 
 The copilot captures web page content (dashboards, alert pages, status pages) and converts it to structured markdown for the FaultMaven backend.
 
-### Two Capture Paths
+### Capture path
 
-1. **Content script import** (primary): `page-content.content.ts` imports `htmlToStructuredText(document)` from `lib/utils/html-to-structured-text.ts`. Used when the content script is already injected on the page.
-2. **Programmatic injection** (fallback): `usePageContent.ts` uses `browser.scripting.executeScript()` with a fully inlined version of the extraction logic. Used when the content script isn't responding (e.g., page loaded before extension install). The function must be self-contained — `scripting.executeScript` serializes it, so no imports are allowed.
+Capture is driven by `shared/ui/hooks/usePageContent.ts`. It first tries `browser.tabs.sendMessage(tabId, { action: "getPageContent" })`, but **no content script listens for that message**, so on a normal page that call rejects and control always falls through to the real path: **programmatic injection** via `browser.scripting.executeScript()` with a fully **inlined** extractor. The extractor must be self-contained — `scripting.executeScript` serializes it, so it takes no imports. (There is no separate `page-content.content.ts` / `lib/utils/html-to-structured-text.ts`; the extraction logic lives inline in `usePageContent.ts`.)
 
-### Extraction: `htmlToStructuredText`
+### Extraction
 
-Converts live DOM to structured markdown. Key features:
+The inlined extractor converts the live DOM to structured markdown. Key features:
 
 *   **Visibility-aware**: Uses `getComputedStyle()` on the live DOM to skip hidden elements (`display: none`, `visibility: hidden`, `opacity: 0`, `aria-hidden`)
 *   **`tryKeyValue` heuristic**: Detects label + value patterns in child elements (e.g., `<div><span>CPU Usage</span><span>92%</span></div>` → `CPU Usage: 92%`)
@@ -107,10 +104,11 @@ We use **Zustand** for global state management, replacing complex prop drilling.
 
 ### Store Slices
 
-1.  **AuthSlice**: Manages user authentication, tokens, and roles.
-2.  **SessionSlice**: Handles session lifecycle, capabilities, and recovery.
-3.  **CasesSlice**: Manages case lists, active conversations, and optimistic updates.
-4.  **UISlice**: Controls UI state (sidebar collapse, modals, active tabs).
+1.  **AppSlice**: UI state (sidebar collapse, modals, active tab, unsaved-new-chat flag).
+2.  **AuthSlice**: User authentication, tokens, and roles.
+3.  **SessionSlice**: Session lifecycle, capabilities, and recovery.
+4.  **CasesSlice**: Case lists, active conversations, and optimistic updates.
+5.  **PendingOpsSlice**: Failed-operation retry/dismiss (the live pending-operation state is held by `pendingOpsManager`, not persisted — see the persistence notes).
 
 ### Data Flow
 
