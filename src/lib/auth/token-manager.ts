@@ -264,6 +264,22 @@ export class TokenManager {
       // past value can't be read as an expired refresh window on the next check.
       await browser.storage.local.remove(['refresh_expires_at']);
     }
+
+    // Keep the composite `authState` in sync with the refresh. The UI auth gate
+    // (authManager.isAuthenticated / getAuthState) and getAuthHeaders' fallback
+    // read authState; if its expires_at stayed frozen at login it would go stale
+    // and (before the getAuthState guard) force a spurious logout. Writing it here
+    // keeps its access_token + expires_at current for an actively-refreshing session.
+    // (Written directly, not via authManager, to avoid an import cycle.)
+    await browser.storage.local.set({
+      authState: {
+        access_token: newTokens.access_token,
+        token_type: newTokens.token_type,
+        expires_at: now + (newTokens.expires_in * 1000),
+        user: tokens.user,
+      },
+    });
+
     log.info('Access token refreshed successfully', { mode: isLocal ? 'local' : 'oauth' });
   }
 
