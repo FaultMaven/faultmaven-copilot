@@ -1,6 +1,5 @@
 import { StateCreator } from 'zustand';
 import { browser } from 'wxt/browser';
-import { createSession } from '../../../lib/api';
 import { refreshSession as coreRefreshSession } from '../../api/session-core';
 import { heartbeatSession } from '../../api/services/session-service';
 import { tokenManager } from '../../auth/token-manager';
@@ -65,30 +64,15 @@ export const createSessionSlice: StateCreator<any, [], [], SessionSlice> = (set,
             sessionError: null
           });
         } else {
-          log.info('Creating new session');
-          const session = await createSession();
-
-          if (!session.session_id) {
-            throw new Error('Invalid session response: missing session_id');
-          }
-
-          await browser.storage.local.set({
-            sessionId: session.session_id,
-            sessionCreatedAt: Date.now(),
-            sessionResumed: session.session_resumed || false,
-            clientId: session.client_id
-          });
-
-          log.info('Session created', {
-            sessionId: session.session_id,
-            resumed: session.session_resumed
-          });
-
-          set({
-            sessionId: session.session_id,
-            isSessionInitialized: true,
-            sessionError: null
-          });
+          log.info('No stored session; ensuring one via the single-flighted refresh');
+          // Delegate to refreshSession, which routes through
+          // session-core.refreshSession (cross-context Web-Locks single-flight +
+          // idempotent storage re-check + persist) and updates the store.
+          // Calling createSession() directly here let two contexts — e.g. a
+          // sidepanel in each of several browser windows — herd parallel
+          // /sessions POSTs. A thrown "no session_id persisted" propagates to
+          // the catch below and becomes sessionError (init never rejects).
+          await get().refreshSession();
         }
 
         // Start keep-alive heartbeat. Pings the server so an open-but-idle panel
