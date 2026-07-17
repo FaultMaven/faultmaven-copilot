@@ -18,13 +18,17 @@ const fetchWithTimeout = vi.fn();
 vi.mock('../../lib/utils/fetch-timeout', () => ({
   fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
 }));
+const storageRemove = vi.fn().mockResolvedValue(undefined);
+const storageGet = vi.fn().mockResolvedValue({});
 vi.mock('wxt/browser', () => ({
-  browser: { storage: { local: { remove: vi.fn().mockResolvedValue(undefined) } } }
+  browser: { storage: { local: { remove: (...a: any[]) => storageRemove(...a), get: (...a: any[]) => storageGet(...a) } } }
 }));
 
 describe('authenticatedFetch — error branding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (getAuthHeaders as any).mockResolvedValue({});
+    storageGet.mockResolvedValue({});
   });
 
   // Regression: a hard 401 threw AuthenticationError inside the try, which the
@@ -70,6 +74,41 @@ describe('authenticatedFetch — error branding', () => {
     );
     // The refresh_token-destroying teardown must NOT have run.
     expect(clearAllAuthData).not.toHaveBeenCalled();
+  });
+});
+
+// Regression: issue #104 — handleSessionExpired must compare-and-remove so a
+// late 401 carrying an OLD session id can't wipe a session a concurrent refresh
+// already rotated to a fresh one.
+describe('authenticatedFetch — session-expired compare-and-remove (#104)', () => {
+  const sessionExpired = {
+    ok: false,
+    status: 401,
+    headers: { get: () => null },
+    json: async () => ({ code: 'SESSION_EXPIRED' })
+  } as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does NOT clear storage when a late 401 carries a superseded session id', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' }); // request carried old S1
+    storageGet.mockResolvedValue({ sessionId: 'S2' });                   // storage already rotated to S2
+    fetchWithTimeout.mockResolvedValue(sessionExpired);
+
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
+    // The fresh S2 must survive.
+    expect(storageRemove).not.toHaveBeenCalled();
+  });
+
+  it('clears storage when the 401 carries the still-current session id', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' });
+    storageGet.mockResolvedValue({ sessionId: 'S1' });
+    fetchWithTimeout.mockResolvedValue(sessionExpired);
+
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(storageRemove).toHaveBeenCalledWith(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
   });
 });
 
