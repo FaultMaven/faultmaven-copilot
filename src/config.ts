@@ -144,6 +144,17 @@ export async function setEndpoints(opts: { apiBaseUrl?: string; dashboardUrl?: s
   }
   if (Object.keys(toWrite).length > 0) {
     await browser.storage.local.set(toWrite);
+    // Changing the endpoint can change the auth mode (e.g. standalone→cloud).
+    // Invalidate the cached auth config so TokenManager re-derives the refresh
+    // endpoint instead of routing to the previous deployment's (#110). Dynamic
+    // import avoids a static config↔auth-config cycle (auth-config imports
+    // getApiUrl from here); it's runtime-only, so the cycle never materializes.
+    try {
+      const { clearAuthConfigCache } = await import('./lib/auth/auth-config');
+      await clearAuthConfigCache();
+    } catch (err) {
+      log.warn('Failed to invalidate auth config cache after endpoint change', err);
+    }
   }
 }
 
