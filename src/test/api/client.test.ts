@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prepareBody, authenticatedFetch } from '../../lib/api/client';
-import { AuthenticationError } from '../../lib/errors/types';
+import { AuthenticationError, SessionExpiredError } from '../../lib/errors/types';
+import { getAuthHeaders } from '../../lib/api/fetch-utils';
 
 // --- Mocks for the authenticatedFetch catch-path test ---
 const clearAllAuthData = vi.fn().mockResolvedValue(undefined);
@@ -31,7 +32,9 @@ describe('authenticatedFetch — error branding', () => {
   // The async-turn poll loop keys its terminal check on err.name, so the
   // mislabelled error looked retryable and a hard 401 was retried instead of
   // aborting. UserFacingError instances must propagate with name intact.
-  it('preserves AuthenticationError on a hard 401 (does not rebrand to NetworkError)', async () => {
+  it('preserves AuthenticationError on a credential-present hard 401 (does not rebrand to NetworkError)', async () => {
+    // A hard 401 means "the credential we SENT is invalid" — attach one.
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer live-token' });
     fetchWithTimeout.mockResolvedValue({
       ok: false,
       status: 401,
@@ -45,6 +48,28 @@ describe('authenticatedFetch — error branding', () => {
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
       AuthenticationError
     );
+    expect(clearAllAuthData).toHaveBeenCalled();
+  });
+
+  // Regression: issue #99 — a 401 on a request that carried NO Authorization
+  // header (getAuthHeaders returned none during a transient refresh outage that
+  // deliberately preserved the tokens) must NOT trigger the hard-auth teardown
+  // that destroys the still-valid refresh_token. It is treated as a recoverable
+  // session-expired condition instead, so the credential survives to recover.
+  it('does NOT tear down auth on a 401 when no Authorization header was sent (#99)', async () => {
+    (getAuthHeaders as any).mockResolvedValue({}); // no credential attached
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+      json: async () => ({ detail: 'Unauthorized' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
+      SessionExpiredError
+    );
+    // The refresh_token-destroying teardown must NOT have run.
+    expect(clearAllAuthData).not.toHaveBeenCalled();
   });
 });
 
