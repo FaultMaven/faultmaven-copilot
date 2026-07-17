@@ -14,6 +14,7 @@ import {
 } from '../../../lib/optimistic';
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { caseCacheManager } from '../../../lib/cache/case-cache';
+import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import { isCommittedMessage } from '../../../lib/utils/memory-manager';
 
@@ -186,12 +187,20 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
       }
 
       log.info('No case exists, creating new case for session:', sessionId);
+      const epoch = getEpoch();
       set({ isCreatingCase: true });
 
       caseCreationPromise = createNewCaseViaAPI(sessionId);
 
       try {
         const caseId = await caseCreationPromise;
+        // A logout during creation must not re-seed activeCaseId /
+        // faultmaven_current_case for a case that belongs to the ended session.
+        if (epoch !== getEpoch()) {
+          log.info('Session changed during ensureCaseExists — discarding created case', { caseId });
+          set({ isCreatingCase: false });
+          return caseId;
+        }
         await browser.storage.local.set({ faultmaven_current_case: caseId });
         set({ activeCaseId: caseId, isCreatingCase: false });
         log.info('Case created successfully:', caseId);
@@ -212,10 +221,18 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
       }
 
       log.info('Force creating new case for session:', sessionId);
+      const epoch = getEpoch();
       set({ isCreatingCase: true });
 
       try {
         const caseId = await createNewCaseViaAPI(sessionId);
+        // A logout during creation must not re-seed activeCaseId /
+        // faultmaven_current_case for a case that belongs to the ended session.
+        if (epoch !== getEpoch()) {
+          log.info('Session changed during createNewCase — discarding created case', { caseId });
+          set({ isCreatingCase: false });
+          return caseId;
+        }
         await browser.storage.local.set({ faultmaven_current_case: caseId });
         set({ activeCaseId: caseId, isCreatingCase: false });
         log.info('New case created successfully:', caseId);
@@ -292,9 +309,17 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
       // isCommittedMessage (drops optimistic / loading / failed / error).
       const offset = (get().conversations[caseId] ?? []).filter(isCommittedMessage).length;
 
+      // Fence the delta-fetch continuation: a logout while the fetch is in flight
+      // must not merge the ended session's messages back into a purged store.
+      const epoch = getEpoch();
+
       inFlightDeltaFetches.add(caseId);
       getCaseConversation(resolvedCaseId, { offset })
         .then(data => {
+          if (epoch !== getEpoch()) {
+            log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
+            return;
+          }
           const incoming: OptimisticConversationItem[] = (data.messages || []).map((msg: any) => ({
             id: msg.message_id,
             timestamp: msg.created_at,
@@ -346,11 +371,19 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
 
       const transitionedCaseId = activeCase.case_id;
       const isTerminal = activeCase.state === 'resolved' || activeCase.state === 'closed';
+      const epoch = getEpoch();
 
       try {
         await caseCacheManager.invalidateCache();
         if (isTerminal) {
           const cases = await getUserCases({ limit: 100, offset: 0 });
+          // A logout during the refetch must not re-hydrate an activeCase for the
+          // ended session. The set() below is also guarded on case_id identity,
+          // but the epoch check stops it before a purge is undone.
+          if (epoch !== getEpoch()) {
+            log.info('Session changed during reconcile — discarding active-case refresh', { transitionedCaseId });
+            return;
+          }
           const fresh = cases.find(c => c.case_id === transitionedCaseId);
           if (fresh) {
             set((state: any) => {

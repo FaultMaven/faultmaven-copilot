@@ -10,6 +10,7 @@ import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
 import { authManager } from '../../../lib/api';
 import { IdMappingState, idMappingManager } from '../../../lib/optimistic';
+import { getEpoch } from '../../../lib/state/session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import { useAppStore } from '../../../lib/state/store';
 import { memoryManager } from '../../../lib/utils/memory-manager';
@@ -51,6 +52,10 @@ export function useDataRecovery(
 
   useEffect(() => {
     const loadPersistedDataWithRecovery = async () => {
+      // Recovery runs across several awaits; capture the epoch so a logout during
+      // recovery fences the active-case restore below (which is otherwise only
+      // isAuthenticated-gated — a TOCTOU: the flag can flip after the check).
+      const epoch = getEpoch();
       try {
         log.info('Starting intelligent persistence loading');
 
@@ -166,7 +171,12 @@ export function useDataRecovery(
           if (await authManager.isAuthenticated()) {
             const { faultmaven_current_case: restoredCaseId } =
               await browser.storage.local.get(['faultmaven_current_case']);
-            if (restoredCaseId && typeof restoredCaseId === 'string') {
+            // Re-check the epoch after the auth/storage awaits: a logout that
+            // landed mid-recovery must not let us re-select the ended session's
+            // case (handleCaseSelect writes activeCase and delta-fetches).
+            if (epoch !== getEpoch()) {
+              log.info('Session ended during recovery — skipping active-case restore');
+            } else if (restoredCaseId && typeof restoredCaseId === 'string') {
               useAppStore.getState().handleCaseSelect(restoredCaseId);
               log.info('Restored active case after reload', { caseId: restoredCaseId });
             }
