@@ -71,11 +71,29 @@ async function handleAuthError(): Promise<void> {
 }
 
 /**
- * Handle session expiration by clearing stale session and triggering refresh
+ * Handle session expiration by clearing the stale session and triggering refresh.
+ *
+ * `sentSessionId` is the session id the failing request actually carried (its
+ * `X-Session-Id`). When provided we **compare-and-remove**: only clear storage
+ * if it still holds that same id. A late 401 from a request carrying an OLD
+ * session id must not wipe a sessionId that a concurrent refresh already rotated
+ * to a fresh one (#104) — clearing the fresh id would send subsequent requests
+ * out header-less and trigger a redundant second `/sessions` POST.
  */
-async function handleSessionExpired(): Promise<void> {
-  // Clear stale session from storage
+async function handleSessionExpired(sentSessionId?: string): Promise<void> {
   if (typeof browser !== 'undefined' && browser.storage) {
+    if (sentSessionId) {
+      const { sessionId: storedSessionId } = await browser.storage.local.get(['sessionId']);
+      if (storedSessionId && storedSessionId !== sentSessionId) {
+        log.info('Late 401 for a superseded session — leaving the fresh session intact', {
+          sentSessionId,
+          storedSessionId
+        });
+        throw new SessionExpiredError('Session expired - please refresh');
+      }
+    }
+    // Clear stale session from storage (storage still holds the failed id, or we
+    // couldn't identify it — clear to force a fresh refresh either way).
     await browser.storage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
   }
 
@@ -157,6 +175,13 @@ export async function authenticatedFetch(
       (k) => k.toLowerCase() === 'authorization' && !!(mergedHeaders as any)[k]
     );
 
+    // The session id this request actually carried — used for the compare-and-
+    // remove in handleSessionExpired so a late 401 can't wipe a fresher session (#104).
+    const sentSessionKey = Object.keys(mergedHeaders).find(
+      (k) => k.toLowerCase() === 'x-session-id'
+    );
+    const sentSessionId = sentSessionKey ? (mergedHeaders as any)[sentSessionKey] : undefined;
+
     const response = await fetchWithTimeout(url, {
       ...options,
       headers: mergedHeaders
@@ -178,7 +203,7 @@ export async function authenticatedFetch(
         if (!sentAuthHeader) {
           log.warn('401 on a request with no Authorization header — treating as transient (token preserved), not a hard auth failure');
         }
-        await handleSessionExpired();
+        await handleSessionExpired(sentSessionId);
         throw new SessionExpiredError('Session expired'); // Fallback in case handleSessionExpired doesn't throw
       }
 
