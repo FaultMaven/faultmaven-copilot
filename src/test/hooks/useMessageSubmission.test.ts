@@ -229,6 +229,50 @@ describe('useMessageSubmission', () => {
     expect(result.current.submitting).toBe(false);
   });
 
+  // Regression: issue #101 — a successful retry must clear the error/failed
+  // flags set by the prior failed attempt, or the answer renders red and gets
+  // dropped from committed-only persistence.
+  it('clears error/failed flags when a retried submission succeeds', async () => {
+    const { result } = renderHook(() => useMessageSubmission());
+
+    // First attempt fails → the AI item is marked error/failed (kept visible).
+    (api.submitTurn as any).mockRejectedValue(new Error('Network Error'));
+    await act(async () => {
+      await result.current.handleQuerySubmit('test query');
+    });
+    await waitFor(() => {
+      expect(pendingOpsManager.fail).toHaveBeenCalledWith('ai-msg-id', expect.any(String), false);
+    });
+    const failedItem = (useAppStore.getState().conversations['case-123'] || [])
+      .find((m: any) => m.id === 'ai-msg-id');
+    expect(failedItem?.error).toBe(true);
+    expect(failedItem?.failed).toBe(true);
+
+    // Retry (same message ids) now succeeds. Grab the retryFn the failed op
+    // registered — it re-runs the submission against the existing failed item.
+    const registeredOp = (pendingOpsManager.add as any).mock.calls.at(-1)?.[0];
+    expect(registeredOp?.retryFn).toBeTypeOf('function');
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Recovered response',
+      turn_number: 1,
+      milestones_completed: [],
+      case_state: 'inquiry',
+      progress_made: false,
+      is_stuck: false,
+      attachments_processed: []
+    });
+    await act(async () => {
+      await registeredOp.retryFn();
+    });
+
+    const healed = (useAppStore.getState().conversations['case-123'] || [])
+      .find((m: any) => m.id === 'ai-msg-id');
+    expect(healed?.response).toBe('Recovered response');
+    expect(healed?.error).toBe(false);
+    expect(healed?.failed).toBe(false);
+    expect(healed?.errorMessage).toBeUndefined();
+  });
+
   // Regression: issue #132 — logout must fence in-flight background writers so a
   // createCase/turn that resolves AFTER the logout purge can't repopulate state.
   describe('session-epoch fence (issue #132)', () => {
