@@ -143,27 +143,47 @@ export async function authenticatedFetch(
       delete (headers as any)['Content-Type'];
     }
 
+    const mergedHeaders = {
+      ...headers,
+      ...(options.headers || {})
+    };
+
+    // Did we actually attach a credential? getAuthHeaders returns no
+    // Authorization header when getValidAccessToken yields null — which happens
+    // during a transient refresh-endpoint outage where TokenManager DELIBERATELY
+    // preserves the tokens (mid-session resilience). A 401 on such a header-less
+    // request means "we had no token", not "the token is invalid" (see #99).
+    const sentAuthHeader = Object.keys(mergedHeaders).some(
+      (k) => k.toLowerCase() === 'authorization' && !!(mergedHeaders as any)[k]
+    );
+
     const response = await fetchWithTimeout(url, {
       ...options,
-      headers: {
-        ...headers,
-        ...(options.headers || {})
-      }
+      headers: mergedHeaders
     }, timeoutMs);
 
     // Handle 401 errors - distinguish between auth failure and session expiration
     if (response.status === 401) {
       const errorData = await response.json().catch(() => ({ detail: 'Unauthorized' }));
 
-      // Check if this is a session expiration (backend returns specific error code)
-      if (errorData.code === 'SESSION_EXPIRED' ||
+      // Treat as a recoverable session condition when EITHER the backend flags
+      // session expiry OR we sent no credential at all. Routing the header-less
+      // case here (instead of through handleAuthError) preserves the still-valid
+      // refresh_token: a transient refresh blip must not force a full logout by
+      // destroying the credential the next request could have refreshed (#99).
+      if (!sentAuthHeader ||
+          errorData.code === 'SESSION_EXPIRED' ||
           errorData.detail?.toLowerCase().includes('session expired') ||
           errorData.detail?.toLowerCase().includes('session not found')) {
+        if (!sentAuthHeader) {
+          log.warn('401 on a request with no Authorization header — treating as transient (token preserved), not a hard auth failure');
+        }
         await handleSessionExpired();
         throw new SessionExpiredError('Session expired'); // Fallback in case handleSessionExpired doesn't throw
       }
 
-      // Otherwise it's an authentication failure
+      // A 401 on a request that DID carry a credential means the credential is
+      // no longer valid → full teardown (clears tokens; see handleAuthError).
       await handleAuthError();
       throw new AuthenticationError('Authentication required');
     }

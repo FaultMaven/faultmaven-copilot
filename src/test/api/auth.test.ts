@@ -8,7 +8,7 @@ import {
   getUserCases,
   createCase
 } from '../../lib/api';
-import { AuthenticationError } from '../../lib/errors/types';
+import { AuthenticationError, SessionExpiredError } from '../../lib/errors/types';
 
 // Mock config
 vi.mock('../../config', () => ({
@@ -325,8 +325,17 @@ describe('Authentication API', () => {
       expect(result).toEqual(userResponse);
     });
 
-    it('handles 401 authentication error', async () => {
-      mockBrowserStorage.local.get.mockResolvedValue({});
+    it('handles 401 authentication error on a credential-present request', async () => {
+      // A hard auth failure means the credential we SENT is invalid — seed a
+      // valid token so getAuthHeaders attaches Authorization: Bearer.
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'valid-token', token_type: 'bearer', expires_at: Date.now() + 86400000 },
+        access_token: 'valid-token',
+        token_type: 'bearer',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'valid-refresh',
+        refresh_expires_at: Date.now() + 604800000
+      });
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         status: 401,
@@ -336,6 +345,23 @@ describe('Authentication API', () => {
 
       await expect(getCurrentUser()).rejects.toThrow(AuthenticationError);
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+    });
+
+    // #99: a 401 on a header-less request (no token attached — transient refresh
+    // outage that preserved the tokens) is a recoverable session condition, not
+    // a hard auth failure. It must NOT run the full teardown.
+    it('does NOT tear down auth on a 401 when no credential was attached (#99)', async () => {
+      mockBrowserStorage.local.get.mockResolvedValue({}); // no stored token
+
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
+        status: 401,
+        ok: false,
+        json: { detail: 'Unauthorized' }
+      }));
+
+      await expect(getCurrentUser()).rejects.toThrow(SessionExpiredError);
+      // The token-clearing teardown must not have fired.
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
     });
   });
 
