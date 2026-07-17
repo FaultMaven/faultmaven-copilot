@@ -57,31 +57,33 @@ describe('session-slice', () => {
     expect(useAppStore.getState().isSessionInitialized).toBe(true);
   });
 
-  it('creates a new session when none is stored', async () => {
-    (api.createSession as any).mockResolvedValue({
-      session_id: 'new-sess',
-      session_resumed: false,
-      client_id: 'client-1'
-    });
+  it('ensures a session via the single-flighted refresh when none is stored (no direct createSession herd)', async () => {
+    (coreRefreshSession as any).mockResolvedValue(undefined);
+    // Two reads: the fast-path check (empty) then refreshSession's read-back
+    // after session-core persisted the new id.
+    (browser.storage.local.get as any)
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ sessionId: 'new-sess' });
 
     await useAppStore.getState().initializeSession();
 
-    expect(api.createSession).toHaveBeenCalled();
+    expect(coreRefreshSession).toHaveBeenCalledTimes(1);
+    // The slice must NOT create a session itself — that bypassed the Web-Locks
+    // mutex and let multiple contexts herd parallel /sessions POSTs.
+    expect(api.createSession).not.toHaveBeenCalled();
     expect(useAppStore.getState().sessionId).toBe('new-sess');
     expect(useAppStore.getState().isSessionInitialized).toBe(true);
-    expect(browser.storage.local.set).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'new-sess', clientId: 'client-1' })
-    );
   });
 
-  it('records an error and stays uninitialized when the backend omits session_id', async () => {
-    (api.createSession as any).mockResolvedValue({ session_id: undefined });
+  it('records an error and stays uninitialized when the refresh persists no session_id', async () => {
+    (coreRefreshSession as any).mockResolvedValue(undefined);
+    (browser.storage.local.get as any).mockResolvedValue({}); // never persisted
 
     await useAppStore.getState().initializeSession();
 
     expect(useAppStore.getState().sessionId).toBeNull();
     expect(useAppStore.getState().isSessionInitialized).toBe(false);
-    expect(useAppStore.getState().sessionError).toMatch(/missing session_id/i);
+    expect(useAppStore.getState().sessionError).toMatch(/session_id/i);
   });
 
   it('refreshSession routes through the single-flighted session-core refresh (no direct createSession herd)', async () => {
