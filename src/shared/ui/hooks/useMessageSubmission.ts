@@ -354,6 +354,12 @@ export function useMessageSubmission() {
                 suggestedActions: response.suggested_actions ?? null,
                 optimistic: false,
                 loading: false,
+                // A successful (re)submission must clear any error state left by a
+                // prior failed attempt (#101): otherwise the AI item renders in
+                // error styling and isCommittedMessage drops it from persistence.
+                error: false,
+                failed: false,
+                errorMessage: undefined,
                 originalId: aiMessageId,
                 metadata: {
                   milestones_completed: response.milestones_completed,

@@ -327,6 +327,11 @@ export function useDataUpload() {
               suggestedActions: turnResponse.suggested_actions ?? null,
               optimistic: false,
               loading: false,
+              // Clear any error state from a prior failed attempt (#101) so a
+              // successful resubmit doesn't render red / get dropped from persist.
+              error: false,
+              failed: false,
+              errorMessage: undefined,
               originalId: aiMessageId,
               metadata: {
                 milestones_completed: turnResponse.milestones_completed,
