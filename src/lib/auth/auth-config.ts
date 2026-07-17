@@ -166,8 +166,16 @@ export async function getAuthConfig(): Promise<AuthConfig> {
 }
 
 /**
- * Clear cached auth config (force reload on next call)
+ * Clear the cached auth config (force a fresh fetch on the next call).
+ *
+ * Clears BOTH the in-memory cache and the persisted `auth_config_cache` key —
+ * the latter is the stale-fallback getAuthConfig reads when a live fetch fails,
+ * so leaving it behind would let a superseded auth mode survive an endpoint
+ * change and route TokenManager's refresh to the wrong endpoint (#110).
  */
-export function clearAuthConfigCache(): void {
+export async function clearAuthConfigCache(): Promise<void> {
   cachedAuthConfig = null;
+  if (typeof browser !== 'undefined' && browser.storage) {
+    await browser.storage.local.remove([AUTH_CONFIG_CACHE_KEY]);
+  }
 }

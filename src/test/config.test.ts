@@ -53,6 +53,25 @@ describe('config endpoints', () => {
       await expect(setEndpoints({ apiBaseUrl: 'not a url' })).rejects.toThrow();
       expect(mockStorage.local.set).not.toHaveBeenCalled();
     });
+
+    // #110: changing the endpoint can change the auth mode, so the cached auth
+    // config (incl. its stale-fallback storage key) must be invalidated —
+    // otherwise TokenManager routes refresh to the previous deployment.
+    // clearAuthConfigCache (in auth-config) uses the ambient global `browser`
+    // (see test setup), distinct from this file's `wxt/browser` module mock.
+    it('invalidates the cached auth config after an endpoint change', async () => {
+      const globalRemove = (globalThis as any).browser.storage.local.remove;
+      globalRemove.mockClear();
+      await setEndpoints({ apiBaseUrl: 'https://fm.acme.com' });
+      expect(globalRemove).toHaveBeenCalledWith(['auth_config_cache']);
+    });
+
+    it('does not invalidate the auth config when nothing is written', async () => {
+      const globalRemove = (globalThis as any).browser.storage.local.remove;
+      globalRemove.mockClear();
+      await setEndpoints({});
+      expect(globalRemove).not.toHaveBeenCalledWith(['auth_config_cache']);
+    });
   });
 
   describe('getApiUrl', () => {
