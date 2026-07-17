@@ -12,6 +12,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
+import { bumpEpoch } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { getDashboardUrl } from "../../config";
@@ -101,10 +102,18 @@ function SidePanelAppContent() {
   } = usePendingOperations(activeCaseId || undefined, showError);
 
   // --- Message Submission ---
-  const { submitting, handleQuerySubmit } = useMessageSubmission();
+  const {
+    submitting,
+    handleQuerySubmit,
+    abortInFlight: abortInFlightMessageTurns
+  } = useMessageSubmission();
 
   // --- Data Upload ---
-  const { handleTurnSubmit, uploading: isUploading } = useDataUpload();
+  const {
+    handleTurnSubmit,
+    uploading: isUploading,
+    abortInFlight: abortInFlightUploadTurns
+  } = useDataUpload();
 
   // Initialize first-run status and capabilities
   useEffect(() => {
@@ -123,6 +132,20 @@ function SidePanelAppContent() {
   };
 
   const handleLogout = async () => {
+    // 0. Fence the session FIRST, synchronously, before any await. handleLogout
+    //    has several sequential awaits below during which a background writer
+    //    (e.g. a createCase whose continuation is already queued) can resolve and
+    //    re-write the state we're about to clear. Bumping the epoch here makes
+    //    every in-flight writer's captured epoch stale, so its post-await store/
+    //    storage/singleton writes are discarded instead of repopulating the purge.
+    bumpEpoch();
+
+    // Stop in-flight turn poll loops so they don't keep hitting the backend for
+    // up to POLL_MAX_TOTAL_MS after logout. This is a budget concern, not a
+    // correctness one — the epoch fence above already prevents stale writes.
+    abortInFlightMessageTurns();
+    abortInFlightUploadTurns();
+
     // 1. Clear backend auth and session state
     await logout();
     await clearSession();

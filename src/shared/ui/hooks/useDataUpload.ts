@@ -19,6 +19,7 @@ import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { TITLE_GENERATION_THRESHOLD } from './useMessageSubmission';
 import { useAppStore } from '../../../lib/state/store';
+import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -38,6 +39,14 @@ export function useDataUpload() {
       controllers.clear();
     };
   }, []);
+
+  // Abort every in-flight turn immediately. Called from handleLogout so a turn's
+  // detached poll loop stops hitting the backend post-logout (a budget concern;
+  // the session-epoch fence is what guarantees stale writes never land).
+  const abortInFlight = () => {
+    inFlightControllers.current.forEach(c => c.abort());
+    inFlightControllers.current.clear();
+  };
 
   // Selected store state
   const sessionId = useAppStore((state) => state.sessionId);
@@ -72,6 +81,11 @@ export function useDataUpload() {
         };
       }
 
+      // Capture the session epoch before any network round-trip. A logout while
+      // case creation or the turn is in flight must not let the continuations
+      // below re-write state into the just-purged store/storage (issue #132).
+      const epoch = getEpoch();
+
       // Step 1: Ensure case exists
       let targetCaseId = activeCaseId;
 
@@ -91,6 +105,13 @@ export function useDataUpload() {
           const newCaseId = caseData.case_id;
           if (!newCaseId) {
             throw new Error('Backend response missing case_id');
+          }
+
+          // Session ended while the case was being created: discard it rather
+          // than re-seeding activeCase / faultmaven_current_case post-logout.
+          if (epoch !== getEpoch()) {
+            log.info('Session changed during case creation — discarding new case', { newCaseId });
+            return { success: false, message: '' };
           }
 
           targetCaseId = newCaseId;
@@ -257,6 +278,14 @@ export function useDataUpload() {
 
       log.info('Turn submitted successfully', { caseId: targetCaseId, turnNumber: turnResponse.turn_number });
 
+      // The session may have ended while the turn was in flight. Skip every
+      // store/storage write below so a resolved turn can't repopulate a
+      // conversation the logout purge just cleared.
+      if (epoch !== getEpoch()) {
+        log.info('Session changed during turn submission — discarding success writes', { caseId: targetCaseId });
+        return { success: false, message: '' };
+      }
+
       if (turnResponse.case_state) {
         setActiveCase((prev: UserCase | null) => {
           if (prev && prev.state !== turnResponse.case_state) {
@@ -358,6 +387,7 @@ export function useDataUpload() {
 
   return {
     handleTurnSubmit,
-    uploading: loading
+    uploading: loading,
+    abortInFlight
   };
 }

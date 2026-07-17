@@ -37,6 +37,7 @@ import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
+import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
@@ -61,6 +62,14 @@ export function useMessageSubmission() {
     };
   }, []);
 
+  // Abort every in-flight turn immediately. Called from handleLogout so a turn's
+  // detached poll loop stops hitting the backend post-logout (a budget concern;
+  // the session-epoch fence is what guarantees stale writes never land).
+  const abortInFlight = () => {
+    inFlightControllers.current.forEach(c => c.abort());
+    inFlightControllers.current.clear();
+  };
+
   // Selected store state
   const sessionId = useAppStore((state) => state.sessionId);
   const activeCaseId = useAppStore((state) => state.activeCaseId);
@@ -80,6 +89,11 @@ export function useMessageSubmission() {
 
   // Reconcile optimistic case ID with backend ID
   const createOptimisticCaseInBackground = async (optimisticId: string, title: string | null) => {
+    // Capture the session epoch before the network round-trip. If the user logs
+    // out (or a hard 401 fires) while createCase is in flight, the continuation
+    // below must NOT re-write faultmaven_current_case, id-mappings, or
+    // conversations back into the just-purged store/storage (issue #132).
+    const epoch = getEpoch();
     try {
       log.info('Creating case on backend', { optimisticId, title });
 
@@ -91,10 +105,28 @@ export function useMessageSubmission() {
       const newCase = await createCase(caseRequest);
       const realCaseId = newCase.case_id;
 
+      if (epoch !== getEpoch()) {
+        log.info('Session changed during case creation — discarding stale reconciliation', {
+          optimisticId,
+          realCaseId
+        });
+        return realCaseId;
+      }
+
       log.info('Case created on backend', { optimisticId, realCaseId });
       idMappingManager.addMapping(optimisticId, realCaseId);
 
       await setActiveCaseId(realCaseId);
+
+      // Re-check after setActiveCaseId's await: a logout during that write must
+      // not let the remaining store/storage writes below repopulate the purge.
+      if (epoch !== getEpoch()) {
+        log.info('Session changed mid-reconciliation — discarding remaining writes', {
+          optimisticId,
+          realCaseId
+        });
+        return realCaseId;
+      }
 
       setConversations(prev => {
         const optimisticConversation = prev[optimisticId];
@@ -158,6 +190,11 @@ export function useMessageSubmission() {
   ) => {
     const controller = new AbortController();
     inFlightControllers.current.add(controller);
+    // Capture the session epoch before the turn round-trip. A logout while the
+    // turn is in flight (or its poll loop is running) must not let the success
+    // handler write the response / complete the pending op / set a title back
+    // into a purged store (issue #132).
+    const epoch = getEpoch();
     try {
       const response = await resilientOperation({
         operation: async () => {
@@ -289,6 +326,14 @@ export function useMessageSubmission() {
       });
 
       // SUCCESS HANDLER
+      // The session may have ended while the turn was in flight. Skip all
+      // store/singleton writes below so a resolved turn can't repopulate a
+      // conversation the logout purge just cleared.
+      if (epoch !== getEpoch()) {
+        log.info('Session changed during turn submission — discarding success writes', { caseId });
+        return;
+      }
+
       setConversations(prev => {
         const conv = prev[caseId] || [];
         return {
@@ -371,6 +416,10 @@ export function useMessageSubmission() {
       return;
     }
 
+    // Capture the epoch up front: if the user logs out during case creation
+    // below, we must stop before adding optimistic messages to a purged store.
+    const epoch = getEpoch();
+
     const isAuth = await authManager.isAuthenticated();
     if (!isAuth) {
       log.error('User not authenticated, cannot submit query');
@@ -414,6 +463,14 @@ export function useMessageSubmission() {
     if (!targetCaseId) {
       log.error('CRITICAL: No case ID available');
       showError('No active case. Please try again.');
+      setSubmitting(false);
+      return;
+    }
+
+    // A logout during case creation ends this submission: don't add optimistic
+    // messages or fire a turn against a case that belongs to the ended session.
+    if (epoch !== getEpoch()) {
+      log.info('Session changed during submission setup — aborting query submit');
       setSubmitting(false);
       return;
     }
@@ -491,6 +548,7 @@ export function useMessageSubmission() {
 
   return {
     submitting,
-    handleQuerySubmit
+    handleQuerySubmit,
+    abortInFlight
   };
 }

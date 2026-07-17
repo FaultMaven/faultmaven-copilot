@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import { refreshSession as coreRefreshSession } from '../../api/session-core';
 import { heartbeatSession } from '../../api/services/session-service';
 import { tokenManager } from '../../auth/token-manager';
+import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('SessionSlice');
@@ -106,6 +107,12 @@ export const createSessionSlice: StateCreator<any, [], [], SessionSlice> = (set,
     },
 
     refreshSession: async (): Promise<string> => {
+      // Fence the store repopulation below: a logout racing a 401-retry refresh
+      // must not re-seed the store's sessionId for the session that just ended.
+      // (The storage-layer persist happens inside coreRefreshSession and is
+      // single-flighted there; this guard covers the store, which is what the
+      // UI reads. Lower severity than the case-pointer leak, but cheap to fence.)
+      const epoch = getEpoch();
       try {
         log.info('Refreshing session');
 
@@ -121,6 +128,11 @@ export const createSessionSlice: StateCreator<any, [], [], SessionSlice> = (set,
         const sessionId = stored.sessionId as string | undefined;
         if (!sessionId) {
           throw new Error('Session refresh did not persist a session_id');
+        }
+
+        if (epoch !== getEpoch()) {
+          log.info('Session ended during refresh — not repopulating store sessionId');
+          return sessionId;
         }
 
         set({

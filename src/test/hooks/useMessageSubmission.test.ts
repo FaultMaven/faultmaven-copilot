@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useMessageSubmission } from '../../shared/ui/hooks/useMessageSubmission';
 import * as api from '../../lib/api';
-import { pendingOpsManager, OptimisticIdGenerator } from '../../lib/optimistic';
+import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '../../lib/optimistic';
 import { useAppStore } from '../../lib/state/store';
+import { bumpEpoch } from '../../lib/state/session-epoch';
+import { browser } from 'wxt/browser';
 
 const mockShowError = vi.fn();
 const mockShowErrorWithRetry = vi.fn();
@@ -225,5 +227,69 @@ describe('useMessageSubmission', () => {
 
     expect(mockShowError).toHaveBeenCalled();
     expect(result.current.submitting).toBe(false);
+  });
+
+  // Regression: issue #132 — logout must fence in-flight background writers so a
+  // createCase/turn that resolves AFTER the logout purge can't repopulate state.
+  describe('session-epoch fence (issue #132)', () => {
+    it('does not re-create case pointer / id-mapping / conversations when logout lands mid-createCase', async () => {
+      // No active case → handleQuerySubmit goes through createOptimisticCaseInBackground.
+      useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+      (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_test');
+
+      const addMappingSpy = vi.spyOn(idMappingManager, 'addMapping');
+
+      // Simulate a logout that lands WHILE createCase is in flight: the network
+      // resolves, but the session epoch has already moved (handleLogout bumped it).
+      (api.createCase as any).mockImplementation(async () => {
+        bumpEpoch();
+        return { case_id: 'real-case-id', title: 'Case-0625-1', state: 'inquiry' };
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('a query typed just before logout');
+      });
+
+      // The stale continuation must NOT reconcile the optimistic case into the
+      // purged store: no id-mapping, no real-case conversation, and the active
+      // case pointer is never re-pointed at the ended session's real case id.
+      expect(addMappingSpy).not.toHaveBeenCalled();
+      expect(useAppStore.getState().conversations['real-case-id']).toBeUndefined();
+      expect(browser.storage.local.set).not.toHaveBeenCalledWith(
+        expect.objectContaining({ faultmaven_current_case: 'real-case-id' })
+      );
+      // The turn itself is never fired for the ended session.
+      expect(api.submitTurn).not.toHaveBeenCalled();
+
+      addMappingSpy.mockRestore();
+    });
+
+    it('does not write turn success back into a store purged mid-flight', async () => {
+      // Active case exists; the turn resolves after a logout bumps the epoch.
+      (api.submitTurn as any).mockImplementation(async () => {
+        bumpEpoch();
+        return {
+          agent_response: 'AI Response (stale — session already ended)',
+          turn_number: 1,
+          milestones_completed: [],
+          case_state: 'inquiry',
+          progress_made: false,
+          is_stuck: false,
+          attachments_processed: []
+        };
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('test query');
+      });
+
+      // Success handler is fenced: the pending op is never completed against the
+      // ended session and the stale agent_response never lands in the store.
+      expect(pendingOpsManager.complete).not.toHaveBeenCalled();
+      const conv = useAppStore.getState().conversations['case-123'] || [];
+      expect(conv.some((m: any) => m.response?.includes('stale'))).toBe(false);
+    });
   });
 });

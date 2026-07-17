@@ -3,6 +3,7 @@ import { authManager } from '../auth/auth-manager';
 import { AuthenticationError, SessionExpiredError, UserFacingError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
 import { refreshSession } from './session-core';
+import { bumpEpoch } from '../state/session-epoch';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 
@@ -50,6 +51,15 @@ export function prepareBody(body: unknown): string | undefined {
  * Handles authentication errors and triggers re-authentication
  */
 async function handleAuthError(): Promise<void> {
+  // A hard 401 ends the session. Fence it synchronously (before the await below)
+  // so any in-flight background writer in THIS context whose continuation is
+  // already queued skips its post-await writes rather than repopulating state
+  // we're about to tear down. When handleAuthError runs in the background
+  // context instead, this bumps the background epoch; the sidepanel bumps its
+  // own epoch off the resulting `{ isAuthenticated: false }` broadcast/storage
+  // change (see auth-slice).
+  bumpEpoch();
+
   // A hard 401 auth failure (not a recoverable SESSION_EXPIRED) means the
   // credential itself is no longer valid — clear ALL local auth data, including
   // the token keys, so a stale refresh_token can't silently re-authenticate.
