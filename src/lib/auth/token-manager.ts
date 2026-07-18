@@ -323,6 +323,20 @@ export class TokenManager {
   }
 
   /**
+   * Read the stored refresh token, if any.
+   *
+   * Used by logout to best-effort revoke the refresh token server-side
+   * (RFC 7009) BEFORE local teardown destroys the in-browser copy. Unlike
+   * getStoredTokens(), this does not require a present access_token — a session
+   * mid-refresh (or with an expired access token) still holds a revocable
+   * refresh token. Returns null when none is stored.
+   */
+  async getRefreshToken(): Promise<string | null> {
+    const { refresh_token } = await browser.storage.local.get('refresh_token');
+    return typeof refresh_token === 'string' ? refresh_token : null;
+  }
+
+  /**
    * Clear all tokens from storage.
    */
   async clearTokens(): Promise<void> {

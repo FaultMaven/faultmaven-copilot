@@ -63,6 +63,15 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
+// Mock auth-config so logout's best-effort refresh-token revoke can be exercised
+// per auth mode. Default is 'local' (revoke skipped) to keep existing tests intact;
+// the OAuth revoke tests override the provider explicitly.
+const { mockGetAuthConfig } = vi.hoisted(() => ({ mockGetAuthConfig: vi.fn() }));
+vi.mock('../../lib/auth/auth-config', async (importActual) => ({
+  ...(await importActual<any>()),
+  getAuthConfig: mockGetAuthConfig
+}));
+
 // Setup global browser mock (for legacy/fallback code)
 (global as any).browser = {
   storage: mockBrowserStorage,
@@ -85,6 +94,17 @@ describe('Authentication API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    // Default to local mode: logout's best-effort revoke is a no-op unless a test
+    // opts into OAuth mode.
+    mockGetAuthConfig.mockResolvedValue({
+      provider: 'local',
+      features: {
+        supports_registration: true,
+        supports_password_reset: false,
+        supports_email_verification: false,
+        requires_redirect: false
+      }
+    });
   });
 
   afterEach(() => {
@@ -434,6 +454,128 @@ describe('Authentication API', () => {
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
         expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
       );
+    });
+
+    const REVOKE_URL = 'https://api.faultmaven.ai/api/v1/auth/oauth/revoke';
+
+    it('OAuth mode: best-effort revokes the refresh token server-side before teardown', async () => {
+      mockGetAuthConfig.mockResolvedValue({
+        provider: 'oidc',
+        features: {
+          supports_registration: false,
+          supports_password_reset: false,
+          supports_email_verification: false,
+          requires_redirect: true
+        }
+      });
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'token-to-clear' },
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'refresh-token',
+        refresh_expires_at: Date.now() + 604800000
+      });
+
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
+
+      await logoutAuth();
+
+      // Revoke was sent with the refresh token + RFC 7009 hint before local teardown.
+      expect(fetch).toHaveBeenCalledWith(
+        REVOKE_URL,
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            token: 'refresh-token',
+            token_type_hint: 'refresh_token',
+            client_id: 'faultmaven-copilot'
+          })
+        })
+      );
+      // Local teardown still runs.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      );
+    });
+
+    it('OAuth mode: a failing revoke never blocks logout', async () => {
+      mockGetAuthConfig.mockResolvedValue({
+        provider: 'oidc',
+        features: {
+          supports_registration: false,
+          supports_password_reset: false,
+          supports_email_verification: false,
+          requires_redirect: true
+        }
+      });
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'token-to-clear' },
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'refresh-token',
+        refresh_expires_at: Date.now() + 604800000
+      });
+
+      global.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url === REVOKE_URL) {
+          return Promise.reject(new Error('network down'));
+        }
+        return Promise.resolve(mockFetchResponse({ ok: true }));
+      });
+
+      // Logout resolves despite the revoke failure...
+      await expect(logoutAuth()).resolves.toBeUndefined();
+      // ...the logout endpoint was still called...
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.faultmaven.ai/api/v1/auth/logout',
+        expect.objectContaining({ method: 'POST' })
+      );
+      // ...and local teardown still ran.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      );
+    });
+
+    it('local mode: does not attempt refresh-token revoke', async () => {
+      // Default mock is local mode.
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'token-to-clear' },
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'refresh-token',
+        refresh_expires_at: Date.now() + 604800000
+      });
+
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
+
+      await logoutAuth();
+
+      expect(fetch).not.toHaveBeenCalledWith(REVOKE_URL, expect.anything());
+    });
+
+    it('OAuth mode with no refresh token: does not attempt revoke', async () => {
+      mockGetAuthConfig.mockResolvedValue({
+        provider: 'oidc',
+        features: {
+          supports_registration: false,
+          supports_password_reset: false,
+          supports_email_verification: false,
+          requires_redirect: true
+        }
+      });
+      // No refresh_token in storage (access-token-only / never-fully-authenticated).
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'token-to-clear' },
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000
+      });
+
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
+
+      await logoutAuth();
+
+      expect(fetch).not.toHaveBeenCalledWith(REVOKE_URL, expect.anything());
     });
   });
 
