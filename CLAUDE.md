@@ -221,7 +221,7 @@ Auth mode is auto-detected via `GET /api/v1/auth/config`.
 - `authManager.clearAuthState()` — **token-preserving**. Clears only the composite `authState` key (+ case cache). Used inside the normal access-token-expiry path (`getAuthState()`), where the `refresh_token` managed by `TokenManager` must survive so the session can be silently refreshed.
 - `authManager.clearAllAuthData()` — **full teardown**. Clears `authState` **and** every `TokenManager` key (`access_token`, `refresh_token`, `refresh_expires_at`, …). Use for logout and hard (401) auth failures. `clearAuthState()` alone is NOT a valid logout: it leaves the token keys, so `getAuthHeaders` keeps attaching a live Bearer and `TokenManager` silently re-mints a session from the surviving `refresh_token`. Real logout sites — `logoutAuth()`, `client.ts handleAuthError()` (hard 401), options `handleSignOut()` — all route through `clearAllAuthData()`.
 
-> Note: `logoutAuth()` POSTs `/api/v1/auth/logout`, which revokes the **access** token server-side; the **refresh** token is not yet revoked on logout (tracked as a backend follow-up). The in-browser copy is destroyed by `clearAllAuthData()`.
+> Note: `logoutAuth()` POSTs `/api/v1/auth/logout`, which revokes the **access** token server-side. In OAuth (cloud) mode it *also* best-effort POSTs `/api/v1/auth/oauth/revoke` (`token_type_hint: refresh_token`, RFC 7009) to revoke the **refresh** token server-side before local teardown — wrapped so any failure never blocks logout, and skipped in local mode (where `/oauth/revoke` isn't mounted). The in-browser copy is destroyed by `clearAllAuthData()` regardless.
 
 ### Deployment Modes
 

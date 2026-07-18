@@ -440,6 +440,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oauth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke
+         * @description OAuth 2.0 Token Revocation Endpoint.
+         *
+         *     Revokes access tokens or refresh tokens (for logout).
+         *
+         *     When to revoke:
+         *     - User logs out: Revoke both access and refresh tokens
+         *     - Security event: Revoke all tokens for user
+         *     - Token rotation: Old refresh token revoked automatically
+         *
+         *     Args:
+         *         revoke_request: Token revocation request
+         *         oauth_service: OAuth service dependency
+         *
+         *     Returns:
+         *         Success response (200 OK, no body per RFC 7009)
+         *
+         *     Note: Returns 200 even if token doesn't exist (per RFC 7009)
+         */
+        post: operations["revoke_api_v1_auth_oauth_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/snapshot/{turn_number}": {
         parameters: {
             query?: never;
@@ -7038,6 +7074,29 @@ export interface components {
             key_insights?: string[];
         };
         /**
+         * RevokeRequest
+         * @description OAuth token revocation request.
+         *
+         *     Supports revoking both access tokens and refresh tokens.
+         */
+        RevokeRequest: {
+            /**
+             * Token
+             * @description Token to revoke (access or refresh)
+             */
+            token: string;
+            /**
+             * Token Type Hint
+             * @description Hint about token type (optional)
+             */
+            token_type_hint?: ("access_token" | "refresh_token") | null;
+            /**
+             * Client Id
+             * @description OAuth client ID
+             */
+            client_id: string;
+        };
+        /**
          * RoleAssignmentRequest
          * @description Role assignment request.
          */
@@ -8779,6 +8838,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_api_v1_auth_oauth_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */
