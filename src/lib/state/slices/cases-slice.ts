@@ -172,10 +172,21 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         return;
       }
 
-      // Offset must count only COMMITTED messages (those that exist on the backend).
-      // `!optimistic` is wrong: a failed turn's AI item is non-optimistic but has NO
-      // backend row, so it would inflate the offset and skip a real message. Use
+      // Offset is a LOWER-BOUND fetch hint, not a correctness boundary. It counts
+      // only COMMITTED messages (those that exist on the backend): `!optimistic` is
+      // wrong because a failed turn's AI item is non-optimistic but has NO backend
+      // row, so it would inflate the offset and skip a real message — use
       // isCommittedMessage (drops optimistic / loading / failed / error).
+      //
+      // When the local copy is the backend PREFIX (the common case), this offset is
+      // exact and we fetch only the tail. When the local copy is a most-recent
+      // SUFFIX (after `sanitizeAndCapForPersistence` bounds a very long conversation),
+      // the count is smaller than the true tail position, so the fetch OVER-reads:
+      // the result is still a superset of the new messages and the merge below
+      // (turn-floor + id dedup) drops the re-read head instead of re-growing it, so
+      // it's correct — but a capped conversation re-downloads its whole tail on each
+      // open. Accepted here because that only bites pathologically long single
+      // conversations; a backend `after_turn` filter would make the fetch delta-sized.
       const offset = (get().conversations[caseId] ?? []).filter(isCommittedMessage).length;
 
       // Fence the delta-fetch continuation: a logout while the fetch is in flight
@@ -205,10 +216,30 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           if (incoming.length > 0) {
             set((state) => {
               const existing = state.conversations[caseId] || [];
-              // id-dedup (belt-and-suspenders vs offset drift / races): never append
-              // a message_id already present locally.
               const existingIds = new Set(existing.map((m) => m.id));
-              const fresh = incoming.filter(m => !existingIds.has(m.id));
+
+              // Turn floor: the lowest turn_number we still hold locally. When a very
+              // long conversation has been bounded to a most-recent suffix (see
+              // `sanitizeAndCapForPersistence`), the delta fetch over-reads and hands
+              // us messages BELOW this floor — the trimmed head. Dropping them here is
+              // what keeps a bounded conversation from re-growing on every case open.
+              // With no committed local messages yet (0), the floor lets everything
+              // through (a cold hydrate). The cap keeps whole turns, so the floor turn
+              // is fully present locally and its messages fall out via id dedup — no
+              // half-turn is ever re-read out of order.
+              const committedTurns = existing
+                .filter(isCommittedMessage)
+                .map((m) => m.turn_number)
+                .filter((t): t is number => typeof t === 'number');
+              const minLocalTurn = committedTurns.length ? Math.min(...committedTurns) : 0;
+
+              // Append only messages that are (a) not already present (id dedup, vs
+              // offset drift / races) and (b) not below the retained-turn floor.
+              const fresh = incoming.filter(
+                (m) =>
+                  !existingIds.has(m.id) &&
+                  (typeof m.turn_number !== 'number' || m.turn_number >= minLocalTurn)
+              );
               if (fresh.length === 0) return state;
 
               let splitAt = existing.length;

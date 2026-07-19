@@ -118,6 +118,48 @@ describe('cases-slice', () => {
       const conv = useAppStore.getState().conversations['case-5'];
       expect(conv.map((m: any) => m.id)).toEqual(['real-1', 'real-2']);
     });
+
+    it('does not re-grow a bounded (suffix) conversation: incoming below the local turn floor is dropped', async () => {
+      // Local copy has been trimmed to a most-recent suffix (floor turn = 200).
+      // The delta fetch over-reads and returns the trimmed head (turn 50); it must
+      // be dropped, not re-appended, while a genuinely new turn (201) is kept.
+      useAppStore.setState({
+        conversations: { 'case-6': [{ id: 'm200', optimistic: false, turn_number: 200 } as any] }
+      });
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'old50', role: 'user', content: 'trimmed head', turn_number: 50 },
+          { message_id: 'm200', role: 'user', content: 'overlap', turn_number: 200 },
+          { message_id: 'new201', role: 'agent', content: 'genuinely new', turn_number: 201 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-6');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-6'];
+      expect(conv.map((m: any) => m.id)).toEqual(['m200', 'new201']);
+    });
+
+    it('appends the missing half of the floor/ceiling turn (same turn_number, new id)', async () => {
+      // Only the user message of turn 250 is present locally; the agent reply for
+      // that same turn arrives on the delta. `turn >= floor` (not `> ceiling`) keeps it.
+      useAppStore.setState({
+        conversations: { 'case-7': [{ id: 'u250', optimistic: false, turn_number: 250 } as any] }
+      });
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'u250', role: 'user', content: 'q', turn_number: 250 },
+          { message_id: 'a250', role: 'agent', content: 'a', turn_number: 250 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-7');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-7'];
+      expect(conv.map((m: any) => m.id)).toEqual(['u250', 'a250']);
+    });
   });
 
   describe('togglePinnedCase', () => {
