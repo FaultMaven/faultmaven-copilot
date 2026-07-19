@@ -341,25 +341,23 @@ The `src/lib/utils/data-integrity.ts` module enforces strict separation between 
 **Key Functions:**
 ```typescript
 import {
-  isOptimisticId,          // Check if ID is optimistic
-  isRealId,                // Check if ID is real
-  sanitizeBackendCases,    // Extract only real cases from mixed data
-  sanitizeOptimisticCases, // Extract only optimistic cases
-  mergeOptimisticAndReal,  // Safely merge with conflict detection
-  validateStateIntegrity   // Validate state has no mixed IDs
+  isOptimisticId,        // Check if ID is optimistic
+  isRealId,              // Check if ID is real
+  sanitizeBackendCases,  // Extract only real cases from mixed backend data
+  validateStateIntegrity // Validate conversations/titles have no opt_ leakage
 } from '~/lib/utils/data-integrity';
 
-// Safe merging with violation tracking
-const { cases, violations } = mergeOptimisticAndReal(
-  backendCases,
-  pendingCases,
-  'ComponentName'
-);
-
-if (violations.length > 0) {
-  log.error('Data integrity violations', { violations });
-}
+// Backend case lists carry only real ids; sanitize defensively.
+const realCases = sanitizeBackendCases(backendCases, 'ComponentName');
 ```
+
+> The case list is real-only: a transient `opt_case_*` exists solely while a
+> lazy case-create is in flight (`handleQuerySubmit`), where it is set as the
+> active-case id and reconciled to the real id via `idMappingManager`. It is
+> never surfaced as a separate "pending case" in the sidebar. If a create fails,
+> the optimistic active-case id is rolled back; both submit paths also guard
+> against a stale `opt_case_*` before POSTing a turn (resolve via the mapping, or
+> create a fresh real case) so a turn never targets an unreconciled id.
 
 ### Optimistic Updates Pattern
 

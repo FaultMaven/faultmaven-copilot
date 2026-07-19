@@ -1,18 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UserCase, getUserCases, deleteCase as deleteCaseApi, generateCaseTitle, updateCaseTitle as apiUpdateCaseTitle } from '../../../lib/api';
-import { OptimisticUserCase } from '../../../lib/optimistic/types';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
 import {
-  mergeOptimisticAndReal,
   sanitizeBackendCases,
-  sanitizeOptimisticCases,
   validateStateIntegrity,
   isOptimisticId,
-  type ValidatedCase,
-  type RealCase,
-  type OptimisticCase
+  type RealCase
 } from '../../../lib/utils/data-integrity';
 import { idMappingManager } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
@@ -53,7 +48,6 @@ interface ConversationsListProps {
   onFirstCaseDetected?: () => void;
   onAfterDelete?: (deletedCaseId: string, remaining: Array<{ case_id: string; updated_at?: string; created_at?: string }>) => void;
   onCasesLoaded?: (cases: UserCase[]) => void;
-  pendingCases?: OptimisticUserCase[];  // v2.0: Uses OptimisticUserCase with owner_id
   onCaseTitleChange?: (caseId: string, newTitle: string) => void;
   pinnedCases?: Set<string>;
   onPinToggle?: (caseId: string) => void;
@@ -73,7 +67,6 @@ export function ConversationsList({
   onFirstCaseDetected,
   onAfterDelete,
   onCasesLoaded,
-  pendingCases = [],
   onCaseTitleChange,
   pinnedCases = new Set(),
   onPinToggle
@@ -127,26 +120,6 @@ export function ConversationsList({
     }
   }, [titleGenStatus.message]);
 
-  // ARCHITECTURAL FIX: Use strict data separation utilities
-  const mergeWithPending = (baseCases: RealCase[]): ValidatedCase[] => {
-    // DEFENSE: Use defensive merging with violation detection
-    const mergeResult = mergeOptimisticAndReal(
-      baseCases,
-      pendingCases || [],
-      'ConversationsList'
-    );
-
-    // Report violations
-    if (mergeResult.violations.length > 0) {
-      log.error('Data integrity violations detected', {
-        count: mergeResult.violations.length,
-        violations: mergeResult.violations
-      });
-    }
-
-    return mergeResult.cases;
-  };
-
   const loadCases = async () => {
     try {
       setLoading(true);
@@ -156,8 +129,7 @@ export function ConversationsList({
       // ✅ PERFORMANCE WIN: Direct object access instead of JSON.stringify
       // JSON.stringify is computationally expensive and unnecessary
       log.debug('Fetched cases from API', {
-        count: list?.length || 0,
-        hasOptimistic: (pendingCases?.length || 0) > 0
+        count: list?.length || 0
       });
 
       // DEFENSIVE: Strictly sanitize backend data
@@ -174,7 +146,6 @@ export function ConversationsList({
         });
       }
 
-      const sorted = mergeWithPending(filteredCases);
       setCases(filteredCases); // Store only real cases in state
 
       log.debug('Backend cases stored in state', { count: filteredCases.length });
@@ -430,22 +401,6 @@ export function ConversationsList({
     return groups;
   };
 
-  // ARCHITECTURAL FIX: Only show "(pending)" for truly pending cases, not reconciled ones
-  // Filter out optimistic cases that have been successfully reconciled to real IDs
-  const pendingIdSet = new Set<string>(
-    (pendingCases || [])
-      .filter(pc => {
-        // If this is an optimistic case, check if it has been reconciled
-        if (isOptimisticId(pc.case_id)) {
-          // If there's a real ID mapping, this case is no longer truly "pending"
-          return !idMappingManager.getRealId(pc.case_id);
-        }
-        // Real cases can't be pending by definition
-        return false;
-      })
-      .map(pc => pc.case_id)
-  );
-
   const handlePinToggle = (caseId: string) => {
     onPinToggle?.(caseId);
   };
@@ -488,11 +443,10 @@ export function ConversationsList({
               <ConversationItem
                 key={c.case_id}
                 session={{ session_id: c.case_id, created_at: c.created_at || '', status: 'active', last_activity: c.updated_at || '', metadata: {} } as any}
-                title={pendingIdSet.has(c.case_id) ? `${getCaseTitle(c)} (pending)` : getCaseTitle(c)}
+                title={getCaseTitle(c)}
                 isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
                 isUnsavedNew={false}
                 isPinned={pinnedCases.has(c.case_id)}
-                isPending={pendingIdSet.has(c.case_id)}
                 messageCount={c.message_count || 0}
                 onSelect={(id) => onCaseSelect && onCaseSelect(id)}
                 onDelete={(id) => handleDeleteCase(id)}
@@ -507,13 +461,12 @@ export function ConversationsList({
     );
   };
 
-  const mergedCases = mergeWithPending(cases);
+  const mergedCases = cases;
 
   // VALIDATION: Check state integrity
   const currentState = {
     conversations: undefined, // We don't have access to this here, but could be passed down
-    conversationTitles,
-    optimisticCases: pendingCases
+    conversationTitles
   };
   validateStateIntegrity(currentState, 'ConversationsList');
 

@@ -33,7 +33,6 @@ const resetStore = () =>
     conversations: {},
     conversationTitles: {},
     titleSources: {},
-    optimisticCases: [],
     pinnedCases: new Set<string>(),
     caseEvidence: {},
     sessionId: null

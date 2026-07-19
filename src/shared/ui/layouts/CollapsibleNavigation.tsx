@@ -31,7 +31,6 @@ export interface CollapsibleNavigationProps {
 
   // Conversations
   conversationTitles: Record<string, string>;
-  optimisticCases: any[];
   pinnedCases: Set<string>;
   refreshTrigger: number;
 
@@ -59,7 +58,6 @@ export function CollapsibleNavigation({
   hasUnsavedNewChat,
   isAdmin,
   conversationTitles,
-  optimisticCases,
   pinnedCases,
   refreshTrigger,
   dashboardUrl,
@@ -301,7 +299,6 @@ export function CollapsibleNavigation({
             onFirstCaseDetected={() => { }}
             onAfterDelete={onAfterDelete}
             onCasesLoaded={onCasesLoaded}
-            pendingCases={optimisticCases}
             onCaseTitleChange={onCaseTitleChange}
             pinnedCases={pinnedCases}
             onPinToggle={onPinToggle}

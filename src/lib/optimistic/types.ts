@@ -89,20 +89,6 @@ export interface OptimisticConversationItem extends ConversationItem {
 }
 
 /**
- * Optimistic user case with additional metadata
- * v2.0: owner_id is optional here (populated when real data arrives)
- * Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
- */
-export interface OptimisticUserCase extends Omit<UserCase, 'owner_id' | 'organization_id'> {
-  owner_id?: string;  // Optional for optimistic cases, required for real cases
-  organization_id?: string;  // Optional for optimistic cases, populated when real data arrives per commit b434152a
-  optimistic?: boolean;
-  failed?: boolean;
-  pendingOperationId?: string;
-  originalId?: string;
-}
-
-/**
  * Title source types for precedence tracking
  */
 export type TitleSource = 'user' | 'backend' | 'system';

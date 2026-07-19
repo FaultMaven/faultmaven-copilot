@@ -61,7 +61,6 @@ function SidePanelAppContent() {
   const conversations = useAppStore((state) => state.conversations);
   const conversationTitles = useAppStore((state) => state.conversationTitles);
   const titleSources = useAppStore((state) => state.titleSources);
-  const optimisticCases = useAppStore((state) => state.optimisticCases);
   const pinnedCases = useAppStore((state) => state.pinnedCases);
   const activeCase = useAppStore((state) => state.activeCase);
 
@@ -185,7 +184,6 @@ function SidePanelAppContent() {
       titleSources: {},
       conversations: {},
       pendingOperations: {},
-      optimisticCases: [],
       caseEvidence: {},
       hasUnsavedNewChat: true,
       activeCaseId: null,
@@ -278,7 +276,6 @@ function SidePanelAppContent() {
             hasUnsavedNewChat={hasUnsavedNewChat}
             isAdmin={isAdmin()}
             conversationTitles={conversationTitles}
-            optimisticCases={optimisticCases}
             pinnedCases={pinnedCases}
             refreshTrigger={refreshSessions}
             dashboardUrl={capabilities?.dashboardUrl}

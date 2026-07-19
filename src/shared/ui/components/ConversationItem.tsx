@@ -10,7 +10,6 @@ interface ConversationItemProps {
   isActive: boolean;
   isUnsavedNew?: boolean;
   isPinned?: boolean;
-  isPending?: boolean; // For optimistic cases that are syncing
   messageCount?: number; // Number of messages in case
   onSelect: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
@@ -25,7 +24,6 @@ export function ConversationItem({
   isActive,
   isUnsavedNew = false,
   isPinned = false,
-  isPending = false,
   messageCount = 0,
   onSelect,
   onDelete,
@@ -210,13 +208,6 @@ export function ConversationItem({
               {isUnsavedNew && (
                 <span className="text-xs text-fm-text-tertiary bg-fm-elevated px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
                   Draft
-                </span>
-              )}
-              {isPending && !isUnsavedNew && (
-                <span className="text-xs text-fm-accent flex items-center gap-1 flex-shrink-0" title="Syncing to server...">
-                  <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
                 </span>
               )}
             </div>

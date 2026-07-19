@@ -33,7 +33,6 @@ const emptyState = () => ({
   conversationTitles: {},
   titleSources: {},
   conversations: {},
-  optimisticCases: [],
   pinnedCases: [] as string[]
 });
 
@@ -57,8 +56,7 @@ describe('store debouncedPersist', () => {
       expect.arrayContaining([
         'conversationTitles',
         'titleSources',
-        'conversations',
-        'optimisticCases'
+        'conversations'
       ])
     );
   });

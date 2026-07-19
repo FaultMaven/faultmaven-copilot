@@ -12,7 +12,6 @@
  */
 
 import { UserCase } from '../api';
-import { OptimisticUserCase } from '../optimistic/types';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('DataIntegrity');
@@ -25,15 +24,6 @@ export interface RealCase extends UserCase {
   source: 'backend';
   case_id: string; // Never starts with 'opt_'
 }
-
-export interface OptimisticCase extends UserCase {
-  source: 'optimistic';
-  case_id: string; // Always starts with 'opt_'
-  pendingOperationId: string;
-  optimistic: true;
-}
-
-export type ValidatedCase = RealCase | OptimisticCase;
 
 // ============================================================================
 // ID Format Validation
@@ -115,125 +105,16 @@ export const sanitizeBackendCases = (cases: UserCase[], context: string = 'unkno
   return realCases;
 };
 
-/**
- * Extract ONLY optimistic cases from mixed data
- * Logs violations and filters out contamination
- * v2.0: Updated to accept OptimisticUserCase[] (which extends UserCase with owner_id)
- */
-export const sanitizeOptimisticCases = (cases: OptimisticUserCase[], context: string = 'unknown'): OptimisticCase[] => {
-  if (!Array.isArray(cases)) {
-    log.warn(`Invalid cases array in ${context}:`, cases);
-    return [];
-  }
-
-  const optimisticCases: OptimisticCase[] = [];
-  const contaminatedCases: OptimisticUserCase[] = [];  // v2.0: Allow Optional owner_id
-
-  cases.forEach(caseItem => {
-    if (!caseItem || !caseItem.case_id) {
-      log.warn(`Invalid case in ${context}:`, caseItem);
-      return;
-    }
-
-    if (isOptimisticId(caseItem.case_id)) {
-      optimisticCases.push({
-        ...caseItem,
-        source: 'optimistic',
-        optimistic: true,
-        pendingOperationId: caseItem.case_id // Use case ID as operation ID for now
-      } as OptimisticCase);
-    } else if (isRealId(caseItem.case_id)) {
-      contaminatedCases.push(caseItem);
-    } else {
-      log.warn(`Unknown ID format in ${context}: ${caseItem.case_id}`);
-    }
-  });
-
-  // Log contamination violations
-  if (contaminatedCases.length > 0) {
-    log.error(`ARCHITECTURE VIOLATION in ${context}: Real IDs found in optimistic data:`,
-      contaminatedCases.map(c => c.case_id));
-  }
-
-  return optimisticCases;
-};
-
-// ============================================================================
-// Safe Merging Functions
-// ============================================================================
-
-export interface MergeResult {
-  cases: ValidatedCase[];
-  realCount: number;
-  optimisticCount: number;
-  violations: string[];
-}
-
-/**
- * Safely merge optimistic and real cases with strict separation
- * v2.0: Updated to accept OptimisticUserCase[] (which extends UserCase with owner_id)
- */
-export const mergeOptimisticAndReal = (
-  backendCases: UserCase[],
-  optimisticCases: OptimisticUserCase[],
-  context: string = 'unknown'
-): MergeResult => {
-  const violations: string[] = [];
-
-  // Sanitize inputs with violation tracking
-  const realCases = sanitizeBackendCases(backendCases, `${context}:backend`);
-  const optCases = sanitizeOptimisticCases(optimisticCases, `${context}:optimistic`);
-
-  // Build merge map with real cases taking precedence
-  const mergedMap = new Map<string, ValidatedCase>();
-
-  // Add real cases first (they have precedence)
-  realCases.forEach(realCase => {
-    mergedMap.set(realCase.case_id, realCase);
-  });
-
-  // Add optimistic cases only if no real case exists with same ID
-  optCases.forEach(optCase => {
-    if (!mergedMap.has(optCase.case_id)) {
-      mergedMap.set(optCase.case_id, optCase);
-    } else {
-      violations.push(`Optimistic case ${optCase.case_id} conflicts with real case`);
-    }
-  });
-
-  // Convert to sorted array
-  const mergedCases = Array.from(mergedMap.values());
-  mergedCases.sort((a, b) => {
-    const aTime = new Date(b.updated_at || b.created_at || 0).getTime();
-    const bTime = new Date(a.updated_at || a.created_at || 0).getTime();
-    return aTime - bTime;
-  });
-
-  // Log violations
-  if (violations.length > 0) {
-    log.warn(`Merge violations in ${context}:`, violations);
-  }
-
-  return {
-    cases: mergedCases,
-    realCount: realCases.length,
-    optimisticCount: optCases.length,
-    violations
-  };
-};
-
 // ============================================================================
 // State Validation Functions
 // ============================================================================
 
 /**
  * Validate state integrity across the application
- * v2.0: Updated to accept OptimisticUserCase[] (which extends UserCase with owner_id)
  */
 export const validateStateIntegrity = (state: {
   conversations?: Record<string, any[]>;
   conversationTitles?: Record<string, string>;
-  optimisticCases?: OptimisticUserCase[];
 }, context: string = 'unknown'): boolean => {
   let isValid = true;
   const violations: string[] = [];
@@ -253,16 +134,6 @@ export const validateStateIntegrity = (state: {
     Object.keys(state.conversationTitles).forEach(caseId => {
       if (isOptimisticId(caseId)) {
         violations.push(`Optimistic ID in titles: ${caseId}`);
-        isValid = false;
-      }
-    });
-  }
-
-  // Check optimistic cases format
-  if (state.optimisticCases) {
-    state.optimisticCases.forEach(optCase => {
-      if (optCase.case_id && isRealId(optCase.case_id)) {
-        violations.push(`Real ID in optimistic cases: ${optCase.case_id}`);
         isValid = false;
       }
     });

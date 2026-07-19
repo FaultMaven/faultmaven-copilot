@@ -27,10 +27,10 @@ import {
   OptimisticIdGenerator,
   idMappingManager,
   pendingOpsManager,
-  OptimisticUserCase,
   OptimisticConversationItem,
   PendingOperation
 } from '../../../lib/optimistic';
+import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
@@ -81,7 +81,6 @@ export function useMessageSubmission() {
   const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
   const setConversations = useAppStore((state) => state.setConversations);
   const setActiveCase = useAppStore((state) => state.setActiveCase);
-  const setOptimisticCases = useAppStore((state) => state.setOptimisticCases);
   const setConversationTitles = useAppStore((state) => state.setConversationTitles);
   const setTitleSources = useAppStore((state) => state.setTitleSources);
   const refreshSession = useAppStore((state) => state.refreshSession);
@@ -164,10 +163,6 @@ export function useMessageSubmission() {
           updated[realCaseId] = optimisticSource;
         }
         return updated;
-      });
-
-      setOptimisticCases(prev => {
-        return prev.filter(c => c.case_id !== optimisticId);
       });
 
       setActiveCase(newCase);
@@ -461,6 +456,15 @@ export function useMessageSubmission() {
 
     let targetCaseId = activeCaseId;
 
+    // Never carry a stale optimistic case id into a turn submit. A prior failed
+    // case-create can leave activeCaseId (and faultmaven_current_case) as an
+    // unreconciled opt_case_*; POSTing a turn against it 404s. Resolve it via the
+    // id-mapping if it was reconciled, otherwise treat as no active case so a
+    // fresh real case is created below.
+    if (targetCaseId && isOptimisticId(targetCaseId)) {
+      targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
+    }
+
     if (!targetCaseId) {
       log.debug('No active case, creating case via createOptimisticCaseInBackground');
 
@@ -479,6 +483,13 @@ export function useMessageSubmission() {
         log.info('Case created and ID reconciled', { optimisticId: optimisticCaseId, realId: targetCaseId });
       } catch (error) {
         log.error('Failed to create case', error);
+        // Roll back the optimistic active-case state set above. Creation failed,
+        // so no id-mapping exists; leaving activeCaseId as a stale opt_case_*
+        // would make the next submit POST a turn against an optimistic id → 404.
+        // Clear it (this also removes faultmaven_current_case) and restore the
+        // unsaved-new-chat flag so the UI returns to the fresh composer.
+        await setActiveCaseId(null);
+        setHasUnsavedNewChat(true);
         showError('Failed to create case. Please try again.');
         setSubmitting(false);
         return;

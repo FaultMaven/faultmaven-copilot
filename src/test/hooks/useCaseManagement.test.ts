@@ -45,7 +45,6 @@ describe('useCaseManagement', () => {
       conversations: {},
       conversationTitles: {},
       titleSources: {},
-      optimisticCases: [],
       pinnedCases: new Set(),
       caseEvidence: {},
       sessionId: null
