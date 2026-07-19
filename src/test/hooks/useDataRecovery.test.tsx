@@ -38,7 +38,8 @@ vi.mock('../../lib/state/store', () => ({
   useAppStore: {
     setState: (...a: any[]) => setState(...a),
     getState: () => ({ handleCaseSelect })
-  }
+  },
+  PERSISTED_STATE_KEYS: ['conversationTitles', 'titleSources', 'conversations', 'pinnedCases']
 }));
 
 import { useDataRecovery } from '../../shared/ui/hooks/useDataRecovery';
