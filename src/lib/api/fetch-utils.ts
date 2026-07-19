@@ -1,10 +1,7 @@
-import config, { getApiUrl } from "../../config";
 import { authManager } from "../auth/auth-manager";
 import { tokenManager } from "../auth/token-manager";
 import { browser } from "wxt/browser";
-import { APIError, Session } from "./types";
 import { createLogger } from "../utils/logger";
-import { fetchWithTimeout } from "../utils/fetch-timeout";
 
 const log = createLogger('FetchUtils');
 
@@ -64,32 +61,4 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
   }
 
   return headers;
-}
-
-/**
- * Create a new session directly (bypassing client resumption)
- * Use this when you explicitly want a fresh session
- */
-export async function createFreshSession(metadata?: Record<string, any>): Promise<Session> {
-  const url = new URL(`${await getApiUrl()}/api/v1/sessions/`);
-
-  const requestBody = metadata ? { metadata } : {};
-
-  // Include auth headers so backend can associate session with authenticated user
-  const authHeaders = await getAuthHeaders();
-
-  const response = await fetchWithTimeout(url.toString(), {
-    method: 'POST',
-    headers: {
-      ...authHeaders,
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to create session: ${response.status}`);
-  }
-
-  return response.json();
 }

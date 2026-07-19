@@ -19,7 +19,6 @@ vi.mock('wxt/browser', () => ({
 
 vi.mock('../../../lib/api', () => ({
   logoutAuth: vi.fn(),
-  devLogin: vi.fn(),
   authManager: { isAuthenticated: vi.fn().mockResolvedValue(false) }
 }));
 

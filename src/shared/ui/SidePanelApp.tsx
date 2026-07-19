@@ -87,7 +87,7 @@ function SidePanelAppContent() {
   const {
     currentCaseId: activeCaseId,
     setActiveCase: setActiveCaseId
-  } = useCaseManagement(sessionId);
+  } = useCaseManagement();
 
   // --- Data Recovery ---
   const { isRecovering } = useDataRecovery();

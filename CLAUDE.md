@@ -92,7 +92,6 @@ src/
 │   │   │   ├── auth-service.ts          # Authentication endpoints
 │   │   │   ├── case-service.ts          # Case CRUD & conversations
 │   │   │   ├── session-service.ts       # Session lifecycle
-│   │   │   ├── report-service.ts        # Report generation
 │   │   │   └── knowledge-service.ts     # Knowledge base queries
 │   │   └── types/                       # API type definitions
 │   │
@@ -127,7 +126,6 @@ src/
 │       ├── resilient-operation.ts       # Retry wrapper
 │       ├── persistence-manager.ts       # Data persistence
 │       ├── data-integrity.ts            # Strict data separation utilities
-│       ├── network-status.ts            # Network connectivity detection
 │       ├── memory-manager.ts            # Memory management
 │       └── api-error-handler.ts         # API error handling utilities
 │
@@ -500,7 +498,6 @@ When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is
 **Key files:**
 
 - `src/shared/ui/components/ResolutionActionsCard.tsx` — Post-terminal card component
-- `src/lib/api/services/report-service.ts` — Report generation API (`generateReports`, `getCaseReports`, `getReportRecommendations`)
 
 ### API Response Polling
 

@@ -326,8 +326,6 @@ export function useMessageSubmission() {
 
           if (plan.strategy === 'manual_retry' || plan.strategy === 'retry_with_backoff') {
              showError(error);
-          } else if (plan.strategy === 'logout_and_redirect') {
-             showError('Session expired. Please sign in again.');
           } else {
              showError(error.userMessage);
           }

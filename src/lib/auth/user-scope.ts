@@ -29,7 +29,7 @@ const DATA_OWNER_KEY = 'faultmaven_data_owner_id';
 
 /**
  * Backend-session pointer keys written by the session layer (session-core
- * `persistSession` / background `handleGetSessionId`). On an identity change we
+ * `persistSession`). On an identity change we
  * cannot ask the backend to delete the PRIOR user's session — their credential
  * is already gone — so we drop the LOCAL pointer, forcing the new user to mint a
  * fresh session instead of resuming the previous user's (`getAuthHeaders` reads

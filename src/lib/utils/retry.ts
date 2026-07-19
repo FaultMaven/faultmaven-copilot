@@ -1,9 +1,5 @@
 // src/lib/utils/retry.ts
 
-import { createLogger } from '~/lib/utils/logger';
-
-const log = createLogger('Retry');
-
 /**
  * Retry configuration options
  */
@@ -73,8 +69,8 @@ export async function retryWithBackoff<T>(
       // Calculate next delay with exponential backoff
       const nextDelay = Math.min(delay * backoffMultiplier, maxDelay);
 
-      // Notify retry callback. Await it: retryWithRateLimit returns a promise
-      // here for the extra Retry-After wait, which was previously discarded.
+      // Notify retry callback. Await it: an onRetry callback may return a
+      // promise for an extra Retry-After wait, which was previously discarded.
       if (onRetry) {
         await onRetry(error, attempt, delay);
       }
@@ -136,77 +132,3 @@ export function isRetryableError(error: any): boolean {
   return true;
 }
 
-/**
- * Extract retry delay from Retry-After header
- *
- * @param error - Error that may contain Retry-After header
- * @returns Delay in milliseconds, or null if not found
- */
-export function getRetryAfterDelay(error: any): number | null {
-  // Check for Retry-After header in error response
-  if (error.response?.headers) {
-    const retryAfter = error.response.headers.get('Retry-After') ||
-                       error.response.headers.get('retry-after');
-
-    if (retryAfter) {
-      // Retry-After can be either a number of seconds or an HTTP date
-      const seconds = parseInt(retryAfter, 10);
-      if (!isNaN(seconds)) {
-        return seconds * 1000; // Convert to milliseconds
-      }
-
-      // Try to parse as HTTP date
-      const date = new Date(retryAfter);
-      if (!isNaN(date.getTime())) {
-        return Math.max(0, date.getTime() - Date.now());
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Retry with rate limit handling
- *
- * Respects Retry-After header from 429 responses
- */
-export async function retryWithRateLimit<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
-  return retryWithBackoff(fn, {
-    ...options,
-    shouldRetry: (error, attempt) => {
-      // Check custom shouldRetry first
-      if (options.shouldRetry && !options.shouldRetry(error, attempt)) {
-        return false;
-      }
-
-      // Check if error is retryable
-      return isRetryableError(error);
-    },
-    onRetry: (error, attempt, delay) => {
-      // Use Retry-After header for rate limit errors
-      const retryAfter = getRetryAfterDelay(error);
-      const actualDelay = retryAfter || delay;
-
-      log.info('Retry attempt failed', {
-        attempt,
-        retryDelayMs: actualDelay,
-        error: error.message,
-        status: error.status || error.response?.status
-      });
-
-      // Call custom onRetry if provided
-      if (options.onRetry) {
-        options.onRetry(error, attempt, actualDelay);
-      }
-
-      // If we have Retry-After, wait for it
-      if (retryAfter && retryAfter > delay) {
-        return new Promise(resolve => setTimeout(resolve, retryAfter - delay));
-      }
-    }
-  });
-}

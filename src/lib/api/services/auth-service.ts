@@ -4,7 +4,7 @@ import { authManager } from "../../auth/auth-manager";
 import { getAuthConfig } from "../../auth/auth-config";
 import { tokenManager } from "../../auth/token-manager";
 import { authenticatedFetch, prepareBody } from "../client";
-import { APIError, AuthState, AuthTokenResponse, UserProfile } from "../types";
+import { UserProfile } from "../types";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { fetchWithTimeout } from "../../utils/fetch-timeout";
 import { createLogger } from '~/lib/utils/logger';
@@ -67,52 +67,6 @@ async function revokeRefreshTokenBestEffort(): Promise<void> {
     }
   } catch (error) {
     log.warn('Refresh-token revoke failed; continuing logout', error);
-  }
-}
-
-export async function devLogin(
-  username: string,
-  email?: string,
-  displayName?: string
-): Promise<AuthTokenResponse> {
-  try {
-    const response = await fetchWithTimeout(`${await getApiUrl()}/api/v1/auth/dev-login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: prepareBody({
-        username,
-        email,
-        display_name: displayName
-      }),
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      throw await createHttpErrorFromResponse(response);
-    }
-
-    const authResponse = await response.json();
-
-    // Store auth state using AuthManager
-    const authState: AuthState = {
-      access_token: authResponse.access_token,
-      token_type: authResponse.token_type,
-      expires_at: Date.now() + (authResponse.expires_in * 1000),
-      user: authResponse.user
-    };
-
-    await authManager.saveAuthState(authState);
-
-    return authResponse;
-  } catch (error) {
-    // Wrap network errors with better messaging
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      const networkError: any = new Error('Unable to connect to server');
-      networkError.name = 'NetworkError';
-      networkError.originalError = error;
-      throw networkError;
-    }
-    throw error;
   }
 }
 

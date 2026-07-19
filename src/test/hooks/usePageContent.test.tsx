@@ -10,9 +10,7 @@ const executeScript = vi.fn();
 vi.mock('wxt/browser', () => ({
   browser: {
     tabs: {
-      query: vi.fn().mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]),
-      // Force the programmatic-injection fallback (the executeScript path).
-      sendMessage: vi.fn().mockRejectedValue(new Error('no content script'))
+      query: vi.fn().mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }])
     },
     permissions: {
       contains: vi.fn().mockResolvedValue(true),

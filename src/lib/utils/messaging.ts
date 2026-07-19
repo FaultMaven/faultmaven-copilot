@@ -68,15 +68,3 @@ export const EventBus = {
     };
   }
 };
-
-/**
- * Legacy support for direct message sending
- */
-export async function sendMessageToBackground(message: any): Promise<any> {
-  try {
-    return await browser.runtime.sendMessage(message);
-  } catch (error) {
-    log.error("Error sending message to background:", error);
-    throw error;
-  }
-}

@@ -314,44 +314,6 @@ describe('PersistenceManager', () => {
     });
   });
 
-  describe('getCurrentState', () => {
-    it('should return current persistence state', async () => {
-      const mockStoredData = {
-        conversationTitles: { 'case1': 'Test Chat' },
-        titleSources: { 'case1': 'backend' },
-        conversations: { 'case1': [] },
-        faultmaven_last_sync: 1234567890,
-        faultmaven_extension_version: '1.0.0'
-      };
-
-      mockBrowser.storage.local.get.mockResolvedValue(mockStoredData);
-
-      const result = await PersistenceManager.getCurrentState();
-
-      expect(result).toEqual({
-        conversationTitles: { 'case1': 'Test Chat' },
-        titleSources: { 'case1': 'backend' },
-        conversations: { 'case1': [] },
-        lastSyncTimestamp: 1234567890,
-        extensionVersion: '1.0.0'
-      });
-    });
-
-    it('should return empty state when storage is empty', async () => {
-      mockBrowser.storage.local.get.mockResolvedValue({});
-
-      const result = await PersistenceManager.getCurrentState();
-
-      expect(result).toEqual({
-        conversationTitles: {},
-        titleSources: {},
-        conversations: {},
-        lastSyncTimestamp: 0,
-        extensionVersion: 'unknown'
-      });
-    });
-  });
-
   describe('markSyncComplete', () => {
     it('should update sync timestamp and version', async () => {
       await PersistenceManager.markSyncComplete();
