@@ -62,6 +62,10 @@ describe('PersistenceManager', () => {
       expect(removedKeys).toContain('faultmaven_current_case');
       expect(removedKeys).toContain('conversations');
       expect(removedKeys).toContain('idMappings');
+      // The recovery cooldown timestamp must go too, else a stale value would
+      // suppress the next login's recovery, leaving it with an empty case list
+      // (#144 — matters when a different user signs in on a shared profile).
+      expect(removedKeys).toContain('faultmaven_last_recovery_attempt');
     });
 
     it('preserves pinnedCases only when asked', async () => {

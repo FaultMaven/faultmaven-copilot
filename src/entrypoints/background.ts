@@ -5,6 +5,7 @@ import { browser } from 'wxt/browser';
 import config from '../config';
 import { reconcileAuthBridgeRegistration } from '../lib/auth/auth-bridge-registration';
 import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
+import { enforceUserDataScope } from '../lib/auth/user-scope';
 import { createLogger } from '../lib/utils/logger';
 import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
 
@@ -66,6 +67,11 @@ export default defineBackground({
 
         // Keep the composite authState for the getAuthHeaders fallback path.
         await authManager.saveAuthState(payload);
+
+        // Purge a prior user's at-rest data if this bridge login hands the
+        // profile to a DIFFERENT user (#144). Runs BEFORE the broadcast/reload so
+        // the side panel hydrates and initializes its session from clean storage.
+        await enforceUserDataScope(payload?.user?.user_id);
 
         // Also broadcast to side panel if open. The auth_state_changed contract
         // (AuthStateChangedEvent) is { isAuthenticated, user } — NOT the raw
@@ -398,6 +404,12 @@ export default defineBackground({
 
         // Use AuthManager to save state
         await authManager.saveAuthState(authState);
+
+        // Purge a prior user's at-rest data if this OAuth login hands the profile
+        // to a DIFFERENT user on a shared browser profile (#144). Runs BEFORE the
+        // broadcast that triggers the side panel reload so the panel hydrates and
+        // initializes its session from clean storage.
+        await enforceUserDataScope(user.user_id);
 
         // Clean up PKCE data
         await cleanupOAuthState();
