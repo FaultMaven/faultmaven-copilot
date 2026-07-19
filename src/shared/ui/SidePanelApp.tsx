@@ -308,6 +308,14 @@ function SidePanelAppContent() {
             onNewChat={handleNewChatFromNav}
             onLogout={handleLogout}
             onCaseTitleChange={async (caseId: string, newTitle: string) => {
+              // Capture prior title + provenance so a failed backend PUT rolls BOTH
+              // back together. Leaving titleSources at 'user' after a failed rename
+              // would permanently gate off auto title-generation for this case
+              // (useDataUpload / useMessageSubmission check `!titleSources[caseId]`).
+              const { conversationTitles: prevTitles, titleSources: prevSources } = useAppStore.getState();
+              const priorTitle = prevTitles[caseId];
+              const priorSource = prevSources[caseId];
+
               setConversationTitles(prev => ({ ...prev, [caseId]: newTitle }));
               setTitleSources(prev => ({ ...prev, [caseId]: 'user' }));
               try {
@@ -320,9 +328,18 @@ function SidePanelAppContent() {
                   message: error instanceof Error ? error.message : 'Unknown error',
                   type: 'error'
                 });
+                // Restore both maps to their exact pre-optimistic values.
                 setConversationTitles(prev => {
-                  const { [caseId]: _, ...rest } = prev;
-                  return rest;
+                  const next = { ...prev };
+                  if (priorTitle === undefined) delete next[caseId];
+                  else next[caseId] = priorTitle;
+                  return next;
+                });
+                setTitleSources(prev => {
+                  const next = { ...prev };
+                  if (priorSource === undefined) delete next[caseId];
+                  else next[caseId] = priorSource;
+                  return next;
                 });
               }
             }}
