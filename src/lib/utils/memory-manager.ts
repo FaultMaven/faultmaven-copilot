@@ -107,59 +107,6 @@ export class MemoryManager {
   }
 
   /**
-   * Clean up old messages from a conversation while preserving recent context
-   *
-   * Strategy:
-   * - Keep all messages if under maxMessagesPerConversation
-   * - If over limit, keep most recent messages
-   * - Always preserve at least minMessagesToKeep messages
-   * - Never delete optimistic (unsaved) messages
-   */
-  cleanupConversation(
-    messages: OptimisticConversationItem[]
-  ): OptimisticConversationItem[] {
-    if (messages.length <= this.config.maxMessagesPerConversation) {
-      return messages; // No cleanup needed
-    }
-
-    log.debug('Cleaning up conversation', {
-      totalMessages: messages.length,
-      maxAllowed: this.config.maxMessagesPerConversation
-    });
-
-    // Separate optimistic and confirmed messages
-    const optimisticMessages = messages.filter(msg => msg.optimistic);
-    const confirmedMessages = messages.filter(msg => !msg.optimistic);
-
-    // Calculate how many confirmed messages we can keep
-    const confirmedToKeep = Math.max(
-      this.config.minMessagesToKeep,
-      this.config.maxMessagesPerConversation - optimisticMessages.length
-    );
-
-    // Keep most recent confirmed messages
-    const recentConfirmed = confirmedMessages.slice(-confirmedToKeep);
-
-    // Combine recent confirmed with all optimistic (never delete unsaved data)
-    const cleaned = [...recentConfirmed, ...optimisticMessages];
-
-    // Sort by timestamp to maintain chronological order
-    cleaned.sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
-      return timeA - timeB;
-    });
-
-    log.debug('Cleanup complete', {
-      removed: messages.length - cleaned.length,
-      kept: cleaned.length,
-      optimisticKept: optimisticMessages.length
-    });
-
-    return cleaned;
-  }
-
-  /**
    * Clean up old conversations keeping only the most recent ones
    *
    * Strategy:
@@ -233,40 +180,6 @@ export class MemoryManager {
     });
 
     return cleaned;
-  }
-
-  /**
-   * Get memory usage statistics
-   */
-  getMemoryStats(conversations: Record<string, OptimisticConversationItem[]>): {
-    totalConversations: number;
-    totalMessages: number;
-    averageMessagesPerConversation: number;
-    largestConversation: { caseId: string; messageCount: number } | null;
-  } {
-    const caseIds = Object.keys(conversations);
-    const totalMessages = caseIds.reduce(
-      (sum, id) => sum + (conversations[id]?.length || 0),
-      0
-    );
-
-    let largestConversation: { caseId: string; messageCount: number } | null = null;
-    let maxMessages = 0;
-
-    caseIds.forEach(caseId => {
-      const count = conversations[caseId]?.length || 0;
-      if (count > maxMessages) {
-        maxMessages = count;
-        largestConversation = { caseId, messageCount: count };
-      }
-    });
-
-    return {
-      totalConversations: caseIds.length,
-      totalMessages,
-      averageMessagesPerConversation: caseIds.length > 0 ? totalMessages / caseIds.length : 0,
-      largestConversation
-    };
   }
 }
 

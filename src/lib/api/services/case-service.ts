@@ -396,51 +396,6 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
 }
 
 /**
- * Update case status with terminal state validation
- * Added 2026-01-30: Handle closure_reason and closed_at for terminal states per commit b434152a
- */
-export async function updateCaseState(
-  caseId: string,
-  status: UserCaseState,
-  closureReason?: string
-): Promise<void> {
-  const isTerminal = isDisposition(status);
-
-  // Validate disposition requirements per backend validation (models.py:3158-3202)
-  if (isTerminal && !closureReason) {
-    throw new Error('Dispositions (resolved/closed) require closure_reason');
-  }
-
-  const updateData: CaseUpdateRequest = {
-    status,
-    closure_reason: closureReason,
-    closed_at: isTerminal ? new Date().toISOString() : undefined
-  };
-
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
-    method: 'PUT',
-    body: prepareBody(updateData),
-    credentials: 'include'
-  });
-
-  if (response.status === 422) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(`Validation failed: ${errorData.detail || 'Invalid status transition'}`);
-  }
-
-  if (response.status === 409) {
-    // OCC conflict on the case row — surfaced as HttpError so callers
-    // can route to CaseVersionConflictError via the ErrorClassifier.
-    throw await createHttpErrorFromResponse(response);
-  }
-
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to update case status: ${response.status}`);
-  }
-}
-
-/**
  * One page of the backend `/messages` response. Message objects are kept loose
  * (Record) because their shape differs from the canonical `Message` type
  * (they additionally carry turn_number / case_state / closure_reason) and the

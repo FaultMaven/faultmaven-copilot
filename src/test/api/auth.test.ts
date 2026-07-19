@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  devLogin,
   getCurrentUser,
   logoutAuth,
   authManager,
@@ -232,69 +231,6 @@ describe('Authentication API', () => {
 
       isAuth = await authManager.isAuthenticated();
       expect(isAuth).toBe(false);
-    });
-  });
-
-  describe('devLogin', () => {
-    it('logs in successfully and stores auth state', async () => {
-      const loginResponse = {
-        access_token: 'new-token-456',
-        token_type: 'bearer',
-        expires_in: 86400,
-        session_id: 'session-789',
-        user: {
-          user_id: 'user_456',
-          username: 'newuser',
-          email: 'new@example.com',
-          display_name: 'New User',
-          is_dev_user: true,
-          is_active: true
-        }
-      };
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(loginResponse)
-      });
-
-      const result = await devLogin('newuser', 'new@example.com', 'New User');
-
-      // Verify API call. devLogin now goes through fetchWithTimeout, which
-      // injects an AbortSignal, so match the options loosely.
-      expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/auth/dev-login',
-        expect.objectContaining({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: 'newuser',
-            email: 'new@example.com',
-            display_name: 'New User'
-          }),
-          credentials: 'include'
-        })
-      );
-
-      // Verify auth state is saved
-      expect(mockBrowserStorage.local.set).toHaveBeenCalledWith({
-        authState: expect.objectContaining({
-          access_token: 'new-token-456',
-          token_type: 'bearer',
-          user: loginResponse.user
-        })
-      });
-
-      expect(result).toEqual(loginResponse);
-    });
-
-    it('handles login failure correctly', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ detail: 'Invalid credentials' })
-      });
-
-      await expect(devLogin('invaliduser')).rejects.toThrow('Invalid credentials');
     });
   });
 
@@ -754,28 +690,6 @@ describe('Authentication API', () => {
     // REMOVED: Legacy uploadData() and uploadDataToCase() tests
     // Both replaced by unified submitTurn() endpoint
 
-    it('getSessionData includes auth headers', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve([])
-      });
-
-      const { getSessionData } = await import('../../lib/api');
-      await getSessionData('session-123');
-
-      expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/data/sessions/session-123?limit=10&offset=0',
-        expect.objectContaining({
-          method: 'GET',
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer valid-auth-token',
-            'X-Session-Id': 'test-session-id'
-          })
-        })
-      );
-    });
-
     /*
     it('uploadKnowledgeDocument includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({
@@ -845,63 +759,20 @@ describe('Authentication API', () => {
     });
     */
 
-    it('getSession includes auth headers', async () => {
+    it('heartbeatSession includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         json: () => Promise.resolve({ session_id: 'session-123', status: 'active' })
       });
 
-      const { getSession } = await import('../../lib/api');
-      await getSession('session-123');
+      const { heartbeatSession } = await import('../../lib/api');
+      await heartbeatSession('session-123');
 
       expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/sessions/session-123',
+        'https://api.faultmaven.ai/api/v1/sessions/session-123/heartbeat',
         expect.objectContaining({
-          method: 'GET',
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer valid-auth-token',
-            'X-Session-Id': 'test-session-id'
-          })
-        })
-      );
-    });
-
-    it('deleteSession includes auth headers', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 204
-      });
-
-      const { deleteSession } = await import('../../lib/api');
-      await deleteSession('session-123');
-
-      expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/sessions/session-123',
-        expect.objectContaining({
-          method: 'DELETE',
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer valid-auth-token',
-            'X-Session-Id': 'test-session-id'
-          })
-        })
-      );
-    });
-
-    it('listSessions includes auth headers', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve([])
-      });
-
-      const { listSessions } = await import('../../lib/api');
-      await listSessions();
-
-      expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/sessions/',
-        expect.objectContaining({
-          method: 'GET',
+          method: 'POST',
           headers: expect.objectContaining({
             'Authorization': 'Bearer valid-auth-token',
             'X-Session-Id': 'test-session-id'

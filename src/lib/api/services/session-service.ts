@@ -1,53 +1,11 @@
-import config, { getApiUrl } from "../../../config";
-import { authenticatedFetch } from "../client";
-import { createFreshSession, getAuthHeaders } from "../fetch-utils";
+import { getApiUrl } from "../../../config";
+import { getAuthHeaders } from "../fetch-utils";
 import { createSession } from "../session-core";
-import { APIError, Session, UploadedData } from "../types";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { fetchWithTimeout } from "../../utils/fetch-timeout";
 
-// Re-export creation functions
-export { createSession, createFreshSession };
-
-export async function getSessionData(sessionId: string, limit: number = 10, offset: number = 0): Promise<UploadedData[]> {
-  const url = new URL(`${await getApiUrl()}/api/v1/data/sessions/${sessionId}`);
-  url.searchParams.append('limit', limit.toString());
-  url.searchParams.append('offset', offset.toString());
-
-  const response = await authenticatedFetch(url.toString(), {
-    method: 'GET'
-  });
-
-  if (!response.ok) {
-    throw await createHttpErrorFromResponse(response);
-  }
-
-  const data = await response.json();
-  // Ensure we always return an array
-  return Array.isArray(data) ? data : [];
-}
-
-export async function getSession(sessionId: string): Promise<Session> {
-  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/sessions/${sessionId}`, {
-    method: 'GET'
-  });
-
-  if (!response.ok) {
-    throw await createHttpErrorFromResponse(response);
-  }
-
-  return response.json();
-}
-
-export async function deleteSession(sessionId: string): Promise<void> {
-  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/sessions/${sessionId}`, {
-    method: 'DELETE'
-  });
-
-  if (!response.ok) {
-    throw await createHttpErrorFromResponse(response);
-  }
-}
+// Re-export creation function
+export { createSession };
 
 export async function heartbeatSession(sessionId: string): Promise<void> {
   // Keep-alive ping. Deliberately does NOT use authenticatedFetch: that wrapper
@@ -64,28 +22,4 @@ export async function heartbeatSession(sessionId: string): Promise<void> {
   if (!response.ok) {
     throw await createHttpErrorFromResponse(response);
   }
-}
-
-export async function listSessions(filters?: {
-  user_id?: string;
-  session_type?: string;
-  usage_type?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<Session[]> {
-  const url = new URL(`${await getApiUrl()}/api/v1/sessions/`);
-  if (filters) {
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v !== undefined) url.searchParams.append(k, String(v));
-    });
-  }
-  const response = await authenticatedFetch(url.toString(), { method: 'GET' });
-  if (!response.ok) {
-    throw await createHttpErrorFromResponse(response);
-  }
-  const data = await response.json().catch(() => []);
-  if (Array.isArray(data)) return data as Session[];
-  if (data && Array.isArray(data.sessions)) return data.sessions as Session[];
-  if (data && Array.isArray(data.items)) return data.items as Session[];
-  return [];
 }

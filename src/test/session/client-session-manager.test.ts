@@ -178,7 +178,7 @@ describe('ClientSessionManager', () => {
     const manager = ClientSessionManager.getInstance();
     const session = await manager.createSession();
 
-    expect(manager.isSessionResumed(session)).toBe(true);
+    expect(session.session_resumed).toBe(true);
     expect(session.message).toBe('Session resumed successfully');
   });
 

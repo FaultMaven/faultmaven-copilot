@@ -161,13 +161,6 @@ export class ClientSessionManager {
   }
 
   /**
-   * Check if a session response indicates a resumed session
-   */
-  isSessionResumed(response: SessionCreateResponse): boolean {
-    return response.session_resumed === true;
-  }
-
-  /**
    * Clear client ID to force creation of new session
    * Note: This is primarily used internally for session expiration recovery.
    * UI no longer exposes manual session forcing to users.
@@ -182,21 +175,6 @@ export class ClientSessionManager {
     }
     
     log.info('Client ID cleared - next session will be new');
-  }
-
-  /**
-   * Get current client ID without generating new one
-   * Returns null if no client ID exists
-   */
-  async getCurrentClientId(): Promise<string | null> {
-    if (this.clientId) return this.clientId;
-    
-    if (typeof browser !== 'undefined' && browser.storage) {
-      const stored = await browser.storage.local.get([ClientSessionManager.CLIENT_ID_KEY]);
-      return stored[ClientSessionManager.CLIENT_ID_KEY] || null;
-    }
-    
-    return localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
   }
 
   /**

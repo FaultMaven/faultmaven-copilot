@@ -16,7 +16,6 @@ vi.mock('wxt/browser', () => ({
 }));
 
 vi.mock('../../../lib/api', () => ({
-  createCase: vi.fn(),
   getCaseConversation: vi.fn().mockResolvedValue({ messages: [] }),
   getUserCases: vi.fn().mockResolvedValue([])
 }));
@@ -29,7 +28,6 @@ const resetStore = () =>
   useAppStore.setState({
     activeCaseId: null,
     activeCase: null,
-    isCreatingCase: false,
     conversations: {},
     conversationTitles: {},
     titleSources: {},
@@ -144,18 +142,4 @@ describe('cases-slice', () => {
     });
   });
 
-  describe('ensureCaseExists', () => {
-    it('throws without a session', async () => {
-      await expect(useAppStore.getState().ensureCaseExists()).rejects.toThrow(
-        'Cannot create case without session'
-      );
-    });
-
-    it('returns the in-memory active case without hitting the API', async () => {
-      useAppStore.setState({ sessionId: 'sess-1', activeCaseId: 'case-existing' });
-      const id = await useAppStore.getState().ensureCaseExists();
-      expect(id).toBe('case-existing');
-      expect(api.createCase).not.toHaveBeenCalled();
-    });
-  });
 });

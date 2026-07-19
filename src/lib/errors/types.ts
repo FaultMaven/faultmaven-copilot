@@ -58,7 +58,6 @@ export type ErrorCategory =
  * Recovery strategies for error handling
  */
 export type RecoveryStrategy =
-  | 'logout_and_redirect'      // Clear auth, redirect to login
   | 'retry_with_backoff'       // Auto-retry with exponential backoff
   | 'manual_retry'             // User must click retry
   | 'user_fix_required'        // User must fix input

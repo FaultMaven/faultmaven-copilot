@@ -173,38 +173,6 @@ export class PendingOperationsManager {
   }
 
   /**
-   * Clean up unused optimistic cases (no messages submitted)
-   * This addresses the issue of empty chats persisting
-   */
-  cleanupUnusedCases(getConversations: () => Record<string, any[]>, maxAgeMs: number = 300000): void {
-    const now = Date.now();
-    const conversations = getConversations();
-
-    this.getByType('create_case').forEach(operation => {
-      if (operation.status === 'completed') {
-        const caseId = operation.optimisticData?.case_id;
-        const age = now - operation.createdAt;
-
-        if (caseId && age > maxAgeMs) {
-          const messages = conversations[caseId] || [];
-
-          // If case has no user messages (only system messages or empty), consider it unused
-          const hasUserMessages = messages.some(msg =>
-            msg.role === 'user' || msg.user_input?.trim()
-          );
-
-          if (!hasUserMessages) {
-            log.info('Cleaning up unused case', { caseId, ageMs: age });
-            // Execute rollback to remove unused case
-            operation.rollbackFn();
-            this.remove(operation.id);
-          }
-        }
-      }
-    });
-  }
-
-  /**
    * Get summary statistics
    */
   getStats(): {
@@ -241,16 +209,6 @@ export class PendingOperationsManager {
     this.cleanupTimer = setInterval(() => {
       this.cleanup();
     }, this.cleanupIntervalMs);
-  }
-
-  /**
-   * Update operations (for backward compatibility with state-based approach)
-   */
-  updateOperations(operations: Record<string, PendingOperation>): void {
-    this.operations.clear();
-    Object.entries(operations).forEach(([id, operation]) => {
-      this.operations.set(id, operation);
-    });
   }
 
   /**

@@ -5,8 +5,6 @@ const {
   mockBrowser,
   listeners,
   mockStorage,
-  mockCreateSession,
-  mockDeleteSession,
   mockAuthSaveState,
   mockAuthClearState
 } = vi.hoisted(() => {
@@ -14,8 +12,6 @@ const {
   const listeners: Record<string, any> = {};
   const mockStorageStore: Record<string, any> = {};
 
-  const mockCreateSession = vi.fn();
-  const mockDeleteSession = vi.fn();
   const mockAuthSaveState = vi.fn();
   const mockAuthClearState = vi.fn();
 
@@ -90,8 +86,6 @@ const {
     mockBrowser: mockBrowserObj,
     listeners,
     mockStorage: mockStorageObj,
-    mockCreateSession,
-    mockDeleteSession,
     mockAuthSaveState,
     mockAuthClearState
   };
@@ -106,8 +100,6 @@ vi.mock('wxt/browser', () => ({
 (global as any).browser = mockBrowser;
 
 vi.mock('../../lib/api', () => ({
-  createSession: mockCreateSession,
-  deleteSession: mockDeleteSession,
   authManager: {
     saveAuthState: mockAuthSaveState,
     clearAuthState: mockAuthClearState
@@ -154,12 +146,12 @@ describe('Background Service Worker', () => {
     it('should reject messages from external extensions (different sender.id)', async () => {
       const sendResponse = vi.fn();
       const result = listeners['message'](
-        { action: 'getSessionId' },
+        { action: 'storeAuth' },
         { id: 'hacker-extension-id' },
         sendResponse
       );
 
-      // Listener should return false (sync handling) or call sendResponse with error
+      // The sender guard rejects before any handler runs.
       expect(sendResponse).toHaveBeenCalledWith({
         status: 'error',
         message: 'Unauthorized sender'
@@ -168,119 +160,19 @@ describe('Background Service Worker', () => {
     });
 
     it('should accept messages from within the same extension (matching sender.id)', async () => {
-      mockCreateSession.mockResolvedValue({
-        session_id: 'new-session-id',
-        client_id: 'client-123',
-        session_resumed: false
-      });
-
       const sendResponse = vi.fn();
-      const result = listeners['message'](
-        { action: 'getSessionId' },
+      listeners['message'](
+        { action: 'someInternalAction' },
         { id: 'test-copilot-id' },
         sendResponse
       );
 
-      // Async message handling should return true
-      expect(result).toBe(true);
-    });
-  });
-
-  describe('Session Message Handling', () => {
-    it('should create new session when getSessionId is called with no stored session', async () => {
-      mockCreateSession.mockResolvedValue({
-        session_id: 'new-session-id',
-        client_id: 'client-123',
-        session_resumed: false,
-        message: 'created'
+      // A same-extension sender passes the guard: it is NOT rejected as
+      // unauthorized (an unrecognized action falls through to 'Unknown action').
+      expect(sendResponse).not.toHaveBeenCalledWith({
+        status: 'error',
+        message: 'Unauthorized sender'
       });
-
-      const sendResponse = vi.fn();
-      await new Promise<void>((resolve) => {
-        const handlerResponse = (res: any) => {
-          sendResponse(res);
-          resolve();
-        };
-
-        listeners['message'](
-          { action: 'getSessionId' },
-          { id: 'test-copilot-id' },
-          handlerResponse
-        );
-      });
-
-      expect(mockCreateSession).toHaveBeenCalled();
-      expect(sendResponse).toHaveBeenCalledWith({
-        sessionId: 'new-session-id',
-        status: 'success',
-        sessionResumed: false,
-        message: 'created'
-      });
-
-      // Verify stored in storage
-      const stored = await mockStorage.local.get(['sessionId']);
-      expect(stored.sessionId).toBe('new-session-id');
-    });
-
-    it('should return existing session when it is still valid', async () => {
-      const now = Date.now();
-      await mockStorage.local.set({
-        sessionId: 'existing-session-id',
-        sessionCreatedAt: now - 5 * 60 * 1000, // 5 min ago (limit is 30 min)
-        sessionResumed: true
-      });
-
-      const sendResponse = vi.fn();
-      await new Promise<void>((resolve) => {
-        const handlerResponse = (res: any) => {
-          sendResponse(res);
-          resolve();
-        };
-
-        listeners['message'](
-          { action: 'getSessionId' },
-          { id: 'test-copilot-id' },
-          handlerResponse
-        );
-      });
-
-      // Should return immediately (synchronously or asynchronously)
-      expect(sendResponse).toHaveBeenCalledWith({
-        sessionId: 'existing-session-id',
-        status: 'success',
-        sessionResumed: true
-      });
-      expect(mockCreateSession).not.toHaveBeenCalled();
-    });
-
-    it('should clear session on clearSession request', async () => {
-      await mockStorage.local.set({
-        sessionId: 'to-clear-id',
-        sessionCreatedAt: Date.now()
-      });
-
-      mockDeleteSession.mockResolvedValue(undefined);
-
-      const sendResponse = vi.fn();
-      await new Promise<void>((resolve) => {
-        const handlerResponse = (res: any) => {
-          sendResponse(res);
-          resolve();
-        };
-
-        listeners['message'](
-          { action: 'clearSession' },
-          { id: 'test-copilot-id' },
-          handlerResponse
-        );
-      });
-
-      expect(mockDeleteSession).toHaveBeenCalledWith('to-clear-id');
-      expect(sendResponse).toHaveBeenCalledWith({ status: 'success' });
-
-      // Verify removed from storage
-      const stored = await mockStorage.local.get(['sessionId']);
-      expect(stored.sessionId).toBeUndefined();
     });
   });
 

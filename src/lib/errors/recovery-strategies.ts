@@ -1,5 +1,5 @@
 
-import { RecoveryStrategy, UserFacingError } from './types';
+import { RecoveryStrategy } from './types';
 import { ErrorClassifier } from './classifier';
 
 export interface RecoveryAction {
@@ -51,14 +51,6 @@ export function getRecoveryPlan(
       plan.actions.push({
         label: 'Retry',
         action: callbacks.onRetry,
-        isPrimary: true
-      });
-      break;
-
-    case 'logout_and_redirect':
-      plan.actions.push({
-        label: 'Sign In',
-        action: callbacks.onLogout || (() => Promise.resolve()),
         isPrimary: true
       });
       break;
