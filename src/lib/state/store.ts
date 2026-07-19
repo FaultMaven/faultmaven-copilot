@@ -46,6 +46,14 @@ export const debouncedPersist = debounce(
     conversations: Record<string, OptimisticConversationItem[]>;
     pinnedCases: string[];
   }) => {
+    // Never persist during a teardown/hand-off reload: the pending call snapshots the
+    // ending session's state, which can be a prior user's just-purged residue. The
+    // beforeunload handler already cancels the pending call; this guard also covers the
+    // millisecond window where the debounce timer could expire naturally between
+    // reload() and beforeunload, making the teardown invariant independent of event
+    // ordering (#164).
+    if (isSessionEnding()) return;
+
     try {
       const storageData: Record<string, unknown> = {};
       const keysToRemove: string[] = [];

@@ -43,6 +43,14 @@
  *
  * Deliberately **not** storage-backed: a persisted epoch would make every guard
  * async and reintroduce the very race it closes.
+ *
+ * ## Also here: the session-teardown flag
+ *
+ * This module additionally hosts `markSessionEnding()` / `isSessionEnding()` — a
+ * sibling teardown signal for purge-coupled reloads (see their own docs). It lives
+ * here rather than in `store.ts` because it is set by the reload paths (auth-slice,
+ * `handleAuthSuccess`) and read by `store.ts`'s `beforeunload` handler; a
+ * zero-dependency module both can import keeps that cycle-free.
  */
 
 let epoch = 0;
