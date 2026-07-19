@@ -8,7 +8,6 @@ import { bumpEpoch } from '../../lib/state/session-epoch';
 import { browser } from 'wxt/browser';
 
 const mockShowError = vi.fn();
-const mockShowErrorWithRetry = vi.fn();
 
 // Mock dependencies
 vi.mock('wxt/browser', () => ({
@@ -35,9 +34,7 @@ vi.mock('../../lib/api', () => ({
 vi.mock('../../lib/errors', () => ({
   useError: () => ({
     showError: mockShowError,
-    showErrorWithRetry: mockShowErrorWithRetry,
-    dismissError: vi.fn(),
-    handleError: vi.fn()
+    dismissError: vi.fn()
   }),
   useErrorHandler: () => ({
     errors: [],
@@ -45,8 +42,7 @@ vi.mock('../../lib/errors', () => ({
     dismissError: vi.fn(),
     dismissAll: vi.fn(),
     getErrorsByType: () => [],
-    hasError: () => false,
-    setRetryAction: vi.fn()
+    hasError: () => false
   })
 }));
 
@@ -87,7 +83,6 @@ describe('useMessageSubmission', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockShowError.mockClear();
-    mockShowErrorWithRetry.mockClear();
 
     (OptimisticIdGenerator.generateMessageId as any)
       .mockReturnValueOnce('user-msg-id')

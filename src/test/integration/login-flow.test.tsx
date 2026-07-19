@@ -14,7 +14,7 @@ vi.mock('../../shared/ui/hooks/useAuth', () => ({
 }));
 vi.mock('../../lib/errors', () => ({
   useErrorHandler: () => ({ getErrorsByType: () => [], dismissError: vi.fn() }),
-  useError: () => ({ showError: vi.fn(), showErrorWithRetry: vi.fn() }),
+  useError: () => ({ showError: vi.fn() }),
   ErrorHandlerProvider: ({ children }: any) => children
 }));
 vi.mock('../../lib/auth/auth-config', () => ({

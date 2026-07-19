@@ -212,13 +212,7 @@ export class NetworkError extends UserFacingError {
       displayType: 'toast',
       duration: 0, // Persistent until dismissed or connection restored
       dismissible: true,
-      icon: 'error',
-      actions: [{
-        label: 'Retry',
-        onClick: async () => {
-          // Will be set by error handler
-        }
-      }]
+      icon: 'error'
     };
   }
 }
@@ -244,13 +238,7 @@ export class TimeoutError extends UserFacingError {
       displayType: 'toast',
       duration: 10000,
       dismissible: true,
-      icon: 'warning',
-      actions: [{
-        label: 'Retry',
-        onClick: async () => {
-          // Will be set by error handler
-        }
-      }]
+      icon: 'warning'
     };
   }
 }
@@ -276,13 +264,7 @@ export class ServerError extends UserFacingError {
       displayType: 'toast',
       duration: 0, // Persistent until dismissed
       dismissible: true,
-      icon: 'error',
-      actions: [{
-        label: 'Retry',
-        onClick: async () => {
-          // Will be set by error handler
-        }
-      }]
+      icon: 'error'
     };
   }
 }
@@ -471,13 +453,7 @@ export class UnknownError extends UserFacingError {
       displayType: 'toast',
       duration: 8000,
       dismissible: true,
-      icon: 'error',
-      actions: [{
-        label: 'Retry',
-        onClick: async () => {
-          // Will be set by error handler
-        }
-      }]
+      icon: 'error'
     };
   }
 }

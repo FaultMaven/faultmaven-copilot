@@ -1,17 +1,13 @@
 // src/shared/ui/components/Toast.tsx
-import React, { useEffect, useState, memo, useCallback } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { ActiveError } from '../../../lib/errors/useErrorHandler';
-import { createLogger } from '~/lib/utils/logger';
-
-const log = createLogger('Toast');
 
 interface ToastProps {
   activeError: ActiveError;
   onDismiss: (id: string) => void;
-  onRetry?: (id: string) => Promise<void>;
 }
 
-const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) => {
+const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss }) => {
   const [isExiting, setIsExiting] = useState(false);
   const { error, displayOptions, id } = activeError;
 
@@ -26,17 +22,6 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
       onDismiss(id);
     }, prefersReducedMotion ? 0 : 300); // Skip animation if user prefers reduced motion
   }, [id, onDismiss, prefersReducedMotion]);
-
-  const handleRetry = async () => {
-    if (onRetry) {
-      try {
-        await onRetry(id);
-        handleDismiss();
-      } catch (retryError) {
-        log.error('Retry failed', retryError);
-      }
-    }
-  };
 
   const getIconPath = () => {
     const icon = displayOptions.icon || 'error';
@@ -59,8 +44,7 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
           border: 'border-fm-critical-border',
           icon: 'text-fm-critical',
           title: 'text-fm-critical',
-          message: 'text-fm-critical',
-          button: 'bg-fm-critical-bg text-fm-critical hover:bg-fm-surface'
+          message: 'text-fm-critical'
         };
       case 'warning':
         return {
@@ -68,8 +52,7 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
           border: 'border-fm-warning-border',
           icon: 'text-fm-warning',
           title: 'text-fm-warning',
-          message: 'text-fm-warning',
-          button: 'bg-fm-warning-bg text-fm-warning hover:bg-fm-surface'
+          message: 'text-fm-warning'
         };
       case 'info':
         return {
@@ -77,16 +60,12 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
           border: 'border-fm-accent-border',
           icon: 'text-fm-accent',
           title: 'text-fm-accent',
-          message: 'text-fm-accent',
-          button: 'bg-fm-accent-soft text-fm-accent hover:bg-fm-surface'
+          message: 'text-fm-accent'
         };
     }
   };
 
   const colors = getColorClasses();
-
-  // Check if this error has a retry action
-  const hasRetryAction = displayOptions.actions?.some(action => action.label === 'Retry');
 
   return (
     <div
@@ -112,29 +91,6 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss, onRetry }) =
           <h3 className={`text-sm font-medium ${colors.title}`}>{error.userTitle}</h3>
           <p className={`text-xs ${colors.message} mt-1`}>{error.userMessage}</p>
           <p className={`text-xs ${colors.message} mt-1 opacity-90`}>{error.userAction}</p>
-
-          {/* Action buttons */}
-          {(hasRetryAction || displayOptions.actions) && (
-            <div className="mt-3 flex items-center gap-2">
-              {hasRetryAction && onRetry && (
-                <button
-                  onClick={handleRetry}
-                  className={`px-3 py-1 text-xs rounded font-medium transition-colors ${colors.button}`}
-                >
-                  Retry
-                </button>
-              )}
-              {displayOptions.actions?.filter(a => a.label !== 'Retry').map((action, idx) => (
-                <button
-                  key={idx}
-                  onClick={action.onClick}
-                  className={`px-3 py-1 text-xs rounded font-medium transition-colors ${colors.button}`}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Dismiss button */}
@@ -159,14 +115,12 @@ Toast.displayName = 'Toast';
 interface ToastContainerProps {
   activeErrors: ActiveError[];
   onDismiss: (id: string) => void;
-  onRetry?: (id: string) => Promise<void>;
   position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
 }
 
 export const ToastContainer: React.FC<ToastContainerProps> = ({
   activeErrors,
   onDismiss,
-  onRetry,
   position = 'top-right'
 }) => {
   const getPositionClasses = () => {
@@ -196,7 +150,6 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({
             key={activeError.id}
             activeError={activeError}
             onDismiss={onDismiss}
-            onRetry={onRetry}
           />
         ))}
       </div>
