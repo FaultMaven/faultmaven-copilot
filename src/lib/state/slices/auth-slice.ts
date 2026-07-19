@@ -149,10 +149,20 @@ export const createAuthSlice: StateCreator<any, [], [], AuthSlice> = (set, get) 
     },
 
     logout: async () => {
+      // logoutAuth() ALWAYS destroys the local credential in its finally (tokens
+      // cleared); a failed /auth/logout POST (offline / 401) only means the
+      // best-effort server-side revocation didn't land. So logout always succeeds
+      // LOCALLY — flip to logged-out and broadcast regardless, and never rethrow.
+      // Rethrowing before left the app half-logged-out (tokens gone but
+      // isAuthenticated still true, no broadcast) AND skipped the caller's local
+      // data purge, leaking the prior user's conversations into storage (#143).
       try {
         log.info('Attempting logout');
         await logoutAuth();
-
+        log.info('Logout successful');
+      } catch (error) {
+        log.warn('Backend logout failed; completing local logout anyway', error);
+      } finally {
         set({
           isAuthenticated: false,
           currentUser: null,
@@ -161,15 +171,10 @@ export const createAuthSlice: StateCreator<any, [], [], AuthSlice> = (set, get) 
           authError: null
         });
 
-        log.info('Logout successful');
-
         EventBus.emit({
           type: 'auth_state_changed',
           authState: null
         });
-      } catch (error) {
-        log.error('Logout failed', error);
-        throw error;
       }
     },
 

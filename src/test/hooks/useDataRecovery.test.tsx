@@ -88,4 +88,29 @@ describe('useDataRecovery — active-case restore', () => {
     await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
     expect(handleCaseSelect).not.toHaveBeenCalled();
   });
+
+  // #143/H3: a logout landing mid-recovery must not let the hydrate re-write the
+  // ended session's conversations into the store (which the subscriber would then
+  // persist straight back into storage the purge just cleared).
+  it('skips the store hydrate + active-case restore when a logout lands during recovery', async () => {
+    const { bumpEpoch } = await import('../../lib/state/session-epoch');
+
+    storageGet.mockImplementation((keys: string[]) => {
+      if (keys.includes('faultmaven_current_case')) {
+        return Promise.resolve({ faultmaven_current_case: 'case-42' });
+      }
+      // Hydration read (runs just before the hydrate) — simulate a logout here.
+      bumpEpoch();
+      return Promise.resolve({
+        conversationTitles: { 'case-42': 'Prod outage' },
+        conversations: { 'case-42': [] }
+      });
+    });
+
+    renderHook(() => useDataRecovery());
+
+    await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
+    expect(setState).not.toHaveBeenCalled();          // store hydrate fenced
+    expect(handleCaseSelect).not.toHaveBeenCalled();  // active-case restore fenced
+  });
 });

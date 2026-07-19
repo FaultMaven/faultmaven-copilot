@@ -16,7 +16,7 @@ import { bumpEpoch } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { getDashboardUrl } from "../../config";
-import { useAppStore } from "../../lib/state/store";
+import { useAppStore, debouncedPersist } from "../../lib/state/store";
 
 const log = createLogger('SidePanelApp');
 
@@ -146,12 +146,31 @@ function SidePanelAppContent() {
     abortInFlightMessageTurns();
     abortInFlightUploadTurns();
 
-    // 1. Clear backend auth and session state
-    await logout();
-    await clearSession();
+    // 1. Best-effort backend logout + session teardown. Their failure (offline,
+    //    a 401) must NOT skip the local purge below — otherwise the previous
+    //    user's conversations / case-pointer / session survive in storage and
+    //    rehydrate on the next login, possibly a DIFFERENT user on a shared
+    //    profile (#143). logout() already completes the local logout even on a
+    //    failed POST; wrap clearSession too so a throw there can't skip the purge.
+    try {
+      await logout();
+      await clearSession();
+    } catch (error) {
+      log.warn('Logout/session teardown failed; proceeding with local purge', error);
+    }
 
-    // 2. Clear persistent storage immediately
-    await PersistenceManager.clearAllPersistenceData({ preservePinnedCases: true });
+    // 2. Cancel any pending debounced persist BEFORE clearing storage: a write
+    //    scheduled just before logout (holding the prior user's conversations)
+    //    could otherwise fire DURING the async clear below and re-write the keys
+    //    we're clearing. Cancelling first closes that window — no writer runs
+    //    between here and the clear, so nothing re-schedules it (#143). The store
+    //    reset in step 4 then schedules a fresh empty-state persist.
+    debouncedPersist.cancel();
+    try {
+      await PersistenceManager.clearAllPersistenceData({ preservePinnedCases: true });
+    } catch (error) {
+      log.error('Failed to clear persistence data on logout', error);
+    }
 
     // 3. Reset the in-memory optimistic singletons. These are module-level and
     //    outlive the session (the side panel is not reloaded on logout), so the

@@ -131,6 +131,17 @@ export function useDataRecovery(
           idMappings: undefined
         };
 
+        // Fence the hydrate against a logout that landed during the network
+        // recovery / storage reads above: writing the ended session's
+        // conversations and id-mappings into the store would repopulate what the
+        // logout purge just cleared, and the store subscriber would persist them
+        // straight back. Mirrors the active-case restore fence below (#143).
+        if (epoch !== getEpoch()) {
+          log.info('Session ended during recovery — skipping store hydrate');
+          await PersistenceManager.markSyncComplete();
+          return;
+        }
+
         if (stored.idMappings) {
           const mappings = stored.idMappings;
           if (mappings.optimisticToReal && mappings.realToOptimistic) {
