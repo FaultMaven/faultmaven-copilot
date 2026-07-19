@@ -186,7 +186,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       // (turn-floor + id dedup) drops the re-read head instead of re-growing it, so
       // it's correct — but a capped conversation re-downloads its whole tail on each
       // open. Accepted here because that only bites pathologically long single
-      // conversations; a backend `after_turn` filter would make the fetch delta-sized.
+      // conversations. A server-side delta fetch would need an INCLUSIVE `from_turn`
+      // filter (NOT exclusive `after_turn`: a user msg and its agent reply share a
+      // turn_number, so excluding the highest local turn drops a late agent reply)
+      // AND would still keep this id-dedup merge to absorb the inclusive overlap.
       const offset = (get().conversations[caseId] ?? []).filter(isCommittedMessage).length;
 
       // Fence the delta-fetch continuation: a logout while the fetch is in flight
