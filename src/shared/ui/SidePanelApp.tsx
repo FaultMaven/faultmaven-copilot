@@ -398,7 +398,6 @@ function SidePanelAppContent() {
         <ToastContainer
           activeErrors={getErrorsByType('toast')}
           onDismiss={dismissError}
-          onRetry={async () => { }}
           position="top-right"
         />
 

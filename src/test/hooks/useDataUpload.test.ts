@@ -30,9 +30,7 @@ vi.mock('../../lib/api', () => ({
 vi.mock('../../lib/errors', () => ({
   useError: () => ({
     showError: mockShowError,
-    showErrorWithRetry: vi.fn(),
-    dismissError: vi.fn(),
-    handleError: vi.fn()
+    dismissError: vi.fn()
   }),
   useErrorHandler: () => ({
     errors: [],
@@ -40,8 +38,7 @@ vi.mock('../../lib/errors', () => ({
     dismissError: vi.fn(),
     dismissAll: vi.fn(),
     getErrorsByType: () => [],
-    hasError: () => false,
-    setRetryAction: vi.fn()
+    hasError: () => false
   })
 }));
 

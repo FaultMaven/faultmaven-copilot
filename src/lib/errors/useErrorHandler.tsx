@@ -43,9 +43,6 @@ interface ErrorHandlerContextValue {
 
   /** Check if error is currently shown */
   hasError: (errorId: string) => boolean;
-
-  /** Set retry action for an error */
-  setRetryAction: (errorId: string, retryFn: () => Promise<void>) => void;
 }
 
 const ErrorHandlerContext = createContext<ErrorHandlerContextValue | null>(null);
@@ -55,7 +52,6 @@ const ErrorHandlerContext = createContext<ErrorHandlerContextValue | null>(null)
  */
 export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [errors, setErrors] = useState<ActiveError[]>([]);
-  const [retryActions, setRetryActions] = useState<Map<string, () => Promise<void>>>(new Map());
   const [timeoutIds, setTimeoutIds] = useState<Map<string, NodeJS.Timeout>>(new Map());
   const [dismissalTimeouts, setDismissalTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map());
 
@@ -63,7 +59,7 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const dismissErrorRef = useRef<((errorId: string) => void) | null>(null);
 
   // Ref mirrors of state kept current on every render. showError must keep a
-  // stable identity (useError.handleError and many consumers depend on it), so
+  // stable identity (useError and many consumers depend on it), so
   // it can't take `errors` as a dep — it reads the live value via this ref
   // instead. The timeout maps are mirrored so the unmount cleanup can clear
   // whatever timers exist WITHOUT re-subscribing on every map change.
@@ -184,13 +180,6 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       e.id === errorId ? { ...e, dismissed: true } : e
     ));
 
-    // Clean up retry action
-    setRetryActions(prev => {
-      const next = new Map(prev);
-      next.delete(errorId);
-      return next;
-    });
-
     // Remove dismissed errors after animation (300ms)
     const dismissalTimeoutId = setTimeout(() => {
       setErrors(prev => prev.filter(e => e.id !== errorId));
@@ -209,7 +198,6 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
    */
   const dismissAll = useCallback(() => {
     setErrors(prev => prev.map(e => ({ ...e, dismissed: true })));
-    setRetryActions(new Map());
 
     setTimeout(() => {
       setErrors([]);
@@ -229,13 +217,6 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const hasError = useCallback((errorId: string): boolean => {
     return errors.some(e => e.id === errorId && !e.dismissed);
   }, [errors]);
-
-  /**
-   * Set retry action for an error
-   */
-  const setRetryAction = useCallback((errorId: string, retryFn: () => Promise<void>) => {
-    setRetryActions(prev => new Map(prev).set(errorId, retryFn));
-  }, []);
 
   // Auto-cleanup old dismissed errors
   useEffect(() => {
@@ -292,8 +273,7 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
     dismissError,
     dismissAll,
     getErrorsByType,
-    hasError,
-    setRetryAction
+    hasError
   };
 
   return (
@@ -319,40 +299,10 @@ export const useErrorHandler = () => {
  * Convenience hook for common error operations
  */
 export const useError = () => {
-  const { showError, dismissError, setRetryAction } = useErrorHandler();
-
-  /**
-   * Handle error with automatic retry setup
-   */
-  const handleError = useCallback((
-    error: unknown,
-    context?: ErrorContext,
-    retryFn?: () => Promise<void>
-  ): string => {
-    const errorId = showError(error, context);
-
-    if (retryFn) {
-      setRetryAction(errorId, retryFn);
-    }
-
-    return errorId;
-  }, [showError, setRetryAction]);
-
-  /**
-   * Show error with retry
-   */
-  const showErrorWithRetry = useCallback((
-    error: unknown,
-    retryFn: () => Promise<void>,
-    context?: ErrorContext
-  ): string => {
-    return handleError(error, context, retryFn);
-  }, [handleError]);
+  const { showError, dismissError } = useErrorHandler();
 
   return {
     showError,
-    showErrorWithRetry,
-    dismissError,
-    handleError
+    dismissError
   };
 };
