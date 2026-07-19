@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppStore } from '../../../lib/state/store';
 import * as api from '../../../lib/api';
 import { EventBus } from '../../../lib/utils/messaging';
+import { shouldReloadOnAuthIdentitySwitch } from '../../../lib/state/slices/auth-slice';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -60,5 +61,41 @@ describe('auth-slice logout (#143)', () => {
     expect(api.logoutAuth).toHaveBeenCalled();
     expect(useAppStore.getState().isAuthenticated).toBe(false);
     expect(emit).toHaveBeenCalledWith({ type: 'auth_state_changed', authState: null });
+  });
+});
+
+// #164: a shared-profile identity switch performed in another context reaches an
+// open panel only as an authenticated broadcast. When the panel is ALREADY
+// authenticated as a different user, nothing else resets the in-memory case-state
+// slices (AuthScreen, which reloads on login into a logged-OUT panel, is not
+// mounted), so the panel must reload to re-scope.
+describe('shouldReloadOnAuthIdentitySwitch (#164)', () => {
+  it('reloads on an A→B switch under an already-authenticated panel', () => {
+    expect(
+      shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: true, user: { user_id: 'userB' } })
+    ).toBe(true);
+  });
+
+  it('does NOT reload when the panel was logged out (AuthScreen reloads that path)', () => {
+    expect(
+      shouldReloadOnAuthIdentitySwitch(false, undefined, { isAuthenticated: true, user: { user_id: 'userB' } })
+    ).toBe(false);
+  });
+
+  it('does NOT reload for the same user (token refresh / re-broadcast)', () => {
+    expect(
+      shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: true, user: { user_id: 'userA' } })
+    ).toBe(false);
+  });
+
+  it('does NOT reload on an unauthenticated or null broadcast', () => {
+    expect(shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: false })).toBe(false);
+    expect(shouldReloadOnAuthIdentitySwitch(true, 'userA', null)).toBe(false);
+  });
+
+  it('does NOT reload when the incoming identity is missing', () => {
+    expect(
+      shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: true, user: {} })
+    ).toBe(false);
   });
 });

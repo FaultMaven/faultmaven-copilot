@@ -13,6 +13,37 @@ type StorageChanges = Record<string, { newValue?: unknown; oldValue?: unknown }>
 
 const log = createLogger('AuthSlice');
 
+/**
+ * Decide whether an incoming authenticated `auth_state_changed` broadcast requires
+ * the panel to reload so it re-hydrates from freshly identity-scoped storage.
+ *
+ * A login/identity-switch performed in ANOTHER context (dashboard bridge or
+ * background OAuth) reaches an open panel only as this broadcast — it does not run
+ * the panel-login reload (`handleAuthSuccess`). Two cases:
+ *
+ * - Panel was logged OUT: `AuthScreen` is mounted and reloads on the same broadcast
+ *   (its own `runtime.onMessage` listener), so this returns false — the slice needn't
+ *   duplicate that reload.
+ * - Panel was authenticated as a DIFFERENT user (a shared-profile A→B switch):
+ *   `AuthScreen` is unmounted, so nothing else resets the in-memory case-state
+ *   slices. Without a reload, the prior user's conversations/titles/active case are
+ *   shown to the new user AND re-persisted on the next store write, reversing the
+ *   background's `enforceUserDataScope` purge (#164). This returns true.
+ *
+ * `enforceUserDataScope` runs before the broadcast, so storage is already clean by
+ * the time the panel reloads.
+ */
+export function shouldReloadOnAuthIdentitySwitch(
+  wasAuthenticated: boolean,
+  priorUserId: string | undefined,
+  nextAuthState: { isAuthenticated?: boolean; user?: { user_id?: string } } | null | undefined
+): boolean {
+  if (!nextAuthState?.isAuthenticated) return false;
+  const nextUserId = nextAuthState.user?.user_id;
+  // Only when the panel is already authenticated and the identity actually changes.
+  return wasAuthenticated && !!nextUserId && nextUserId !== priorUserId;
+}
+
 export interface AuthSlice {
   isAuthenticated: boolean;
   currentUser: User | null;
@@ -69,11 +100,31 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
               authError: 'Your session has expired. Please log in again.'
             });
           } else {
+            const wasAuthenticated = get().isAuthenticated;
+            const priorUserId = get().currentUser?.user_id;
+
             set({
               isAuthenticated: event.authState.isAuthenticated,
               currentUser: event.authState.user,
               authError: null
             });
+
+            // A shared-profile identity switch under an already-authenticated panel
+            // leaves the prior user's case-state slices in memory (AuthScreen — which
+            // reloads on login into a logged-out panel — is not mounted here). Reload
+            // so the panel re-hydrates from the storage the background already
+            // identity-scoped, instead of showing and re-persisting the prior user's
+            // data (#164).
+            if (
+              shouldReloadOnAuthIdentitySwitch(wasAuthenticated, priorUserId, event.authState) &&
+              typeof window !== 'undefined'
+            ) {
+              log.warn('Auth identity switched under an authenticated panel — reloading to re-scope in-memory state', {
+                priorUserId,
+                nextUserId: event.authState.user?.user_id
+              });
+              window.location.reload();
+            }
           }
         });
       }
