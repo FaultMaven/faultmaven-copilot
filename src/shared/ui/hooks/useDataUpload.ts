@@ -93,13 +93,25 @@ export function useDataUpload() {
         log.info('No active case, creating case via /api/v1/cases');
 
         try {
-          const caseData = await createCase({
-            title: null,
-            priority: 'medium',
-            metadata: {
-              created_via: 'browser_extension',
-              auto_generated: true
-            }
+          // Stable key for this logical case creation so an ambiguous network
+          // failure can be auto-retried without the backend creating a second
+          // case. Generated once, OUTSIDE the retry closure, so every retry of
+          // this attempt reuses it.
+          const caseIdempotencyKey = crypto.randomUUID();
+          const caseData = await resilientOperation({
+            operation: () => createCase(
+              {
+                title: null,
+                priority: 'medium',
+                metadata: {
+                  created_via: 'browser_extension',
+                  auto_generated: true
+                }
+              },
+              { idempotencyKey: caseIdempotencyKey }
+            ),
+            context: { operation: 'case_create' },
+            idempotent: true,
           });
 
           const newCaseId = caseData.case_id;
@@ -241,7 +253,12 @@ export function useDataUpload() {
       try {
         turnResponse = await resilientOperation({
           operation: async () => {
-            return await submitTurn(targetCaseId!, turnRequest, { signal: controller.signal });
+            return await submitTurn(targetCaseId!, turnRequest, {
+              signal: controller.signal,
+              // Stable per-turn key so an ambiguous network failure can be safely
+              // retried without submitting a second turn (backend dedupes).
+              idempotencyKey: aiMessageId,
+            });
           },
           context: {
             operation: 'turn_submit',
@@ -252,9 +269,10 @@ export function useDataUpload() {
               hasPasted: !!turnRequest.pastedContent
             }
           },
-          // A turn submission is a non-idempotent POST: never auto-retry an
-          // ambiguous network failure (the turn may already have committed).
-          idempotent: false
+          // Safe to auto-retry an ambiguous network failure: the request carries a
+          // stable Idempotency-Key (aiMessageId), so the backend replays the cached
+          // response for a resend instead of committing a second turn.
+          idempotent: true
         });
       } catch (error) {
         // Caller-initiated cancellation (hook unmounted): return silently.
