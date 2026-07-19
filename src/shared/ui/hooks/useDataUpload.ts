@@ -383,7 +383,12 @@ export function useDataUpload() {
         });
         try {
           const titleResult = await generateCaseTitle(targetCaseId, { max_words: 6 });
-          if (titleResult.title) {
+          // Re-check the epoch after the title-gen await: a logout during the
+          // (multi-second) LLM call must not write the ended session's title back
+          // into the purged store, which the subscriber would then persist (#143).
+          if (epoch !== getEpoch()) {
+            log.info('Session ended during title generation — discarding title write', { caseId: targetCaseId });
+          } else if (titleResult.title) {
             setConversationTitles(prev => ({ ...prev, [targetCaseId!]: titleResult.title }));
             setTitleSources(prev => ({ ...prev, [targetCaseId!]: 'backend' }));
             log.info('Smart title auto-generated', { caseId: targetCaseId, title: titleResult.title });

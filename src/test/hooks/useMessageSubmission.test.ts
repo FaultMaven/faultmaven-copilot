@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useMessageSubmission } from '../../shared/ui/hooks/useMessageSubmission';
+import { useMessageSubmission, TITLE_GENERATION_THRESHOLD } from '../../shared/ui/hooks/useMessageSubmission';
 import * as api from '../../lib/api';
 import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '../../lib/optimistic';
 import { useAppStore } from '../../lib/state/store';
@@ -337,6 +337,41 @@ describe('useMessageSubmission', () => {
       expect(pendingOpsManager.complete).not.toHaveBeenCalled();
       const conv = useAppStore.getState().conversations['case-123'] || [];
       expect(conv.some((m: any) => m.response?.includes('stale'))).toBe(false);
+    });
+
+    it('does not write an auto-generated title back into a store purged mid-title-gen (#143)', async () => {
+      useAppStore.setState({
+        activeCaseId: 'case-123',
+        conversations: { 'case-123': [] },
+        conversationTitles: { 'case-123': 'Original' },
+        titleSources: {} // no source → eligible for auto-generation
+      });
+
+      // The turn itself succeeds (epoch stable); the logout lands DURING the
+      // subsequent multi-second title-generation LLM call.
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok',
+        turn_number: TITLE_GENERATION_THRESHOLD, // triggers auto-title
+        milestones_completed: [],
+        case_state: 'inquiry',
+        progress_made: false,
+        is_stuck: false,
+        attachments_processed: []
+      });
+      (api.generateCaseTitle as any).mockImplementation(async () => {
+        bumpEpoch();
+        return { title: 'Generated Title (stale — session already ended)' };
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('the fifth turn');
+      });
+
+      expect(api.generateCaseTitle).toHaveBeenCalled();
+      // The generated title for the ended session must NOT overwrite the store
+      // (the subscriber would otherwise persist it into the purged storage).
+      expect(useAppStore.getState().conversationTitles['case-123']).toBe('Original');
     });
   });
 });
