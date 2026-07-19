@@ -21,7 +21,6 @@ interface RecoveredData {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   conversations: Record<string, any[]>;
-  optimisticCases: any[];
   pinnedCases: Set<string>;
   idMappings?: IdMappingState;
 }
@@ -108,7 +107,6 @@ export function useDataRecovery(
           'conversationTitles',
           'titleSources',
           'conversations',
-          'optimisticCases',
           'idMappings',
           'pinnedCases'
         ]);
@@ -126,7 +124,6 @@ export function useDataRecovery(
           // interrupted flush) may still hold transient optimistic/loading items.
           // Drop them here too so a reload can't rehydrate a stuck spinner.
           conversations: memoryManager.sanitizeAndCapForPersistence(stored.conversations || {}, undefined),
-          optimisticCases: stored.optimisticCases || [],
           pinnedCases: new Set(stored.pinnedCases || []),
           idMappings: undefined
         };
@@ -164,7 +161,6 @@ export function useDataRecovery(
           conversationTitles: recoveredData.conversationTitles,
           titleSources: recoveredData.titleSources,
           conversations: recoveredData.conversations,
-          optimisticCases: recoveredData.optimisticCases,
           pinnedCases: recoveredData.pinnedCases
         });
 

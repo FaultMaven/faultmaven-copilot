@@ -28,7 +28,6 @@ export const debouncedPersist = debounce(
     conversationTitles: Record<string, string>;
     titleSources: Record<string, 'user' | 'backend' | 'system'>;
     conversations: Record<string, any[]>;
-    optimisticCases: any[];
     pinnedCases: string[];
   }) => {
     try {
@@ -66,12 +65,6 @@ export const debouncedPersist = debounce(
       // "restored" pending operation could never actually retry or roll back.
       // pendingOpsManager is the single in-session source of truth; after a
       // reload, in-flight/failed turns are reconciled from the backend instead.
-
-      if (stateToSave.optimisticCases.length > 0) {
-        storageData.optimisticCases = stateToSave.optimisticCases;
-      } else {
-        keysToRemove.push('optimisticCases');
-      }
 
       storageData.pinnedCases = stateToSave.pinnedCases;
 
@@ -115,7 +108,6 @@ useAppStore.subscribe((state) => {
     state.conversationTitles !== previousState.conversationTitles ||
     state.titleSources !== previousState.titleSources ||
     state.conversations !== previousState.conversations ||
-    state.optimisticCases !== previousState.optimisticCases ||
     state.pinnedCases !== previousState.pinnedCases
   ) {
     previousState = state;
@@ -123,7 +115,6 @@ useAppStore.subscribe((state) => {
       conversationTitles: state.conversationTitles,
       titleSources: state.titleSources,
       conversations: state.conversations,
-      optimisticCases: state.optimisticCases,
       pinnedCases: Array.from(state.pinnedCases)
     });
   }

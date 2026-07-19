@@ -68,7 +68,6 @@ describe('useDataUpload — error surfacing regression guard', () => {
       conversations: { 'case-123': [] },
       titleSources: {},
       conversationTitles: {},
-      optimisticCases: [],
       pinnedCases: new Set(),
       caseEvidence: {}
     });
@@ -173,5 +172,29 @@ describe('useDataUpload — error surfacing regression guard', () => {
     // The successful retry clears the failed affordance.
     expect(useAppStore.getState().getFailedOperationsForUser()).toHaveLength(0);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  // Regression: issue #147 — a stale opt_case_* left in activeCaseId by a prior
+  // failed case-create must not be POSTed against (backend 404s). With no mapping,
+  // the guard discards it and a fresh real case is created.
+  it('creates a fresh real case instead of submitting a turn against a stale opt_case_*', async () => {
+    useAppStore.setState({ activeCaseId: 'opt_case_stale', conversations: {} });
+    (api.createCase as any).mockResolvedValue({
+      case_id: 'real-case-id', title: 'Case-0625-1', state: 'inquiry'
+    });
+    (api.submitTurn as any).mockResolvedValue(okTurnResponse);
+
+    const { result } = renderHook(() => useDataUpload());
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'diagnose this' });
+    });
+
+    expect(api.createCase).toHaveBeenCalled();
+    expect(api.submitTurn).toHaveBeenCalledWith(
+      'real-case-id', expect.anything(), expect.anything()
+    );
+    expect(api.submitTurn).not.toHaveBeenCalledWith(
+      'opt_case_stale', expect.anything(), expect.anything()
+    );
   });
 });

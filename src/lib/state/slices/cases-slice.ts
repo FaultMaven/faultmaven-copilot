@@ -9,8 +9,7 @@ import {
 import type { UserCase } from '../../../types/case';
 import {
   idMappingManager,
-  OptimisticConversationItem,
-  OptimisticUserCase
+  OptimisticConversationItem
 } from '../../../lib/optimistic';
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { caseCacheManager } from '../../../lib/cache/case-cache';
@@ -27,7 +26,6 @@ export interface CasesSlice {
   conversations: Record<string, OptimisticConversationItem[]>;
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
-  optimisticCases: OptimisticUserCase[];
   pinnedCases: Set<string>;
   caseEvidence: Record<string, any[]>;
 
@@ -37,7 +35,6 @@ export interface CasesSlice {
   setConversations: (updater: Record<string, OptimisticConversationItem[]> | ((prev: Record<string, OptimisticConversationItem[]>) => Record<string, OptimisticConversationItem[]>)) => void;
   setConversationTitles: (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
   setTitleSources: (updater: Record<string, 'user' | 'backend' | 'system'> | ((prev: Record<string, 'user' | 'backend' | 'system'>) => Record<string, 'user' | 'backend' | 'system'>)) => void;
-  setOptimisticCases: (updater: OptimisticUserCase[] | ((prev: OptimisticUserCase[]) => OptimisticUserCase[])) => void;
   setPinnedCases: (pinned: Set<string>) => void;
   togglePinnedCase: (caseId: string) => void;
   setCaseEvidence: (updater: Record<string, any[]> | ((prev: Record<string, any[]>) => Record<string, any[]>)) => void;
@@ -80,7 +77,6 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
     conversations: {},
     conversationTitles: {},
     titleSources: {},
-    optimisticCases: [],
     pinnedCases: new Set(),
     caseEvidence: {},
 
@@ -125,14 +121,6 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
         set((state: any) => ({ titleSources: updater(state.titleSources) }));
       } else {
         set({ titleSources: updater });
-      }
-    },
-
-    setOptimisticCases: (updater) => {
-      if (typeof updater === 'function') {
-        set((state: any) => ({ optimisticCases: updater(state.optimisticCases) }));
-      } else {
-        set({ optimisticCases: updater });
       }
     },
 
@@ -254,40 +242,22 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
       get().setActiveCaseId(caseId);
       set({ hasUnsavedNewChat: false, activeTab: 'copilot' });
 
-      const optimisticCase = get().optimisticCases.find((c: any) => c.case_id === caseId);
-      if (optimisticCase) {
-        set({
-          activeCase: {
-            case_id: optimisticCase.case_id,
-            title: optimisticCase.title || get().conversationTitles[caseId] || 'New Case',
-            state: (optimisticCase.state || 'inquiry') as UserCase['state'],
-            created_at: optimisticCase.created_at || new Date().toISOString(),
-            updated_at: optimisticCase.updated_at || new Date().toISOString(),
-            owner_id: optimisticCase.owner_id || '',
-            organization_id: '',
-            closure_reason: null,
-            closed_at: null,
-            message_count: get().conversations[caseId]?.length || 0
-          }
-        });
-      } else {
-        const caseMessages = get().conversations[caseId] || [];
-        const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_state);
-        set({
-          activeCase: {
-            case_id: caseId,
-            title: get().conversationTitles[caseId] || 'Loading...',
-            state: (lastStatusMessage?.case_state || 'inquiry') as UserCase['state'],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            owner_id: '',
-            organization_id: '',
-            closure_reason: null,
-            closed_at: null,
-            message_count: caseMessages.length || 0
-          }
-        });
-      }
+      const caseMessages = get().conversations[caseId] || [];
+      const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_state);
+      set({
+        activeCase: {
+          case_id: caseId,
+          title: get().conversationTitles[caseId] || 'Loading...',
+          state: (lastStatusMessage?.case_state || 'inquiry') as UserCase['state'],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          owner_id: '',
+          organization_id: '',
+          closure_reason: null,
+          closed_at: null,
+          message_count: caseMessages.length || 0
+        }
+      });
 
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId

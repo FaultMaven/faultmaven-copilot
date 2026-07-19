@@ -17,7 +17,6 @@ export type {
   ConversationItem,
   OptimisticConversationItem,
   UserCase,
-  OptimisticUserCase,
   TitleSource,
   OptimisticStatus
 } from './types';

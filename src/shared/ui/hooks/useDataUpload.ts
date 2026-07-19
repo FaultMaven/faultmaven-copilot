@@ -11,9 +11,11 @@ import {
 import {
   OptimisticConversationItem,
   OptimisticIdGenerator,
+  idMappingManager,
   pendingOpsManager,
   PendingOperation,
 } from '../../../lib/optimistic';
+import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
@@ -283,6 +285,15 @@ export function useDataUpload() {
 
       // Step 1: Ensure case exists
       let targetCaseId = activeCaseId;
+
+      // Never carry a stale optimistic case id into a turn submit. A prior failed
+      // case-create (in useMessageSubmission) can leave activeCaseId as an
+      // unreconciled opt_case_*; POSTing a turn against it 404s. Resolve via the
+      // id-mapping if reconciled, otherwise treat as no active case so a fresh
+      // real case is created below.
+      if (targetCaseId && isOptimisticId(targetCaseId)) {
+        targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
+      }
 
       if (!targetCaseId) {
         log.info('No active case, creating case via /api/v1/cases');

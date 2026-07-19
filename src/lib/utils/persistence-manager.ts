@@ -443,7 +443,6 @@ export class PersistenceManager {
         'titleSources',
         'conversations',
         'pendingOperations',
-        'optimisticCases',
         'idMappings',
         'faultmaven_current_case',
         PersistenceManager.SYNC_TIMESTAMP_KEY,

@@ -96,7 +96,6 @@ describe('useMessageSubmission', () => {
       conversations: { 'case-123': [] },
       titleSources: {},
       conversationTitles: {},
-      optimisticCases: [],
       pinnedCases: new Set(),
       activeCase: {
         case_id: 'case-123',
@@ -367,6 +366,77 @@ describe('useMessageSubmission', () => {
       // The generated title for the ended session must NOT overwrite the store
       // (the subscriber would otherwise persist it into the purged storage).
       expect(useAppStore.getState().conversationTitles['case-123']).toBe('Original');
+    });
+  });
+
+  // Regression: issue #147 — a prior failed case-create can leave activeCaseId as
+  // a stale opt_case_* with no id-mapping. A turn must never be POSTed against an
+  // optimistic id (backend 404s); the stale pointer is resolved or discarded.
+  describe('stale optimistic active-case guard (#147)', () => {
+    it('creates a fresh real case instead of POSTing a turn against an unreconciled opt_case_*', async () => {
+      // Stale optimistic pointer with NO mapping (prior create failed).
+      useAppStore.setState({ activeCaseId: 'opt_case_stale', conversations: {} });
+      (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_new');
+      (api.createCase as any).mockResolvedValue({
+        case_id: 'real-case-id', title: 'Case-0625-1', state: 'inquiry'
+      });
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok', turn_number: 1, milestones_completed: [],
+        case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: []
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('test query');
+      });
+
+      // A fresh case was created and the turn went to the REAL id, never the stale opt id.
+      expect(api.createCase).toHaveBeenCalled();
+      expect(api.submitTurn).toHaveBeenCalledWith(
+        'real-case-id', expect.anything(), expect.anything()
+      );
+      expect(api.submitTurn).not.toHaveBeenCalledWith(
+        'opt_case_stale', expect.anything(), expect.anything()
+      );
+    });
+
+    it('resolves a reconciled opt_case_* via the id-mapping without creating a new case', async () => {
+      idMappingManager.addMapping('opt_case_reconciled', 'real-mapped-id');
+      useAppStore.setState({ activeCaseId: 'opt_case_reconciled', conversations: { 'real-mapped-id': [] } });
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok', turn_number: 1, milestones_completed: [],
+        case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: []
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('test query');
+      });
+
+      expect(api.createCase).not.toHaveBeenCalled();
+      expect(api.submitTurn).toHaveBeenCalledWith(
+        'real-mapped-id', expect.anything(), expect.anything()
+      );
+    });
+
+    it('rolls back the optimistic active-case pointer when case creation fails', async () => {
+      useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+      (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_test');
+      (api.createCase as any).mockRejectedValue(new Error('create failed'));
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('test query');
+      });
+
+      // The failed optimistic pointer is cleared so the next submit starts fresh
+      // rather than POSTing a turn against the dead opt id, and the UI returns to
+      // the unsaved-new-chat composer state.
+      expect(useAppStore.getState().activeCaseId).toBeNull();
+      expect(useAppStore.getState().hasUnsavedNewChat).toBe(true);
+      expect(api.submitTurn).not.toHaveBeenCalled();
+      expect(mockShowError).toHaveBeenCalled();
+      expect(result.current.submitting).toBe(false);
     });
   });
 });
