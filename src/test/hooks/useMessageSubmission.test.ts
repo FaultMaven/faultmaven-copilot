@@ -203,9 +203,12 @@ describe('useMessageSubmission', () => {
       await result.current.handleQuerySubmit('test query');
     });
 
-    expect(api.createCase).toHaveBeenCalledWith(expect.objectContaining({
-      title: null
-    }));
+    // The optimistic case id doubles as the Idempotency-Key so an ambiguous
+    // network failure can be safely auto-retried without creating a second case.
+    expect(api.createCase).toHaveBeenCalledWith(
+      expect.objectContaining({ title: null }),
+      { idempotencyKey: 'opt_case_test' }
+    );
     expect(useAppStore.getState().activeCaseId).toBe('real-case-id');
   });
 

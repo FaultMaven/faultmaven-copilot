@@ -102,7 +102,14 @@ export function useMessageSubmission() {
         priority: 'low'
       };
 
-      const newCase = await createCase(caseRequest);
+      // optimisticId is stable for this logical case creation, so it doubles as
+      // the Idempotency-Key: an ambiguous network failure can be auto-retried
+      // without the backend creating a second case.
+      const newCase = await resilientOperation({
+        operation: () => createCase(caseRequest, { idempotencyKey: optimisticId }),
+        context: { operation: 'case_create', metadata: { optimisticId } },
+        idempotent: true,
+      });
       const realCaseId = newCase.case_id;
 
       if (epoch !== getEpoch()) {
@@ -206,7 +213,13 @@ export function useMessageSubmission() {
             intentData: intent ? { ...intent } : undefined,
           };
 
-          const response = await submitTurn(caseId, turnRequest, { signal: controller.signal });
+          const response = await submitTurn(caseId, turnRequest, {
+            signal: controller.signal,
+            // aiMessageId is stable across every retry of this turn (the auto-retry
+            // closure captures it; the manual-retry onRetry re-passes it), so it is
+            // the natural per-turn Idempotency-Key — the backend dedupes a resend.
+            idempotencyKey: aiMessageId,
+          });
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 
           if (response.case_state) {
@@ -231,9 +244,10 @@ export function useMessageSubmission() {
           caseId,
           metadata: { query: query.substring(0, 50) }
         },
-        // A turn submission is a non-idempotent POST: never auto-retry an
-        // ambiguous network failure (the turn may already have committed).
-        idempotent: false,
+        // Safe to auto-retry an ambiguous network failure: the request carries a
+        // stable Idempotency-Key (aiMessageId), so the backend replays the cached
+        // response for a resend instead of committing a second turn.
+        idempotent: true,
         onError: (error, attempt) => {
           log.warn(`Submission attempt ${attempt} failed`, error);
         },

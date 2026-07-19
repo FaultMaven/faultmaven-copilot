@@ -63,6 +63,35 @@ describe('Case Service', () => {
       expect(result.title).toEqual('New Case');
       expect(result.owner_id).toEqual('user-1'); // Maps user_id -> owner_id
     });
+
+    it('sends an Idempotency-Key header when a key is provided', async () => {
+      const responseData = {
+        case_id: 'case-123', title: 'New Case', status: 'inquiry',
+        created_at: '2024-01-01T00:00:00Z', user_id: 'user-1'
+      };
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
+
+      await caseService.createCase(
+        { title: 'New Case', priority: 'medium' as const },
+        { idempotencyKey: 'opt_case_1700000000_1' }
+      );
+
+      const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
+      expect(callArgs[1].headers).toEqual({ 'Idempotency-Key': 'opt_case_1700000000_1' });
+    });
+
+    it('omits the Idempotency-Key header when no key is provided', async () => {
+      const responseData = {
+        case_id: 'case-123', title: 'New Case', status: 'inquiry',
+        created_at: '2024-01-01T00:00:00Z', user_id: 'user-1'
+      };
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
+
+      await caseService.createCase({ title: 'New Case', priority: 'medium' as const });
+
+      const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
+      expect(callArgs[1].headers).toBeUndefined();
+    });
   });
 
   describe('getUserCases', () => {
@@ -179,6 +208,25 @@ describe('Case Service', () => {
         to_state: 'resolved',
         user_confirmed: true
       });
+    });
+
+    it('sends an Idempotency-Key header on the turn POST when a key is provided', async () => {
+      const turnResponseData = {
+        agent_response: 'AI Response', turn_number: 1, milestones_completed: [],
+        case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: []
+      };
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(turnResponseData));
+
+      await caseService.submitTurn(
+        'case-123',
+        { query: 'test query' },
+        { idempotencyKey: 'opt_msg_1700000000_2' }
+      );
+
+      const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
+      expect(callArgs[1].headers).toEqual({ 'Idempotency-Key': 'opt_msg_1700000000_2' });
+      // The key must not disturb the FormData body path (Content-Type stays unset).
+      expect(callArgs[1].body).toBeInstanceOf(FormData);
     });
 
     it('should throw error when no query, files, or pasted content provided', async () => {

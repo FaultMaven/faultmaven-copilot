@@ -279,11 +279,22 @@ export async function getUserCases(filters?: {
   return userCases;
 }
 
-export async function createCase(data: CreateCaseRequest): Promise<UserCase> {
+export async function createCase(
+  data: CreateCaseRequest,
+  options?: { idempotencyKey?: string }
+): Promise<UserCase> {
+  // An Idempotency-Key lets the backend dedupe a retried create so an ambiguous
+  // network failure can be safely auto-retried without spawning a second case
+  // (see submitTurn and the resilientOperation `idempotent` flag). The key must
+  // match the backend format `^[a-zA-Z0-9_-]+$` (8–255 chars); optimistic ids and
+  // UUIDs both satisfy it.
   const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases`, {
     method: 'POST',
     body: prepareBody(data),
-    credentials: 'include'
+    credentials: 'include',
+    ...(options?.idempotencyKey
+      ? { headers: { 'Idempotency-Key': options.idempotencyKey } }
+      : {})
   });
 
   if (!response.ok) {
@@ -537,9 +548,10 @@ export async function getCaseConversation(
 export async function submitTurn(
   caseId: string,
   request: TurnRequest,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; idempotencyKey?: string }
 ): Promise<TurnResponse> {
   const signal = options?.signal;
+  const idempotencyKey = options?.idempotencyKey;
   if (signal?.aborted) throw createAbortError();
   const hasQuery = request.query && request.query.trim();
   const hasFiles = request.files && request.files.length > 0;
@@ -564,7 +576,13 @@ export async function submitTurn(
     method: 'POST',
     body: form,
     credentials: 'include',
-    signal
+    signal,
+    // Stable per-turn Idempotency-Key: the backend replays the cached response
+    // (including a 202 + job Location) for a repeat, so an ambiguous network
+    // failure can be auto-retried (and re-polled) without submitting a second
+    // turn. Callers derive the key from the turn's stable optimistic message id
+    // so auto- AND manual-retries of the same turn share one key.
+    ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {})
   });
 
   if (response.status === 422) {
