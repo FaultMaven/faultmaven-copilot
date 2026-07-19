@@ -16,6 +16,16 @@ import {
 
 const log = createLogger('CaseService');
 
+/**
+ * Canonical page size for the primary "recent case list" fetch. The single-slot
+ * case cache is only valid for this exact page shape (offset 0, this limit), so
+ * the UI callers that populate/read the cache and the cache-eligibility check
+ * must share one source of truth for it — otherwise a differently-paged fetch
+ * (e.g. limit:50) would overwrite the cache with a shorter slice that a limit:100
+ * caller then reads back as the full list.
+ */
+export const DEFAULT_CASE_LIST_LIMIT = 100;
+
 
 /**
  * Allowed case actions (phase transitions and dispositions)
@@ -224,11 +234,17 @@ export async function getUserCases(filters?: {
     });
   }
 
-  // OPTIMIZATION: Check cache first for default listing (no special filters)
-  // Only cache the main case list (no offset/limit or default ones)
-  const isDefaultList = !filters ||
-    (Object.keys(filters).length === 0) ||
-    (Object.keys(filters).every(k => k === 'limit' || k === 'offset'));
+  // OPTIMIZATION: Check cache first for the canonical default listing only.
+  // The cache is a single slot keyed by nothing, so it may only represent exactly
+  // one page shape: no status/priority filter, offset 0, and the explicit default
+  // page size. Any other request — a different limit/offset, OR a no-arg/`{}` call
+  // that returns the backend-default slice (not guaranteed to equal our page size)
+  // — targets a different slice and must neither read nor write this cache, else
+  // e.g. a limit:50 fetch would shrink the list a limit:100 caller then reads back.
+  const isDefaultList = !!filters &&
+    Object.keys(filters).every(k => k === 'limit' || k === 'offset') &&
+    filters.limit === DEFAULT_CASE_LIST_LIMIT &&
+    (filters.offset === undefined || filters.offset === 0);
 
   if (isDefaultList) {
     const cached = await caseCacheManager.getCachedCases();

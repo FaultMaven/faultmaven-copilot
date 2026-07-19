@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import {
   createCase,
   CreateCaseRequest,
+  DEFAULT_CASE_LIST_LIMIT,
   getCaseConversation,
   getUserCases
 } from '../../../lib/api';
@@ -346,7 +347,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
       try {
         await caseCacheManager.invalidateCache();
         if (isTerminal) {
-          const cases = await getUserCases({ limit: 100, offset: 0 });
+          const cases = await getUserCases({ limit: DEFAULT_CASE_LIST_LIMIT, offset: 0 });
           // A logout during the refetch must not re-hydrate an activeCase for the
           // ended session. The set() below is also guarded on case_id identity,
           // but the epoch check stops it before a purge is undone.

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserCase, getUserCases, deleteCase as deleteCaseApi, generateCaseTitle, updateCaseTitle as apiUpdateCaseTitle } from '../../../lib/api';
+import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCaseApi, generateCaseTitle, updateCaseTitle as apiUpdateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
@@ -124,7 +124,7 @@ export function ConversationsList({
     try {
       setLoading(true);
       setError(null);
-      const list = await getUserCases({ limit: 100, offset: 0 });
+      const list = await getUserCases({ limit: DEFAULT_CASE_LIST_LIMIT, offset: 0 });
 
       // ✅ PERFORMANCE WIN: Direct object access instead of JSON.stringify
       // JSON.stringify is computationally expensive and unnecessary
@@ -157,7 +157,7 @@ export function ConversationsList({
       log.error('Failed to load cases', err);
 
       // Special handling for rate limit errors - don't spam retries
-      if (err.name === 'RateLimitError' || err.state === 429) {
+      if (err.name === 'RateLimitError' || err.status === 429) {
         const retryAfter = err.retryAfter || 60;
         log.warn('Rate limited', { retryAfter });
         setError(`Rate limit reached. Please wait ${retryAfter} seconds before refreshing.`);

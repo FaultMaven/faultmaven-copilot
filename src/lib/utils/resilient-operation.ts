@@ -1,7 +1,14 @@
 
 import { ErrorClassifier } from '../errors/classifier';
-import { UserFacingError, ErrorContext } from '../errors/types';
+import { RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
 import { retryWithBackoff, RetryOptions } from './retry';
+
+/**
+ * Upper bound on a honored Retry-After delay. The value originates from a
+ * server-controlled header, so it is clamped to keep a pathological/misconfigured
+ * `Retry-After` from stalling a bounded retry for minutes or hours.
+ */
+const MAX_RETRY_AFTER_MS = 60_000;
 
 export interface ResilientOperationOptions<T> {
   /** The operation to perform */
@@ -96,9 +103,24 @@ export async function resilientOperation<T>(
         }
       },
       
-      onRetry: (error, attempt, delay) => {
+      onRetry: async (error, attempt, delay) => {
         if (retryOptions.onRetry) {
-          retryOptions.onRetry(error, attempt, delay);
+          await retryOptions.onRetry(error, attempt, delay);
+        }
+
+        // Honor Retry-After for rate-limit responses. The classifier surfaces the
+        // server's window as `retryAfterMs` on the RateLimitError. retryWithBackoff
+        // sleeps `delay` (generic exponential backoff, ~1–2s) after this callback,
+        // so wait only the remainder beyond it — otherwise a 429 carrying a 60s
+        // window is retried after ~1s and simply burns its bounded attempts. Clamp
+        // the (server-controlled) value to MAX_RETRY_AFTER_MS so a pathological
+        // header (e.g. `Retry-After: 999999`) can't hang the operation for hours.
+        const classified = ErrorClassifier.classify(error, context);
+        if (classified instanceof RateLimitError) {
+          const retryAfterMs = Math.min(classified.retryAfterMs, MAX_RETRY_AFTER_MS);
+          if (retryAfterMs > delay) {
+            await new Promise(resolve => setTimeout(resolve, retryAfterMs - delay));
+          }
         }
       }
     });
