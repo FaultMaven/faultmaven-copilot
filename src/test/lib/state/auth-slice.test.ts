@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppStore } from '../../../lib/state/store';
 import * as api from '../../../lib/api';
 import { EventBus } from '../../../lib/utils/messaging';
-import { shouldReloadOnAuthIdentitySwitch } from '../../../lib/state/slices/auth-slice';
+import { shouldReloadOnAuthBroadcast } from '../../../lib/state/slices/auth-slice';
+
+// Capture the runtime.onMessage listeners that EventBus.on registers, so a test can
+// deliver an auth_state_changed broadcast to the auth-slice listener directly.
+const hoisted = vi.hoisted(() => ({ messageListeners: [] as ((msg: any) => void)[] }));
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -14,13 +18,22 @@ vi.mock('wxt/browser', () => ({
       },
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() }
     },
-    runtime: { sendMessage: vi.fn().mockResolvedValue(undefined) }
+    runtime: {
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+      onMessage: {
+        addListener: vi.fn((l: (msg: any) => void) => hoisted.messageListeners.push(l)),
+        removeListener: vi.fn()
+      }
+    }
   }
 }));
 
 vi.mock('../../../lib/api', () => ({
   logoutAuth: vi.fn(),
-  authManager: { isAuthenticated: vi.fn().mockResolvedValue(false) }
+  authManager: {
+    isAuthenticated: vi.fn().mockResolvedValue(false),
+    getCurrentUser: vi.fn().mockResolvedValue(null)
+  }
 }));
 
 vi.mock('../../../lib/utils/logger', () => ({
@@ -64,38 +77,77 @@ describe('auth-slice logout (#143)', () => {
   });
 });
 
-// #164: a shared-profile identity switch performed in another context reaches an
-// open panel only as an authenticated broadcast. When the panel is ALREADY
-// authenticated as a different user, nothing else resets the in-memory case-state
-// slices (AuthScreen, which reloads on login into a logged-OUT panel, is not
-// mounted), so the panel must reload to re-scope.
-describe('shouldReloadOnAuthIdentitySwitch (#164)', () => {
+// #164: a login/identity-switch performed in another context reaches an open panel
+// only as an authenticated broadcast. The panel must reload to re-scope its
+// in-memory case-state slices whenever that broadcast establishes a new identity
+// (into a not-authenticated panel — covers the pre-AuthScreen init window) or
+// switches identity (A→B under an authenticated panel). Same-user re-broadcasts
+// (token refresh) must not reload.
+describe('shouldReloadOnAuthBroadcast (#164)', () => {
   it('reloads on an A→B switch under an already-authenticated panel', () => {
     expect(
-      shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: true, user: { user_id: 'userB' } })
+      shouldReloadOnAuthBroadcast(true, 'userA', { isAuthenticated: true, user: { user_id: 'userB' } })
     ).toBe(true);
   });
 
-  it('does NOT reload when the panel was logged out (AuthScreen reloads that path)', () => {
+  it('reloads when identity is established into a not-authenticated panel (pre-AuthScreen window)', () => {
     expect(
-      shouldReloadOnAuthIdentitySwitch(false, undefined, { isAuthenticated: true, user: { user_id: 'userB' } })
-    ).toBe(false);
+      shouldReloadOnAuthBroadcast(false, undefined, { isAuthenticated: true, user: { user_id: 'userB' } })
+    ).toBe(true);
   });
 
-  it('does NOT reload for the same user (token refresh / re-broadcast)', () => {
+  it('does NOT reload for the same user under an authenticated panel (token refresh / re-broadcast)', () => {
     expect(
-      shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: true, user: { user_id: 'userA' } })
+      shouldReloadOnAuthBroadcast(true, 'userA', { isAuthenticated: true, user: { user_id: 'userA' } })
     ).toBe(false);
   });
 
   it('does NOT reload on an unauthenticated or null broadcast', () => {
-    expect(shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: false })).toBe(false);
-    expect(shouldReloadOnAuthIdentitySwitch(true, 'userA', null)).toBe(false);
+    expect(shouldReloadOnAuthBroadcast(true, 'userA', { isAuthenticated: false })).toBe(false);
+    expect(shouldReloadOnAuthBroadcast(true, 'userA', null)).toBe(false);
   });
 
   it('does NOT reload when the incoming identity is missing', () => {
     expect(
-      shouldReloadOnAuthIdentitySwitch(true, 'userA', { isAuthenticated: true, user: {} })
+      shouldReloadOnAuthBroadcast(true, 'userA', { isAuthenticated: true, user: {} })
     ).toBe(false);
+  });
+});
+
+// The predicate above is wired into the auth-slice EventBus listener; assert the
+// wiring actually issues the reload (a regression in the `if` would be invisible to
+// the predicate tests alone).
+describe('auth-slice broadcast listener reload wiring (#164)', () => {
+  const deliver = (authState: any) =>
+    hoisted.messageListeners.forEach((l) => l({ type: 'auth_state_changed', authState }));
+
+  let reload: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    reload = vi.fn();
+    // jsdom: make window.location.reload observable.
+    Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
+    (api.authManager.isAuthenticated as any).mockResolvedValue(true);
+    (api.authManager.getCurrentUser as any).mockResolvedValue({ user_id: 'userA', username: 'alice' });
+    // Registers the EventBus (runtime.onMessage) listener once for the singleton store.
+    await useAppStore.getState().initializeAuth();
+    // Normalise the store to "authenticated as userA" regardless of prior tests.
+    useAppStore.setState({ isAuthenticated: true, currentUser: { user_id: 'userA' } as any });
+  });
+
+  it('reloads the panel on an A→B identity-switch broadcast', () => {
+    deliver({ isAuthenticated: true, user: { user_id: 'userB' } });
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload on a same-user re-broadcast', () => {
+    deliver({ isAuthenticated: true, user: { user_id: 'userA' } });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('does not reload on a logout (null authState) broadcast', () => {
+    deliver(null);
+    expect(reload).not.toHaveBeenCalled();
   });
 });

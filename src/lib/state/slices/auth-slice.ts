@@ -18,30 +18,37 @@ const log = createLogger('AuthSlice');
  * the panel to reload so it re-hydrates from freshly identity-scoped storage.
  *
  * A login/identity-switch performed in ANOTHER context (dashboard bridge or
- * background OAuth) reaches an open panel only as this broadcast — it does not run
- * the panel-login reload (`handleAuthSuccess`). Two cases:
+ * background OAuth/local) reaches an open panel only as this broadcast — it does
+ * not run the panel-login reload (`handleAuthSuccess`). We reload when the broadcast:
  *
- * - Panel was logged OUT: `AuthScreen` is mounted and reloads on the same broadcast
- *   (its own `runtime.onMessage` listener), so this returns false — the slice needn't
- *   duplicate that reload.
- * - Panel was authenticated as a DIFFERENT user (a shared-profile A→B switch):
- *   `AuthScreen` is unmounted, so nothing else resets the in-memory case-state
- *   slices. Without a reload, the prior user's conversations/titles/active case are
- *   shown to the new user AND re-persisted on the next store write, reversing the
- *   background's `enforceUserDataScope` purge (#164). This returns true.
+ * - ESTABLISHES an identity into a not-yet-authenticated panel (`!wasAuthenticated`).
+ *   `AuthScreen` also reloads on this broadcast, but ONLY while it is mounted — not
+ *   during the pre-AuthScreen window (capabilities init / `LoadingScreen`), where a
+ *   prior user's at-rest residue could already be hydrated into memory by
+ *   `useDataRecovery`. Handling it here makes the reload independent of AuthScreen's
+ *   mount state.
+ * - SWITCHES identity under an already-authenticated panel (a shared-profile A→B
+ *   switch), where `AuthScreen` is unmounted and nothing else resets the in-memory
+ *   case-state slices.
+ *
+ * In both cases, without a reload the prior/other user's conversations/titles/active
+ * case would be shown to the new user AND re-persisted on the next store write,
+ * reversing the background's `enforceUserDataScope` purge (#164). Same-user
+ * re-broadcasts (e.g. token refresh) never reload.
  *
  * `enforceUserDataScope` runs before the broadcast, so storage is already clean by
- * the time the panel reloads.
+ * the time the panel reloads, and the reload is issued synchronously (no `await`
+ * between broadcast receipt and reload) so no debounced persist can re-write residue.
  */
-export function shouldReloadOnAuthIdentitySwitch(
+export function shouldReloadOnAuthBroadcast(
   wasAuthenticated: boolean,
   priorUserId: string | undefined,
   nextAuthState: { isAuthenticated?: boolean; user?: { user_id?: string } } | null | undefined
 ): boolean {
   if (!nextAuthState?.isAuthenticated) return false;
   const nextUserId = nextAuthState.user?.user_id;
-  // Only when the panel is already authenticated and the identity actually changes.
-  return wasAuthenticated && !!nextUserId && nextUserId !== priorUserId;
+  if (!nextUserId) return false;
+  return !wasAuthenticated || nextUserId !== priorUserId;
 }
 
 export interface AuthSlice {
@@ -109,17 +116,18 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
               authError: null
             });
 
-            // A shared-profile identity switch under an already-authenticated panel
-            // leaves the prior user's case-state slices in memory (AuthScreen — which
-            // reloads on login into a logged-out panel — is not mounted here). Reload
-            // so the panel re-hydrates from the storage the background already
-            // identity-scoped, instead of showing and re-persisting the prior user's
-            // data (#164).
+            // An externally-broadcast login/identity-switch can leave a prior user's
+            // case-state slices in memory (already hydrated by useDataRecovery, or
+            // held from a previous authenticated session). Reload so the panel
+            // re-hydrates from the storage the background already identity-scoped,
+            // instead of showing and re-persisting the prior user's data (#164). Issued
+            // synchronously so no debounced persist runs before the navigation.
             if (
-              shouldReloadOnAuthIdentitySwitch(wasAuthenticated, priorUserId, event.authState) &&
+              shouldReloadOnAuthBroadcast(wasAuthenticated, priorUserId, event.authState) &&
               typeof window !== 'undefined'
             ) {
-              log.warn('Auth identity switched under an authenticated panel — reloading to re-scope in-memory state', {
+              log.warn('Auth identity established/switched via broadcast — reloading to re-scope in-memory state', {
+                wasAuthenticated,
                 priorUserId,
                 nextUserId: event.authState.user?.user_id
               });
