@@ -5,6 +5,11 @@ import { createLogger } from '../../../lib/utils/logger';
 import { hasRole, isAdmin } from '../../../lib/utils/roles';
 import { EventBus, AuthStateChangedEvent } from '../../../lib/utils/messaging';
 import { bumpEpoch } from '../session-epoch';
+import type { StoreState } from '../store';
+
+// Shape of the browser.storage.onChanged payload we consume (a subset of the
+// full listener signature — we only read newValue/oldValue for the authState key).
+type StorageChanges = Record<string, { newValue?: unknown; oldValue?: unknown }>;
 
 const log = createLogger('AuthSlice');
 
@@ -21,9 +26,9 @@ export interface AuthSlice {
   checkIsAdmin: () => boolean;
 }
 
-export const createAuthSlice: StateCreator<any, [], [], AuthSlice> = (set, get) => {
+export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set, get) => {
   let unsubscribeEventBus: (() => void) | null = null;
-  let handleStorageChange: ((changes: any) => void) | null = null;
+  let handleStorageChange: ((changes: StorageChanges) => void) | null = null;
 
   return {
     isAuthenticated: false,
@@ -75,7 +80,7 @@ export const createAuthSlice: StateCreator<any, [], [], AuthSlice> = (set, get) 
 
       // 3. Set up Storage listener (if not already set up)
       if (!handleStorageChange) {
-        handleStorageChange = (changes: any) => {
+        handleStorageChange = (changes: StorageChanges) => {
           if (changes.authState && !changes.authState.newValue && changes.authState.oldValue) {
             // The authState key was cleared underneath us (logout / hard 401 in
             // another context). Fence the session before reacting so in-flight

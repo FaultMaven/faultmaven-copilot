@@ -3,6 +3,8 @@ import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../../config';
 import { capabilitiesManager, BackendCapabilities } from '../../capabilities';
 import { createLogger } from '../../utils/logger';
+import type { KnowledgeDocument } from '../../../lib/api';
+import type { StoreState } from '../store';
 
 const log = createLogger('AppSlice');
 
@@ -14,7 +16,7 @@ export interface AppSlice {
   capabilitiesError: string | null;
   sidebarCollapsed: boolean;
   refreshSessions: number;
-  viewingDocument: any | null;
+  viewingDocument: KnowledgeDocument | null;
   isDocumentModalOpen: boolean;
   hasUnsavedNewChat: boolean;
 
@@ -22,7 +24,7 @@ export interface AppSlice {
   setActiveTab: (tab: 'copilot') => void;
   setHasCompletedFirstRun: (completed: boolean | null) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  setViewingDocument: (doc: any | null) => void;
+  setViewingDocument: (doc: KnowledgeDocument | null) => void;
   setIsDocumentModalOpen: (open: boolean) => void;
   triggerRefreshSessions: () => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
@@ -30,7 +32,7 @@ export interface AppSlice {
   loadCapabilities: () => Promise<void>;
 }
 
-export const createAppSlice: StateCreator<any, [], [], AppSlice> = (set, get) => ({
+export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, get) => ({
   activeTab: 'copilot',
   hasCompletedFirstRun: null,
   capabilities: null,
@@ -52,7 +54,7 @@ export const createAppSlice: StateCreator<any, [], [], AppSlice> = (set, get) =>
   },
   setViewingDocument: (doc) => set({ viewingDocument: doc }),
   setIsDocumentModalOpen: (open) => set({ isDocumentModalOpen: open }),
-  triggerRefreshSessions: () => set((state: any) => ({ refreshSessions: state.refreshSessions + 1 })),
+  triggerRefreshSessions: () => set((state) => ({ refreshSessions: state.refreshSessions + 1 })),
   setHasUnsavedNewChat: (hasUnsaved) => set({ hasUnsavedNewChat: hasUnsaved }),
 
   initializeApp: async () => {

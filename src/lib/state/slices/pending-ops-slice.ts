@@ -1,6 +1,8 @@
 import { StateCreator } from 'zustand';
 import { pendingOpsManager, PendingOperation } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
+import type { ErrorContext } from '../../../lib/errors/types';
+import type { StoreState } from '../store';
 
 const log = createLogger('PendingOpsSlice');
 
@@ -16,17 +18,17 @@ export interface PendingOpsSlice {
   // Actions
   setPendingOperations: (ops: Record<string, PendingOperation> | ((prev: Record<string, PendingOperation>) => Record<string, PendingOperation>)) => void;
   getFailedOperationsForUser: () => PendingOperation[];
-  handleUserRetry: (operationId: string, onError: (error: any, context?: any) => void) => Promise<void>;
+  handleUserRetry: (operationId: string, onError: (error: unknown, context?: ErrorContext) => void) => Promise<void>;
   handleDismissFailedOperation: (operationId: string) => void;
   getErrorMessageForOperation: (operation: PendingOperation) => OperationError;
 }
 
-export const createPendingOpsSlice: StateCreator<any, [], [], PendingOpsSlice> = (set, get) => ({
+export const createPendingOpsSlice: StateCreator<StoreState, [], [], PendingOpsSlice> = (set, get) => ({
   pendingOperations: {},
 
   setPendingOperations: (ops) => {
     if (typeof ops === 'function') {
-      set((state: any) => ({ pendingOperations: ops(state.pendingOperations) }));
+      set((state) => ({ pendingOperations: ops(state.pendingOperations) }));
     } else {
       set({ pendingOperations: ops });
     }

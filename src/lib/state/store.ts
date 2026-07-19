@@ -7,12 +7,27 @@ import { createPendingOpsSlice, PendingOpsSlice } from './slices/pending-ops-sli
 import { debounce } from '../utils/debounce';
 import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
-import { idMappingManager } from '../optimistic';
+import { idMappingManager, OptimisticConversationItem } from '../optimistic';
 import { memoryManager } from '../utils/memory-manager';
 
 const log = createLogger('Store');
 
 export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & PendingOpsSlice;
+
+// The store-state keys that are persisted to browser.storage.local and hydrated
+// back on load. Shared so the persist trigger (the subscribe change-detection
+// below) and the hydrate read (useDataRecovery) draw from one list and can't
+// drift apart. NOTE: debouncedPersist's body still writes each key explicitly —
+// its per-key logic (empty-key clearing, conversation sanitizing) isn't derivable
+// from this list — so a key added here must also be handled there. `idMappings`
+// is persisted alongside these but is sourced from idMappingManager, not store
+// state, so it is handled explicitly at each site rather than listed here.
+export const PERSISTED_STATE_KEYS = [
+  'conversationTitles',
+  'titleSources',
+  'conversations',
+  'pinnedCases'
+] as const;
 
 export const useAppStore = create<StoreState>()((set, get, store) => ({
   ...createAppSlice(set, get, store),
@@ -27,11 +42,11 @@ export const debouncedPersist = debounce(
   async (stateToSave: {
     conversationTitles: Record<string, string>;
     titleSources: Record<string, 'user' | 'backend' | 'system'>;
-    conversations: Record<string, any[]>;
+    conversations: Record<string, OptimisticConversationItem[]>;
     pinnedCases: string[];
   }) => {
     try {
-      const storageData: Record<string, any> = {};
+      const storageData: Record<string, unknown> = {};
       const keysToRemove: string[] = [];
 
       if (Object.keys(stateToSave.conversationTitles).length > 0) {
@@ -104,12 +119,7 @@ export const debouncedPersist = debounce(
 let previousState = useAppStore.getState();
 
 useAppStore.subscribe((state) => {
-  if (
-    state.conversationTitles !== previousState.conversationTitles ||
-    state.titleSources !== previousState.titleSources ||
-    state.conversations !== previousState.conversations ||
-    state.pinnedCases !== previousState.pinnedCases
-  ) {
+  if (PERSISTED_STATE_KEYS.some((key) => state[key] !== previousState[key])) {
     previousState = state;
     debouncedPersist({
       conversationTitles: state.conversationTitles,

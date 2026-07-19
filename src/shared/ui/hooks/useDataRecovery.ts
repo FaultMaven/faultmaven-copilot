@@ -12,7 +12,7 @@ import { authManager } from '../../../lib/api';
 import { IdMappingState, idMappingManager } from '../../../lib/optimistic';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
-import { useAppStore } from '../../../lib/state/store';
+import { useAppStore, PERSISTED_STATE_KEYS } from '../../../lib/state/store';
 import { memoryManager } from '../../../lib/utils/memory-manager';
 
 const log = createLogger('DataRecovery');
@@ -103,13 +103,10 @@ export function useDataRecovery(
         }
 
         log.debug('Loading data from browser storage');
-        const stored = await browser.storage.local.get([
-          'conversationTitles',
-          'titleSources',
-          'conversations',
-          'idMappings',
-          'pinnedCases'
-        ]);
+        // Read the persisted store-state keys (shared constant, kept in sync with
+        // the write side in store.ts) plus idMappings, which is persisted from
+        // idMappingManager rather than store state and so is not in that list.
+        const stored = await browser.storage.local.get([...PERSISTED_STATE_KEYS, 'idMappings']);
 
         log.debug('Retrieved from storage', {
           titleCount: stored.conversationTitles ? Object.keys(stored.conversationTitles).length : 0,

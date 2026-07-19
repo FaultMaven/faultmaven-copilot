@@ -5,6 +5,7 @@ import { heartbeatSession } from '../../api/services/session-service';
 import { tokenManager } from '../../auth/token-manager';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
+import type { StoreState } from '../store';
 
 const log = createLogger('SessionSlice');
 
@@ -31,7 +32,7 @@ export interface SessionSlice {
   clearSession: () => Promise<void>;
 }
 
-export const createSessionSlice: StateCreator<any, [], [], SessionSlice> = (set, get) => {
+export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> = (set, get) => {
   let heartbeatInterval: NodeJS.Timeout | null = null;
 
   return {

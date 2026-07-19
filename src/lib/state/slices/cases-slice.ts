@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { browser } from 'wxt/browser';
 import {
+  AttachmentResult,
   DEFAULT_CASE_LIST_LIMIT,
   getCaseConversation,
   getUserCases
@@ -15,8 +16,23 @@ import { caseCacheManager } from '../../../lib/cache/case-cache';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import { isCommittedMessage } from '../../../lib/utils/memory-manager';
+import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
+
+// The raw per-message shape the backend `/messages` endpoint returns, as consumed
+// by the delta fetch below. `getCaseConversation` is currently untyped (returns
+// `any`); this narrows the fields we actually read so the mapping is type-checked.
+interface BackendConversationMessage {
+  message_id: string;
+  created_at: string;
+  turn_number: number;
+  role: string;
+  content: string;
+  case_state?: UserCase['state'];
+  closure_reason?: string | null;
+  closed_at?: string | null;
+}
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -25,7 +41,7 @@ export interface CasesSlice {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   pinnedCases: Set<string>;
-  caseEvidence: Record<string, any[]>;
+  caseEvidence: Record<string, AttachmentResult[]>;
 
   // Actions
   setActiveCaseId: (caseId: string | null | undefined) => Promise<void>;
@@ -35,12 +51,12 @@ export interface CasesSlice {
   setTitleSources: (updater: Record<string, 'user' | 'backend' | 'system'> | ((prev: Record<string, 'user' | 'backend' | 'system'>) => Record<string, 'user' | 'backend' | 'system'>)) => void;
   setPinnedCases: (pinned: Set<string>) => void;
   togglePinnedCase: (caseId: string) => void;
-  setCaseEvidence: (updater: Record<string, any[]> | ((prev: Record<string, any[]>) => Record<string, any[]>)) => void;
+  setCaseEvidence: (updater: Record<string, AttachmentResult[]> | ((prev: Record<string, AttachmentResult[]>) => Record<string, AttachmentResult[]>)) => void;
   handleCaseSelect: (caseId: string) => void;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
-export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get) => {
+export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (set, get) => {
   // Cases with a delta fetch currently in flight — guards against a double-click /
   // rapid A→B→A firing two fetches for the same case with the same offset (which
   // would append the same rows twice and PERSIST the duplicates).
@@ -69,7 +85,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
 
     setActiveCase: (caseObj) => {
       if (typeof caseObj === 'function') {
-        set((state: any) => ({ activeCase: caseObj(state.activeCase) }));
+        set((state) => ({ activeCase: caseObj(state.activeCase) }));
       } else {
         set({ activeCase: caseObj });
       }
@@ -77,7 +93,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
 
     setConversations: (updater) => {
       if (typeof updater === 'function') {
-        set((state: any) => ({ conversations: updater(state.conversations) }));
+        set((state) => ({ conversations: updater(state.conversations) }));
       } else {
         set({ conversations: updater });
       }
@@ -85,7 +101,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
 
     setConversationTitles: (updater) => {
       if (typeof updater === 'function') {
-        set((state: any) => ({ conversationTitles: updater(state.conversationTitles) }));
+        set((state) => ({ conversationTitles: updater(state.conversationTitles) }));
       } else {
         set({ conversationTitles: updater });
       }
@@ -93,7 +109,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
 
     setTitleSources: (updater) => {
       if (typeof updater === 'function') {
-        set((state: any) => ({ titleSources: updater(state.titleSources) }));
+        set((state) => ({ titleSources: updater(state.titleSources) }));
       } else {
         set({ titleSources: updater });
       }
@@ -102,7 +118,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
     setPinnedCases: (pinned) => set({ pinnedCases: pinned }),
 
     togglePinnedCase: (caseId) => {
-      set((state: any) => {
+      set((state) => {
         const next = new Set(state.pinnedCases);
         if (next.has(caseId)) {
           next.delete(caseId);
@@ -115,7 +131,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
 
     setCaseEvidence: (updater) => {
       if (typeof updater === 'function') {
-        set((state: any) => ({ caseEvidence: updater(state.caseEvidence) }));
+        set((state) => ({ caseEvidence: updater(state.caseEvidence) }));
       } else {
         set({ caseEvidence: updater });
       }
@@ -173,7 +189,8 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
             log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
             return;
           }
-          const incoming: OptimisticConversationItem[] = (data.messages || []).map((msg: any) => ({
+          const messages = (data.messages ?? []) as BackendConversationMessage[];
+          const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
             id: msg.message_id,
             timestamp: msg.created_at,
             turn_number: msg.turn_number,
@@ -186,11 +203,11 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
             closed_at: msg.closed_at ?? null
           }));
           if (incoming.length > 0) {
-            set((state: any) => {
+            set((state) => {
               const existing = state.conversations[caseId] || [];
               // id-dedup (belt-and-suspenders vs offset drift / races): never append
               // a message_id already present locally.
-              const existingIds = new Set(existing.map((m: OptimisticConversationItem) => m.id));
+              const existingIds = new Set(existing.map((m) => m.id));
               const fresh = incoming.filter(m => !existingIds.has(m.id));
               if (fresh.length === 0) return state;
 
@@ -239,7 +256,7 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
           }
           const fresh = cases.find(c => c.case_id === transitionedCaseId);
           if (fresh) {
-            set((state: any) => {
+            set((state) => {
               if (state.activeCase && state.activeCase.case_id === fresh.case_id) {
                 return { activeCase: { ...state.activeCase, ...fresh } };
               }
