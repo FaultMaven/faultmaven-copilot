@@ -71,39 +71,82 @@ export class MemoryManager {
    * Produce the storage-safe form of the conversation map for persistence:
    *   1. Drop transient (optimistic / loading / failed) messages, and drop any
    *      conversation left empty by that filtering.
-   *   2. Cap the NUMBER of conversations (`cleanupConversations`).
+   *   2. Cap the message count *within* each conversation to the most-recent
+   *      turns (`capConversationToRecentTurns`).
+   *   3. Cap the NUMBER of conversations (`cleanupConversations`).
    *
    * This is the single choke point that both prevents unbounded growth in
    * `browser.storage.local` and guarantees a reload never rehydrates a stuck
    * spinner or a to-be-duplicated optimistic turn.
    *
-   * NOTE: we deliberately do NOT cap the message count *within* a conversation.
-   * The delta fetch on case open (`cases-slice.handleCaseSelect`) uses the local
-   * committed-message count as a head offset and assumes the local copy is the
-   * backend PREFIX. Trimming a conversation to its most-recent N messages (a
-   * suffix) would make that offset skip real messages and re-append overlapping
-   * ones as duplicates — reintroducing the very duplicate-turn bug at N. Bounding
-   * a single very long conversation needs an id/turn-based delta fetch instead
-   * (tracked separately).
+   * Capping a single conversation to a most-recent SUFFIX is now safe because the
+   * delta fetch on case open (`cases-slice.handleCaseSelect`) no longer assumes the
+   * local copy is the backend PREFIX: it treats the committed-message count as a
+   * lower-bound fetch hint and merges the result with a turn-floor + message_id
+   * guard, so the trimmed head is dropped rather than re-appended as duplicates.
+   * The cap keeps whole turns so that guard's floor turn is fully present locally.
    */
   sanitizeAndCapForPersistence(
     conversations: Record<string, OptimisticConversationItem[]>,
     activeCaseId: string | undefined
   ): Record<string, OptimisticConversationItem[]> {
     // 1. Keep only committed messages; drop conversations that become empty.
+    // 2. Cap each surviving conversation to its most-recent turns.
     const committed: Record<string, OptimisticConversationItem[]> = {};
     for (const [caseId, msgs] of Object.entries(conversations)) {
-      const kept = (msgs || []).filter(isCommittedMessage);
+      const kept = this.capConversationToRecentTurns(
+        (msgs || []).filter(isCommittedMessage)
+      );
       if (kept.length > 0) {
         committed[caseId] = kept;
       }
     }
 
-    // 2. Cap the number of conversations. Dropping a whole old case is offset-safe:
+    // 3. Cap the number of conversations. Dropping a whole old case is offset-safe:
     //    reopening it delta-fetches from offset 0 (empty local) — no duplication.
     //    No optimistic/failed items survive step 1, so only the active case needs
     //    protecting beyond the most-recent set.
     return this.cleanupConversations(committed, activeCaseId, new Set());
+  }
+
+  /**
+   * Bound a single conversation to (about) the most-recent
+   * `maxMessagesPerConversation` messages, trimming from the HEAD so the tail —
+   * the part the user is actively reading — is always kept.
+   *
+   * The cut is snapped FORWARD to a turn boundary: the oldest kept message is the
+   * first message of its turn, never a mid-turn agent reply orphaned from its
+   * question. This matters for correctness, not just cosmetics — the delta-fetch
+   * merge drops re-read messages at or below the retained-turn floor, so if the
+   * floor turn were only half-present locally the missing half would be re-fetched
+   * and appended out of order. Keeping whole turns means the floor turn is fully
+   * present and falls out via id dedup.
+   *
+   * `turn_number` is expected on committed (backend-sourced) messages; if it is
+   * missing we fall back to a plain suffix slice rather than risk an empty result.
+   */
+  capConversationToRecentTurns(
+    messages: OptimisticConversationItem[]
+  ): OptimisticConversationItem[] {
+    const max = this.config.maxMessagesPerConversation;
+    if (messages.length <= max) return messages;
+
+    let cut = messages.length - max;
+    // Advance to a turn boundary (drop the rest of a split turn), but never past
+    // what would empty the conversation.
+    while (
+      cut > 0 &&
+      cut < messages.length &&
+      typeof messages[cut].turn_number === 'number' &&
+      messages[cut].turn_number === messages[cut - 1].turn_number
+    ) {
+      cut++;
+    }
+    if (cut >= messages.length) {
+      // A single turn larger than the cap: fall back to a plain suffix slice.
+      cut = messages.length - max;
+    }
+    return messages.slice(cut);
   }
 
   /**

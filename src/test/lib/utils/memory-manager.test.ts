@@ -41,18 +41,45 @@ describe('MemoryManager', () => {
       expect(result).toHaveProperty('kept');
     });
 
-    it('does NOT trim messages within a conversation (would break the delta-fetch offset)', () => {
-      // The local copy must remain the backend PREFIX: capping to a suffix would
-      // make the offset-based delta fetch re-append overlapping messages as dups.
-      const manager = new MemoryManager({ maxMessagesPerConversation: 3, minMessagesToKeep: 1 });
+    it('caps a long conversation to the most-recent messages, trimming from the head', () => {
+      // The delta-fetch merge (turn-floor + id dedup) makes a most-recent SUFFIX safe:
+      // the trimmed head is dropped on re-open, not re-appended as duplicates.
+      const manager = new MemoryManager({ maxMessagesPerConversation: 4 });
+      // 5 turns, one message each (turn N -> mN).
       const many = Array.from({ length: 10 }).map((_, i) =>
-        committedMsg({ id: `m${i}`, optimistic: false, timestamp: new Date(1000 + i).toISOString() })
+        committedMsg({
+          id: `m${i}`, optimistic: false, turn_number: i,
+          timestamp: new Date(1000 + i).toISOString()
+        })
       );
       const result = manager.sanitizeAndCapForPersistence({ 'case-1': many }, undefined);
-      // All 10 committed messages preserved, in order.
-      expect(result['case-1'].map(m => m.id)).toEqual(
-        Array.from({ length: 10 }).map((_, i) => `m${i}`)
+      // Head trimmed, tail kept.
+      expect(result['case-1'].map(m => m.id)).toEqual(['m6', 'm7', 'm8', 'm9']);
+    });
+
+    it('snaps the cap forward to a turn boundary so the oldest kept message starts a turn', () => {
+      const manager = new MemoryManager({ maxMessagesPerConversation: 3 });
+      // Turns of 2 messages each: turn 0 -> [a0,a1], turn 1 -> [b0,b1], turn 2 -> [c0,c1].
+      const msgs = [
+        committedMsg({ id: 'a0', turn_number: 0 }),
+        committedMsg({ id: 'a1', turn_number: 0 }),
+        committedMsg({ id: 'b0', turn_number: 1 }),
+        committedMsg({ id: 'b1', turn_number: 1 }),
+        committedMsg({ id: 'c0', turn_number: 2 }),
+        committedMsg({ id: 'c1', turn_number: 2 })
+      ];
+      const result = manager.sanitizeAndCapForPersistence({ 'case-1': msgs }, undefined);
+      // A raw suffix of 3 would start mid-turn at b1; snap forward to turn 2's start.
+      expect(result['case-1'].map(m => m.id)).toEqual(['c0', 'c1']);
+    });
+
+    it('does not trim a conversation at or under the cap', () => {
+      const manager = new MemoryManager({ maxMessagesPerConversation: 4 });
+      const msgs = Array.from({ length: 4 }).map((_, i) =>
+        committedMsg({ id: `m${i}`, optimistic: false, turn_number: i })
       );
+      const result = manager.sanitizeAndCapForPersistence({ 'case-1': msgs }, undefined);
+      expect(result['case-1'].map(m => m.id)).toEqual(['m0', 'm1', 'm2', 'm3']);
     });
 
     it('caps the NUMBER of conversations while protecting the active case', () => {
