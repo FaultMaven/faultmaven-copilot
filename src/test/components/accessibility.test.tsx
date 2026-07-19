@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { WelcomeScreen } from '~/shared/ui/components/WelcomeScreen';
 import { ErrorModal } from '~/shared/ui/components/ErrorModal';
 import DocumentDetailsModal from '~/shared/ui/components/DocumentDetailsModal';
+import { StatusChangeRequestModal } from '~/shared/ui/components/case-header/StatusChangeRequestModal';
 
 // Mock browser extension API
 vi.mock('wxt/browser', () => ({
@@ -201,5 +202,74 @@ describe('Accessibility: DocumentDetailsModal', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(document.activeElement).toBe(triggerBtn);
     expect(onCloseMock).toHaveBeenCalled();
+  });
+});
+
+describe('Accessibility: StatusChangeRequestModal', () => {
+  it('should trap focus and restore focus on cancel', async () => {
+    const user = userEvent.setup();
+    const onCancelMock = vi.fn();
+
+    const TestWrapper = () => {
+      const [isOpen, setIsOpen] = React.useState(false);
+      return (
+        <div>
+          <button
+            data-testid="trigger-btn"
+            onClick={() => setIsOpen(true)}
+          >
+            Change Status
+          </button>
+          <StatusChangeRequestModal
+            isOpen={isOpen}
+            currentStatus="inquiry"
+            newStatus="investigating"
+            onConfirm={() => {}}
+            onCancel={() => {
+              onCancelMock();
+              setIsOpen(false);
+            }}
+          />
+        </div>
+      );
+    };
+
+    render(<TestWrapper />);
+    const triggerBtn = screen.getByTestId('trigger-btn');
+
+    // 1. Initial focus on trigger button
+    triggerBtn.focus();
+    expect(document.activeElement).toBe(triggerBtn);
+
+    // 2. Open modal
+    await user.click(triggerBtn);
+
+    // 3. Modal container itself gets focused, with dialog semantics
+    const modalContainer = screen.getByRole('dialog');
+    expect(document.activeElement).toBe(modalContainer);
+    expect(modalContainer).toHaveAttribute('aria-modal', 'true');
+    expect(modalContainer).toHaveAttribute('aria-labelledby', 'status-change-modal-title');
+
+    // 4. Tab sequence cycles within the modal
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
+    const continueBtn = screen.getByRole('button', { name: 'Continue' });
+
+    await user.tab();
+    expect(document.activeElement).toBe(cancelBtn);
+
+    await user.tab();
+    expect(document.activeElement).toBe(continueBtn);
+
+    // Wrap around
+    await user.tab();
+    expect(document.activeElement).toBe(cancelBtn);
+
+    // 5. Escape key closure
+    await user.keyboard('{Escape}');
+
+    // 6. Focus restored to trigger
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(triggerBtn);
+    expect(onCancelMock).toHaveBeenCalled();
   });
 });
