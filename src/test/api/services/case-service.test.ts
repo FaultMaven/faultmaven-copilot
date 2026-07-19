@@ -441,4 +441,26 @@ describe('Case Service', () => {
       expect(msg).toBe('I want to start a formal investigation to find the root cause.');
     });
   });
+
+  describe('CLOSURE_DISPLAY_INFO', () => {
+    // The real keys must mirror backend VALID_CLOSURE_REASONS
+    // (faultmaven/modules/case/domain/models.py) exactly, plus the defensive
+    // 'other' fallback. This is the single source of truth for closure-reason
+    // display; ResolutionActionsCard sources its label from here.
+    it('covers exactly the backend closure reasons plus the defensive fallback', () => {
+      expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
+        'closed_after_investigation',
+        'closed_insufficient_evidence',
+        'inquiry_only',
+        'other',
+      ]);
+    });
+
+    it('provides both a full label and a compact shortLabel for every entry', () => {
+      for (const info of Object.values(caseService.CLOSURE_DISPLAY_INFO)) {
+        expect(info.label.length).toBeGreaterThan(0);
+        expect(info.shortLabel.length).toBeGreaterThan(0);
+      }
+    });
+  });
 });
