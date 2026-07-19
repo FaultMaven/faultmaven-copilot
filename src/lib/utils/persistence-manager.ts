@@ -450,7 +450,13 @@ export class PersistenceManager {
         PersistenceManager.VERSION_KEY,
         PersistenceManager.RECOVERY_FLAG_KEY,
         PersistenceManager.RELOAD_FLAG_KEY,
-        PersistenceManager.SESSION_ID_KEY
+        PersistenceManager.SESSION_ID_KEY,
+        // Clear the recovery cooldown too: after wiping all conversation data a
+        // stale "last recovery attempt" timestamp would suppress the NEXT
+        // recovery, leaving the following login (logout/login or a different user
+        // on a shared profile, #144) with an empty case list until the cooldown
+        // lapses.
+        PersistenceManager.LAST_RECOVERY_KEY
       ];
       if (!options.preservePinnedCases) keys.push('pinnedCases');
       await browser.storage.local.remove(keys);

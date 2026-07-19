@@ -11,6 +11,7 @@ import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
+import { enforceUserDataScope } from './user-scope';
 import type { AuthTokenResponse, APIError } from '../api/types';
 
 const log = createLogger('LocalAuthClient');
@@ -289,6 +290,14 @@ export class LocalAuthClient {
     if (keysToRemove.length > 0) {
       await browser.storage.local.remove(keysToRemove);
     }
+
+    // Purge a prior user's at-rest data if this local login/registration hands
+    // the profile to a DIFFERENT user (#144). Runs here — before signIn/register
+    // return and the caller reloads the panel — so the reload hydrates and
+    // initializes its session from clean storage. Sequenced AFTER the token write
+    // above; enforceUserDataScope never touches the auth/token keys, so the new
+    // user's freshly-stored credential survives the purge.
+    await enforceUserDataScope(tokenResponse.user?.user_id);
 
     log.debug('Tokens stored in chrome.storage.local');
   }

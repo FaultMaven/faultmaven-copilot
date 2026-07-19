@@ -36,8 +36,16 @@ vi.mock('../utils/logger', () => ({
   })
 }));
 
+// enforceUserDataScope is a collaborator (identity-change purge, #144); mock it
+// so this stays a LocalAuthClient unit test and doesn't pull in the persistence /
+// session-manager chain. Its own behavior is covered in test/lib/auth/user-scope.
+vi.mock('./user-scope', () => ({
+  enforceUserDataScope: vi.fn().mockResolvedValue(false)
+}));
+
 // Import mocked browser after mocking
 import { browser } from 'wxt/browser';
+import { enforceUserDataScope } from './user-scope';
 
 describe('LocalAuthClient', () => {
   let client: LocalAuthClient;
@@ -97,6 +105,10 @@ describe('LocalAuthClient', () => {
       expect(result.success).toBe(true);
       expect(result.user).toEqual(mockTokenResponse.user);
       expect(result.error).toBeUndefined();
+
+      // #144: enforce data-owner scope with the authenticated user's id so a
+      // prior user's residue is purged when the profile changes hands.
+      expect(enforceUserDataScope).toHaveBeenCalledWith('user-123');
 
       // Verify fetch was called correctly
       expect(mockFetch).toHaveBeenCalledWith(
