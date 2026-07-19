@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as caseService from '../../../lib/api/services/case-service';
 import * as client from '../../../lib/api/client';
+import { caseCacheManager } from '../../../lib/cache/case-cache';
 
 // Mock client
 vi.mock('../../../lib/api/client', () => ({
@@ -113,6 +114,58 @@ describe('Case Service', () => {
       expect(result[0].owner_id).toEqual('user-1'); // Maps user_id -> owner_id
       expect(result[1].case_id).toEqual('2');
       expect(result[1].owner_id).toEqual('user-2');
+    });
+
+    // L2: the single-slot cache is only valid for the canonical default page
+    // (offset 0, DEFAULT_CASE_LIST_LIMIT). A differently-paged fetch must neither
+    // read nor write it, or a limit:50 fetch would shrink the list a limit:100
+    // caller reads back.
+    describe('cache paging', () => {
+      let getSpy: any;
+      let setSpy: any;
+
+      beforeEach(() => {
+        getSpy = vi.spyOn(caseCacheManager, 'getCachedCases');
+        setSpy = vi.spyOn(caseCacheManager, 'setCachedCases').mockResolvedValue();
+      });
+
+      afterEach(() => {
+        getSpy.mockRestore();
+        setSpy.mockRestore();
+      });
+
+      const fresh = { case_id: 'fresh', title: 'Fresh', status: 'inquiry', created_at: '2024-01-01', user_id: 'user-1' };
+
+      it('does not read or write the shared cache for a non-default page size', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' } as any]);
+        (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [fresh] }));
+
+        const result = await caseService.getUserCases({ limit: 50 });
+
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+        expect(result[0].case_id).toBe('fresh'); // fetched, not served from cache
+      });
+
+      it('does not read or write the shared cache when offset > 0', async () => {
+        getSpy.mockResolvedValue(null);
+        (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [fresh] }));
+
+        await caseService.getUserCases({ limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 100 });
+
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+      });
+
+      it('reads and writes the cache for the canonical default page', async () => {
+        getSpy.mockResolvedValue(null);
+        (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [fresh] }));
+
+        await caseService.getUserCases({ limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0 });
+
+        expect(getSpy).toHaveBeenCalled();
+        expect(setSpy).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

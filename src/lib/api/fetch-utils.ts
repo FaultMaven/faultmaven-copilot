@@ -14,45 +14,51 @@ const log = createLogger('FetchUtils');
  */
 export async function getAuthHeaders(): Promise<HeadersInit> {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  // getAuthHeaders runs on every request (including each poll iteration), so the
+  // happy path stays log-quiet: a single consolidated debug line at the end
+  // records the auth source, and only genuinely notable states (no token, or a
+  // TokenManager failure forcing fallback) warn. See the structured-logging
+  // standard in CLAUDE.md.
+  let authSource: 'token-manager' | 'auth-manager' | 'auth-manager-fallback' | 'none' = 'none';
+  let hasSession = false;
 
   try {
     if (typeof browser !== 'undefined' && browser.storage) {
       // Try to get OAuth token from TokenManager first (with auto-refresh)
       try {
         const accessToken = await tokenManager.getValidAccessToken();
-        log.info('TokenManager returned:', { hasToken: !!accessToken });
         if (accessToken) {
           headers['Authorization'] = `Bearer ${accessToken}`;
-          log.info('✅ Authorization header set from TokenManager');
+          authSource = 'token-manager';
         } else {
           // TokenManager returned null - try fallback
-          log.info('TokenManager returned null, trying AuthManager fallback');
           const authState = await authManager.getAuthState();
-          log.info('AuthManager fallback:', { hasAuthState: !!authState, hasToken: !!authState?.access_token });
           if (authState?.access_token) {
             headers['Authorization'] = `Bearer ${authState.access_token}`;
-            log.info('✅ Authorization header set from AuthManager');
-          } else {
-            log.warn('⚠️ NO JWT TOKEN AVAILABLE - Session will be created as anonymous');
+            authSource = 'auth-manager';
           }
         }
       } catch (tokenError) {
-        log.warn('TokenManager failed, falling back to AuthManager:', tokenError);
-
         // Fall back to legacy auth for backward compatibility
         const authState = await authManager.getAuthState();
         if (authState?.access_token) {
           headers['Authorization'] = `Bearer ${authState.access_token}`;
-          log.info('✅ Authorization header set from AuthManager (fallback)');
-        } else {
-          log.warn('⚠️ AuthManager fallback failed - NO JWT TOKEN AVAILABLE');
+          authSource = 'auth-manager-fallback';
         }
+        log.warn('TokenManager failed, fell back to AuthManager', tokenError);
       }
 
       // Get session ID (Manifest V3 Service Worker safe - fetched from storage every time)
       const sessionData = await browser.storage.local.get(['sessionId']);
       if (sessionData.sessionId) {
         headers['X-Session-Id'] = sessionData.sessionId;
+        hasSession = true;
+      }
+
+      if (authSource === 'none') {
+        log.warn('No JWT token available - session will be created as anonymous');
+      } else {
+        log.debug('Auth headers prepared', { authSource, hasSession });
       }
     }
   } catch (error) {

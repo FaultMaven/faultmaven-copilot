@@ -121,6 +121,63 @@ describe('resilientOperation', () => {
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
+  it('honors Retry-After on a 429: waits the server window, not just the generic backoff', async () => {
+    // 429 with a Retry-After of 5s. The generic exponential backoff (100ms here)
+    // is far shorter; without Retry-After wiring the retry would fire after ~100ms
+    // and be wasted inside the server's window.
+    const rateLimit = new Error('Too Many Requests');
+    (rateLimit as any).status = 429;
+    (rateLimit as any).retryAfter = 5; // seconds -> retryAfterMs = 5000
+    const operation = vi.fn()
+      .mockRejectedValueOnce(rateLimit)
+      .mockResolvedValueOnce('ok');
+
+    const promise = resilientOperation({
+      operation,
+      context: { operation: 'test' },
+      retryOptions: { maxAttempts: 3, initialDelay: 100 }
+    });
+
+    // Only the generic backoff has elapsed — the Retry-After window is still open,
+    // so the operation must NOT have been retried yet.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(operation).toHaveBeenCalledTimes(1);
+
+    // Advance past the remainder of the Retry-After window; now the retry fires.
+    await vi.advanceTimersByTimeAsync(5000);
+    const result = await promise;
+
+    expect(result).toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('clamps a pathological Retry-After so a bad header cannot hang the retry', async () => {
+    // Server-controlled header of ~11.5 days. The honored wait must be clamped to
+    // MAX_RETRY_AFTER_MS (60s), not the raw value.
+    const rateLimit = new Error('Too Many Requests');
+    (rateLimit as any).status = 429;
+    (rateLimit as any).retryAfter = 999999; // seconds
+    const operation = vi.fn()
+      .mockRejectedValueOnce(rateLimit)
+      .mockResolvedValueOnce('ok');
+
+    const promise = resilientOperation({
+      operation,
+      context: { operation: 'test' },
+      retryOptions: { maxAttempts: 3, initialDelay: 100 }
+    });
+
+    // Not retried inside the clamp window...
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(operation).toHaveBeenCalledTimes(1);
+
+    // ...but the retry fires once the 60s clamp elapses (well before the raw value).
+    await vi.advanceTimersByTimeAsync(2_000);
+    const result = await promise;
+    expect(result).toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
   it('should fail after max retries and call onFailure', async () => {
     const networkError = new TypeError('Failed to fetch');
     const operation = vi.fn().mockRejectedValue(networkError);
