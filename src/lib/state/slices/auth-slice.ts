@@ -4,7 +4,7 @@ import { logoutAuth, authManager, User } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
 import { hasRole, isAdmin } from '../../../lib/utils/roles';
 import { EventBus, AuthStateChangedEvent } from '../../../lib/utils/messaging';
-import { bumpEpoch } from '../session-epoch';
+import { bumpEpoch, markSessionEnding } from '../session-epoch';
 import type { StoreState } from '../store';
 
 // Shape of the browser.storage.onChanged payload we consume (a subset of the
@@ -37,8 +37,10 @@ const log = createLogger('AuthSlice');
  * re-broadcasts (e.g. token refresh) never reload.
  *
  * `enforceUserDataScope` runs before the broadcast, so storage is already clean by
- * the time the panel reloads, and the reload is issued synchronously (no `await`
- * between broadcast receipt and reload) so no debounced persist can re-write residue.
+ * the time the panel reloads. The listener also calls `markSessionEnding()` before
+ * reloading so the store's `beforeunload` handler cancels (rather than flushes) the
+ * pending debounced persist — otherwise that flush would write the prior user's
+ * snapshotted residue back over the purge.
  */
 export function shouldReloadOnAuthBroadcast(
   wasAuthenticated: boolean,
@@ -120,8 +122,12 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
             // case-state slices in memory (already hydrated by useDataRecovery, or
             // held from a previous authenticated session). Reload so the panel
             // re-hydrates from the storage the background already identity-scoped,
-            // instead of showing and re-persisting the prior user's data (#164). Issued
-            // synchronously so no debounced persist runs before the navigation.
+            // instead of showing and re-persisting the prior user's data (#164).
+            //
+            // markSessionEnding() BEFORE the reload so the store's beforeunload
+            // handler CANCELS (not flushes) the pending debounced persist — a flush
+            // would write the prior user's snapshotted residue back to storage after
+            // the purge and re-home it under the new owner.
             if (
               shouldReloadOnAuthBroadcast(wasAuthenticated, priorUserId, event.authState) &&
               typeof window !== 'undefined'
@@ -131,6 +137,7 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
                 priorUserId,
                 nextUserId: event.authState.user?.user_id
               });
+              markSessionEnding();
               window.location.reload();
             }
           }

@@ -21,6 +21,15 @@ vi.mock('../../../lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
+// Control the teardown flag the store's beforeunload handler reads.
+const { sessionEnding } = vi.hoisted(() => ({ sessionEnding: { value: false } }));
+vi.mock('../../../lib/state/session-epoch', () => ({
+  getEpoch: () => 0,
+  bumpEpoch: () => 1,
+  markSessionEnding: () => { sessionEnding.value = true; },
+  isSessionEnding: () => sessionEnding.value
+}));
+
 import { debouncedPersist } from '../../../lib/state/store';
 
 // Let the debounced async persistence body run to completion.
@@ -137,5 +146,44 @@ describe('store debouncedPersist', () => {
 
     const saved = storageSet.mock.calls[0][0] as Record<string, unknown>;
     expect(saved.pinnedCases).toEqual(['case-7']);
+  });
+});
+
+// #164: on a teardown/hand-off reload the beforeunload handler must CANCEL the
+// pending persist, not flush it — a flush would write the ending session's
+// snapshotted in-memory state (possibly a prior user's just-purged residue) back
+// to storage after the purge, re-homing it under the new owner.
+describe('store beforeunload teardown (#164)', () => {
+  const pending = () => ({
+    ...emptyState(),
+    conversations: { 'case-1': [{ id: 'm1', optimistic: false }] as any }
+  });
+
+  beforeEach(() => {
+    storageSet.mockClear();
+    storageRemove.mockClear();
+    sessionEnding.value = false;
+  });
+
+  afterEach(() => {
+    debouncedPersist.cancel();
+    sessionEnding.value = false;
+  });
+
+  it('flushes a pending persist on a NORMAL unload (last committed turn is not lost)', async () => {
+    debouncedPersist(pending()); // schedule (trailing timer, not yet fired)
+    window.dispatchEvent(new Event('beforeunload')); // isSessionEnding() === false → flush
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(storageSet).toHaveBeenCalled();
+  });
+
+  it('CANCELS a pending persist on a teardown unload (residue is not re-written after purge)', async () => {
+    debouncedPersist(pending()); // schedule a persist carrying the residue snapshot
+    sessionEnding.value = true; // markSessionEnding() has run before the reload
+    window.dispatchEvent(new Event('beforeunload')); // isSessionEnding() === true → cancel
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(storageSet).not.toHaveBeenCalled();
   });
 });
