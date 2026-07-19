@@ -8,19 +8,12 @@ import {
 } from './case-header/shared';
 import type { UserCase } from '../../../types/case';
 import type { CaseUIResponse } from '../../../types/case';
+import { CLOSURE_DISPLAY_INFO } from '../../../lib/api/services/case-service';
 
 interface ResolutionActionsCardProps {
   activeCase: UserCase;
   caseData: CaseUIResponse | null;
 }
-
-const CLOSURE_REASON_LABELS: Record<string, string> = {
-  abandoned: 'Abandoned',
-  escalated: 'Escalated',
-  inquiry_only: 'Inquiry Only',
-  closed_after_investigation: 'Closed',
-  other: 'Closed',
-};
 
 const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
   activeCase,
@@ -51,7 +44,7 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
 
   const closureReason = activeCase.closure_reason;
   const closureLabel = closureReason
-    ? CLOSURE_REASON_LABELS[closureReason] ?? closureReason
+    ? (CLOSURE_DISPLAY_INFO[closureReason] ?? CLOSURE_DISPLAY_INFO.other).shortLabel
     : null;
 
   // Build compact stats line

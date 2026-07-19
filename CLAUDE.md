@@ -133,7 +133,7 @@ src/
 │   ├── SidePanelApp.tsx                 # Main app component
 │   ├── components/                      # React components
 │   │   ├── ChatWindow.tsx               # Conversation display
-│   │   ├── ResolutionActionsCard.tsx    # Post-terminal actions (report gen + knowledge nudge)
+│   │   ├── ResolutionActionsCard.tsx    # Post-terminal status banner (resolution/closure label + Q&A affordance)
 │   │   ├── ConversationsList.tsx        # Case list sidebar
 │   │   ├── AuthScreen.tsx               # Login screen
 │   │   ├── LocalLoginForm.tsx           # Local auth form
@@ -201,7 +201,7 @@ The extension supports two authentication modes, determined by backend configura
 - PKCE-based OAuth flow via Dashboard
 - Used for cloud deployments
 - Implemented in `src/lib/auth/dashboard-oauth.ts`
-- Endpoints: `POST /api/v1/auth/login/initiate`, `GET /api/v1/auth/callback`
+- Flow: extension opens the Dashboard `/auth/authorize` page (PKCE), then exchanges the returned code at `POST /api/v1/auth/oauth/token`
 
 Auth mode is auto-detected via `GET /api/v1/auth/config`.
 
@@ -239,7 +239,7 @@ URL configuration is done via the Settings page and stored in `browser.storage.l
 
 - **Vitest**: Fast testing with jsdom environment
 - **React Testing Library**: Component testing
-- **Coverage**: 20 test files covering API, hooks, components, and integration
+- **Coverage**: Vitest suite across API, hooks, components, and integration (run `npm run test`)
 - **Mocks**: Browser API and Fetch mocked in `src/test/setup.ts`
 
 ## Development Guidelines
@@ -484,8 +484,8 @@ When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is
 
 **Closed cases:**
 
-- "Case Closed" + closure reason label (Abandoned, Escalated, Mitigated, Inquiry Only)
-- `mitigation_sufficient` uses distinct warm styling (warning-tinted background) and the affordance line mentions runbook generation; other closure reasons use neutral styling and a simpler "Ask questions about this case." line
+- "Case Closed" + closure reason label — the `shortLabel` from `CLOSURE_DISPLAY_INFO` (case-service.ts), keyed on the engine-derived `closure_reason` (Inquiry Only / Closed / Insufficient Evidence; single source of truth mirroring backend `VALID_CLOSURE_REASONS`)
+- All closure reasons share the same neutral styling and a simpler "Ask questions about this case." affordance line
 - Duration / turn stats on their own line
 
 **No Dashboard link.** The card deliberately does not link to the Dashboard's Report tab. Closure summaries are rendered inline in the chat reply at the moment of generation (a backend-side design decision: the chat is now the primary surface for the summary; the Dashboard is the persistent view). A chat-side card linking to the Dashboard for a summary the user can already see in chat above would be redundant noise.
@@ -493,7 +493,7 @@ When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is
 **Auto-generated summaries vs runbooks:**
 
 - **Summaries** (Resolution Summary, Closure Summary) are auto-generated synchronously at terminal transition and embedded directly into the closure-turn chat reply.
-- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or CLOSED(mitigation_sufficient) cases. The agent offers them as DECIDE suggestions in chat on terminal Q&A turns; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
+- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or eligible CLOSED cases. The agent offers them as DECIDE suggestions in chat on terminal Q&A turns; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
 
 **Key files:**
 

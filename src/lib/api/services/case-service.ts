@@ -79,27 +79,41 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
 };
 
 /**
- * Closure reason display info for CLOSED status pill and CaseDetails closure row.
+ * Closure reason display info — the single source of truth for closure-reason
+ * display across the extension (CLOSED status pill, CaseDetails closure row, and
+ * the ResolutionActionsCard compact banner via `shortLabel`).
  *
- * Three engine-derived values, kept in sync with VALID_CLOSURE_REASONS in
- * faultmaven/modules/case/domain/models.py. The 'other' fallback is retained
- * as a defensive default for cases where closure_reason is null/unrecognized
- * (used by HeaderSummary; CaseDetails suppresses the closure row in that case).
+ * The three real keys mirror VALID_CLOSURE_REASONS in
+ * faultmaven/modules/case/domain/models.py exactly (inquiry_only,
+ * closed_after_investigation, closed_insufficient_evidence). `label` is the full
+ * descriptive form; `shortLabel` is the compact form for contexts already
+ * prefixed with "Closed". The 'other' fallback is a defensive default for cases
+ * where closure_reason is null/unrecognized (used by HeaderSummary and
+ * ResolutionActionsCard; CaseDetails suppresses the closure row in that case).
  */
-export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; bannerClass: string; description: string }> = {
+export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; bannerClass: string; description: string }> = {
   inquiry_only: {
     label: 'Inquiry Only',
+    shortLabel: 'Inquiry Only',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Q&A session completed, no investigation needed.',
   },
   closed_after_investigation: {
     label: 'Closed after investigation',
+    shortLabel: 'Closed',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Investigation occurred but no resolution was reached.',
+  },
+  closed_insufficient_evidence: {
+    label: 'Insufficient evidence',
+    shortLabel: 'Insufficient Evidence',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'Investigation closed at a data wall; the honest partial is preserved.',
   },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
     label: 'Other',
+    shortLabel: 'Closed',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Case closed.',
   },
