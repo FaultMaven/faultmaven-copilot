@@ -4,7 +4,8 @@
  * Confirmation modal for case actions (phase transitions and dispositions).
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface StatusChangeRequestModalProps {
   isOpen: boolean;
@@ -47,6 +48,11 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
   onConfirm,
   onCancel
 }) => {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Accessibility: trap focus, lock body scroll, close on Escape while open.
+  useFocusTrap({ isActive: isOpen, containerRef: modalRef, onEscape: onCancel });
+
   if (!isOpen) return null;
 
   const getStatusLabel = (status: string) => {
@@ -70,9 +76,16 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
   const isDisposition = newStatus === 'resolved' || newStatus === 'closed';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      ref={modalRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="status-change-modal-title"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 focus:outline-none"
+    >
       <div className="bg-fm-surface rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <h3 id="status-change-modal-title" className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
           <span className="text-2xl">⚠️</span>
           {getTitle()}
         </h3>
