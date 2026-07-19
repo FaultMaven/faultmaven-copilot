@@ -1,8 +1,6 @@
 import { StateCreator } from 'zustand';
 import { browser } from 'wxt/browser';
 import {
-  createCase,
-  CreateCaseRequest,
   DEFAULT_CASE_LIST_LIMIT,
   getCaseConversation,
   getUserCases
@@ -23,7 +21,6 @@ const log = createLogger('CasesSlice');
 export interface CasesSlice {
   activeCaseId: string | null;
   activeCase: UserCase | null;
-  isCreatingCase: boolean;
   conversations: Record<string, OptimisticConversationItem[]>;
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
@@ -39,42 +36,19 @@ export interface CasesSlice {
   setPinnedCases: (pinned: Set<string>) => void;
   togglePinnedCase: (caseId: string) => void;
   setCaseEvidence: (updater: Record<string, any[]> | ((prev: Record<string, any[]>) => Record<string, any[]>)) => void;
-  ensureCaseExists: (sessionId?: string | null) => Promise<string>;
-  createNewCase: (sessionId?: string | null) => Promise<string>;
-  clearCurrentCase: () => Promise<void>;
   handleCaseSelect: (caseId: string) => void;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
 export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get) => {
-  let caseCreationPromise: Promise<string> | null = null;
   // Cases with a delta fetch currently in flight — guards against a double-click /
   // rapid A→B→A firing two fetches for the same case with the same offset (which
   // would append the same rows twice and PERSIST the duplicates).
   const inFlightDeltaFetches = new Set<string>();
 
-  const createNewCaseViaAPI = async (sessionId: string | null): Promise<string> => {
-    log.debug('Creating new case via /api/v1/cases (v2.0)');
-    const request: CreateCaseRequest = {
-      title: null,
-      priority: 'medium',
-      metadata: {
-        created_via: 'browser_extension',
-        auto_generated: true
-      }
-    };
-    const caseData = await createCase(request);
-    if (!caseData.case_id) {
-      throw new Error('Backend response missing case_id');
-    }
-    log.info('Case created via v2.0 API', { caseId: caseData.case_id });
-    return caseData.case_id;
-  };
-
   return {
     activeCaseId: null,
     activeCase: null,
-    isCreatingCase: false,
     conversations: {},
     conversationTitles: {},
     titleSources: {},
@@ -145,98 +119,6 @@ export const createCasesSlice: StateCreator<any, [], [], CasesSlice> = (set, get
       } else {
         set({ caseEvidence: updater });
       }
-    },
-
-    ensureCaseExists: async (overrideSessionId?: string | null): Promise<string> => {
-      const sessionId = overrideSessionId || get().sessionId;
-      if (!sessionId) {
-        throw new Error('Cannot create case without session');
-      }
-
-      const activeCaseId = get().activeCaseId;
-      if (activeCaseId) {
-        log.debug('Case exists in memory:', activeCaseId);
-        return activeCaseId;
-      }
-
-      try {
-        const stored = await browser.storage.local.get(['faultmaven_current_case']);
-        if (stored.faultmaven_current_case) {
-          log.debug('Case restored from storage:', stored.faultmaven_current_case);
-          set({ activeCaseId: stored.faultmaven_current_case });
-          return stored.faultmaven_current_case;
-        }
-      } catch (error) {
-        log.warn('Failed to read from storage:', error);
-      }
-
-      if (caseCreationPromise) {
-        log.debug('Case creation already in progress, waiting...');
-        return await caseCreationPromise;
-      }
-
-      log.info('No case exists, creating new case for session:', sessionId);
-      const epoch = getEpoch();
-      set({ isCreatingCase: true });
-
-      caseCreationPromise = createNewCaseViaAPI(sessionId);
-
-      try {
-        const caseId = await caseCreationPromise;
-        // A logout during creation must not re-seed activeCaseId /
-        // faultmaven_current_case for a case that belongs to the ended session.
-        if (epoch !== getEpoch()) {
-          log.info('Session changed during ensureCaseExists — discarding created case', { caseId });
-          set({ isCreatingCase: false });
-          return caseId;
-        }
-        await browser.storage.local.set({ faultmaven_current_case: caseId });
-        set({ activeCaseId: caseId, isCreatingCase: false });
-        log.info('Case created successfully:', caseId);
-        return caseId;
-      } catch (error) {
-        set({ isCreatingCase: false });
-        log.error('Case creation failed:', error);
-        throw error;
-      } finally {
-        caseCreationPromise = null;
-      }
-    },
-
-    createNewCase: async (overrideSessionId?: string | null): Promise<string> => {
-      const sessionId = overrideSessionId || get().sessionId;
-      if (!sessionId) {
-        throw new Error('Cannot create case without session');
-      }
-
-      log.info('Force creating new case for session:', sessionId);
-      const epoch = getEpoch();
-      set({ isCreatingCase: true });
-
-      try {
-        const caseId = await createNewCaseViaAPI(sessionId);
-        // A logout during creation must not re-seed activeCaseId /
-        // faultmaven_current_case for a case that belongs to the ended session.
-        if (epoch !== getEpoch()) {
-          log.info('Session changed during createNewCase — discarding created case', { caseId });
-          set({ isCreatingCase: false });
-          return caseId;
-        }
-        await browser.storage.local.set({ faultmaven_current_case: caseId });
-        set({ activeCaseId: caseId, isCreatingCase: false });
-        log.info('New case created successfully:', caseId);
-        return caseId;
-      } catch (error) {
-        set({ isCreatingCase: false });
-        log.error('New case creation failed:', error);
-        throw error;
-      }
-    },
-
-    clearCurrentCase: async () => {
-      log.debug('Clearing current case (no backend call)');
-      set({ activeCaseId: null });
-      await browser.storage.local.remove(['faultmaven_current_case']);
     },
 
     handleCaseSelect: (caseId) => {

@@ -91,7 +91,6 @@ export async function resilientOperation<T>(
             return true;
           
           case 'manual_retry':
-          case 'logout_and_redirect':
           case 'user_fix_required':
           case 'show_modal':
           case 'graceful_degradation':

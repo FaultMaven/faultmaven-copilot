@@ -9,7 +9,7 @@
  */
 
 import { browser } from "wxt/browser";
-import { getUserCases, getCaseConversation, authManager, UserCase } from "../api";
+import { getUserCases, authManager, UserCase } from "../api";
 import { OptimisticConversationItem } from "../optimistic";
 import { createLogger } from '~/lib/utils/logger';
 
@@ -334,97 +334,12 @@ export class PersistenceManager {
   }
 
   /**
-   * Gets current persistence state from storage
-   */
-  static async getCurrentState(): Promise<Partial<PersistenceState>> {
-    try {
-      const stored = await browser.storage.local.get([
-        'conversationTitles',
-        'titleSources',
-        'conversations',
-        PersistenceManager.SYNC_TIMESTAMP_KEY,
-        PersistenceManager.VERSION_KEY
-      ]);
-
-      return {
-        conversationTitles: stored.conversationTitles || {},
-        titleSources: stored.titleSources || {},
-        conversations: stored.conversations || {},
-        lastSyncTimestamp: stored[PersistenceManager.SYNC_TIMESTAMP_KEY] || 0,
-        extensionVersion: stored[PersistenceManager.VERSION_KEY] || 'unknown'
-      };
-    } catch (error) {
-      log.warn('Failed to get current state:', error);
-      return {};
-    }
-  }
-
-  /**
    * Forces conversation recovery (for testing/debugging purposes)
    */
   static async forceRecovery(): Promise<RecoveryResult> {
     log.info(' 🔧 Force recovery triggered');
     return await PersistenceManager.recoverConversationsFromBackend();
   }
-
-  /**
-   * Test enhanced API with detailed debugging (for troubleshooting)
-   */
-  static async testEnhancedAPI(caseId?: string): Promise<void> {
-    log.info(' 🧪 Testing enhanced API with debugging...');
-
-    try {
-      if (!await authManager.isAuthenticated()) {
-        log.error('Not authenticated - cannot test API');
-        return;
-      }
-
-      // If no specific case ID provided, get the first case
-      if (!caseId) {
-        log.info('Fetching user cases');
-        const cases = await getUserCases();
-        if (!cases || cases.length === 0) {
-          log.warn('No cases found for testing');
-          return;
-        }
-        caseId = cases[0].case_id;
-        log.info('Using first case for testing', { caseId });
-      }
-
-      // Test the enhanced API with debug enabled
-      log.info(' 🔍 Testing enhanced /messages API...');
-      const response = await getCaseConversation(caseId, { includeDebug: true });
-
-      log.info(' 📊 Enhanced API Test Results:', {
-        caseId,
-        totalCount: response.total_count,
-        retrievedCount: response.retrieved_count,
-        hasMore: response.has_more,
-        messagesArray: response.messages?.length || 0,
-        debugInfo: response.debug_info,
-        timestamp: new Date().toISOString()
-      });
-
-      // Analyze the results
-      if (response.total_count > 0 && response.retrieved_count === 0) {
-        log.error('🚨 ISSUE DETECTED: Messages exist but none retrieved');
-        log.error('Debug details:', response.debug_info);
-      } else if (response.total_count === response.retrieved_count && response.messages?.length > 0) {
-        log.info(' ✅ API working correctly - all messages retrieved');
-      } else if (response.total_count === 0) {
-        log.info(' ℹ️ Case is empty (no messages)');
-      } else {
-        log.warn('⚠️ Partial retrieval:', {
-          total: response.total_count,
-          retrieved: response.retrieved_count
-        });
-      }
-
-    } catch (error) {
-      log.error('❌ Enhanced API test failed:', error);
-    }
-  }
-
 
   /**
    * Clears persistence data (for debugging/reset and logout flows).
