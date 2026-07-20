@@ -15,7 +15,7 @@ const liveCaps = {
   deploymentMode: 'cloud',
   kbManagement: 'dashboard',
   dashboardUrl: 'https://app.faultmaven.ai',
-  features: { extensionKB: false, adminKB: true, teamWorkspaces: true, caseHistory: true, sso: true },
+  features: { extensionKB: false, adminKB: true, teamSharing: true, caseHistory: true, sso: true },
   limits: { maxFileBytes: 10485760, allowedExtensions: ['.md'] }
 };
 

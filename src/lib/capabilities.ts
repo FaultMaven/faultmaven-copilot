@@ -21,7 +21,11 @@ export interface BackendCapabilities {
   features: {
     extensionKB: boolean;  // Should always be false
     adminKB: boolean;
-    teamWorkspaces: boolean;
+    // Team-based KB/case sharing (ADR-013: Team = the sharing unit). Renamed
+    // from the "teamWorkspaces" misnomer — a Slack workspace maps to a Team;
+    // the capability is team *sharing*, not a workspace. Wire key must match
+    // the backend /v1/meta/capabilities payload.
+    teamSharing: boolean;
     caseHistory: boolean;
     sso: boolean;
   };
@@ -100,7 +104,7 @@ export class CapabilitiesManager {
           features: {
             extensionKB: false,
             adminKB: false,
-            teamWorkspaces: false,
+            teamSharing: false,
             caseHistory: false,
             sso: false
           },

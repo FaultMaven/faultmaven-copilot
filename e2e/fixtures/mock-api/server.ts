@@ -140,7 +140,7 @@ app.get('/v1/meta/capabilities', (req, res) => {
         features: {
             extensionKB: false,
             adminKB: true,
-            teamWorkspaces: false,
+            teamSharing: false,
             caseHistory: true,
             sso: false
         }
