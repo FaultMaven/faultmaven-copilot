@@ -446,6 +446,8 @@ createCase({ title: 'My Case', priority: 'medium' });
 2. **Manual rename**: `PUT /api/v1/cases/{id}` with explicit title string
 3. **LLM auto-generate**: `POST /api/v1/cases/{id}/title` triggers AI summarization
 
+**Display-title precedence (single source):** which title actually renders is resolved by `selectCaseTitle` (`lib/state/case-title.ts`): **store (`conversationTitles[caseId]`) > backend `UserCase.title` > fallback**. The store is the authoritative client source — `SidePanelApp.onCaseTitleChange` writes it synchronously on rename/generate and rolls it back if the backend PUT fails. Every title read (`ConversationsList` list rows, `handleCaseSelect` active-case header) goes through this one selector, so there is no per-call-site precedence and no divergent local mirror to cause title reversion.
+
 ### Case Status Lifecycle
 
 Cases follow a defined status lifecycle with specific transitions:

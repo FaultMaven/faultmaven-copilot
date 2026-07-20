@@ -16,6 +16,7 @@ import { caseCacheManager } from '../../../lib/cache/case-cache';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import { isCommittedMessage } from '../../../lib/utils/memory-manager';
+import { selectCaseTitle } from '../case-title';
 import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
@@ -146,7 +147,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       set({
         activeCase: {
           case_id: caseId,
-          title: get().conversationTitles[caseId] || 'Loading...',
+          title: selectCaseTitle({ store: get().conversationTitles[caseId] }, 'Loading...'),
           state: (lastStatusMessage?.case_state || 'inquiry') as UserCase['state'],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

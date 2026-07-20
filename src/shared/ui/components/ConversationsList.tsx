@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCaseApi, generateCaseTitle, updateCaseTitle as apiUpdateCaseTitle } from '../../../lib/api';
+import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
@@ -10,6 +10,7 @@ import {
   type RealCase
 } from '../../../lib/utils/data-integrity';
 import { idMappingManager } from '../../../lib/optimistic';
+import { selectCaseTitle } from '../../../lib/state/case-title';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('ConversationsList');
@@ -74,7 +75,6 @@ export function ConversationsList({
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [caseTitles, setCaseTitles] = useState<Record<string, string>>({});
   const [titleGenStatus, setTitleGenStatus] = useState<{ message: string; type: 'success' | 'info' | 'error' | '' }>({ message: "", type: "" });
 
   // Track recently deleted cases to prevent them from reappearing due to backend issues
@@ -97,18 +97,6 @@ export function ConversationsList({
 
   useEffect(() => { loadCases(); }, []);
   useEffect(() => { if (refreshTrigger > 0) loadCases(); }, [refreshTrigger]);
-
-  // Sync parent conversationTitles changes to local caseTitles state
-  useEffect(() => {
-    if (conversationTitles && Object.keys(conversationTitles).length > 0) {
-      log.debug('Syncing conversation titles from parent', { count: Object.keys(conversationTitles).length });
-      setCaseTitles(prev => ({
-        ...prev,
-        ...conversationTitles // Merge parent titles into local state
-      }));
-    }
-  }, [conversationTitles]);
-
 
   // Auto-clear title generation status after 4 seconds
   useEffect(() => {
@@ -176,40 +164,23 @@ export function ConversationsList({
     }
   };
 
-  const getCaseTitle = (c: UserCase): string => {
-    // Priority: parent prop (always current) > local state > backend case object.
-    // conversationTitles (parent) is checked first because caseTitles (local)
-    // syncs via useEffect which can be one render behind during batched updates.
-    // This prevents title reversion when renaming one case while another case
-    // has a recently auto-generated title.
-    const t = (conversationTitles && conversationTitles[c.case_id])
-      || caseTitles[c.case_id]
-      || c.title;
-    if (t && t.trim()) return t;
-
-    return c.title || 'Untitled Case';
-  };
-
-  const updateCaseTitle = (caseId: string, title: string) => {
-    log.debug('Updating case title in local state', { caseId, title });
-    setCaseTitles(prev => ({ ...prev, [caseId]: title }));
-  };
+  const getCaseTitle = (c: UserCase): string =>
+    // Precedence lives in one place (`selectCaseTitle`): store title > backend
+    // title > fallback. The store (`conversationTitles`) is the single, synchronously
+    // updated client source, so this never reverts one case's title while renaming
+    // another.
+    selectCaseTitle({ store: conversationTitles?.[c.case_id], backend: c.title }, 'Untitled Case');
 
   const handleRenameCase = async (caseId: string, newTitle: string) => {
     const title = (newTitle || '').trim();
     if (!title) return;
 
-    // ✅ CONSOLIDATED: Single log instead of 3 separate logs
     log.info('Case title renamed', { caseId, newTitle: title });
 
-    // OPTIMISTIC UPDATE: Update local state immediately
-    updateCaseTitle(caseId, title);
-
-    // Notify parent component - parent handles backend sync
+    // Notify parent — it owns the optimistic store write (conversationTitles +
+    // titleSources) AND the backend sync/rollback (SidePanelApp.onCaseTitleChange).
+    // The store is authoritative and read first, so there is no separate local copy.
     onCaseTitleChange?.(caseId, title);
-
-    // NOTE: Backend sync is now handled by parent (SidePanelApp.handleOptimisticTitleUpdate)
-    // This prevents duplicate API calls (previously we called API here AND parent called it)
   };
 
   const handleGenerateTitle = async (caseId: string, sessionIdGuess?: string) => {
@@ -236,12 +207,10 @@ export function ConversationsList({
       // ✅ SENTRY BREADCRUMB: This info log will be attached to error reports
       log.info('Smart title generated', { caseId, source });
 
-      // Update local state — backend already persisted the title
-      updateCaseTitle(caseId, newTitle);
-      // Mark title source so auto-generation doesn't overwrite it.
-      // Pass through onCaseTitleChange which updates titleSources in parent.
-      // The redundant PUT is harmless (idempotent, same title) and keeps the
-      // parent's state consistent.
+      // Backend already persisted the title; notify parent to mirror it into the
+      // store (conversationTitles + titleSources) so auto-generation doesn't
+      // overwrite it. The parent's redundant PUT is harmless (idempotent, same
+      // title). The store is the single source read by `getCaseTitle`.
       onCaseTitleChange?.(caseId, newTitle);
 
       // Show different messages based on whether title was newly generated or already existed
