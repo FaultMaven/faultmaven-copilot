@@ -83,6 +83,26 @@ describe('enforceUserDataScope (#144 user-isolation)', () => {
     expect(clearAll).not.toHaveBeenCalled();
   });
 
+  it('purges titles-only unowned residue (empty conversations dropped at persist, titles not)', async () => {
+    // A profile can hold conversationTitles residue with no conversations/pointer:
+    // sanitizeAndCapForPersistence drops empty conversations but not their titles.
+    get.mockResolvedValue({ conversationTitles: { caseA: 'Renamed' } });
+
+    const purged = await enforceUserDataScope('userA');
+
+    expect(purged).toBe(true);
+    expect(clearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not purge for an empty conversationTitles map with no owner', async () => {
+    get.mockResolvedValue({ conversationTitles: {} });
+
+    const purged = await enforceUserDataScope('userA');
+
+    expect(purged).toBe(false);
+    expect(clearAll).not.toHaveBeenCalled();
+  });
+
   it('does not purge when the same user logs in again', async () => {
     get.mockResolvedValue({ [DATA_OWNER_KEY]: 'userA' });
 

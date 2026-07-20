@@ -43,6 +43,14 @@
  *
  * Deliberately **not** storage-backed: a persisted epoch would make every guard
  * async and reintroduce the very race it closes.
+ *
+ * ## Also here: the session-teardown flag
+ *
+ * This module additionally hosts `markSessionEnding()` / `isSessionEnding()` — a
+ * sibling teardown signal for purge-coupled reloads (see their own docs). It lives
+ * here rather than in `store.ts` because it is set by the reload paths (auth-slice,
+ * `handleAuthSuccess`) and read by `store.ts`'s `beforeunload` handler; a
+ * zero-dependency module both can import keeps that cycle-free.
  */
 
 let epoch = 0;
@@ -50,6 +58,32 @@ let epoch = 0;
 /** The current session epoch. Cheap, synchronous, safe to read before any write. */
 export function getEpoch(): number {
   return epoch;
+}
+
+let sessionEnding = false;
+
+/**
+ * Mark that the current session is ending or handing off (logout / identity switch)
+ * and a page reload is imminent.
+ *
+ * The persistence layer's `beforeunload` handler (`store.ts`) checks this to CANCEL
+ * rather than flush the pending debounced persist. A flush here would write the
+ * ending session's in-memory state back to `browser.storage.local` — and that state
+ * can be a prior user's at-rest residue (hydrated by `useDataRecovery`) that the
+ * background just purged, re-homing it under the new owner after the purge (#164).
+ * `handleLogout` already cancels the debounce before its purge; the reload paths
+ * (auth-slice identity switch, `handleAuthSuccess`) mark this instead, since the
+ * flush they must suppress runs at `beforeunload`, after their code has returned.
+ *
+ * One-shot for the page's lifetime; a reload starts a fresh module with it false.
+ */
+export function markSessionEnding(): void {
+  sessionEnding = true;
+}
+
+/** Whether a teardown/hand-off reload is in progress (see `markSessionEnding`). */
+export function isSessionEnding(): boolean {
+  return sessionEnding;
 }
 
 /**

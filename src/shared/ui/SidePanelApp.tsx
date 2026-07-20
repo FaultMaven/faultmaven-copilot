@@ -12,7 +12,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
-import { bumpEpoch } from "../../lib/state/session-epoch";
+import { bumpEpoch, markSessionEnding } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { getDashboardUrl } from "../../config";
@@ -127,6 +127,10 @@ function SidePanelAppContent() {
   const handleAuthSuccess = async () => {
     log.info('Authentication successful, checking auth state');
     await new Promise(resolve => setTimeout(resolve, 100));
+    // Mark teardown BEFORE reloading so the store's beforeunload handler cancels the
+    // pending debounced persist instead of flushing a prior user's just-purged
+    // residue back to storage (#164). Same discipline as the auth-slice reload path.
+    markSessionEnding();
     window.location.reload();
   };
 

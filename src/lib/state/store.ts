@@ -9,6 +9,7 @@ import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
 import { idMappingManager, OptimisticConversationItem } from '../optimistic';
 import { memoryManager } from '../utils/memory-manager';
+import { isSessionEnding } from './session-epoch';
 
 const log = createLogger('Store');
 
@@ -45,6 +46,14 @@ export const debouncedPersist = debounce(
     conversations: Record<string, OptimisticConversationItem[]>;
     pinnedCases: string[];
   }) => {
+    // Never persist during a teardown/hand-off reload: the pending call snapshots the
+    // ending session's state, which can be a prior user's just-purged residue. The
+    // beforeunload handler already cancels the pending call; this guard also covers the
+    // millisecond window where the debounce timer could expire naturally between
+    // reload() and beforeunload, making the teardown invariant independent of event
+    // ordering (#164).
+    if (isSessionEnding()) return;
+
     try {
       const storageData: Record<string, unknown> = {};
       const keysToRemove: string[] = [];
@@ -130,9 +139,18 @@ useAppStore.subscribe((state) => {
   }
 });
 
-// Flush on window beforeunload
+// Flush any pending persist on a normal unload so the last committed turn isn't
+// lost. But on a teardown/hand-off reload (logout / identity switch), CANCEL
+// instead: the pending persist snapshots the ending session's in-memory state,
+// which can be a prior user's just-purged residue — flushing it would write that
+// residue back to storage after the purge and re-home it under the new owner
+// (#164). The reload paths call `markSessionEnding()` before reloading.
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
-    debouncedPersist.flush();
+    if (isSessionEnding()) {
+      debouncedPersist.cancel();
+    } else {
+      debouncedPersist.flush();
+    }
   });
 }

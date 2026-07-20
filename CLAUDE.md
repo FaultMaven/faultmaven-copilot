@@ -317,6 +317,7 @@ Use the `UserFacingError` class hierarchy for consistent error handling:
 | `ValidationError` | validation | user_fix_required |
 | `RateLimitError` | rate_limit | auto_retry_with_delay |
 | `QuotaExhaustedError` | billing | graceful_degradation |
+| `CaseVersionConflictError` | validation | manual_retry |
 | `OptimisticUpdateError` | optimistic_rollback | rollback_and_retry |
 | `UnknownError` | unknown | manual_retry |
 

@@ -71,18 +71,22 @@ export async function enforceUserDataScope(userId: string | undefined | null): P
     const stored = await browser.storage.local.get([
       DATA_OWNER_KEY,
       'conversations',
+      'conversationTitles',
       'faultmaven_current_case'
     ]);
     const priorOwner = stored[DATA_OWNER_KEY];
 
     // A prior owner that isn't this user → definite hand-off. No recorded owner
     // but at-rest residue present → unverifiable provenance, purge to be safe
-    // (closes the one-transition gap for sessions predating this scoping).
+    // (closes the one-transition gap for sessions predating this scoping). Titles
+    // are probed alongside conversations: empty conversations are dropped at
+    // persist but their titles are not, so a profile can hold titles-only residue.
     const differentOwner = priorOwner && priorOwner !== userId;
     const unownedResidue =
       !priorOwner &&
       (!!stored.faultmaven_current_case ||
-        (stored.conversations && Object.keys(stored.conversations).length > 0));
+        (stored.conversations && Object.keys(stored.conversations).length > 0) ||
+        (stored.conversationTitles && Object.keys(stored.conversationTitles).length > 0));
 
     if (differentOwner || unownedResidue) {
       log.info('Purging prior/unowned at-rest data on login', {
