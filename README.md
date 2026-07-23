@@ -41,7 +41,7 @@ This extension connects to your FaultMaven backend (self-hosted or Cloud) to pro
 
 **Option 1: Manual Load (Development)**
 
-Download the latest `faultmaven-copilot.zip` from [Releases](https://github.com/FaultMaven/faultmaven-copilot/releases) or build from source.
+Download the latest `faultmaven-copilot-<version>-chrome.zip` (or `-firefox.zip`) from [Releases](https://github.com/FaultMaven/faultmaven-copilot/releases) or build from source.
 
 **Chrome/Edge:**
 
@@ -58,13 +58,16 @@ Download the latest `faultmaven-copilot.zip` from [Releases](https://github.com/
 
 ### Connection
 
-By default, the extension tries to connect to **FaultMaven Cloud**.
+By default, the extension connects to **FaultMaven Cloud**. To point it at your own backend, open **Settings** and pick a preset:
 
-**To use with self-hosted:**
+1. Click the extension icon, then open **Settings**
+2. Choose a preset:
+   - **Standalone (localhost)** — backend running on this machine (API `http://localhost:8090`, Dashboard `http://localhost:3333`)
+   - **Custom / self-hosted** — a LAN or remote server: set the **API base URL** (e.g. `http://192.168.1.100:8090`) and, for browser sign-in and "open in Dashboard" links, the **Dashboard URL** (e.g. `http://192.168.1.100:3333`)
+   - **FaultMaven Cloud** — the hosted service
+3. Click **Save** and approve the one-time host-access prompt when asked
 
-1. Click the extension icon
-2. Go to **Settings**
-3. Change API Endpoint to: `http://localhost:8090` (or your gateway URL)
+See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for details.
 
 > **Need the backend?** Deploy FaultMaven in 5 minutes: [Quick Start](https://github.com/FaultMaven/faultmaven#quick-start)
 
@@ -82,8 +85,8 @@ cd faultmaven-copilot
 # 2. Install dependencies
 pnpm install
 
-# 3. Setup environment
-cp .env.example .env
+# 3. Setup environment (optional — defaults work out of the box)
+cp .env.example .env.local
 
 # 4. Run in dev mode (Chrome)
 pnpm dev
