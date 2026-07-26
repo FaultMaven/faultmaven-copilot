@@ -119,6 +119,28 @@ describe('cases-slice', () => {
       expect(conv.map((m: any) => m.id)).toEqual(['real-1', 'real-2']);
     });
 
+    it('drops system turns instead of creating empty ghost items', async () => {
+      // The backend role CHECK admits 'system' (e.g. the runbook-conversion
+      // notification). This conversation model is strictly question/response, so
+      // a system row would map to an item with BOTH fields undefined — invisible
+      // in ChatWindow, yet still holding an id and a turn slot.
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
+          { message_id: 'm-2', role: 'system', content: 'Runbook created', turn_number: 1 },
+          { message_id: 'm-3', role: 'assistant', content: 'looking into it', turn_number: 1 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-sys');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-sys'];
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-3']);
+      // Nothing retained may be contentless — that is the defect being guarded.
+      expect(conv.every((m: any) => m.question || m.response)).toBe(true);
+    });
+
     it('does not re-grow a bounded (suffix) conversation: incoming below the local turn floor is dropped', async () => {
       // Local copy has been trimmed to a most-recent suffix (floor turn = 200).
       // The delta fetch over-reads and returns the trimmed head (turn 50); it must

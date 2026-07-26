@@ -221,11 +221,12 @@ export interface Message {
   content: string;
   created_at: string;
   metadata?: Record<string, any>;
-  // Who wrote this turn. Null whenever no human did — assistant and system
-  // turns, and any row written before the backend began persisting it
-  // (faultmaven migration 037). Matches `api.generated.ts`, which has always
-  // typed this `string | null`; this hand-written copy claimed non-nullable
-  // while the field was in practice always null, so nothing caught the drift.
+  // Who wrote this turn, when a human did. Absent or null otherwise — treat
+  // "no author" as the only reliable signal and do NOT infer message kind from
+  // it; `role` is what says whether a turn is human-authored. Matches
+  // `api.generated.ts`, which has always typed this `string | null`; this
+  // hand-written copy claimed non-nullable while the field was in practice
+  // always null, so nothing caught the drift.
   author_id?: string | null;
 }
 
