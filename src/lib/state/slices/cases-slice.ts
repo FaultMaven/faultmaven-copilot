@@ -204,7 +204,18 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
             return;
           }
-          const messages = (data.messages ?? []) as BackendConversationMessage[];
+          // Drop system turns. The backend role CHECK admits 'system' (e.g. the
+          // runbook-conversion notification) but this conversation model is
+          // strictly question/response: a system row maps to an item with BOTH
+          // `question` and `response` undefined, which ChatWindow renders as
+          // nothing while it still consumes an id and a turn slot. Filtering is
+          // safe against the offset below — it only ever UNDER-counts, the
+          // tolerated direction (see the offset comment: a lower-bound hint,
+          // with the turn-floor + id-dedup merge absorbing the over-read).
+          // Surfacing these to the user is a UI decision, tracked separately.
+          const messages = ((data.messages ?? []) as BackendConversationMessage[]).filter(
+            (msg) => msg.role !== 'system'
+          );
           const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
             id: msg.message_id,
             timestamp: msg.created_at,
