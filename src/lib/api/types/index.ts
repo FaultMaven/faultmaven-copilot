@@ -215,11 +215,18 @@ export interface CaseUpdateRequest {
 
 export interface Message {
   message_id: string;
-  role: "user" | "assistant";
+  // The backend CHECK constraint is role IN ('user', 'assistant', 'system');
+  // system turns are real (e.g. the runbook-conversion notification).
+  role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
   metadata?: Record<string, any>;
-  author_id: string;
+  // Who wrote this turn. Null whenever no human did — assistant and system
+  // turns, and any row written before the backend began persisting it
+  // (faultmaven migration 037). Matches `api.generated.ts`, which has always
+  // typed this `string | null`; this hand-written copy claimed non-nullable
+  // while the field was in practice always null, so nothing caught the drift.
+  author_id?: string | null;
 }
 
 export interface User {
