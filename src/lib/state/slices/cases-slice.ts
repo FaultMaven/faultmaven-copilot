@@ -3,10 +3,11 @@ import { browser } from 'wxt/browser';
 import {
   AttachmentResult,
   DEFAULT_CASE_LIST_LIMIT,
+  getCase,
   getCaseConversation,
   getUserCases
 } from '../../../lib/api';
-import type { Message, UserCase } from '../../../types/case';
+import type { UserCase } from '../../../types/case';
 import {
   idMappingManager,
   OptimisticConversationItem
@@ -21,12 +22,9 @@ import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
 
-// The `/messages` row shape is the generated contract `Message` type directly.
-// `getCaseConversation` is currently untyped (returns `any`); the cast in the
-// delta fetch below makes the mapping type-checked against the contract.
 // Case-level fields (state, closure_reason, closed_at) are deliberately NOT
-// read off message rows — the backend Message model never carries them; the
-// case-list row is the authoritative source (see refreshActiveCaseFromList).
+// read off `/messages` rows — the backend Message model never carries them.
+// The backend case row is the authoritative source (see refreshActiveCase).
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -47,7 +45,7 @@ export interface CasesSlice {
   togglePinnedCase: (caseId: string) => void;
   setCaseEvidence: (updater: Record<string, AttachmentResult[]> | ((prev: Record<string, AttachmentResult[]>) => Record<string, AttachmentResult[]>)) => void;
   handleCaseSelect: (caseId: string) => void;
-  refreshActiveCaseFromList: (caseId: string, opts?: { bypassCache?: boolean }) => Promise<void>;
+  refreshActiveCase: (caseId: string) => Promise<void>;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -155,12 +153,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         }
       });
 
-      // Hydrate the placeholder from the authoritative case-list row
-      // (cache-first — warm whenever the sidebar just rendered the list).
-      // This is what restores state/closure_reason/closed_at on reopening a
-      // terminal case: ResolutionActionsCard and the case header read them
-      // off activeCase, and the ChatWindow /ui sync copies only `state`.
-      void get().refreshActiveCaseFromList(caseId);
+      // Hydrate the placeholder from the backend case row — this restores
+      // state/closure_reason/closed_at on reopening a terminal case (the
+      // ChatWindow /ui sync copies only `state`).
+      void get().refreshActiveCase(caseId);
 
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
@@ -219,7 +215,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // comment: a lower-bound hint, with the turn-floor + id-dedup merge
           // absorbing the over-read). Surfacing system turns to the user is a
           // UI decision, tracked separately.
-          const messages = ((data.messages ?? []) as Message[]).filter(
+          const messages = (data.messages ?? []).filter(
             (msg) => msg.role === 'user' || msg.role === 'assistant'
           );
           const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
@@ -291,7 +287,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         .finally(() => inFlightDeltaFetches.delete(caseId));
     },
 
-    refreshActiveCaseFromList: async (caseId, opts) => {
+    refreshActiveCase: async (caseId) => {
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
@@ -299,26 +295,16 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
 
       const epoch = getEpoch();
       try {
-        let row: UserCase | undefined;
-        if (opts?.bypassCache) {
-          // Post-409 path: our copy of the case is known-stale, so the cached
-          // list (same age or older) is too.
-          await caseCacheManager.invalidateCache();
-        } else {
-          const cached = await caseCacheManager.getCachedCases();
-          row = cached?.find((c) => c.case_id === resolvedCaseId);
-        }
-        if (!row) {
-          const cases = await getUserCases({ limit: DEFAULT_CASE_LIST_LIMIT, offset: 0 });
-          row = cases.find((c) => c.case_id === resolvedCaseId);
-        }
+        // Single-case GET: always fresh, immune to list pagination (a case
+        // ranked beyond the first list page would never be found there), and
+        // no coupling to the sidebar's list cache.
+        const row = await getCase(resolvedCaseId);
         if (!row) return;
         if (epoch !== getEpoch()) {
           log.info('Session changed during case refresh — discarding', { caseId });
           return;
         }
 
-        const freshRow = row;
         set((state) => {
           const current = state.activeCase;
           // Guard on identity: the user may have switched cases while the
@@ -327,19 +313,22 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           if (!current || (current.case_id !== caseId && current.case_id !== resolvedCaseId)) {
             return {};
           }
-          // Never move a terminal activeCase back to an active state off a
-          // stale list row (the cache TTL is minutes; a case resolved this
-          // session can be ahead of it). Same-direction updates apply fully.
+          // Belt-and-braces against out-of-order landings of concurrent
+          // refreshes: never move a terminal activeCase back to an active
+          // state.
           const currentIsTerminal = current.state === 'resolved' || current.state === 'closed';
-          const rowIsTerminal = freshRow.state === 'resolved' || freshRow.state === 'closed';
+          const rowIsTerminal = row.state === 'resolved' || row.state === 'closed';
           if (currentIsTerminal && !rowIsTerminal) return {};
 
           // Keep the current id: swapping identity mid-reconciliation is the
           // id-mapping manager's job, not a side effect of hydration.
-          return { activeCase: { ...current, ...freshRow, case_id: current.case_id } };
+          return { activeCase: { ...current, ...row, case_id: current.case_id } };
         });
       } catch (error) {
-        log.debug('Active-case refresh from case list failed', { caseId, error });
+        // warn, not debug: this is the only recovery on the post-409 path and
+        // the only source of closure metadata on case select, and debug logs
+        // are dropped in production builds.
+        log.warn('Active-case refresh failed', { caseId, error });
       }
     },
 

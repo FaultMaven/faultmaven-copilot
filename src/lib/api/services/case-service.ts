@@ -1,5 +1,5 @@
 import { getApiUrl } from "../../../config";
-import { UserCase, UserCaseState } from "../../../types/case";
+import { Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
@@ -235,6 +235,49 @@ export function generateDefaultCaseName(existingCases?: UserCase[]): string {
 
 // API Functions
 
+// Map one backend case row (CaseSummary or CaseDetail) to the client UserCase
+// shape. API returns user_id; UserCase expects owner_id.
+function toUserCase(c: any): UserCase {
+  return {
+    case_id: c.case_id,
+    title: c.title,
+    state: normalizeState(c.state),
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+    description: c.description,
+    priority: c.priority,
+    resolved_at: c.resolved_at,
+    message_count: c.current_turn || c.message_count || 0,
+    owner_id: c.user_id || c.owner_id || '',  // API uses user_id
+    organization_id: c.organization_id || '',  // Multi-tenant field per commit b434152a
+    closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
+    closed_at: c.closed_at ?? null  // Terminal state timestamp per commit b434152a
+  };
+}
+
+/**
+ * Fetch one case by id (GET /api/v1/cases/{case_id}).
+ *
+ * Unlike the paginated list, this cannot miss a case ranked beyond the first
+ * page and is always a fresh read. It deliberately does not read or write the
+ * case-list cache — it refreshes one case, not the sidebar's list slice.
+ */
+export async function getCase(caseId: string): Promise<UserCase> {
+  const response = await authenticatedFetchWithRetry(
+    `${await getApiUrl()}/api/v1/cases/${encodeURIComponent(caseId)}`,
+    { method: 'GET', credentials: 'include' }
+  );
+  if (!response.ok) {
+    const errorData: APIError = await response.json().catch(() => ({} as any));
+    throw new Error(errorData.detail || `Failed to get case: ${response.status}`);
+  }
+  const caseData = await response.json();
+  if (!caseData || !caseData.case_id) {
+    throw new Error('Invalid CaseDetail shape from server');
+  }
+  return toUserCase(caseData);
+}
+
 export async function getUserCases(filters?: {
   status?: string;
   priority?: string;
@@ -282,24 +325,7 @@ export async function getUserCases(filters?: {
     return [];
   }
 
-  // Map API CaseSummary fields to UserCase interface
-  // API returns user_id, UserCase expects owner_id
-  // Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
-  const userCases = data.cases.map((c: any) => ({
-    case_id: c.case_id,
-    title: c.title,
-    state: normalizeState(c.state),
-    created_at: c.created_at,
-    updated_at: c.updated_at,
-    description: c.description,
-    priority: c.priority,
-    resolved_at: c.resolved_at,
-    message_count: c.current_turn || c.message_count || 0,
-    owner_id: c.user_id || c.owner_id || '',  // API uses user_id
-    organization_id: c.organization_id || '',  // Multi-tenant field per commit b434152a
-    closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
-    closed_at: c.closed_at ?? null  // Terminal state timestamp per commit b434152a
-  }));
+  const userCases = data.cases.map((c: any) => toUserCase(c));
 
   // Update cache if this was a default list
   if (isDefaultList) {
@@ -341,24 +367,7 @@ export async function createCase(
     throw new Error('Invalid CaseResponse shape from server');
   }
 
-  // Map API field names to UserCase interface
-  // API returns user_id, UserCase expects owner_id
-  // Updated 2026-01-30: Include organization_id, closure_reason, closed_at per backend storage fixes
-  const userCase: UserCase = {
-    case_id: caseData.case_id,
-    title: caseData.title,
-    state: normalizeState(caseData.state),
-    created_at: caseData.created_at,
-    updated_at: caseData.updated_at,
-    description: caseData.description,
-    priority: caseData.priority,
-    resolved_at: caseData.resolved_at,
-    message_count: caseData.current_turn || caseData.message_count || 0,
-    owner_id: caseData.user_id || caseData.owner_id || '',  // API uses user_id
-    organization_id: caseData.organization_id || '',  // Multi-tenant field per commit b434152a
-    closure_reason: caseData.closure_reason ?? null,  // Terminal state field per commit b434152a
-    closed_at: caseData.closed_at ?? null  // Terminal state timestamp per commit b434152a
-  };
+  const userCase: UserCase = toUserCase(caseData);
 
   // CONTRACT VALIDATION: Backend MUST provide title per API contract
   if (!userCase.title) {
@@ -426,13 +435,12 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
 }
 
 /**
- * One page of the backend `/messages` response. Message objects are kept loose
- * (Record) here; the consumer casts rows to the generated contract `Message`
- * type at the use site (see the delta merge in cases-slice). Rows carry only
- * message-level fields — case-level state is never present on them.
+ * One page of the backend `/messages` response. Rows are the generated
+ * contract `Message` type; they carry only message-level fields — case-level
+ * state is never present on them.
  */
-interface MessagesPage {
-  messages?: Record<string, unknown>[];
+export interface MessagesPage {
+  messages?: Message[];
   total_count?: number;
   retrieved_count?: number;
   has_more?: boolean;
@@ -442,7 +450,7 @@ interface MessagesPage {
 export async function getCaseConversation(
   caseId: string,
   options: { offset?: number; includeDebug?: boolean } = {}
-): Promise<any> {
+): Promise<MessagesPage> {
   const { offset = 0, includeDebug = false } = options;
   const apiBase = await getApiUrl();
   const pageSize = 100; // backend per-request cap (le=100)
@@ -452,7 +460,7 @@ export async function getCaseConversation(
   // that left newer turns unfetched until the next panel open (and on a cold
   // open it truncated the history). Drain every page from `offset` to the end
   // and return the merged delta so callers get the complete tail in one call.
-  const messages: Record<string, unknown>[] = [];
+  const messages: Message[] = [];
   let lastData: MessagesPage = {};
 
   for (let pageOffset = offset; ; pageOffset += pageSize) {

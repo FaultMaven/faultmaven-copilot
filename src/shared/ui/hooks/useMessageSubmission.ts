@@ -261,11 +261,9 @@ export function useMessageSubmission() {
               expectedVersion: classified.expectedVersion,
               actualVersion: classified.actualVersion,
             });
-            // The conflict means our copy of the case is stale — refresh from
-            // the authoritative case-list row, bypassing the list cache (it is
-            // as stale as we are). The old recovery read case_state off the
-            // last /messages row, a field the backend never emits there.
-            void useAppStore.getState().refreshActiveCaseFromList(caseId, { bypassCache: true });
+            // The conflict means our copy of the case is stale — refresh it
+            // from the backend case row.
+            void useAppStore.getState().refreshActiveCase(caseId);
           }
 
           // Mark the op failed WITHOUT rolling back: the default rollback would
@@ -336,7 +334,6 @@ export function useMessageSubmission() {
                 ...item,
                 response: response.agent_response,
                 turn_number: response.turn_number,
-                caseStatus: response.case_state,
                 suggestedActions: response.suggested_actions ?? null,
                 optimistic: false,
                 loading: false,

@@ -398,7 +398,7 @@ describe('Case Service', () => {
       expect(calls[1]).toContain('offset=100');
       expect(calls[2]).toContain('offset=200');
       expect(data.messages).toHaveLength(250);
-      expect(data.messages.map((m: any) => m.message_id)).toEqual(makeMessages(0, 250).map((m) => m.message_id));
+      expect(data.messages!.map((m: any) => m.message_id)).toEqual(makeMessages(0, 250).map((m) => m.message_id));
       expect(data.retrieved_count).toBe(250);
     });
 

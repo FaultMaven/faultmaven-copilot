@@ -197,7 +197,6 @@ export function useDataUpload() {
             ...item,
             response: turnResponse.agent_response || "Data uploaded and processed successfully.",
             turn_number: turnResponse.turn_number,
-            caseStatus: turnResponse.case_state,
             suggestedActions: turnResponse.suggested_actions ?? null,
             optimistic: false,
             loading: false,
