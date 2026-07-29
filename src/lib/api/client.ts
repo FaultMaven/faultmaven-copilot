@@ -15,11 +15,15 @@ const log = createLogger('APIClient');
 // max file upload on a slow link; callers may override per request.
 //
 // Sized as the MIDDLE rung of the turn timeout ladder: server per-turn ceiling
-// (240s) < this client timeout (300s) < ingress proxy-read (600s). Keeping the
+// (120s) < this client timeout (300s) < ingress proxy-read (600s). Keeping the
 // client ABOVE the server ceiling means a slow investigation turn surfaces the
 // server's real error/partial instead of a bare client-side "Request timed out"
-// abort. It was previously 120_000, equal to the old server ceiling — the two
+// abort. It was previously 120_000, equal to the server ceiling — the two
 // raced, and the client usually won, producing exactly that opaque timeout.
+//
+// The server rung is core AgentSettings.agent_request_timeout: default 120,
+// bounded 30-600 via AGENT_REQUEST_TIMEOUT, and not overridden in k8s. Re-check
+// it there before narrowing this value — the gap is the safety margin.
 const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
