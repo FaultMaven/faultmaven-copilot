@@ -377,6 +377,11 @@ export async function createCase(
     );
   }
 
+  // Invalidate the list cache so the sidebar refresh the create flows trigger
+  // actually network-fetches and includes the new case. (The reconcile effect
+  // no longer invalidates on case select, so creation must not rely on it.)
+  await caseCacheManager.invalidateCache();
+
   // Optimistically add to cache
   await caseCacheManager.addOptimisticCase(userCase);
 

@@ -34,6 +34,26 @@ describe('Case Service', () => {
   });
 
   describe('createCase', () => {
+    it('invalidates the case-list cache on success so the sidebar refresh includes the new case', async () => {
+      // The reconcile effect no longer invalidates on case select, so a
+      // create must not rely on it — the triggerRefreshSessions bump the
+      // create flows fire would otherwise re-read a warm cache that has no
+      // row for the new case.
+      const invalidateSpy = vi.spyOn(caseCacheManager, 'invalidateCache').mockResolvedValue();
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({
+        case_id: 'case-fresh',
+        title: 'New Case',
+        state: 'inquiry',
+        created_at: '2024-01-01T00:00:00Z',
+        user_id: 'user-1'
+      }));
+
+      await caseService.createCase({ title: 'New Case', priority: 'medium' as const });
+
+      expect(invalidateSpy).toHaveBeenCalled();
+      invalidateSpy.mockRestore();
+    });
+
     it('should create a case successfully', async () => {
       // API returns CaseSummary directly at root level per OpenAPI spec
       const responseData = {
