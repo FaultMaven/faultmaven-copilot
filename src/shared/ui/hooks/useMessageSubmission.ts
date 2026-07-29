@@ -13,7 +13,6 @@ import {
   QueryIntent,
   authManager,
   generateCaseTitle,
-  getCaseConversation,
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
@@ -262,31 +261,9 @@ export function useMessageSubmission() {
               expectedVersion: classified.expectedVersion,
               actualVersion: classified.actualVersion,
             });
-            getCaseConversation(caseId)
-              .then(data => {
-                const fresh = (data?.messages ?? []) as Array<{
-                  message_id: string;
-                  case_state?: string;
-                  closure_reason?: string | null;
-                  closed_at?: string | null;
-                }>;
-                const last = fresh[fresh.length - 1];
-                if (last?.case_state) {
-                  setActiveCase((prev: UserCase | null) => {
-                    if (prev && prev.state !== last.case_state) {
-                      log.info('activeCase status refreshed after 409', {
-                        oldStatus: prev.state,
-                        newStatus: last.case_state,
-                      });
-                      return { ...prev, state: last.case_state as UserCase['state'] };
-                    }
-                    return prev;
-                  });
-                }
-              })
-              .catch(refreshErr => {
-                log.debug('Post-409 case refresh failed', refreshErr);
-              });
+            // The conflict means our copy of the case is stale — refresh it
+            // from the backend case row.
+            void useAppStore.getState().refreshActiveCase(caseId);
           }
 
           // Mark the op failed WITHOUT rolling back: the default rollback would
@@ -357,7 +334,6 @@ export function useMessageSubmission() {
                 ...item,
                 response: response.agent_response,
                 turn_number: response.turn_number,
-                caseStatus: response.case_state,
                 suggestedActions: response.suggested_actions ?? null,
                 optimistic: false,
                 loading: false,

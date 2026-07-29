@@ -3,10 +3,11 @@ import { browser } from 'wxt/browser';
 import {
   AttachmentResult,
   DEFAULT_CASE_LIST_LIMIT,
+  getCase,
   getCaseConversation,
   getUserCases
 } from '../../../lib/api';
-import type { Message, UserCase } from '../../../types/case';
+import type { UserCase } from '../../../types/case';
 import {
   idMappingManager,
   OptimisticConversationItem
@@ -21,20 +22,9 @@ import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
 
-// The raw per-message shape the backend `/messages` endpoint returns, as consumed
-// by the delta fetch below. `getCaseConversation` is currently untyped (returns
-// `any`); typing the rows here makes the mapping type-checked. The base shape —
-// including the closed role vocabulary — derives from the generated OpenAPI
-// contract, so a backend vocabulary change surfaces on regen instead of drifting.
-type BackendConversationMessage = Message & {
-  // NOT in the generated contract: the backend /messages serializer never
-  // constructs these, so today they are always undefined at runtime. The
-  // downstream reads (terminal-state derivation in handleCaseSelect) are kept
-  // pending a backend-side decision on emitting them — tracked separately.
-  case_state?: UserCase['state'];
-  closure_reason?: string | null;
-  closed_at?: string | null;
-};
+// Case-level fields (state, closure_reason, closed_at) are deliberately NOT
+// read off `/messages` rows — the backend Message model never carries them.
+// The backend case row is the authoritative source (see refreshActiveCase).
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -55,6 +45,7 @@ export interface CasesSlice {
   togglePinnedCase: (caseId: string) => void;
   setCaseEvidence: (updater: Record<string, AttachmentResult[]> | ((prev: Record<string, AttachmentResult[]>) => Record<string, AttachmentResult[]>)) => void;
   handleCaseSelect: (caseId: string) => void;
+  refreshActiveCase: (caseId: string) => Promise<void>;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -144,12 +135,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       set({ hasUnsavedNewChat: false, activeTab: 'copilot' });
 
       const caseMessages = get().conversations[caseId] || [];
-      const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_state);
       set({
         activeCase: {
           case_id: caseId,
           title: selectCaseTitle({ store: get().conversationTitles[caseId] }, 'Loading...'),
-          state: (lastStatusMessage?.case_state || 'inquiry') as UserCase['state'],
+          // Placeholder until the list-row hydration below lands. Case-level
+          // state is NOT derivable from conversation items — the backend
+          // /messages rows never carry it.
+          state: 'inquiry',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           owner_id: '',
@@ -159,6 +152,11 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           message_count: caseMessages.length || 0
         }
       });
+
+      // Hydrate the placeholder from the backend case row — this restores
+      // state/closure_reason/closed_at on reopening a terminal case (the
+      // ChatWindow /ui sync copies only `state`).
+      void get().refreshActiveCase(caseId);
 
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
@@ -217,7 +215,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // comment: a lower-bound hint, with the turn-floor + id-dedup merge
           // absorbing the over-read). Surfacing system turns to the user is a
           // UI decision, tracked separately.
-          const messages = ((data.messages ?? []) as BackendConversationMessage[]).filter(
+          const messages = (data.messages ?? []).filter(
             (msg) => msg.role === 'user' || msg.role === 'assistant'
           );
           const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
@@ -227,10 +225,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             optimistic: false,
             originalId: msg.message_id,
             question: msg.role === 'user' ? msg.content : undefined,
-            response: msg.role === 'assistant' ? msg.content : undefined,
-            case_state: msg.case_state,
-            closure_reason: msg.closure_reason ?? null,
-            closed_at: msg.closed_at ?? null
+            response: msg.role === 'assistant' ? msg.content : undefined
           }));
           if (incoming.length > 0) {
             let appended = 0;
@@ -290,6 +285,51 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         })
         .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))
         .finally(() => inFlightDeltaFetches.delete(caseId));
+    },
+
+    refreshActiveCase: async (caseId) => {
+      const resolvedCaseId = isOptimisticId(caseId)
+        ? idMappingManager.getRealId(caseId) || caseId
+        : caseId;
+      if (isOptimisticId(resolvedCaseId)) return; // no backend row yet
+
+      const epoch = getEpoch();
+      try {
+        // Single-case GET: always fresh, immune to list pagination (a case
+        // ranked beyond the first list page would never be found there), and
+        // no coupling to the sidebar's list cache.
+        const row = await getCase(resolvedCaseId);
+        if (!row) return;
+        if (epoch !== getEpoch()) {
+          log.info('Session changed during case refresh — discarding', { caseId });
+          return;
+        }
+
+        set((state) => {
+          const current = state.activeCase;
+          // Guard on identity: the user may have switched cases while the
+          // fetch was in flight. The optimistic id may have been reconciled
+          // to the real id in the meantime, so accept either.
+          if (!current || (current.case_id !== caseId && current.case_id !== resolvedCaseId)) {
+            return {};
+          }
+          // Belt-and-braces against out-of-order landings of concurrent
+          // refreshes: never move a terminal activeCase back to an active
+          // state.
+          const currentIsTerminal = current.state === 'resolved' || current.state === 'closed';
+          const rowIsTerminal = row.state === 'resolved' || row.state === 'closed';
+          if (currentIsTerminal && !rowIsTerminal) return {};
+
+          // Keep the current id: swapping identity mid-reconciliation is the
+          // id-mapping manager's job, not a side effect of hydration.
+          return { activeCase: { ...current, ...row, case_id: current.case_id } };
+        });
+      } catch (error) {
+        // warn, not debug: this is the only recovery on the post-409 path and
+        // the only source of closure metadata on case select, and debug logs
+        // are dropped in production builds.
+        log.warn('Active-case refresh failed', { caseId, error });
+      }
     },
 
     reconcileActiveCaseState: async () => {

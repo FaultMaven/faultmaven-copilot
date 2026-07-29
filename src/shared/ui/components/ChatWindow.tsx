@@ -48,7 +48,6 @@ interface ConversationItem {
   // v3.1.0 Evidence-centric fields
   evidenceRequests?: EvidenceRequest[];
   investigationMode?: InvestigationMode;
-  caseStatus?: CaseState;
 
   suggestedActions?: SuggestedAction[] | null;
   commandValidation?: CommandValidation | null;

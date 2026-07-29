@@ -23,7 +23,6 @@ export type { UserCase };
 
 /**
  * Base conversation item interface - matches ChatWindow.tsx (v3.1.0)
- * Updated 2026-01-30: Added case state tracking fields per backend message storage (commit b434152a)
  */
 export interface ConversationItem {
   id: string;
@@ -38,13 +37,6 @@ export interface ConversationItem {
   // v3.1.0 Evidence-centric fields
   evidenceRequests?: EvidenceRequest[];
   investigationMode?: InvestigationMode;
-  caseStatus?: CaseState;
-
-  // Case state tracking fields (added 2026-01-30 per commit b434152a)
-  // These track case state at the time the message was created
-  case_state?: CaseState;  // Case status when this message was created
-  closure_reason?: string | null;  // If case was closed in this turn
-  closed_at?: string | null;  // Timestamp if case reached terminal state
 
   // DEPRECATED v3.0.0 fields (kept for backward compatibility)
   suggestedActions?: SuggestedAction[] | null;

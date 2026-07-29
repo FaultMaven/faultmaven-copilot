@@ -1,5 +1,5 @@
 // src/shared/ui/SidePanelApp.tsx
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { browser } from "wxt/browser";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
@@ -11,6 +11,7 @@ import { ErrorScreen } from "./components/ErrorScreen";
 import { AuthScreen } from "./components/AuthScreen";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
+import { CaseSnapshot, isCaseTransition } from "../../lib/state/case-reconcile";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch, markSessionEnding } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
@@ -119,9 +120,25 @@ function SidePanelAppContent() {
     initializeApp();
   }, [initializeApp]);
 
-  // Reconcile case state transitions
+  // Reconcile case state TRANSITIONS only (same case observed changing
+  // state). Keying this on raw activeCase state made every case select run
+  // reconcileActiveCaseState — which invalidates the sidebar list cache and
+  // bumps the refresh trigger — costing a full network list fetch per click.
+  // A case switch now just resets the baseline; genuine transitions (turn
+  // responses, the /ui sync discovering an out-of-band change, terminal
+  // hydration on reopen) still reconcile. See isCaseTransition for the
+  // accepted reopen false positive.
+  const prevCaseSnapshotRef = useRef<CaseSnapshot>({ id: null, state: null });
   useEffect(() => {
-    reconcileActiveCaseState();
+    const next: CaseSnapshot = {
+      id: activeCase?.case_id ?? null,
+      state: activeCase?.state ?? null
+    };
+    const prev = prevCaseSnapshotRef.current;
+    prevCaseSnapshotRef.current = next;
+    if (isCaseTransition(prev, next)) {
+      reconcileActiveCaseState();
+    }
   }, [activeCase?.case_id, activeCase?.state, reconcileActiveCaseState]);
 
   const handleAuthSuccess = async () => {
