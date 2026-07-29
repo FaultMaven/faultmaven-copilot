@@ -21,20 +21,12 @@ import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
 
-// The raw per-message shape the backend `/messages` endpoint returns, as consumed
-// by the delta fetch below. `getCaseConversation` is currently untyped (returns
-// `any`); typing the rows here makes the mapping type-checked. The base shape —
-// including the closed role vocabulary — derives from the generated OpenAPI
-// contract, so a backend vocabulary change surfaces on regen instead of drifting.
-type BackendConversationMessage = Message & {
-  // NOT in the generated contract: the backend /messages serializer never
-  // constructs these, so today they are always undefined at runtime. The
-  // downstream reads (terminal-state derivation in handleCaseSelect) are kept
-  // pending a backend-side decision on emitting them — tracked separately.
-  case_state?: UserCase['state'];
-  closure_reason?: string | null;
-  closed_at?: string | null;
-};
+// The `/messages` row shape is the generated contract `Message` type directly.
+// `getCaseConversation` is currently untyped (returns `any`); the cast in the
+// delta fetch below makes the mapping type-checked against the contract.
+// Case-level fields (state, closure_reason, closed_at) are deliberately NOT
+// read off message rows — the backend Message model never carries them; the
+// case-list row is the authoritative source (see refreshActiveCaseFromList).
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -55,6 +47,7 @@ export interface CasesSlice {
   togglePinnedCase: (caseId: string) => void;
   setCaseEvidence: (updater: Record<string, AttachmentResult[]> | ((prev: Record<string, AttachmentResult[]>) => Record<string, AttachmentResult[]>)) => void;
   handleCaseSelect: (caseId: string) => void;
+  refreshActiveCaseFromList: (caseId: string, opts?: { bypassCache?: boolean }) => Promise<void>;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -144,12 +137,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       set({ hasUnsavedNewChat: false, activeTab: 'copilot' });
 
       const caseMessages = get().conversations[caseId] || [];
-      const lastStatusMessage = [...caseMessages].reverse().find(m => m.case_state);
       set({
         activeCase: {
           case_id: caseId,
           title: selectCaseTitle({ store: get().conversationTitles[caseId] }, 'Loading...'),
-          state: (lastStatusMessage?.case_state || 'inquiry') as UserCase['state'],
+          // Placeholder until the list-row hydration below lands. Case-level
+          // state is NOT derivable from conversation items — the backend
+          // /messages rows never carry it.
+          state: 'inquiry',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           owner_id: '',
@@ -159,6 +154,13 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           message_count: caseMessages.length || 0
         }
       });
+
+      // Hydrate the placeholder from the authoritative case-list row
+      // (cache-first — warm whenever the sidebar just rendered the list).
+      // This is what restores state/closure_reason/closed_at on reopening a
+      // terminal case: ResolutionActionsCard and the case header read them
+      // off activeCase, and the ChatWindow /ui sync copies only `state`.
+      void get().refreshActiveCaseFromList(caseId);
 
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
@@ -217,7 +219,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // comment: a lower-bound hint, with the turn-floor + id-dedup merge
           // absorbing the over-read). Surfacing system turns to the user is a
           // UI decision, tracked separately.
-          const messages = ((data.messages ?? []) as BackendConversationMessage[]).filter(
+          const messages = ((data.messages ?? []) as Message[]).filter(
             (msg) => msg.role === 'user' || msg.role === 'assistant'
           );
           const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
@@ -227,10 +229,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             optimistic: false,
             originalId: msg.message_id,
             question: msg.role === 'user' ? msg.content : undefined,
-            response: msg.role === 'assistant' ? msg.content : undefined,
-            case_state: msg.case_state,
-            closure_reason: msg.closure_reason ?? null,
-            closed_at: msg.closed_at ?? null
+            response: msg.role === 'assistant' ? msg.content : undefined
           }));
           if (incoming.length > 0) {
             let appended = 0;
@@ -290,6 +289,58 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         })
         .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))
         .finally(() => inFlightDeltaFetches.delete(caseId));
+    },
+
+    refreshActiveCaseFromList: async (caseId, opts) => {
+      const resolvedCaseId = isOptimisticId(caseId)
+        ? idMappingManager.getRealId(caseId) || caseId
+        : caseId;
+      if (isOptimisticId(resolvedCaseId)) return; // no backend row yet
+
+      const epoch = getEpoch();
+      try {
+        let row: UserCase | undefined;
+        if (opts?.bypassCache) {
+          // Post-409 path: our copy of the case is known-stale, so the cached
+          // list (same age or older) is too.
+          await caseCacheManager.invalidateCache();
+        } else {
+          const cached = await caseCacheManager.getCachedCases();
+          row = cached?.find((c) => c.case_id === resolvedCaseId);
+        }
+        if (!row) {
+          const cases = await getUserCases({ limit: DEFAULT_CASE_LIST_LIMIT, offset: 0 });
+          row = cases.find((c) => c.case_id === resolvedCaseId);
+        }
+        if (!row) return;
+        if (epoch !== getEpoch()) {
+          log.info('Session changed during case refresh — discarding', { caseId });
+          return;
+        }
+
+        const freshRow = row;
+        set((state) => {
+          const current = state.activeCase;
+          // Guard on identity: the user may have switched cases while the
+          // fetch was in flight. The optimistic id may have been reconciled
+          // to the real id in the meantime, so accept either.
+          if (!current || (current.case_id !== caseId && current.case_id !== resolvedCaseId)) {
+            return {};
+          }
+          // Never move a terminal activeCase back to an active state off a
+          // stale list row (the cache TTL is minutes; a case resolved this
+          // session can be ahead of it). Same-direction updates apply fully.
+          const currentIsTerminal = current.state === 'resolved' || current.state === 'closed';
+          const rowIsTerminal = freshRow.state === 'resolved' || freshRow.state === 'closed';
+          if (currentIsTerminal && !rowIsTerminal) return {};
+
+          // Keep the current id: swapping identity mid-reconciliation is the
+          // id-mapping manager's job, not a side effect of hydration.
+          return { activeCase: { ...current, ...freshRow, case_id: current.case_id } };
+        });
+      } catch (error) {
+        log.debug('Active-case refresh from case list failed', { caseId, error });
+      }
     },
 
     reconcileActiveCaseState: async () => {

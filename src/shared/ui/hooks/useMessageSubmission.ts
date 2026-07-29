@@ -13,7 +13,6 @@ import {
   QueryIntent,
   authManager,
   generateCaseTitle,
-  getCaseConversation,
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
@@ -262,31 +261,11 @@ export function useMessageSubmission() {
               expectedVersion: classified.expectedVersion,
               actualVersion: classified.actualVersion,
             });
-            getCaseConversation(caseId)
-              .then(data => {
-                const fresh = (data?.messages ?? []) as Array<{
-                  message_id: string;
-                  case_state?: string;
-                  closure_reason?: string | null;
-                  closed_at?: string | null;
-                }>;
-                const last = fresh[fresh.length - 1];
-                if (last?.case_state) {
-                  setActiveCase((prev: UserCase | null) => {
-                    if (prev && prev.state !== last.case_state) {
-                      log.info('activeCase status refreshed after 409', {
-                        oldStatus: prev.state,
-                        newStatus: last.case_state,
-                      });
-                      return { ...prev, state: last.case_state as UserCase['state'] };
-                    }
-                    return prev;
-                  });
-                }
-              })
-              .catch(refreshErr => {
-                log.debug('Post-409 case refresh failed', refreshErr);
-              });
+            // The conflict means our copy of the case is stale — refresh from
+            // the authoritative case-list row, bypassing the list cache (it is
+            // as stale as we are). The old recovery read case_state off the
+            // last /messages row, a field the backend never emits there.
+            void useAppStore.getState().refreshActiveCaseFromList(caseId, { bypassCache: true });
           }
 
           // Mark the op failed WITHOUT rolling back: the default rollback would

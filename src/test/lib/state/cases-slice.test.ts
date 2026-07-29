@@ -17,7 +17,8 @@ vi.mock('wxt/browser', () => ({
 
 vi.mock('../../../lib/api', () => ({
   getCaseConversation: vi.fn().mockResolvedValue({ messages: [] }),
-  getUserCases: vi.fn().mockResolvedValue([])
+  getUserCases: vi.fn().mockResolvedValue([]),
+  DEFAULT_CASE_LIST_LIMIT: 100
 }));
 
 vi.mock('../../../lib/utils/logger', () => ({
@@ -203,6 +204,70 @@ describe('cases-slice', () => {
 
       const conv = useAppStore.getState().conversations['case-7'];
       expect(conv.map((m: any) => m.id)).toEqual(['u250', 'a250']);
+    });
+  });
+
+  describe('refreshActiveCaseFromList', () => {
+    const closedRow = {
+      case_id: 'case-h1',
+      title: 'Hydrated',
+      state: 'closed',
+      created_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-02T00:00:00Z',
+      owner_id: 'u1',
+      organization_id: 'o1',
+      closure_reason: 'inquiry_only',
+      closed_at: '2026-07-02T00:00:00Z'
+    };
+
+    it('hydrates activeCase state and closure fields from the case-list row on select', async () => {
+      // The /messages rows never carry case-level state, so reopening a
+      // terminal case must get state/closure_reason/closed_at from the
+      // case-list row — ResolutionActionsCard reads them off activeCase.
+      (api.getUserCases as any).mockResolvedValue([closedRow]);
+
+      useAppStore.getState().handleCaseSelect('case-h1');
+      // Placeholder first: synchronous select renders immediately.
+      expect(useAppStore.getState().activeCase?.state).toBe('inquiry');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const ac = useAppStore.getState().activeCase!;
+      expect(ac.state).toBe('closed');
+      expect(ac.closure_reason).toBe('inquiry_only');
+      expect(ac.closed_at).toBe('2026-07-02T00:00:00Z');
+    });
+
+    it('does not regress a terminal activeCase to an active state from a stale list row', async () => {
+      (api.getUserCases as any).mockResolvedValue([
+        { ...closedRow, case_id: 'case-h2', state: 'investigating', closure_reason: null, closed_at: null }
+      ]);
+      useAppStore.setState({
+        activeCase: {
+          ...closedRow,
+          case_id: 'case-h2',
+          state: 'resolved',
+          closure_reason: null
+        } as any
+      });
+
+      await useAppStore.getState().refreshActiveCaseFromList('case-h2');
+
+      expect(useAppStore.getState().activeCase?.state).toBe('resolved');
+    });
+
+    it('does not touch activeCase when the user switched cases mid-fetch', async () => {
+      let resolveFetch: (v: any) => void;
+      (api.getUserCases as any).mockReturnValue(new Promise((r) => { resolveFetch = r; }));
+      useAppStore.setState({
+        activeCase: { ...closedRow, case_id: 'case-other', state: 'inquiry', closure_reason: null, closed_at: null } as any
+      });
+
+      const p = useAppStore.getState().refreshActiveCaseFromList('case-h3');
+      resolveFetch!([{ ...closedRow, case_id: 'case-h3' }]);
+      await p;
+
+      expect(useAppStore.getState().activeCase?.case_id).toBe('case-other');
+      expect(useAppStore.getState().activeCase?.state).toBe('inquiry');
     });
   });
 

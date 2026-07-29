@@ -427,9 +427,9 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
 
 /**
  * One page of the backend `/messages` response. Message objects are kept loose
- * (Record) because their shape differs from the canonical `Message` type
- * (they additionally carry turn_number / case_state / closure_reason) and the
- * consumers read those fields directly.
+ * (Record) here; the consumer casts rows to the generated contract `Message`
+ * type at the use site (see the delta merge in cases-slice). Rows carry only
+ * message-level fields — case-level state is never present on them.
  */
 interface MessagesPage {
   messages?: Record<string, unknown>[];
