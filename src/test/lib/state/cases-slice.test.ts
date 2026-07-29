@@ -141,6 +141,28 @@ describe('cases-slice', () => {
       expect(conv.every((m: any) => m.question || m.response)).toBe(true);
     });
 
+    it('drops an out-of-vocabulary role instead of committing a contentless item', async () => {
+      // The role filter is an ALLOW-list (user/assistant), not a 'system'
+      // deny-list. A role outside the contract vocabulary must degrade the
+      // same way 'system' does — dropped, offset under-counted — because a
+      // retained unmapped row would be an invisible committed item whose
+      // message_id permanently blocks a corrected re-fetch via id dedup.
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
+          { message_id: 'm-x', role: 'tool', content: 'hypothetical future role', turn_number: 1 },
+          { message_id: 'm-2', role: 'assistant', content: 'looking into it', turn_number: 1 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-vocab');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-vocab'];
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-2']);
+      expect(conv.every((m: any) => m.question || m.response)).toBe(true);
+    });
+
     it('does not re-grow a bounded (suffix) conversation: incoming below the local turn floor is dropped', async () => {
       // Local copy has been trimmed to a most-recent suffix (floor turn = 200).
       // The delta fetch over-reads and returns the trimmed head (turn 50); it must
