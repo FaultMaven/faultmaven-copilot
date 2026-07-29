@@ -14,6 +14,11 @@ import { components } from './api.generated';
 export type CaseState = 'inquiry' | 'investigating' | 'resolved' | 'closed';
 export type CaseDetail = components['schemas']['CaseDetail'];
 
+// Conversation message row from GET /cases/{id}/messages. Deriving from the
+// generated contract keeps the closed role vocabulary a regen-checked fact
+// rather than a hand-copy (see the author_id drift note in lib/api/types).
+export type Message = components['schemas']['Message'];
+
 /**
  * User-Facing Case Status Types (4 values)
  * Phases: inquiry, investigating (active work)

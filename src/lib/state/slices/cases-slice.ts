@@ -6,7 +6,7 @@ import {
   getCaseConversation,
   getUserCases
 } from '../../../lib/api';
-import type { UserCase } from '../../../types/case';
+import type { Message, UserCase } from '../../../types/case';
 import {
   idMappingManager,
   OptimisticConversationItem
@@ -23,17 +23,18 @@ const log = createLogger('CasesSlice');
 
 // The raw per-message shape the backend `/messages` endpoint returns, as consumed
 // by the delta fetch below. `getCaseConversation` is currently untyped (returns
-// `any`); this narrows the fields we actually read so the mapping is type-checked.
-interface BackendConversationMessage {
-  message_id: string;
-  created_at: string;
-  turn_number: number;
-  role: string;
-  content: string;
+// `any`); typing the rows here makes the mapping type-checked. The base shape —
+// including the closed role vocabulary — derives from the generated OpenAPI
+// contract, so a backend vocabulary change surfaces on regen instead of drifting.
+type BackendConversationMessage = Message & {
+  // NOT in the generated contract: the backend /messages serializer never
+  // constructs these, so today they are always undefined at runtime. The
+  // downstream reads (terminal-state derivation in handleCaseSelect) are kept
+  // pending a backend-side decision on emitting them — tracked separately.
   case_state?: UserCase['state'];
   closure_reason?: string | null;
   closed_at?: string | null;
-}
+};
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -204,17 +205,20 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
             return;
           }
-          // Drop system turns. The backend role CHECK admits 'system' (e.g. the
-          // runbook-conversion notification) but this conversation model is
-          // strictly question/response: a system row maps to an item with BOTH
-          // `question` and `response` undefined, which ChatWindow renders as
-          // nothing while it still consumes an id and a turn slot. Filtering is
-          // safe against the offset below — it only ever UNDER-counts, the
-          // tolerated direction (see the offset comment: a lower-bound hint,
-          // with the turn-floor + id-dedup merge absorbing the over-read).
-          // Surfacing these to the user is a UI decision, tracked separately.
+          // Keep only the roles this strictly question/response model can
+          // display. 'system' rows (e.g. the runbook-conversion notification)
+          // are deliberately dropped, and this allow-list extends the same
+          // treatment to any role outside the contract vocabulary: an unmapped
+          // row would otherwise become an item with BOTH `question` and
+          // `response` undefined — invisible in ChatWindow, yet committed, so
+          // its message_id would permanently block a corrected re-fetch via
+          // the id-dedup below. Dropping is safe against the offset — it only
+          // ever UNDER-counts, the tolerated direction (see the offset
+          // comment: a lower-bound hint, with the turn-floor + id-dedup merge
+          // absorbing the over-read). Surfacing system turns to the user is a
+          // UI decision, tracked separately.
           const messages = ((data.messages ?? []) as BackendConversationMessage[]).filter(
-            (msg) => msg.role !== 'system'
+            (msg) => msg.role === 'user' || msg.role === 'assistant'
           );
           const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
             id: msg.message_id,
@@ -223,12 +227,13 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             optimistic: false,
             originalId: msg.message_id,
             question: msg.role === 'user' ? msg.content : undefined,
-            response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
+            response: msg.role === 'assistant' ? msg.content : undefined,
             case_state: msg.case_state,
             closure_reason: msg.closure_reason ?? null,
             closed_at: msg.closed_at ?? null
           }));
           if (incoming.length > 0) {
+            let appended = 0;
             set((state) => {
               const existing = state.conversations[caseId] || [];
               const existingIds = new Set(existing.map((m) => m.id));
@@ -256,6 +261,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
                   (typeof m.turn_number !== 'number' || m.turn_number >= minLocalTurn)
               );
               if (fresh.length === 0) return state;
+              appended = fresh.length;
 
               let splitAt = existing.length;
               for (let i = existing.length - 1; i >= 0; i--) {
@@ -274,7 +280,12 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
                 }
               };
             });
-            log.info('Conversation delta applied', { caseId, added: incoming.length, offset });
+            // `appended` is the post-dedup count actually merged; the raw
+            // fetch size would over-report on the capped-conversation
+            // over-read, where everything is dropped by the merge.
+            if (appended > 0) {
+              log.info('Conversation delta applied', { caseId, added: appended, offset });
+            }
           }
         })
         .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))

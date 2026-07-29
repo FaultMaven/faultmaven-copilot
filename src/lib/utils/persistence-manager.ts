@@ -15,30 +15,6 @@ import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('PersistenceManager');
 
-// Backend API message format (from /api/v1/cases/{case_id}/messages)
-interface BackendMessage {
-  id?: string;
-  message_id?: string;
-  role: 'user' | 'agent' | 'assistant';
-  content: string;
-  created_at: string;
-}
-
-// Enhanced API response format
-interface EnhancedCaseMessagesResponse {
-  messages: BackendMessage[];
-  total_count: number;
-  retrieved_count: number;
-  has_more: boolean;
-  next_offset?: number;
-  debug_info?: {
-    redis_key?: string;
-    redis_operation_time_ms?: number;
-    storage_errors?: string[];
-    message_parsing_errors?: number;
-  };
-}
-
 export interface PersistenceState {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
