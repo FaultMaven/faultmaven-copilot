@@ -108,7 +108,7 @@ describe('cases-slice', () => {
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'real-1', role: 'user', content: 'dup' },   // already present locally
-          { message_id: 'real-2', role: 'agent', content: 'new' }
+          { message_id: 'real-2', role: 'assistant', content: 'new' }
         ]
       });
 
@@ -152,7 +152,7 @@ describe('cases-slice', () => {
         messages: [
           { message_id: 'old50', role: 'user', content: 'trimmed head', turn_number: 50 },
           { message_id: 'm200', role: 'user', content: 'overlap', turn_number: 200 },
-          { message_id: 'new201', role: 'agent', content: 'genuinely new', turn_number: 201 }
+          { message_id: 'new201', role: 'assistant', content: 'genuinely new', turn_number: 201 }
         ]
       });
 
@@ -172,7 +172,7 @@ describe('cases-slice', () => {
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'u250', role: 'user', content: 'q', turn_number: 250 },
-          { message_id: 'a250', role: 'agent', content: 'a', turn_number: 250 }
+          { message_id: 'a250', role: 'assistant', content: 'a', turn_number: 250 }
         ]
       });
 

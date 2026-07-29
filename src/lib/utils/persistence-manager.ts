@@ -19,7 +19,7 @@ const log = createLogger('PersistenceManager');
 interface BackendMessage {
   id?: string;
   message_id?: string;
-  role: 'user' | 'agent' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   created_at: string;
 }

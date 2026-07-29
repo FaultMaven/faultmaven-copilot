@@ -28,7 +28,10 @@ interface BackendConversationMessage {
   message_id: string;
   created_at: string;
   turn_number: number;
-  role: string;
+  // Backend role vocabulary is closed: `case_messages` carries a CHECK
+  // constraint admitting exactly these three values, and the serializer passes
+  // the column through unchanged.
+  role: 'user' | 'assistant' | 'system';
   content: string;
   case_state?: UserCase['state'];
   closure_reason?: string | null;
@@ -223,7 +226,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             optimistic: false,
             originalId: msg.message_id,
             question: msg.role === 'user' ? msg.content : undefined,
-            response: (msg.role === 'agent' || msg.role === 'assistant') ? msg.content : undefined,
+            response: msg.role === 'assistant' ? msg.content : undefined,
             case_state: msg.case_state,
             closure_reason: msg.closure_reason ?? null,
             closed_at: msg.closed_at ?? null
