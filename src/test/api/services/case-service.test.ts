@@ -469,10 +469,12 @@ describe('Case Service', () => {
     // display; ResolutionActionsCard sources its label from here.
     it('covers exactly the backend closure reasons plus the defensive fallback', () => {
       expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
-        'closed_after_investigation',
         'closed_insufficient_evidence',
+        'closed_rca_infeasible',
         'inquiry_only',
+        'mitigation_sufficient',
         'other',
+        'solution_deferred',
       ]);
     });
 

@@ -83,9 +83,10 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * display across the extension (CLOSED status pill, CaseDetails closure row, and
  * the ResolutionActionsCard compact banner via `shortLabel`).
  *
- * The three real keys mirror VALID_CLOSURE_REASONS in
+ * The real keys mirror VALID_CLOSURE_REASONS in
  * faultmaven/modules/case/domain/models.py exactly (inquiry_only,
- * closed_after_investigation, closed_insufficient_evidence). `label` is the full
+ * solution_deferred, closed_rca_infeasible, mitigation_sufficient,
+ * closed_insufficient_evidence). `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already
  * prefixed with "Closed". The 'other' fallback is a defensive default for cases
  * where closure_reason is null/unrecognized (used by HeaderSummary and
@@ -98,17 +99,29 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Q&A session completed, no investigation needed.',
   },
-  closed_after_investigation: {
-    label: 'Closed after investigation',
-    shortLabel: 'Closed',
+  solution_deferred: {
+    label: 'Fix deferred',
+    shortLabel: 'Fix Deferred',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
-    description: 'Investigation occurred but no resolution was reached.',
+    description: 'Cause identified and a fix documented; implementation happens out-of-band.',
+  },
+  closed_rca_infeasible: {
+    label: 'Root cause unreachable',
+    shortLabel: 'Cause Unreachable',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'The cause cannot be reached for this problem; the mitigation is the accepted strategy.',
+  },
+  mitigation_sufficient: {
+    label: 'Stabilized by mitigation',
+    shortLabel: 'Stabilized',
+    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
+    description: 'A verified mitigation relieved the symptom; root-cause analysis was deferred.',
   },
   closed_insufficient_evidence: {
     label: 'Insufficient evidence',
     shortLabel: 'Insufficient Evidence',
     bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
-    description: 'Investigation closed at a data wall; the honest partial is preserved.',
+    description: 'Closed without establishing the problem or its cause; the honest partial is preserved.',
   },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
