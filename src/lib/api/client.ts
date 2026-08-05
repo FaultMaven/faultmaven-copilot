@@ -223,7 +223,7 @@ export async function authenticatedFetch(
       const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
 
       const errorData = await response.json().catch(() => ({ detail: 'Rate limit exceeded' }));
-      const error: any = new Error(errorData.detail || `Rate limit exceeded. Please try again in ${retryAfterSeconds} seconds.`);
+      const error: any = new Error(errorData.detail || errorData.message || `Rate limit exceeded. Please try again in ${retryAfterSeconds} seconds.`);
       error.name = 'RateLimitError';
       error.status = 429;
       error.retryAfter = retryAfterSeconds;
