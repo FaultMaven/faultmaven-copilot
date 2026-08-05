@@ -127,6 +127,24 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
 };
 
 /**
+ * Resolve a closure reason to something renderable — never undefined.
+ *
+ * Every consumer needs the same degrade-to-`other` behaviour, and hand-rolling
+ * it three times is what let one of them drift: CaseDetails required a map hit
+ * and so dropped its Closure row entirely for a reason the build did not know,
+ * while ResolutionActionsCard and HeaderSummary fell back. That row is shown
+ * only when the closure summary was SKIPPED, i.e. when it is the user's only
+ * signal of why the case closed.
+ *
+ * An unknown reason is not hypothetical: a case can still carry a value retired
+ * from the backend vocabulary, and the backend can add a reason before this
+ * extension ships.
+ */
+export function closureDisplayFor(reason: string | null | undefined) {
+  return (reason && CLOSURE_DISPLAY_INFO[reason]) || CLOSURE_DISPLAY_INFO.other;
+}
+
+/**
  * Evidence source type display info (for EvidenceSummary.type badge).
  */
 export const EVIDENCE_TYPE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; badgeClass: string }> = {

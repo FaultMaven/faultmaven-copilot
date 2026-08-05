@@ -13,7 +13,7 @@ import type {
   UserCase,
 } from '../../../../types/case';
 import type { UserCaseState } from '../../../../lib/api';
-import { STAGE_DISPLAY_INFO, CLOSURE_DISPLAY_INFO, STATUS_LABELS } from '../../../../lib/api/services/case-service';
+import { STAGE_DISPLAY_INFO, closureDisplayFor, STATUS_LABELS } from '../../../../lib/api/services/case-service';
 import { SeverityChip, ChevronDownIcon, getPhaseIcon, formatTimeAgo } from './shared';
 import { createLogger } from '~/lib/utils/logger';
 
@@ -196,7 +196,7 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     if (status === caseData.state) {
       if (status === 'closed') {
         const reason = activeCase?.closure_reason;
-        const info = (reason && CLOSURE_DISPLAY_INFO[reason]) || CLOSURE_DISPLAY_INFO.other;
+        const info = closureDisplayFor(reason);
         return `Closed - ${info.label}`;
       }
     }

@@ -36,7 +36,7 @@ import {
   isCaseResolved,
   isCaseClosed,
 } from '../../../../types/case';
-import { CLOSURE_DISPLAY_INFO } from '../../../../lib/api/services/case-service';
+import { closureDisplayFor } from '../../../../lib/api/services/case-service';
 import { filesApi } from '../../../../lib/api/files-service';
 import { EvidenceDetailsModal } from './EvidenceDetailsModal';
 import {
@@ -343,7 +343,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
       // A backend that adds a reason before this build ships, or a case still
       // carrying a retired one, both land here.
       if (reason) {
-        const info = CLOSURE_DISPLAY_INFO[reason] ?? CLOSURE_DISPLAY_INFO.other;
+        const info = closureDisplayFor(reason);
         closureRow = (
           <DetailRow label="Closure">
             {info.label} — {info.description}
