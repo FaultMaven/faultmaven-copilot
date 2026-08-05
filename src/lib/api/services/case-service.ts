@@ -92,42 +92,36 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * where closure_reason is null/unrecognized (used by HeaderSummary and
  * ResolutionActionsCard; CaseDetails suppresses the closure row in that case).
  */
-export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; bannerClass: string; description: string }> = {
+export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; description: string }> = {
   inquiry_only: {
     label: 'Inquiry Only',
     shortLabel: 'Inquiry Only',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Q&A session completed, no investigation needed.',
   },
   solution_deferred: {
     label: 'Fix deferred',
     shortLabel: 'Fix Deferred',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Cause identified and a fix documented; implementation happens out-of-band.',
   },
   closed_rca_infeasible: {
     label: 'Root cause unreachable',
     shortLabel: 'Cause Unreachable',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'The cause cannot be reached for this problem; the mitigation is the accepted strategy.',
   },
   mitigation_sufficient: {
     label: 'Stabilized by mitigation',
     shortLabel: 'Stabilized',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'A verified mitigation relieved the symptom; root-cause analysis was deferred.',
   },
   closed_insufficient_evidence: {
     label: 'Insufficient evidence',
     shortLabel: 'Insufficient Evidence',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Closed without establishing the problem or its cause; the honest partial is preserved.',
   },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
     label: 'Other',
     shortLabel: 'Closed',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Case closed.',
   },
 };

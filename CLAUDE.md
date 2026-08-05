@@ -487,7 +487,7 @@ When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is
 
 **Closed cases:**
 
-- "Case Closed" + closure reason label — the `shortLabel` from `CLOSURE_DISPLAY_INFO` (case-service.ts), keyed on the engine-derived `closure_reason` (Inquiry Only / Closed / Insufficient Evidence; single source of truth mirroring backend `VALID_CLOSURE_REASONS`)
+- "Case Closed" + closure reason label — the `shortLabel` from `CLOSURE_DISPLAY_INFO` (case-service.ts), keyed on the engine-derived `closure_reason`. Five reasons, mirroring backend `VALID_CLOSURE_REASONS`: Inquiry Only / Fix Deferred / Cause Unreachable / Stabilized / Insufficient Evidence. Every consumer falls back to the `other` entry for a reason this build does not know, so an unrecognized value degrades to a readable row rather than disappearing
 - All closure reasons share the same neutral styling and a simpler "Ask questions about this case." affordance line
 - Duration / turn stats on their own line
 
