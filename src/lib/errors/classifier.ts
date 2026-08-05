@@ -272,9 +272,10 @@ export class ErrorClassifier {
       }
     }
 
-    // Check for generic error detail
-    if (error.response?.data?.detail && typeof error.response.data.detail === 'string') {
-      fieldErrors['general'] = error.response.data.detail;
+    // Check for generic error detail or protection error message
+    const errorText = error.response?.data?.detail || error.response?.data?.message;
+    if (errorText && typeof errorText === 'string') {
+      fieldErrors['general'] = errorText;
     }
 
     return fieldErrors;

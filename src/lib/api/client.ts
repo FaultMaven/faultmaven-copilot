@@ -236,7 +236,7 @@ export async function authenticatedFetch(
     // Enrich non-OK responses with HTTP status for error classification
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      const error: any = new Error(errorData.detail || `HTTP ${response.status}`);
+      const error: any = new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
       error.name = 'HTTPError';
       error.status = response.status;
       error.response = { data: errorData };
