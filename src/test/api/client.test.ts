@@ -208,3 +208,81 @@ describe('prepareBody', () => {
     });
   });
 });
+
+// The backend's protection middleware answers with `ProtectionErrorResponse`,
+// which has no `detail` field at all — the text is in `message`. Reading only
+// `detail` meant a rate-limited request reported a fabricated generic string
+// and the server's own explanation was discarded (fm#994).
+//
+// These two are the mutation guard for the change: delete `errorBodyText`'s
+// `message` branch, or revert either call site to `errorData.detail || …`, and
+// they fail. Before them the whole suite stayed green either way.
+describe('authenticatedFetch — protection-shaped error bodies (fm#994)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getAuthHeaders as any).mockResolvedValue({});
+    storageGet.mockResolvedValue({});
+  });
+
+  it('surfaces the server text from a 429 that carries `message` and no `detail`', async () => {
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: { get: (n: string) => (n.toLowerCase() === 'retry-after' ? '60' : null) },
+      json: async () => ({
+        error: 'rate_limit_exceeded',
+        message: 'Rate limit exceeded: per_session_read (121/120)',
+        retry_after: 60
+      })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/cases/abc/ui')).rejects.toMatchObject({
+      name: 'RateLimitError',
+      status: 429,
+      retryAfter: 60,
+      message: 'Rate limit exceeded: per_session_read (121/120)'
+    });
+  });
+
+  it('surfaces the server text from a non-429 body that carries `message`', async () => {
+    // Deduplication answers 409 in the same shape.
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: { get: () => null },
+      json: async () => ({ error: 'duplicate_request', message: 'Duplicate request detected' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/cases/abc/turns')).rejects.toMatchObject({
+      name: 'HTTPError',
+      status: 409,
+      message: 'Duplicate request detected'
+    });
+  });
+
+  it('still prefers `detail` when the body is FastAPI-shaped', async () => {
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 404,
+      headers: { get: () => null },
+      json: async () => ({ detail: 'Case not found' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/cases/nope')).rejects.toMatchObject({
+      message: 'Case not found'
+    });
+  });
+
+  it('falls back to its own text when the body carries neither', async () => {
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: { get: () => null },
+      json: async () => ({ error: 'internal' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/cases')).rejects.toMatchObject({
+      message: 'HTTP 500'
+    });
+  });
+});

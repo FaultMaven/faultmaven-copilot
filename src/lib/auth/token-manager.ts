@@ -14,6 +14,7 @@ import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { retryWithBackoff, isRetryableError } from '../utils/retry';
+import { errorBodyText } from '../errors/error-body';
 import { getAuthConfig } from './auth-config';
 
 const log = createLogger('TokenManager');
@@ -214,7 +215,7 @@ export class TokenManager {
     if (!response.ok) {
       const body = await response.json().catch(() => ({} as any));
       const err: any = new Error(
-        `Token refresh failed: ${body.detail || body.error_description || body.error || response.status}`
+        `Token refresh failed: ${errorBodyText(body) || body.error_description || body.error || response.status}`
       );
       err.status = response.status;
       // Definitive (4xx except 408/429) → clear tokens so the user re-authenticates.

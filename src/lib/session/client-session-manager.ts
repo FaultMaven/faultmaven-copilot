@@ -4,6 +4,7 @@ import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
 import { getAuthHeaders } from '../api/fetch-utils';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
+import { errorBodyText } from '../errors/error-body';
 
 const log = createLogger('ClientSessionManager');
 
@@ -145,7 +146,25 @@ export class ClientSessionManager {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Failed to create session: ${response.status}`);
+      // `detail` is FastAPI's key; `message` is the one the protection
+      // middleware uses, and a rate-limited session create is answered by the
+      // protection middleware — so reading `detail` alone showed "Failed to
+      // create session: 429" and threw away what the server said (fm#994).
+      const error: any = new Error(
+        errorBodyText(errorData) || `Failed to create session: ${response.status}`
+      );
+      // Carry the status and the server's own window, in the shape
+      // `ErrorClassifier` reads. Without them a 429 here classifies as a
+      // generic error: no RateLimitError, so no "we'll try again in N
+      // seconds" and no Retry-After honoured by the resilient-operation
+      // wrapper — it would retry on plain backoff and burn its attempts.
+      error.status = response.status;
+      const retryAfter = response.headers?.get?.('Retry-After');
+      if (retryAfter) {
+        const seconds = parseInt(retryAfter, 10);
+        if (Number.isFinite(seconds)) error.retryAfter = seconds;
+      }
+      throw error;
     }
 
     const sessionResponse: SessionCreateResponse = await response.json();

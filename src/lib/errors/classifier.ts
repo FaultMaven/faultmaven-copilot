@@ -272,7 +272,17 @@ export class ErrorClassifier {
       }
     }
 
-    // Check for generic error detail
+    // Check for generic error detail.
+    //
+    // Deliberately does NOT fall back to `data.message`. This method is reached
+    // only from `classifyHttpError` for 400 and 422, and every backend body at
+    // those statuses uses `detail` — FastAPI's own validation handler, the
+    // ValidationException handler, and the idempotency middleware's 400 all do.
+    // `message` is the `ProtectionErrorResponse` shape, which is only ever
+    // emitted at 409, 429 and 503. A fallback here would be a branch nothing
+    // can reach, and an unreachable branch reads as coverage that isn't there.
+    // The `message` shape is handled where it actually arrives: in
+    // `createHttpErrorFromResponse` and `authenticatedFetch`.
     if (error.response?.data?.detail && typeof error.response.data.detail === 'string') {
       fieldErrors['general'] = error.response.data.detail;
     }

@@ -6,6 +6,7 @@
  */
 
 import type { APIError } from '../api/types';
+import { errorBodyText } from './error-body';
 
 /**
  * Structured HTTP error with status code and detail message.
@@ -177,7 +178,23 @@ export async function createHttpErrorFromResponse(response: Response): Promise<H
     const data = await response.json();
     if (data && typeof data === 'object') {
       apiError = data as APIError;
-      detail = data.detail;
+      // Two body shapes reach here. FastAPI's handlers put the human-readable
+      // text in `detail`; the backend's protection middleware answers with
+      // `ProtectionErrorResponse`, which has no `detail` at all and puts the
+      // text in `message` — that is the shape of every 429 (rate limiting) and
+      // the 409/503 from deduplication. Reading only `detail` degraded all of
+      // them to "HTTP 429: Too Many Requests" and dropped the retry guidance
+      // with it (fm#994). This path is not a niche one: `heartbeatSession`
+      // deliberately bypasses `authenticatedFetch`, and the auth, case,
+      // knowledge and session services all throw through here.
+      //
+      // `errorBodyText` returns a string or nothing, so a 422's *array* of
+      // field errors never lands here: that is structured data, not a message,
+      // and using it as one produced "[object Object]" as the error text. It
+      // stays available in full on `apiError`, which is where a caller that
+      // wants field errors reads it — and `HttpError.detail` is declared
+      // `string`, so an array there was a lie about the type as well.
+      detail = errorBodyText(data);
     }
   } catch {
     // Failed to parse JSON, use status text

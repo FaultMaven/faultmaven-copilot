@@ -329,6 +329,46 @@ Each error provides:
 - `recovery` - Strategy for handling
 - `getDisplayOptions()` - Toast/modal/inline configuration
 
+#### Reading an error body: always `errorBodyText`
+
+The backend answers errors in **two shapes**, and which one you get depends on
+what refused the request:
+
+| Shape | Sent by | Statuses |
+|-------|---------|----------|
+| `{ detail: "…" }` | Every FastAPI handler — `HTTPException`, the validation handlers, the idempotency middleware | any |
+| `{ error, message, retry_after }` | `ProtectionErrorResponse`, from the protection middleware. **No `detail` field at all** | 429 rate limit, 409/503 deduplication |
+
+```typescript
+import { errorBodyText } from '~/lib/errors/error-body';
+
+const errorData = await response.json().catch(() => ({}));
+throw new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`);
+```
+
+**Never write `errorData.detail || '<fallback>'`.** It reads as complete and
+silently discards everything the server said on precisely the responses where
+the server said the most — a rate-limited request reported a fabricated generic
+string instead of its actual limit and window (fm#994). Thirteen call sites had
+independently written that chain. `src/test/lib/errors/error-body.test.ts` fails
+if a new one appears.
+
+`errorBodyText` returns **a string or nothing**, never an array: a 422 puts its
+per-field validation errors in `detail`, and using that as a message rendered
+`"[object Object]"`. Field errors are read from the body by
+`ErrorClassifier.extractFieldErrors`, which is the code that knows their shape.
+
+**Carry `status` and `retryAfter` too** when you throw from a raw `fetch`.
+`ErrorClassifier` needs them to produce a `RateLimitError` — without them a 429
+becomes an `UnknownError`, so no countdown and no Retry-After honoured by
+`resilientOperation`. See `client-session-manager.ts` for the shape.
+
+Note what the recovered text is *for*. On a 429 the chat reply and toast render
+`RateLimitError.userMessage` ("You're sending requests too quickly.") and its
+countdown — deliberately, because `per_session_read (121/120)` is diagnostic,
+not something to put in front of a user mid-conversation. The server's text
+surfaces in the failed-operations banner, in `error.message`, and in logs.
+
 ### Data Integrity for Optimistic Updates
 
 The `src/lib/utils/data-integrity.ts` module enforces strict separation between optimistic and real data:

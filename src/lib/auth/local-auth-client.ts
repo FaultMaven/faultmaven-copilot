@@ -11,6 +11,7 @@ import { browser } from 'wxt/browser';
 import { getApiUrl } from '../../config';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
+import { errorBodyText } from '../errors/error-body';
 import { enforceUserDataScope } from './user-scope';
 import type { AuthTokenResponse, APIError } from '../api/types';
 
@@ -86,7 +87,7 @@ export class LocalAuthClient {
 
         return {
           success: false,
-          error: errorData.detail || `Login failed: ${response.status}`
+          error: errorBodyText(errorData) || `Login failed: ${response.status}`
         };
       }
 
@@ -162,7 +163,7 @@ export class LocalAuthClient {
 
         return {
           success: false,
-          error: errorData.detail || `Registration failed: ${response.status}`
+          error: errorBodyText(errorData) || `Registration failed: ${response.status}`
         };
       }
 

@@ -4,6 +4,7 @@ import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
 import { HttpError, createHttpErrorFromResponse } from "../../errors/http-error";
+import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
 import {
   APIError,
@@ -294,7 +295,7 @@ export async function getCase(caseId: string): Promise<UserCase> {
   );
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({} as any));
-    throw new Error(errorData.detail || `Failed to get case: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`);
   }
   const caseData = await response.json();
   if (!caseData || !caseData.case_id) {
@@ -339,7 +340,7 @@ export async function getUserCases(filters?: {
   const response = await authenticatedFetchWithRetry(url.toString(), { method: 'GET', credentials: 'include' });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to get cases: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to get cases: ${response.status}`);
   }
   const data = await response.json().catch(() => ({ cases: [] }));
 
@@ -380,7 +381,7 @@ export async function createCase(
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({} as any));
-    throw new Error(errorData.detail || `Failed to create case: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to create case: ${response.status}`);
   }
 
   // Parse response - API returns CaseSummary directly per OpenAPI spec
@@ -420,7 +421,7 @@ export async function archiveCase(caseId: string): Promise<void> {
   });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to archive case: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to archive case: ${response.status}`);
   }
 }
 
@@ -457,7 +458,7 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
     const errorData: APIError = await response.json().catch(() => ({}));
     // Invalidate cache on failure to ensure consistency 
     await caseCacheManager.invalidateCache();
-    throw new Error(errorData.detail || `Failed to update case: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to update case: ${response.status}`);
   }
 
   // Optimistically update cache on success
@@ -506,7 +507,7 @@ export async function getCaseConversation(
 
     if (!response.ok) {
       const errorData: APIError = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Failed to get case conversation: ${response.status}`);
+      throw new Error(errorBodyText(errorData) || `Failed to get case conversation: ${response.status}`);
     }
 
     const page = (await response.json()) as MessagesPage;
@@ -612,7 +613,12 @@ export async function submitTurn(
     let detail: any = 'Validation failed (422)';
     try {
       const errJson = await response.json();
-      const inner = errJson?.detail?.error?.message || errJson?.detail || errJson;
+      // A 422 from the turn endpoint can carry a nested engine error; prefer
+      // that, then the body's ordinary text, then the raw body so nothing is
+      // lost for diagnosis. `errorBodyText` returns nothing for the array of
+      // field errors a plain FastAPI 422 carries, which falls through to the
+      // stringify below — the same result as before, stated deliberately.
+      const inner = errJson?.detail?.error?.message ?? errorBodyText(errJson) ?? errJson;
       if (typeof inner === 'string') detail = inner;
       else detail = JSON.stringify(inner);
     } catch {
@@ -700,7 +706,7 @@ export async function submitTurn(
     if (response.status === 404) {
       throw new Error('Case not found: Please refresh and try again');
     }
-    throw new Error(errorData.detail || `Failed to submit turn: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to submit turn: ${response.status}`);
   }
 
   return response.json();
@@ -756,7 +762,7 @@ export async function generateCaseTitle(
   }
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to generate case title: ${response.status}`);
+    throw new Error(errorBodyText(errorData) || `Failed to generate case title: ${response.status}`);
   }
   const result: TitleResponse = await response.json();
   const t = (result?.title || '').trim();
