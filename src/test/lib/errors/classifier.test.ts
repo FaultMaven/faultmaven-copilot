@@ -160,3 +160,79 @@ describe('ErrorClassifier', () => {
     expect(classified.category).toBe('rate_limit');
   });
 });
+
+// `extractFieldErrors` deliberately reads only `detail`, not the protection
+// middleware's `message`. That rests on a premise, not a coincidence: the method
+// is reached only from `classifyHttpError` for 400 and 422, and no backend body
+// at those statuses uses `message` — FastAPI's own validation handler, the
+// ValidationException handler and the idempotency middleware's 400 all send
+// `detail`. `message` is the ProtectionErrorResponse shape, emitted only at 409,
+// 429 and 503. A `message` fallback there would be an unreachable branch, which
+// reads as coverage that is not there (fm#994, review finding 3).
+//
+// These pin the premise: if a protection-shaped body ever started reaching field
+// extraction, the removal would need revisiting and this fails first.
+describe('ErrorClassifier — protection-shaped bodies are not validation errors', () => {
+  const protectionBody = {
+    error: 'rate_limit_exceeded',
+    message: 'Rate limit exceeded: per_session_read (121/120)',
+    retry_after: 60
+  };
+
+  /**
+   * An error shaped the way `client.ts` actually brands one.
+   *
+   * It must be a real Error: `ErrorClassifier.isHttpError` requires
+   * `instanceof Error`, so a plain object literal falls straight through to
+   * UnknownError and every negative assertion below would pass without ever
+   * exercising the status path.
+   */
+  function brandedHttpError(status: number, body: any, retryAfter?: number): Error {
+    const error: any = new Error(body.message ?? body.detail ?? 'error');
+    error.name = status === 429 ? 'RateLimitError' : 'HTTPError';
+    error.status = status;
+    if (retryAfter !== undefined) error.retryAfter = retryAfter;
+    error.response = { data: body };
+    return error;
+  }
+
+  it('the fixture really does reach the status path', () => {
+    // Guards the guard. If branding changes and these stop being seen as HTTP
+    // errors, the assertions below go vacuous instead of failing.
+    expect(ErrorClassifier.classify(brandedHttpError(429, protectionBody, 60)).category)
+      .not.toBe('unknown');
+  });
+
+  it('classifies a 429 carrying `message` as a rate limit, not a validation error', () => {
+    const classified: any = ErrorClassifier.classify(brandedHttpError(429, protectionBody, 60));
+
+    expect(classified.category).toBe('rate_limit');
+    expect(classified).toBeInstanceOf(UserFacingError);
+    expect(classified.fieldErrors).toBeUndefined();
+    // The server's own text survives classification.
+    expect(classified.message).toBe(protectionBody.message);
+  });
+
+  it.each([409, 503])('does not route a %i carrying `message` into field extraction', status => {
+    const classified: any = ErrorClassifier.classify(brandedHttpError(status, protectionBody));
+
+    // NOT asserted: that the category isn't 'validation'. A 409 is
+    // CaseVersionConflictError, which *is* categorised validation — it simply
+    // has its own `case 409` arm and never calls extractFieldErrors. The claim
+    // that matters is the absence of extracted field errors, not the label.
+    expect(classified.category).not.toBe('unknown');
+    expect(classified.fieldErrors).toBeUndefined();
+    expect(classified.message).toBe(protectionBody.message);
+  });
+
+  it('still extracts a string `detail` at 422, which is the shape that arrives there', () => {
+    const fieldErrors = ErrorClassifier.extractFieldErrors(
+      brandedHttpError(422, { detail: 'title must not be empty' })
+    );
+    expect(fieldErrors).toEqual({ general: 'title must not be empty' });
+  });
+
+  it('extracts nothing from a protection-shaped body — the branch that was removed', () => {
+    expect(ErrorClassifier.extractFieldErrors(brandedHttpError(429, protectionBody))).toEqual({});
+  });
+});
