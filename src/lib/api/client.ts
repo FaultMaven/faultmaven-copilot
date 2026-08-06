@@ -6,6 +6,7 @@ import { refreshSession } from './session-core';
 import { bumpEpoch } from '../state/session-epoch';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
+import { errorBodyText } from '../errors/error-body';
 
 const log = createLogger('APIClient');
 
@@ -223,7 +224,7 @@ export async function authenticatedFetch(
       const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
 
       const errorData = await response.json().catch(() => ({ detail: 'Rate limit exceeded' }));
-      const error: any = new Error(errorData.detail || errorData.message || `Rate limit exceeded. Please try again in ${retryAfterSeconds} seconds.`);
+      const error: any = new Error(errorBodyText(errorData) || `Rate limit exceeded. Please try again in ${retryAfterSeconds} seconds.`);
       error.name = 'RateLimitError';
       error.status = 429;
       error.retryAfter = retryAfterSeconds;
@@ -236,7 +237,7 @@ export async function authenticatedFetch(
     // Enrich non-OK responses with HTTP status for error classification
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      const error: any = new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+      const error: any = new Error(errorBodyText(errorData) || `HTTP ${response.status}`);
       error.name = 'HTTPError';
       error.status = response.status;
       error.response = { data: errorData };

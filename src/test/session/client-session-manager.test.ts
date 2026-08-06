@@ -257,3 +257,68 @@ describe('ClientSessionManager', () => {
     expect(manager1).toBe(manager2);
   });
 });
+
+// A rate-limited session create is answered by the backend's protection
+// middleware, whose body has no `detail` — the text is in `message`, and the
+// wait is in the `Retry-After` header. Reading `detail` alone showed "Failed to
+// create session: 429" and threw both away (fm#994).
+describe('ClientSessionManager — a refused session create', () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    vi.clearAllMocks();
+    (ClientSessionManager as any).instance = undefined;
+    mockBrowser.storage.local.get.mockResolvedValue({});
+  });
+
+  test('surfaces the server text and the retry window from a 429', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      headers: { get: (n: string) => (n.toLowerCase() === 'retry-after' ? '45' : null) },
+      json: () =>
+        Promise.resolve({
+          error: 'rate_limit_exceeded',
+          message: 'Rate limit exceeded: per_session (11/10)',
+          retry_after: 45
+        }),
+    } as unknown as Response);
+
+    const manager = ClientSessionManager.getInstance();
+
+    // The status and retryAfter are what let ErrorClassifier produce a
+    // RateLimitError; without them a 429 here becomes a generic error with no
+    // countdown and no honoured Retry-After.
+    await expect(manager.createSession()).rejects.toMatchObject({
+      message: 'Rate limit exceeded: per_session (11/10)',
+      status: 429,
+      retryAfter: 45
+    });
+  });
+
+  test('still prefers `detail` when the body is FastAPI-shaped', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      headers: { get: () => null },
+      json: () => Promise.resolve({ detail: 'Session quota reached for this account' }),
+    } as unknown as Response);
+
+    const manager = ClientSessionManager.getInstance();
+    await expect(manager.createSession()).rejects.toMatchObject({
+      message: 'Session quota reached for this account',
+      status: 403
+    });
+  });
+
+  test('falls back to its own text when the body carries neither', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      headers: { get: () => null },
+      json: () => Promise.resolve({}),
+    } as unknown as Response);
+
+    const manager = ClientSessionManager.getInstance();
+    await expect(manager.createSession()).rejects.toThrow('Failed to create session: 500');
+  });
+});
