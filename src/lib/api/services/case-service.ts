@@ -83,41 +83,66 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * display across the extension (CLOSED status pill, CaseDetails closure row, and
  * the ResolutionActionsCard compact banner via `shortLabel`).
  *
- * The three real keys mirror VALID_CLOSURE_REASONS in
+ * The real keys mirror VALID_CLOSURE_REASONS in
  * faultmaven/modules/case/domain/models.py exactly (inquiry_only,
- * closed_after_investigation, closed_insufficient_evidence). `label` is the full
+ * solution_deferred, closed_rca_infeasible, mitigation_sufficient,
+ * closed_insufficient_evidence). `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already
  * prefixed with "Closed". The 'other' fallback is a defensive default for cases
  * where closure_reason is null/unrecognized (used by HeaderSummary and
  * ResolutionActionsCard; CaseDetails suppresses the closure row in that case).
  */
-export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; bannerClass: string; description: string }> = {
+export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; description: string }> = {
   inquiry_only: {
     label: 'Inquiry Only',
     shortLabel: 'Inquiry Only',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Q&A session completed, no investigation needed.',
   },
-  closed_after_investigation: {
-    label: 'Closed after investigation',
-    shortLabel: 'Closed',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
-    description: 'Investigation occurred but no resolution was reached.',
+  solution_deferred: {
+    label: 'Fix deferred',
+    shortLabel: 'Fix Deferred',
+    description: 'Cause identified and a fix documented; implementation happens out-of-band.',
+  },
+  closed_rca_infeasible: {
+    label: 'Root cause unreachable',
+    shortLabel: 'Cause Unreachable',
+    description: 'The cause cannot be reached for this problem; the mitigation is the accepted strategy.',
+  },
+  mitigation_sufficient: {
+    label: 'Stabilized by mitigation',
+    shortLabel: 'Stabilized',
+    description: 'A verified mitigation relieved the symptom; root-cause analysis was deferred.',
   },
   closed_insufficient_evidence: {
     label: 'Insufficient evidence',
     shortLabel: 'Insufficient Evidence',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
-    description: 'Investigation closed at a data wall; the honest partial is preserved.',
+    description: 'Closed without establishing the problem or its cause; the honest partial is preserved.',
   },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
     label: 'Other',
     shortLabel: 'Closed',
-    bannerClass: 'bg-fm-surface border border-fm-border text-fm-text-tertiary',
     description: 'Case closed.',
   },
 };
+
+/**
+ * Resolve a closure reason to something renderable — never undefined.
+ *
+ * Every consumer needs the same degrade-to-`other` behaviour, and hand-rolling
+ * it three times is what let one of them drift: CaseDetails required a map hit
+ * and so dropped its Closure row entirely for a reason the build did not know,
+ * while ResolutionActionsCard and HeaderSummary fell back. That row is shown
+ * only when the closure summary was SKIPPED, i.e. when it is the user's only
+ * signal of why the case closed.
+ *
+ * An unknown reason is not hypothetical: a case can still carry a value retired
+ * from the backend vocabulary, and the backend can add a reason before this
+ * extension ships.
+ */
+export function closureDisplayFor(reason: string | null | undefined) {
+  return (reason && CLOSURE_DISPLAY_INFO[reason]) || CLOSURE_DISPLAY_INFO.other;
+}
 
 /**
  * Evidence source type display info (for EvidenceSummary.type badge).

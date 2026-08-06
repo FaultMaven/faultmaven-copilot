@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as caseService from '../../../lib/api/services/case-service';
 import * as client from '../../../lib/api/client';
 import { caseCacheManager } from '../../../lib/cache/case-cache';
@@ -466,13 +468,25 @@ describe('Case Service', () => {
     // The real keys must mirror backend VALID_CLOSURE_REASONS
     // (faultmaven/modules/case/domain/models.py) exactly, plus the defensive
     // 'other' fallback. This is the single source of truth for closure-reason
-    // display; ResolutionActionsCard sources its label from here.
-    it('covers exactly the backend closure reasons plus the defensive fallback', () => {
+    // display; ResolutionActionsCard and HeaderSummary source their labels here.
+    //
+    // WHAT THIS DOES AND DOES NOT CATCH. The expected list is a literal in this
+    // file, so it pins the map against a deliberate edit — dropping or renaming
+    // a key here fails. It CANNOT detect backend drift: a sixth reason added on
+    // the backend leaves this suite green, because nothing shared crosses the
+    // repo boundary. `closure_reason` is typed as a bare `string` in
+    // src/lib/api/types/index.ts, and the OpenAPI pipeline is not a dependable
+    // gate, so there is no artifact to assert against. The real protection is
+    // the `other` fallback every consumer now applies, which degrades an
+    // unknown reason to a readable row instead of dropping it.
+    it('pins the map to the backend reasons plus the defensive fallback', () => {
       expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
-        'closed_after_investigation',
         'closed_insufficient_evidence',
+        'closed_rca_infeasible',
         'inquiry_only',
+        'mitigation_sufficient',
         'other',
+        'solution_deferred',
       ]);
     });
 
@@ -480,6 +494,71 @@ describe('Case Service', () => {
       for (const info of Object.values(caseService.CLOSURE_DISPLAY_INFO)) {
         expect(info.label.length).toBeGreaterThan(0);
         expect(info.shortLabel.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  // Every consumer must degrade an UNKNOWN reason to the `other` entry rather
+  // than rendering nothing. CaseDetails is where this matters most: it shows
+  // the closure row only when the closure summary was SKIPPED, i.e. when the
+  // label is the user's only signal of why the case closed. Requiring a map hit
+  // there dropped the row entirely for a reason this build does not know —
+  // a case still carrying a retired value, or a backend that adds a reason
+  // before the extension ships.
+  // `closureDisplayFor` is the ONE resolver every consumer uses. Testing the
+  // idiom (`map[x] ?? other`) instead would assert nothing about the callers —
+  // an earlier version of these tests passed while CaseDetails still required a
+  // map hit and dropped its Closure row for unknown reasons.
+  describe('closureDisplayFor', () => {
+    it('resolves an unknown reason to the defensive `other` entry', () => {
+      const info = caseService.closureDisplayFor('a_reason_this_build_never_heard_of');
+      expect(info).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+      expect(info.label.length).toBeGreaterThan(0);
+    });
+
+    it('resolves a retired backend reason to something renderable', () => {
+      // Pre-migration rows carry `closed_after_investigation`. It is gone from
+      // the backend vocabulary, so the map must not know it — but the closure
+      // row is the user's only signal when the summary was skipped.
+      expect(
+        caseService.CLOSURE_DISPLAY_INFO['closed_after_investigation'],
+      ).toBeUndefined();
+      expect(caseService.closureDisplayFor('closed_after_investigation').shortLabel)
+        .toBe(caseService.CLOSURE_DISPLAY_INFO.other.shortLabel);
+    });
+
+    it('resolves null and undefined rather than throwing', () => {
+      expect(caseService.closureDisplayFor(null)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+      expect(caseService.closureDisplayFor(undefined)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+    });
+
+    it('returns the real entry for every known reason', () => {
+      for (const key of Object.keys(caseService.CLOSURE_DISPLAY_INFO)) {
+        expect(caseService.closureDisplayFor(key)).toBe(
+          caseService.CLOSURE_DISPLAY_INFO[key],
+        );
+      }
+    });
+
+    // Pins the centralisation itself. The property is a source-level one — "no
+    // consumer resolves a closure reason on its own" — so it is asserted at the
+    // source level. The behavioural alternative would need a full CaseDetails
+    // render, and an earlier version of these tests exercised the `?? other`
+    // IDIOM instead, which passed happily while CaseDetails still required a
+    // map hit and dropped its Closure row.
+    it('is the only closure-display resolution path in the UI', () => {
+      const consumers = [
+        'src/shared/ui/components/case-header/CaseDetails.tsx',
+        'src/shared/ui/components/case-header/HeaderSummary.tsx',
+        'src/shared/ui/components/ResolutionActionsCard.tsx',
+      ];
+      for (const rel of consumers) {
+        const src = readFileSync(resolve(process.cwd(), rel), 'utf8');
+        expect(
+          src.includes('CLOSURE_DISPLAY_INFO['),
+          `${rel} indexes CLOSURE_DISPLAY_INFO directly; use closureDisplayFor()`,
+        ).toBe(false);
+        expect(src.includes('closureDisplayFor(')).toBe(true);
       }
     });
   });

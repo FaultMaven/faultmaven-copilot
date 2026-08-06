@@ -36,7 +36,7 @@ import {
   isCaseResolved,
   isCaseClosed,
 } from '../../../../types/case';
-import { CLOSURE_DISPLAY_INFO } from '../../../../lib/api/services/case-service';
+import { closureDisplayFor } from '../../../../lib/api/services/case-service';
 import { filesApi } from '../../../../lib/api/files-service';
 import { EvidenceDetailsModal } from './EvidenceDetailsModal';
 import {
@@ -335,8 +335,15 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     const closureSkipped = closureSummary?.status === 'skipped';
     if (closureSkipped) {
       const reason = activeCase?.closure_reason;
-      if (reason && reason !== 'other' && CLOSURE_DISPLAY_INFO[reason]) {
-        const info = CLOSURE_DISPLAY_INFO[reason];
+      // Fall back to the `other` entry for a reason this build does not know,
+      // matching ResolutionActionsCard and HeaderSummary. Requiring a map hit
+      // dropped the row entirely — and per the comment above, when the closure
+      // summary was skipped this row is the user's ONLY signal of why the case
+      // closed, so an unknown reason is exactly when suppressing it costs most.
+      // A backend that adds a reason before this build ships, or a case still
+      // carrying a retired one, both land here.
+      if (reason) {
+        const info = closureDisplayFor(reason);
         closureRow = (
           <DetailRow label="Closure">
             {info.label} — {info.description}
