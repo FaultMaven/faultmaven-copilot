@@ -2,8 +2,13 @@
  * Case UI Types
  *
  * Re-exports from OpenAPI generated types with convenient type aliases
- * Source: Generated from fm-api-gateway OpenAPI spec
- * To regenerate: npx openapi-typescript http://localhost:8090/openapi.json -o src/types/api.generated.ts
+ * Source: faultmaven's committed docs/reference/api/openapi.json, which CI
+ * gates against the running app (fm#880).
+ * To regenerate: pnpm generate:api-types
+ *
+ * Do NOT regenerate from a live server. Generating against whatever build
+ * happened to be running is how this repo and the dashboard ended up with
+ * different names for the same schema.
  */
 
 import { components } from './api.generated';

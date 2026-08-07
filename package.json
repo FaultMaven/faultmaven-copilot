@@ -12,6 +12,7 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "generate:api-types": "openapi-typescript ${FM_OPENAPI_SPEC:-../faultmaven/docs/reference/api/openapi.json} -o src/types/api.generated.ts",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "test": "vitest",

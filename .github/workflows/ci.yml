@@ -57,6 +57,68 @@ jobs:
           exit 1
 
   # ============================================================================
+  # API type drift
+  # `src/types/api.generated.ts` is generated from faultmaven's committed
+  # OpenAPI spec. Nothing previously compared the two, so the file could sit
+  # arbitrarily far behind the API it claims to describe — and did: it declared
+  # an endpoint the server had removed. Regenerating and diffing is the whole
+  # check; there is no hand-maintained list to curate.
+  #
+  # This is the client half of faultmaven's own `api-contract-drift` job
+  # (fm#880). That one keeps the spec honest about the app; this one keeps the
+  # generated client honest about the spec.
+  # ============================================================================
+  api-types-drift:
+    name: API Types Drift Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch the API's committed spec
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            https://raw.githubusercontent.com/FaultMaven/faultmaven/main/docs/reference/api/openapi.json \
+            -o /tmp/openapi.json
+          # A truncated or error-page download would regenerate an empty client
+          # and the diff below would "pass" by matching nothing.
+          python3 -c "import json,sys; d=json.load(open('/tmp/openapi.json')); sys.exit(0 if d.get('paths') else 1)"
+
+      - name: Regenerate and compare
+        env:
+          FM_OPENAPI_SPEC: /tmp/openapi.json
+        run: |
+          pnpm run generate:api-types
+          git diff --exit-code src/types/api.generated.ts || {
+            echo "::error::src/types/api.generated.ts no longer matches the API's committed spec."
+            echo ""
+            echo "Regenerate and commit it:"
+            echo "    pnpm generate:api-types"
+            echo "    git add src/types/api.generated.ts"
+            echo ""
+            echo "If faultmaven's spec changed intentionally, this is expected —"
+            echo "regenerate here in a PR of its own."
+            exit 1
+          }
+
+  # ============================================================================
   # Stage 2: Run Tests
   # ============================================================================
   test:
