@@ -94,7 +94,7 @@ jobs:
       - name: Fetch the API's committed spec
         run: |
           set -euo pipefail
-          curl -fsSL \
+          curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
             https://raw.githubusercontent.com/FaultMaven/faultmaven/main/docs/reference/api/openapi.json \
             -o /tmp/openapi.json
           # A truncated or error-page download would regenerate an empty client
@@ -362,7 +362,7 @@ jobs:
   # ============================================================================
   summary:
     name: Pipeline Summary
-    needs: [lint, test, build, validate, security]
+    needs: [lint, api-types-drift, test, build, validate, security]
     if: always()
     runs-on: ubuntu-latest
 
@@ -377,6 +377,7 @@ jobs:
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lint & Type Check | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Types Drift | ${{ needs['api-types-drift'].result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tests | ${{ needs.test.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | ${{ needs.build.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | ${{ needs.validate.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
