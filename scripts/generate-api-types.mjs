@@ -23,21 +23,50 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_SPEC =
   "https://raw.githubusercontent.com/FaultMaven/faultmaven/main/docs/reference/api/openapi.json";
 
-const flagIndex = process.argv.indexOf("--spec");
-if (flagIndex !== -1 && !process.argv[flagIndex + 1]) {
-  console.error("--spec needs a path or URL");
-  process.exit(1);
+const USAGE = "usage: node scripts/generate-api-types.mjs [--spec <path-or-url>]";
+
+// Unrecognised arguments are rejected rather than ignored. A typo'd or
+// `--spec=`-style flag that silently fell through to the default would
+// overwrite the checked-in client with `main`'s types while the developer
+// believed they were generating from their branch — the exact silent-wrong-
+// client failure this script exists to prevent.
+function parseSpec(argv) {
+  let spec;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--spec") {
+      spec = argv[i + 1];
+      if (!spec) {
+        console.error(`--spec needs a path or URL\n${USAGE}`);
+        process.exit(1);
+      }
+      i += 1;
+    } else if (arg.startsWith("--spec=")) {
+      spec = arg.slice("--spec=".length);
+      if (!spec) {
+        console.error(`--spec needs a path or URL\n${USAGE}`);
+        process.exit(1);
+      }
+    } else {
+      console.error(`unrecognised argument: ${arg}\n${USAGE}`);
+      process.exit(1);
+    }
+  }
+  return spec;
 }
 
-const spec =
-  (flagIndex !== -1 && process.argv[flagIndex + 1]) ||
-  process.env.FM_OPENAPI_SPEC ||
-  DEFAULT_SPEC;
-const out = "src/types/api.generated.ts";
+const spec = parseSpec(process.argv.slice(2)) || process.env.FM_OPENAPI_SPEC || DEFAULT_SPEC;
+
+// Anchored to the repo, not the caller's cwd. A relative output path would
+// write a stray file and exit 0 when the script is run from a subdirectory,
+// leaving the tracked one stale and the drift gate red for no visible reason.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const out = path.join(repoRoot, "src", "types", "api.generated.ts");
 
 // Resolve the generator's own declared entrypoint. `openapi-typescript/bin/cli.js`
 // is not resolvable directly — the package's `exports` map does not expose it —
@@ -56,7 +85,7 @@ try {
   process.exit(1);
 }
 
-console.log(`Generating ${out} from ${spec}`);
+console.log(`Generating ${path.relative(repoRoot, out)} from ${spec}`);
 
 const result = spawnSync(process.execPath, [cli, spec, "-o", out], {
   stdio: "inherit",

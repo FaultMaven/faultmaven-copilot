@@ -411,9 +411,16 @@ jobs:
           rc=0
           for stage in LINT API_TYPES_DRIFT TEST BUILD VALIDATE; do
             result="${!stage}"
-            if [ "$result" != "success" ]; then
-              echo "::error::$stage did not pass (result: $result)"
-              rc=1
-            fi
+            # `skipped` is a pass: a stage skipped on purpose (the `skip_tests`
+            # dispatch input) must not fail the pipeline, and a stage skipped
+            # because an upstream one failed is already accounted for — that
+            # upstream stage reports `failure` and is itself in this list.
+            case "$result" in
+              success|skipped) ;;
+              *)
+                echo "::error::$stage did not pass (result: $result)"
+                rc=1
+                ;;
+            esac
           done
           exit $rc
