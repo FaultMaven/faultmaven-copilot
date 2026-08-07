@@ -602,11 +602,24 @@ pnpm generate:api-types
 
 By default it reads the spec from `main` on GitHub, which is the same source the
 `api-types-drift` CI job compares against. Point it elsewhere to generate from a
-local checkout or a branch:
+local checkout or a branch — `--spec` works identically on every platform:
 
 ```bash
-FM_OPENAPI_SPEC=../faultmaven/docs/reference/api/openapi.json pnpm generate:api-types
+pnpm generate:api-types --spec ../faultmaven/docs/reference/api/openapi.json
 ```
+
+`FM_OPENAPI_SPEC` does the same and is what CI sets. Note the environment-prefix
+form is POSIX-only — neither `cmd.exe` nor PowerShell accepts it:
+
+```bash
+FM_OPENAPI_SPEC=../faultmaven/docs/reference/api/openapi.json pnpm generate:api-types   # bash/zsh
+```
+```
+set FM_OPENAPI_SPEC=..\faultmaven\docs\reference\api\openapi.json && pnpm generate:api-types   :: cmd.exe
+$env:FM_OPENAPI_SPEC = "..\faultmaven\docs\reference\api\openapi.json"; pnpm generate:api-types   # PowerShell
+```
+
+Prefer `--spec` — it avoids the question entirely.
 
 ⚠️ Do **not** generate from a live server (`http://localhost:8090/openapi.json`).
 Generating against whatever build happens to be running is how this repo and the

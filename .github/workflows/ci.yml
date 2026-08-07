@@ -392,3 +392,28 @@ jobs:
             echo "git push origin v0.4.0" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Fail if any required stage failed
+        # `summary` runs with `if: always()` so the table is written even when an
+        # earlier stage fails — but without this the job, named "Pipeline
+        # Summary", would still *conclude* success for a failed pipeline. That
+        # is the fail-open shape this table exists to avoid: an aggregate check
+        # announcing success for stages it merely reported on.
+        # Security scanning is advisory here (the table reports it as a
+        # warning), so it is deliberately not gated on.
+        env:
+          LINT: ${{ needs.lint.result }}
+          API_TYPES_DRIFT: ${{ needs['api-types-drift'].result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+          VALIDATE: ${{ needs.validate.result }}
+        run: |
+          rc=0
+          for stage in LINT API_TYPES_DRIFT TEST BUILD VALIDATE; do
+            result="${!stage}"
+            if [ "$result" != "success" ]; then
+              echo "::error::$stage did not pass (result: $result)"
+              rc=1
+            fi
+          done
+          exit $rc
