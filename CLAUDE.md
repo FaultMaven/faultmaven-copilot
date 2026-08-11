@@ -315,11 +315,26 @@ Use the `UserFacingError` class hierarchy for consistent error handling:
 | `TimeoutError` | timeout | manual_retry |
 | `ServerError` | server | manual_retry |
 | `ValidationError` | validation | user_fix_required |
-| `RateLimitError` | rate_limit | auto_retry_with_delay |
+| `RateLimitError` | rate_limit | auto_retry_with_delay **or** manual_retry (see below) |
 | `QuotaExhaustedError` | billing | graceful_degradation |
 | `CaseVersionConflictError` | validation | manual_retry |
 | `OptimisticUpdateError` | optimistic_rollback | rollback_and_retry |
 | `UnknownError` | unknown | manual_retry |
+
+`RateLimitError` is the one entry whose recovery is **derived, not fixed**. The
+backend's `Retry-After` is measured and uncapped — it is the instant the oldest
+entry ages out of the window that refused, so a per-minute bucket asks for
+seconds and an hourly one for up to 3600s. Within `MAX_AUTO_RETRY_WAIT_MS`
+(60s, exported from `errors/types.ts`) the error is `auto_retry_with_delay` and
+`resilientOperation` waits the window out. Past it the error is `manual_retry`:
+the quota provably has not freed, so an automatic attempt is refused by
+construction, and retrying anyway only burns the operation's bounded attempts.
+`userAction` and `getDisplayOptions()` follow the same split — the long-wait
+copy states the wait instead of promising a retry, and its toast is dismissible
+and persistent rather than pinned undismissible for the length of the window.
+Do not reintroduce a clamp that shortens the wait and retries anyway: shortening
+an honest window does not make quota free sooner, it only guarantees the retry
+lands inside it (fm#985 item 9).
 
 `QuotaExhaustedError` is raised for **HTTP 402 / `x-error-code: QUOTA_EXHAUSTED`** — the AI provider is out of quota/credits. Recovery is `graceful_degradation` (no auto-retry, no retry button); the chat surfaces an operator-actionable "add credits / update billing" message and preserves the user's input so they can resend once billing is fixed.
 
