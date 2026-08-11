@@ -5096,7 +5096,10 @@ export interface components {
             llm_provider: string;
             /** Pii Redaction Enabled */
             pii_redaction_enabled: boolean;
-            /** Rate Limit Enabled */
+            /**
+             * Rate Limit Enabled
+             * @description Rate limiting middleware is installed on this deployment. Read from the running middleware stack rather than from configuration: no rate-limit setting exists, the protection presets decide by environment name, and a deployment that skipped protection setup (SKIP_SERVICE_CHECKS) reports false here.
+             */
             rate_limit_enabled: boolean;
             /**
              * Session Storage
