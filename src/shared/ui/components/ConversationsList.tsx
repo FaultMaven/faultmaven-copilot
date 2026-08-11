@@ -3,6 +3,7 @@ import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCa
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
+import { describeWait } from '../../../lib/errors/types';
 import {
   sanitizeBackendCases,
   validateStateIntegrity,
@@ -148,7 +149,9 @@ export function ConversationsList({
       if (err.name === 'RateLimitError' || err.status === 429) {
         const retryAfter = err.retryAfter || 60;
         log.warn('Rate limited', { retryAfter });
-        setError(`Rate limit reached. Please wait ${retryAfter} seconds before refreshing.`);
+        // Same renderer as the rate-limit toast: an hourly window read
+        // "wait 3600 seconds" here while the toast said "about 60 minutes".
+        setError(`Rate limit reached. Please wait ${describeWait(retryAfter * 1000)} before refreshing.`);
 
         // Don't clear cases on rate limit - keep showing existing data
         // onCasesLoaded?.([]) - DON'T notify parent, keep existing state

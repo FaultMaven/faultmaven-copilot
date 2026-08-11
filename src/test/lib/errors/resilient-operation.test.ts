@@ -184,13 +184,16 @@ describe('resilientOperation', () => {
     expect((caught as RateLimitError).retryAfterMs).toBe(3_600_000);
   });
 
-  it('still bounds the honored wait when a caller overrides shouldRetry', async () => {
-    // `retryOptions.shouldRetry` is checked before the recovery strategy, so an
-    // override can force a retry the strategy declined. The clamp is what keeps
-    // that path from parking the operation on the raw hour-long header.
+  it('waits out a window at the bound in ONE sleep, where the old clamp needed two attempts', async () => {
+    // The bound is the old clamped policy's effective ceiling: 3 attempts gave
+    // two waits of at most 60s, so a window freeing within 120s was the most it
+    // could ever recover — and it burned an extra attempt discovering that.
+    // Honoring the wait as given reaches the same success with one sleep, which
+    // is what makes moving the bound to 120s a strict improvement rather than a
+    // trade.
     const rateLimit = new Error('Too Many Requests');
     (rateLimit as any).status = 429;
-    (rateLimit as any).retryAfter = 999999; // seconds — ~11.5 days
+    (rateLimit as any).retryAfter = 120; // seconds — exactly the bound
     const operation = vi.fn()
       .mockRejectedValueOnce(rateLimit)
       .mockResolvedValueOnce('ok');
@@ -198,18 +201,18 @@ describe('resilientOperation', () => {
     const promise = resilientOperation({
       operation,
       context: { operation: 'test' },
-      retryOptions: { maxAttempts: 3, initialDelay: 100, shouldRetry: () => true }
+      retryOptions: { maxAttempts: 3, initialDelay: 100 }
     });
 
-    // Not retried inside the clamp window...
-    await vi.advanceTimersByTimeAsync(59_000);
+    // Still waiting at 119s — the wait is honored in full, not shortened to 60s
+    // and retried into a window that has not freed.
+    await vi.advanceTimersByTimeAsync(119_000);
     expect(operation).toHaveBeenCalledTimes(1);
 
-    // ...but the retry fires once the 60s bound elapses (well before the raw value).
     await vi.advanceTimersByTimeAsync(2_000);
     const result = await promise;
     expect(result).toBe('ok');
-    expect(operation).toHaveBeenCalledTimes(2);
+    expect(operation).toHaveBeenCalledTimes(2); // not 3
   });
 
   it('should fail after max retries and call onFailure', async () => {

@@ -20,7 +20,17 @@ describe('RateLimitError: recovery derives from the server\'s window', () => {
     const error = new RateLimitError('Too Many Requests', MAX_AUTO_RETRY_WAIT_MS);
 
     expect(error.recovery).toBe('auto_retry_with_delay');
-    expect(error.userAction).toBe("We'll try again in a minute...");
+  });
+
+  it('still auto-retries everything the old clamped policy could recover', () => {
+    // The old policy clamped to 60s and retried; with maxAttempts 3 that gave
+    // two waits, so it could recover a window freeing within 120s and nothing
+    // beyond. The bound is set there deliberately — any value below it would
+    // hand the user a retry the previous code performed automatically.
+    expect(MAX_AUTO_RETRY_WAIT_MS).toBe(120_000);
+    for (const seconds of [1, 30, 60, 90, 119, 120]) {
+      expect(new RateLimitError('x', seconds * 1000).recovery).toBe('auto_retry_with_delay');
+    }
   });
 
   it('hands the retry to the user one millisecond past the bound', () => {
@@ -43,9 +53,15 @@ describe('RateLimitError: recovery derives from the server\'s window', () => {
 
   it('rounds a partial minute up, never down', () => {
     // Understating sends the user back before their quota exists and earns a
-    // second refusal; overstating costs idle seconds.
-    expect(new RateLimitError('x', 61_000).userAction).toBe('You can try again in about 2 minutes.');
-    expect(new RateLimitError('x', 119_000).userAction).toBe('You can try again in about 2 minutes.');
+    // second refusal; overstating costs idle time.
+    expect(new RateLimitError('x', 121_000).userAction).toBe('You can try again in about 3 minutes.');
+    expect(new RateLimitError('x', 179_000).userAction).toBe('You can try again in about 3 minutes.');
+  });
+
+  it('does not render "1 seconds" at the window edge', () => {
+    // The backend floors Retry-After at one second (window_math.py returns
+    // max(1, ...)), so a bucket-edge refusal reaches this copy in production.
+    expect(new RateLimitError('x', 1_000).userAction).toBe("We'll try again in 1 second...");
   });
 
   it('defaults to a waitable 5s when the server sent no Retry-After', () => {

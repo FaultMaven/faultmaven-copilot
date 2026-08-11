@@ -299,29 +299,42 @@ export class ValidationError extends UserFacingError {
 /**
  * The longest server-directed wait this client will sit through on its own.
  *
- * The backend's `Retry-After` is measured, honest and deliberately uncapped: it
- * is the instant the oldest entry ages out of whichever window refused the
- * request, so a refusal from an hourly bucket legitimately asks for up to an
- * hour. Nothing about a side panel survives an await that long — the user can
- * close it, and the turn it belongs to times out at 300s regardless.
+ * The protection middleware's `Retry-After` is measured and deliberately
+ * uncapped: it is the instant the oldest entry ages out of whichever window
+ * refused the request, so a refusal from an hourly bucket legitimately asks for
+ * up to 3600s. (Not every 429 comes from there — an upstream LLM provider's own
+ * 429 is re-emitted with a flat `Retry-After: 60`, which lands inside this bound
+ * and behaves as it always has.)
  *
- * Past this bound a wait stops being something to sleep through and becomes
- * something to tell the user about. It is the threshold between the two, not a
- * ceiling applied to the wait itself: shortening an honest window does not make
- * quota free any sooner, it only guarantees the retry lands inside it.
+ * The value is where this client stops being willing to wait. A longer wait
+ * would still succeed if we sat through it — the bound is a judgement, not a
+ * physical limit — so it is placed where the judgement costs nothing: with
+ * `maxAttempts: 3` the old code got two waits of at most 60s each, making a
+ * window that frees within 120s the most it could ever recover, and everything
+ * beyond that it retried into and was refused by construction. Setting the
+ * bound there keeps every recovery that already worked and gives up only on
+ * attempts that never could.
+ *
+ * Past the bound a wait stops being something to sleep through and becomes
+ * something to tell the user about. It is the threshold between those two, and
+ * nothing shortens the wait itself: a shortened window does not make quota free
+ * any sooner, it only guarantees the retry lands inside it.
  */
-export const MAX_AUTO_RETRY_WAIT_MS = 60_000;
+export const MAX_AUTO_RETRY_WAIT_MS = 120_000;
 
 /**
- * A wait rendered for a human. Rounded UP to the next whole minute, because the
- * two roundings fail differently: overstating costs the user a few idle seconds,
- * understating sends them back before their quota exists and earns a second
- * refusal.
+ * A wait rendered for a human — whole seconds below a minute, whole minutes
+ * above it.
+ *
+ * Both tiers round UP, because the two directions fail differently: overstating
+ * costs idle time (up to a minute, at the bottom of the minutes tier),
+ * understating sends the user back before their quota exists and earns them a
+ * second refusal. Idle time is the cheaper mistake.
  */
-function describeWait(ms: number): string {
+export function describeWait(ms: number): string {
   const seconds = Math.ceil(ms / 1000);
   if (seconds < 60) {
-    return `${seconds} seconds`;
+    return seconds === 1 ? '1 second' : `${seconds} seconds`;
   }
   const minutes = Math.ceil(seconds / 60);
   return minutes === 1 ? 'a minute' : `about ${minutes} minutes`;
@@ -339,10 +352,9 @@ export class RateLimitError extends UserFacingError {
    * Derived from the wait, not fixed: auto-retry is only a recovery when the
    * window is short enough to wait out. Beyond `MAX_AUTO_RETRY_WAIT_MS` the
    * quota provably has not freed — the server told us when it will — so every
-   * automatic attempt is refused by construction, burning the operation's
-   * bounded attempts and, while refusals still count against the earlier
-   * windows they passed, pushing the user's own recovery further out. Handing
-   * the retry to the user is the only honest option left.
+   * automatic attempt is refused by construction and spends the operation's
+   * bounded attempts on answers already known. Handing the retry to the user is
+   * the only honest option left.
    */
   readonly recovery: RecoveryStrategy;
   readonly retryAfterMs: number;
@@ -363,11 +375,13 @@ export class RateLimitError extends UserFacingError {
   }
 
   getDisplayOptions(): ErrorDisplayOptions {
-    // The toast lives as long as the wait, so it clears exactly when the user
-    // can act again — coherent for the seconds-long windows this dismisses
-    // itself for. An hour-long window would instead pin an undismissible
-    // banner for an hour, so past the bound the toast becomes the user's to
-    // close and stops auto-dismissing (0 = persistent).
+    // `duration` is a real auto-dismiss timer (see useErrorHandler), so it must
+    // never be handed a window length. This toast is raised after the operation
+    // has already given up — not while a retry is pending — and for a short
+    // window the wait doubles as a reasonable time to leave the notice up. An
+    // hour-long window does not: it pinned an undismissible banner for an hour.
+    // Past the bound the toast is persistent (0 = no timer) and the user's to
+    // close.
     const autoRetrying = this.recovery === 'auto_retry_with_delay';
     return {
       displayType: 'toast',

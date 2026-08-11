@@ -1,6 +1,6 @@
 
 import { ErrorClassifier } from '../errors/classifier';
-import { MAX_AUTO_RETRY_WAIT_MS, RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
+import { RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
 import { retryWithBackoff, RetryOptions } from './retry';
 
 export interface ResilientOperationOptions<T> {
@@ -106,17 +106,15 @@ export async function resilientOperation<T>(
         // so wait only the remainder beyond it — otherwise a 429 carrying a 60s
         // window is retried after ~1s and simply burns its bounded attempts.
         //
-        // Whether a wait is worth sitting on at all is decided upstream, by
-        // RateLimitError.recovery: anything past MAX_AUTO_RETRY_WAIT_MS is
-        // `manual_retry` and the switch above has already declined it, so a
-        // 429 reaching here normally carries a wait within the bound. The clamp
-        // stays because one path can still deliver a longer one — a caller's own
-        // `retryOptions.shouldRetry` overrides the recovery strategy entirely
-        // (checked first, above), and no override should be able to park the
-        // operation on an hour-long `Retry-After`.
+        // The wait is honored as given. Whether it is worth sitting on at all
+        // was already decided upstream by RateLimitError.recovery: a wait past
+        // MAX_AUTO_RETRY_WAIT_MS is `manual_retry`, which the switch above
+        // declines, so nothing that reaches here carries a window this client
+        // is unwilling to wait out. Clamping it again here would only shorten
+        // an honest wait into a guaranteed refusal.
         const classified = ErrorClassifier.classify(error, context);
         if (classified instanceof RateLimitError) {
-          const retryAfterMs = Math.min(classified.retryAfterMs, MAX_AUTO_RETRY_WAIT_MS);
+          const retryAfterMs = classified.retryAfterMs;
           if (retryAfterMs > delay) {
             await new Promise(resolve => setTimeout(resolve, retryAfterMs - delay));
           }
