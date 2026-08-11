@@ -1,14 +1,7 @@
 
 import { ErrorClassifier } from '../errors/classifier';
-import { RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
+import { MAX_AUTO_RETRY_WAIT_MS, RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
 import { retryWithBackoff, RetryOptions } from './retry';
-
-/**
- * Upper bound on a honored Retry-After delay. The value originates from a
- * server-controlled header, so it is clamped to keep a pathological/misconfigured
- * `Retry-After` from stalling a bounded retry for minutes or hours.
- */
-const MAX_RETRY_AFTER_MS = 60_000;
 
 export interface ResilientOperationOptions<T> {
   /** The operation to perform */
@@ -111,12 +104,19 @@ export async function resilientOperation<T>(
         // server's window as `retryAfterMs` on the RateLimitError. retryWithBackoff
         // sleeps `delay` (generic exponential backoff, ~1–2s) after this callback,
         // so wait only the remainder beyond it — otherwise a 429 carrying a 60s
-        // window is retried after ~1s and simply burns its bounded attempts. Clamp
-        // the (server-controlled) value to MAX_RETRY_AFTER_MS so a pathological
-        // header (e.g. `Retry-After: 999999`) can't hang the operation for hours.
+        // window is retried after ~1s and simply burns its bounded attempts.
+        //
+        // Whether a wait is worth sitting on at all is decided upstream, by
+        // RateLimitError.recovery: anything past MAX_AUTO_RETRY_WAIT_MS is
+        // `manual_retry` and the switch above has already declined it, so a
+        // 429 reaching here normally carries a wait within the bound. The clamp
+        // stays because one path can still deliver a longer one — a caller's own
+        // `retryOptions.shouldRetry` overrides the recovery strategy entirely
+        // (checked first, above), and no override should be able to park the
+        // operation on an hour-long `Retry-After`.
         const classified = ErrorClassifier.classify(error, context);
         if (classified instanceof RateLimitError) {
-          const retryAfterMs = Math.min(classified.retryAfterMs, MAX_RETRY_AFTER_MS);
+          const retryAfterMs = Math.min(classified.retryAfterMs, MAX_AUTO_RETRY_WAIT_MS);
           if (retryAfterMs > delay) {
             await new Promise(resolve => setTimeout(resolve, retryAfterMs - delay));
           }

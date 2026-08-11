@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resilientOperation } from '~lib/utils/resilient-operation';
 import { ErrorClassifier } from '~lib/errors/classifier';
+import { RateLimitError } from '~lib/errors/types';
 
 describe('resilientOperation', () => {
   beforeEach(() => {
@@ -151,12 +152,45 @@ describe('resilientOperation', () => {
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
-  it('clamps a pathological Retry-After so a bad header cannot hang the retry', async () => {
-    // Server-controlled header of ~11.5 days. The honored wait must be clamped to
-    // MAX_RETRY_AFTER_MS (60s), not the raw value.
+  it('does NOT auto-retry a 429 whose window is longer than we will wait', async () => {
+    // An hourly bucket refusing a turn carries an honest Retry-After of up to
+    // 3600s: the server has measured that no quota frees until then. Retrying
+    // before that instant is refused by construction, so the old behaviour
+    // (clamp to 60s and retry anyway) spent every remaining attempt on
+    // guaranteed refusals and took two minutes to report a failure it knew
+    // about immediately. The wait must be surfaced, not slept on.
     const rateLimit = new Error('Too Many Requests');
     (rateLimit as any).status = 429;
-    (rateLimit as any).retryAfter = 999999; // seconds
+    (rateLimit as any).retryAfter = 3600; // seconds — a full hourly window
+    const operation = vi.fn().mockRejectedValue(rateLimit);
+    const onFailure = vi.fn();
+
+    const promise = resilientOperation({
+      operation,
+      context: { operation: 'test' },
+      retryOptions: { maxAttempts: 3, initialDelay: 100 },
+      onFailure
+    });
+    const settled = promise.catch(e => e);
+
+    await vi.runAllTimersAsync();
+    const caught = await settled;
+
+    // One attempt only — no second request inside a window that cannot have freed.
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    // And it fails with the wait intact, so the UI can state it.
+    expect(caught).toBeInstanceOf(RateLimitError);
+    expect((caught as RateLimitError).retryAfterMs).toBe(3_600_000);
+  });
+
+  it('still bounds the honored wait when a caller overrides shouldRetry', async () => {
+    // `retryOptions.shouldRetry` is checked before the recovery strategy, so an
+    // override can force a retry the strategy declined. The clamp is what keeps
+    // that path from parking the operation on the raw hour-long header.
+    const rateLimit = new Error('Too Many Requests');
+    (rateLimit as any).status = 429;
+    (rateLimit as any).retryAfter = 999999; // seconds — ~11.5 days
     const operation = vi.fn()
       .mockRejectedValueOnce(rateLimit)
       .mockResolvedValueOnce('ok');
@@ -164,14 +198,14 @@ describe('resilientOperation', () => {
     const promise = resilientOperation({
       operation,
       context: { operation: 'test' },
-      retryOptions: { maxAttempts: 3, initialDelay: 100 }
+      retryOptions: { maxAttempts: 3, initialDelay: 100, shouldRetry: () => true }
     });
 
     // Not retried inside the clamp window...
     await vi.advanceTimersByTimeAsync(59_000);
     expect(operation).toHaveBeenCalledTimes(1);
 
-    // ...but the retry fires once the 60s clamp elapses (well before the raw value).
+    // ...but the retry fires once the 60s bound elapses (well before the raw value).
     await vi.advanceTimersByTimeAsync(2_000);
     const result = await promise;
     expect(result).toBe('ok');
