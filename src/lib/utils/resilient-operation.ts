@@ -3,13 +3,6 @@ import { ErrorClassifier } from '../errors/classifier';
 import { RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
 import { retryWithBackoff, RetryOptions } from './retry';
 
-/**
- * Upper bound on a honored Retry-After delay. The value originates from a
- * server-controlled header, so it is clamped to keep a pathological/misconfigured
- * `Retry-After` from stalling a bounded retry for minutes or hours.
- */
-const MAX_RETRY_AFTER_MS = 60_000;
-
 export interface ResilientOperationOptions<T> {
   /** The operation to perform */
   operation: () => Promise<T>;
@@ -111,12 +104,17 @@ export async function resilientOperation<T>(
         // server's window as `retryAfterMs` on the RateLimitError. retryWithBackoff
         // sleeps `delay` (generic exponential backoff, ~1–2s) after this callback,
         // so wait only the remainder beyond it — otherwise a 429 carrying a 60s
-        // window is retried after ~1s and simply burns its bounded attempts. Clamp
-        // the (server-controlled) value to MAX_RETRY_AFTER_MS so a pathological
-        // header (e.g. `Retry-After: 999999`) can't hang the operation for hours.
+        // window is retried after ~1s and simply burns its bounded attempts.
+        //
+        // The wait is honored as given. Whether it is worth sitting on at all
+        // was already decided upstream by RateLimitError.recovery: a wait past
+        // MAX_AUTO_RETRY_WAIT_MS is `manual_retry`, which the switch above
+        // declines, so nothing that reaches here carries a window this client
+        // is unwilling to wait out. Clamping it again here would only shorten
+        // an honest wait into a guaranteed refusal.
         const classified = ErrorClassifier.classify(error, context);
         if (classified instanceof RateLimitError) {
-          const retryAfterMs = Math.min(classified.retryAfterMs, MAX_RETRY_AFTER_MS);
+          const retryAfterMs = classified.retryAfterMs;
           if (retryAfterMs > delay) {
             await new Promise(resolve => setTimeout(resolve, retryAfterMs - delay));
           }

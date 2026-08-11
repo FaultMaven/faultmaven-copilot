@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ErrorHandlerProvider, useErrorHandler } from '../../../lib/errors/useErrorHandler';
+import { RateLimitError } from '../../../lib/errors/types';
 
 vi.mock('~/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
@@ -67,5 +68,25 @@ describe('useErrorHandler', () => {
     act(() => { vi.advanceTimersByTime(10_000 + 300); });
 
     expect(result.current.errors.filter(e => !e.dismissed)).toHaveLength(0);
+  });
+
+  // `RateLimitError` signals "leave this up until the user closes it" by
+  // emitting `duration: 0` for a wait too long to sit through. That contract
+  // lives across a seam: the error sets 0, this hook decides what 0 means. With
+  // only the producer under test, changing the guard here to arm a 0ms timer
+  // would make a persistent notice vanish instantly and nothing would go red.
+  it('treats duration 0 as persistent — never arms a zero-delay auto-dismiss', () => {
+    const { result } = renderHook(() => useErrorHandler(), { wrapper });
+
+    const longWait = new RateLimitError('Too Many Requests', 3_600_000);
+    expect(longWait.getDisplayOptions().duration).toBe(0); // the producer half
+
+    act(() => { result.current.showError(longWait); });
+    expect(result.current.errors.filter(e => !e.dismissed)).toHaveLength(1);
+
+    // Well past any plausible auto-dismiss, including a 0ms one.
+    act(() => { vi.advanceTimersByTime(60_000); });
+
+    expect(result.current.errors.filter(e => !e.dismissed)).toHaveLength(1);
   });
 });
