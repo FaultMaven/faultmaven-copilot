@@ -186,7 +186,7 @@ export const ScopeAssessmentDisplay: React.FC<ScopeAssessmentDisplayProps> = ({ 
           <div>
             <p className="text-xs font-semibold text-white">Blast Radius Assessed</p>
             <p className="text-xs text-fm-text-tertiary mt-1">
-              Next: Establishing timeline and gathering evidence to understand when this started
+              Next: Establishing timeline and collecting data to understand when this started
             </p>
           </div>
         </div>

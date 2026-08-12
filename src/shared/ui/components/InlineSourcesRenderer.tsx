@@ -278,7 +278,7 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
         {evidenceRequests && evidenceRequests.length > 0 && (
           <div className="mt-4 space-y-3">
             <div className="text-xs font-semibold text-fm-text-primary uppercase tracking-wide mb-2">
-              Evidence Requested
+              Data Requested
             </div>
             {evidenceRequests.map((request) => (
               <EvidenceRequestCard
@@ -311,7 +311,7 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
       {evidenceRequests && evidenceRequests.length > 0 && (
         <div className="mt-4 space-y-3">
           <div className="text-xs font-semibold text-fm-text-primary uppercase tracking-wide mb-2">
-            Evidence Requested
+            Data Requested
           </div>
           {evidenceRequests.map((request) => (
             <EvidenceRequestCard
