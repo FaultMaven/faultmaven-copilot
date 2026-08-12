@@ -553,19 +553,6 @@ export interface SimilarRunbook {
   case_id: string;
 }
 
-export interface RunbookRecommendation {
-  action: "reuse" | "review_or_generate" | "generate";
-  existing_runbook?: CaseReport;
-  similarity_score?: number;
-  reason: string;
-}
-
-export interface ReportRecommendation {
-  case_id: string;
-  available_for_generation: ReportType[];
-  runbook_recommendation: RunbookRecommendation;
-}
-
 export interface ReportGenerationRequest {
   report_types: ReportType[];
 }
