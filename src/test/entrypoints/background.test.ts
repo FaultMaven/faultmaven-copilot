@@ -411,6 +411,62 @@ describe('Background Service Worker', () => {
       expect(result.error).toMatch(/state parameter mismatch/i);
     });
 
+    // The PKCE verifier and state live at FIXED storage keys — one slot. The
+    // retry the panel offers after its 3-minute wait timeout starts a second
+    // flow that overwrites the first, and the abandoned tab can still complete.
+    // Its callback then arrives with the SUPERSEDED state, and cleaning up after
+    // that failure removed the live flow's verifier: the stale tab died on the
+    // mismatch, the live one on "No pending authorization request found".
+    it('leaves the pending flow intact when a superseded callback arrives', async () => {
+      // Storage holds the SECOND (live) flow; the first tab reports back late.
+      await mockStorage.local.set({
+        pkce_verifier: 'verifier-second',
+        auth_state: 'state-second',
+        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+      });
+      const mockFetch = vi.fn();
+      global.fetch = mockFetch;
+
+      const stale = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-first', state: 'state-first' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(stale).toEqual(expect.objectContaining({ success: false }));
+      expect(mockFetch).not.toHaveBeenCalled();
+
+      // The live flow's PKCE state must still be there — this is the whole point.
+      const after = await mockStorage.local.get(['pkce_verifier', 'auth_state']);
+      expect(after.pkce_verifier).toBe('verifier-second');
+      expect(after.auth_state).toBe('state-second');
+    });
+
+    // The converse, so the guard above cannot be satisfied by never cleaning up:
+    // a failure that DOES belong to the pending flow must still clear it.
+    it('still clears the pending flow when the matching exchange fails', async () => {
+      await mockStorage.local.set({
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123',
+        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+      });
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => 'invalid_grant',
+        json: async () => ({ detail: 'invalid_grant' })
+      });
+
+      const result = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(result).toEqual(expect.objectContaining({ success: false }));
+      const after = await mockStorage.local.get(['pkce_verifier', 'auth_state']);
+      expect(after.pkce_verifier).toBeUndefined();
+      expect(after.auth_state).toBeUndefined();
+    });
+
     it('does not re-exchange the same code after a completed flow (replay rejected)', async () => {
       await mockStorage.local.set({
         oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
