@@ -80,7 +80,12 @@ class AuthManager {
 
   async isAuthenticated(): Promise<boolean> {
     const authState = await this.getAuthState();
-    return authState !== null;
+    // Must agree with getCurrentUser(): a stored authState with no `user` is
+    // not a usable session. Returning true here while getCurrentUser() returns
+    // null puts the store in {isAuthenticated: true, currentUser: null}, and
+    // SidePanelApp gates only on isAuthenticated — so the signed-in UI renders
+    // with no identity and the login prompt never appears (copilot#185).
+    return authState !== null && !!authState.user;
   }
 
   /**

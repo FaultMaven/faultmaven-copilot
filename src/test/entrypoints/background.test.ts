@@ -187,8 +187,8 @@ describe('Background Service Worker', () => {
    * a model this endpoint never returns, and so passed against a contract the
    * server does not implement (copilot#185).
    *
-   * `profile: null` simulates a failing profile read, which must degrade to the
-   * token identity rather than failing the sign-in.
+   * `profile: null` simulates a failing profile read, which must FAIL the
+   * sign-in — a degraded profile would be persisted and never re-read.
    */
   const mockOAuthFetch = (
     tokenBody: Record<string, any>,
@@ -484,8 +484,39 @@ describe('Background Service Worker', () => {
       );
     });
 
-    // A profile read is a nicety; losing it must not cost the user their login.
-    it('still signs in when the /auth/me read fails, falling back to the token identity', async () => {
+    // The AUTH_CALLBACK ingress resolves with this value. It used to echo
+    // `tokens.user`, which by this endpoint's contract never exists — so a
+    // successful sign-in resolved as { success: true, user: undefined }.
+    it('resolves the callback with the profile-built user, not the absent tokens.user', async () => {
+      await mockStorage.local.set({
+        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123'
+      });
+      global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
+
+      const result = await new Promise<any>((resolve) => {
+        listeners['message'](
+          { type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' },
+          resolve
+        );
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          success: true,
+          user: expect.objectContaining({ user_id: 'user-789', display_name: 'Alice' })
+        })
+      );
+    });
+
+    // A degraded profile must never be persisted. Nothing re-reads it once
+    // stored (auth-service's getCurrentUser has no callers) and TokenManager
+    // copies it forward on every refresh, so a guessed `roles: ['user']` would
+    // silently strip an admin's access for the life of the refresh window.
+    // Failing the sign-in costs one retry; the alternative costs up to 7 days.
+    it('fails the sign-in when the /auth/me read fails, persisting no session', async () => {
       await mockStorage.local.set({
         oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
@@ -500,18 +531,9 @@ describe('Background Service Worker', () => {
         { id: 999 }
       );
 
-      // Session established, identity taken from the token response, and
-      // display_name degraded to the username rather than left undefined —
-      // an undefined display_name is exactly what crashed the panel.
-      expect(mockAuthSaveState).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user: expect.objectContaining({
-            user_id: 'user-789',
-            username: 'alice',
-            display_name: 'alice'
-          })
-        })
-      );
+      expect(mockAuthSaveState).not.toHaveBeenCalled();
+      const stored = await mockStorage.local.get(['access_token']);
+      expect(stored.access_token).toBeUndefined();
     });
 
     it('should ignore URLs when state parameter does not match expectedState (CSRF protection)', async () => {
@@ -564,7 +586,7 @@ describe('Background Service Worker', () => {
 
       const result = await storeAuth(noUser);
 
-      expect(result).toEqual(expect.objectContaining({ success: false }));
+      expect(result).toEqual(expect.objectContaining({ status: 'error' }));
       expect(mockAuthSaveState).not.toHaveBeenCalled();
       // Critically: no half-written session — the token keys must not land either.
       const stored = await mockStorage.local.get(['access_token', 'refresh_token']);

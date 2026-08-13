@@ -33,7 +33,7 @@ export default defineBackground({
             hasToken: !!payload?.access_token,
             hasUser: !!payload?.user
           });
-          sendResponse({ success: false, error: 'Malformed auth payload' });
+          sendResponse({ status: 'error', message: 'Malformed auth payload' });
           return;
         }
 
@@ -311,44 +311,36 @@ export default defineBackground({
         // first to satisfy that helper would leave a half-built session behind
         // if the profile read then failed.
         //
-        // A profile read failing must NOT fail an otherwise-successful sign-in:
-        // fall back to the identity the token response already proved, with
-        // display_name defaulting to the username, so the panel renders a
-        // plainer session instead of bouncing the user back to login.
-        const fallbackUser = {
-          user_id: tokens.user_id,
-          username: tokens.username,
-          email: '',
-          display_name: tokens.username,
-          is_dev_user: false,
-          is_active: true,
-          roles: ['user'] as string[]
-        };
-        let user = fallbackUser;
-        try {
-          const profileResponse = await fetchWithTimeout(`${apiUrl}/api/v1/auth/me`, {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${tokens.access_token}` }
-          });
-          if (profileResponse.ok) {
-            const profile = await profileResponse.json();
-            user = {
-              user_id: profile.user_id ?? fallbackUser.user_id,
-              username: profile.username ?? fallbackUser.username,
-              email: profile.email ?? fallbackUser.email,
-              display_name: profile.display_name || profile.username || fallbackUser.display_name,
-              is_dev_user: profile.is_dev_user ?? false,
-              is_active: true,
-              roles: profile.roles || ['user']
-            };
-          } else {
-            log.warn('Profile read after OAuth login returned non-OK; using token identity', {
-              status: profileResponse.status
-            });
-          }
-        } catch (profileError) {
-          log.warn('Profile read after OAuth login failed; using token identity', profileError);
+        // A failed read FAILS THE SIGN-IN rather than degrading to a guessed
+        // identity. Nothing re-reads the profile once it is stored: the only
+        // other /auth/me caller (auth-service.ts getCurrentUser) has no
+        // production callers, and TokenManager copies the stored `user` forward
+        // verbatim on every refresh (token-manager.ts:257). So a fallback
+        // `roles: ['user']` would outlive the outage that caused it and
+        // silently strip an admin's access for the life of the refresh window —
+        // up to 7 days — with nothing to signal why. Losing one login attempt
+        // to a transient error is by far the smaller failure: the user signs in
+        // again and gets a correct session.
+        const profileResponse = await fetchWithTimeout(`${apiUrl}/api/v1/auth/me`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${tokens.access_token}` }
+        });
+        if (!profileResponse.ok) {
+          throw new Error(`Could not load your profile after sign-in (${profileResponse.status})`);
         }
+        const profile = await profileResponse.json().catch(() => null);
+        if (typeof profile?.user_id !== 'string') {
+          throw new Error('Could not load your profile after sign-in');
+        }
+        const user = {
+          user_id: profile.user_id,
+          username: profile.username ?? tokens.username,
+          email: profile.email ?? '',
+          display_name: profile.display_name || profile.username || tokens.username,
+          is_dev_user: profile.is_dev_user ?? false,
+          is_active: true,
+          roles: profile.roles || ['user']
+        };
 
         // Store tokens and user info. storage.set MERGES — it never removes keys —
         // so clear a stale refresh_expires_at from a prior session rather than
@@ -405,7 +397,7 @@ export default defineBackground({
           log.debug('Could not broadcast auth state change:', e);
         }
 
-        return { success: true, user: tokens.user };
+        return { success: true, user };
       } catch (error: any) {
         log.error('OAuth callback failed:', error);
 
