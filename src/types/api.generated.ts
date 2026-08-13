@@ -533,25 +533,28 @@ export interface paths {
         put?: never;
         /**
          * Assign Role
-         * @description Assign role to user (admin only).
+         * @description Assign an organization-scoped role to a user (operator only).
          *
-         *     Replaces existing roles with the new role. Revokes all JWT tokens.
-         *     Admin cannot modify their own roles.
+         *     Replaces the user's organization-scoped role (`admin`, `member`, `viewer`)
+         *     and leaves roles on other axes untouched — notably `platform_admin`, which
+         *     is granted and revoked only by `fm-promote-platform-admin` /
+         *     `fm-demote-platform-admin`, and the base `user` marker. Revokes all JWT
+         *     tokens. Callers cannot modify their own roles.
          *
          *     Path Parameters:
          *         user_id: User ID to assign role to
          *
          *     Request Body:
-         *         role: Role to assign (admin, member, viewer)
+         *         role: Organization-scoped role to assign (admin, member, viewer)
          *
          *     Returns:
          *         RoleAssignmentResponse confirming role assignment
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: User lacks admin role OR trying to modify own roles
+         *         403 Forbidden: Caller is not a platform admin OR trying to modify own roles
          *         404 Not Found: User does not exist
-         *         409 Conflict: User already has this role
+         *         409 Conflict: User already has this organization-scoped role
          *         422 Unprocessable Entity: Invalid role
          */
         post: operations["assign_role_api_v1_admin_users__user_id__roles_post"];
@@ -573,21 +576,24 @@ export interface paths {
         post?: never;
         /**
          * Remove Role
-         * @description Remove role from user (admin only).
+         * @description Remove an organization-scoped role from a user (operator only).
          *
-         *     Downgrades user to viewer (minimum privilege). Revokes all JWT tokens.
-         *     Admin cannot remove their own admin role.
+         *     Drops the role from the user's organization-scoped axis; if that leaves no
+         *     organization-scoped role, the user lands on `viewer` (minimum privilege).
+         *     Roles on other axes are preserved — removing an org role never revokes
+         *     `platform_admin` (use `fm-demote-platform-admin` for that). Revokes all
+         *     JWT tokens. Callers cannot remove their own roles.
          *
          *     Path Parameters:
          *         user_id: User ID to remove role from
-         *         role: Role to remove (admin, member)
+         *         role: Organization-scoped role to remove (admin, member)
          *
          *     Returns:
          *         RoleAssignmentResponse confirming role removal
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: User lacks admin role OR trying to remove own admin role
+         *         403 Forbidden: Caller is not a platform admin OR trying to modify own roles
          *         404 Not Found: User does not exist OR user doesn't have this role
          *         422 Unprocessable Entity: Invalid role or attempting to remove viewer role
          */
@@ -1663,16 +1669,18 @@ export interface paths {
          * Get Report Recommendations
          * @description Get intelligent report recommendations for a resolved case.
          *
-         *     Returns recommendations for which reports to generate, including
-         *     intelligent runbook suggestions based on similarity search of existing
-         *     runbooks (both incident-driven and document-driven sources).
+         *     Returns recommendations for which reports to generate, including runbook
+         *     suggestions based on a similarity search of the published runbooks the
+         *     REQUESTER can read (global ∪ their own ∪ shared to their teams). The
+         *     requester is the principal who will act on the answer, so their scope
+         *     governs here; the engine's terminal-turn dedup scopes on the case owner
+         *     (fm#1030).
          *
          *     Recommendation Logic:
-         *     - Always available: Incident Report, Post-Mortem (unique per incident)
-         *     - Conditional: Runbook (based on similarity search)
-         *         - ≥85% similarity: Recommend reuse existing runbook
-         *         - 70-84% similarity: Offer both review OR generate options
-         *         - <70% similarity: Recommend generate new runbook
+         *     - Always available: the case's terminal summary
+         *     - Runbook: a ≥70% best-chunk match is surfaced by title and score for the
+         *       user to judge; below that, generation is recommended. There is no
+         *       auto-"reuse" verdict.
          *
          *     Args:
          *         case_id: Case identifier
@@ -3006,26 +3014,6 @@ export interface paths {
          * @description Generate post-mortem, executive summary, or technical analysis reports using LLM
          */
         post: operations["generate_report_api_v1_reports_generate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/reports/recommendations/{case_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get report recommendations for a case
-         * @description Get intelligent recommendations for which reports to generate
-         */
-        get: operations["get_report_recommendations_api_v1_reports_recommendations__case_id__get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6007,18 +5995,6 @@ export interface components {
             reports: components["schemas"]["ReportResponse"][];
             /** Total */
             total: number;
-        };
-        /**
-         * ReportRecommendationResponse
-         * @description API response for report recommendations.
-         */
-        ReportRecommendationResponse: {
-            /** Available For Generation */
-            available_for_generation: string[];
-            /** Case Id */
-            case_id: string;
-            /** Runbook Recommendation */
-            runbook_recommendation: Record<string, never>;
         };
         /**
          * ReportResponse
@@ -10621,38 +10597,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportGenerationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_report_recommendations_api_v1_reports_recommendations__case_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Case ID */
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReportRecommendationResponse"];
                 };
             };
             /** @description Validation Error */
