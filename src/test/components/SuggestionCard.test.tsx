@@ -41,7 +41,7 @@ describe('SuggestionCard — Phase 6 evidence_need_id visual linkage', () => {
     );
     const row = container.firstChild as HTMLElement;
     expect(row.getAttribute('title')).toBe(
-      'Tracks open evidence need (id: eneed_abc123def456)',
+      'Tracks an open data need (id: eneed_abc123def456)',
     );
   });
 

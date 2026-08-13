@@ -43,7 +43,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
     <div
       className={`border border-fm-border rounded-lg bg-fm-surface shadow-sm hover:shadow-md transition-shadow ${className}`}
       role="article"
-      aria-label={`Evidence request: ${request.label}`}
+      aria-label={`Data request: ${request.label}`}
     >
       {/* Header */}
       <div className="p-4">
@@ -91,7 +91,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
           aria-valuenow={completenessPercent}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label="Evidence completeness"
+          aria-label="Data completeness"
         >
           <div
             className={`h-full rounded-full transition-all duration-300 ${getCompletenessBarColor(request.completeness)}`}
@@ -129,7 +129,7 @@ const EvidenceRequestCard: React.FC<EvidenceRequestCardProps> = memo(({ request,
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              How to obtain this evidence
+              How to collect this data
             </span>
             <span className="text-xs text-fm-text-tertiary">
               {isGuidanceExpanded ? 'Hide' : 'Show'} guidance

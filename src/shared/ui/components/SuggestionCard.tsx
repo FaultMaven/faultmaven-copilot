@@ -74,7 +74,7 @@ export function SuggestionCard({
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
       aria-label={isClickable ? action.label : undefined}
-      title={isTrackedNeed ? `Tracks open evidence need (id: ${action.evidence_need_id})` : undefined}
+      title={isTrackedNeed ? `Tracks an open data need (id: ${action.evidence_need_id})` : undefined}
       data-evidence-need-id={isTrackedNeed ? action.evidence_need_id : undefined}
     >
       <span

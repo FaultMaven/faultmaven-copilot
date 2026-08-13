@@ -40,7 +40,7 @@ only as a result of actions you take. Specifically:
 |------|------|---------------|-----|
 | **Page content** (visible text of the current tab) | Only when you explicitly click "capture page" for the active tab | Your configured FaultMaven backend | So the assistant can analyze logs, stack traces, and dashboard data you are looking at |
 | **Messages, questions, and pasted text** | When you send them in the chat | Your configured FaultMaven backend | To answer your troubleshooting questions |
-| **Files you upload** | When you attach a file | Your configured FaultMaven backend | To analyze logs/evidence you provide |
+| **Files you upload** | When you attach a file | Your configured FaultMaven backend | To analyze the logs and other data you provide |
 | **Authentication tokens** | During and after login | Stored locally; sent to your backend on each request to authenticate you | To keep you signed in securely |
 
 **Page capture is never automatic.** The extension only reads page content when
