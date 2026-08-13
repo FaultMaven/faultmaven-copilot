@@ -80,7 +80,12 @@ class AuthManager {
 
   async isAuthenticated(): Promise<boolean> {
     const authState = await this.getAuthState();
-    return authState !== null;
+    // Must agree with getCurrentUser(): a stored authState with no `user` is
+    // not a usable session. Returning true here while getCurrentUser() returns
+    // null puts the store in {isAuthenticated: true, currentUser: null}, and
+    // SidePanelApp gates only on isAuthenticated — so the signed-in UI renders
+    // with no identity and the login prompt never appears (copilot#185).
+    return authState !== null && !!authState.user;
   }
 
   /**
@@ -90,6 +95,17 @@ class AuthManager {
   async getCurrentUser(): Promise<User | null> {
     const authState = await this.getAuthState();
     if (!authState) return null;
+
+    // A stored authState with no `user` is structurally invalid — it can only
+    // come from a writer that persisted an unvalidated payload. Treat it as "no
+    // session" rather than dereferencing it: throwing here surfaces as
+    // `Cannot read properties of undefined (reading 'display_name')` inside
+    // whatever component asked, which renders as an unrecoverable error page
+    // instead of a login prompt (copilot#185).
+    if (!authState.user) {
+      log.warn('Stored authState has no user; treating as unauthenticated');
+      return null;
+    }
 
     return {
       user_id: authState.user.user_id,

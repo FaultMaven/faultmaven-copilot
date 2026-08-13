@@ -232,6 +232,28 @@ describe('Authentication API', () => {
       isAuth = await authManager.isAuthenticated();
       expect(isAuth).toBe(false);
     });
+
+    // copilot#185. A stored authState with no `user` is structurally invalid.
+    // Dereferencing it threw `Cannot read properties of undefined (reading
+    // 'display_name')` inside whichever component asked, which renders as an
+    // unrecoverable error page instead of a login prompt. Treat it as no session.
+    it('returns null for a stored authState that has no user, instead of throwing', async () => {
+      const { user: _omitted, ...noUser } = mockAuthState as any;
+      mockBrowserStorage.local.get.mockResolvedValue({ authState: noUser });
+
+      await expect(authManager.getCurrentUser()).resolves.toBeNull();
+    });
+
+    // isAuthenticated() must agree with getCurrentUser(). Disagreeing puts the
+    // store in {isAuthenticated: true, currentUser: null}, and SidePanelApp
+    // gates only on isAuthenticated — so the signed-in UI renders with no
+    // identity and the login prompt never appears.
+    it('reports NOT authenticated for a stored authState that has no user', async () => {
+      const { user: _omitted, ...noUser } = mockAuthState as any;
+      mockBrowserStorage.local.get.mockResolvedValue({ authState: noUser });
+
+      await expect(authManager.isAuthenticated()).resolves.toBe(false);
+    });
   });
 
   describe('getCurrentUser', () => {
