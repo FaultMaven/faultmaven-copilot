@@ -176,6 +176,64 @@ describe('Background Service Worker', () => {
     });
   });
 
+  /**
+   * Mock fetch for the OAuth callback, which makes TWO calls: the token
+   * exchange, then the `/auth/me` profile read.
+   *
+   * `POST /auth/oauth/token` answers with the backend's flat `TokenResponse`
+   * (access_token, refresh_token, token_type, expires_in, refresh_expires_in,
+   * user_id, username) — no nested `user`. These fixtures deliberately carry
+   * that shape: they previously nested a `user` object per `AuthTokenResponse`,
+   * a model this endpoint never returns, and so passed against a contract the
+   * server does not implement (copilot#185).
+   *
+   * `profile: null` simulates a failing profile read, which must degrade to the
+   * token identity rather than failing the sign-in.
+   */
+  const mockOAuthFetch = (
+    tokenBody: Record<string, any>,
+    opts: { profile?: Record<string, any> | null } = {}
+  ) =>
+    vi.fn().mockImplementation((url: unknown) => {
+      if (typeof url === 'string' && url.includes('/auth/me')) {
+        return Promise.resolve(
+          opts.profile === null
+            ? { ok: false, status: 503, json: async () => ({}) }
+            : { ok: true, json: async () => opts.profile ?? {} }
+        );
+      }
+      return Promise.resolve({ ok: true, json: async () => tokenBody });
+    });
+
+  /**
+   * Count only token-exchange calls. The OAuth callback also fetches /auth/me,
+   * so a bare `mockFetch` call count no longer answers "was this code exchanged
+   * exactly once?" — which is what these single-exchange assertions are about.
+   */
+  const tokenExchangeCalls = (mockFetch: any) =>
+    mockFetch.mock.calls.filter(
+      ([url]: [unknown]) => typeof url === 'string' && url.includes('/auth/oauth/token')
+    ).length;
+
+  const TOKEN_RESPONSE = {
+    access_token: 'new-token-abc',
+    token_type: 'bearer',
+    expires_in: 3600,
+    refresh_token: 'refresh-abc',
+    refresh_expires_in: 86400,
+    user_id: 'user-789',
+    username: 'alice'
+  };
+
+  const PROFILE_RESPONSE = {
+    user_id: 'user-789',
+    username: 'alice',
+    email: 'alice@example.com',
+    display_name: 'Alice',
+    is_dev_user: false,
+    roles: ['user']
+  };
+
   describe('OAuth Redirect Tab Monitoring', () => {
     it('should complete OAuth callback and close tab when matching redirect URL is parsed', async () => {
       // Store pending OAuth flow metadata
@@ -190,24 +248,8 @@ describe('Background Service Worker', () => {
         redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
       });
 
-      // Mock token exchange fetch
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          access_token: 'new-token-abc',
-          token_type: 'bearer',
-          expires_in: 3600,
-          refresh_token: 'refresh-abc',
-          refresh_expires_in: 86400,
-          user: {
-            user_id: 'user-789',
-            username: 'alice',
-            email: 'alice@example.com',
-            display_name: 'Alice',
-            roles: ['user']
-          }
-        })
-      });
+      // Mock token exchange + profile read
+      const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
       global.fetch = mockFetch;
 
       // Trigger tab update
@@ -259,7 +301,7 @@ describe('Background Service Worker', () => {
         json: async () => ({
           access_token: 'a', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
           // NO refresh_expires_in
-          user: { user_id: 'u', username: 'x', roles: ['user'] }
+          user_id: 'u', username: 'x'
         })
       });
 
@@ -278,7 +320,7 @@ describe('Background Service Worker', () => {
       await mockStorage.local.set({ pkce_verifier: 'v', auth_state: 's' });
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ access_token: 'a', token_type: 'bearer', refresh_token: 'r', user: { user_id: 'u' } })
+        json: async () => ({ access_token: 'a', token_type: 'bearer', refresh_token: 'r', user_id: 'u', username: 'x' })
       });
 
       const res = await new Promise<any>((resolve) => {
@@ -302,17 +344,7 @@ describe('Background Service Worker', () => {
         redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
       });
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          access_token: 'new-token-abc',
-          token_type: 'bearer',
-          expires_in: 3600,
-          refresh_token: 'refresh-abc',
-          refresh_expires_in: 86400,
-          user: { user_id: 'user-789', username: 'alice', email: 'a@b.c', display_name: 'Alice', roles: ['user'] }
-        })
-      });
+      const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
       global.fetch = mockFetch;
 
       // Fire BOTH ingress paths for the same authorization code, concurrently:
@@ -332,7 +364,7 @@ describe('Background Service Worker', () => {
       await Promise.all([p1, p2]);
 
       // The single-use code must be exchanged exactly ONCE (not raced twice).
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(tokenExchangeCalls(mockFetch)).toBe(1);
       expect(mockAuthSaveState).toHaveBeenCalledTimes(1);
     });
 
@@ -347,7 +379,7 @@ describe('Background Service Worker', () => {
         ok: true,
         json: async () => ({
           access_token: 't', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
-          refresh_expires_in: 86400, user: { user_id: 'u1', username: 'a', roles: ['user'] }
+          refresh_expires_in: 86400, user_id: 'u1', username: 'a'
         })
       });
 
@@ -390,7 +422,7 @@ describe('Background Service Worker', () => {
         ok: true,
         json: async () => ({
           access_token: 't', token_type: 'bearer', expires_in: 3600, refresh_token: 'r',
-          refresh_expires_in: 86400, user: { user_id: 'u1', username: 'a', roles: ['user'] }
+          refresh_expires_in: 86400, user_id: 'u1', username: 'a'
         })
       });
       global.fetch = mockFetch;
@@ -400,15 +432,86 @@ describe('Background Service Worker', () => {
         listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
           { id: 'test-copilot-id' }, () => resolve());
       });
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(tokenExchangeCalls(mockFetch)).toBe(1);
 
       // Replay the same code: must be rejected with no additional token exchange.
       const replay = await new Promise<any>((resolve) => {
         listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
           { id: 'test-copilot-id' }, resolve);
       });
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(tokenExchangeCalls(mockFetch)).toBe(1);
       expect(replay).toEqual(expect.objectContaining({ success: false }));
+    });
+
+    // copilot#185. /auth/oauth/token returns the flat TokenResponse — no nested
+    // `user`. Requiring one made every cloud sign-in fail on
+    // `tokens.user.display_name`. The profile must come from /auth/me instead.
+    it('completes sign-in on the flat TokenResponse and fills the profile from /auth/me', async () => {
+      await mockStorage.local.set({
+        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123'
+      });
+
+      const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
+      global.fetch = mockFetch;
+
+      await listeners['tabUpdate'](
+        999,
+        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
+        { id: 999 }
+      );
+
+      // The profile read is what supplies display_name/email/roles.
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.faultmaven.ai/api/v1/auth/me',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({ Authorization: 'Bearer new-token-abc' })
+        })
+      );
+      expect(mockAuthSaveState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          access_token: 'new-token-abc',
+          user: expect.objectContaining({
+            user_id: 'user-789',
+            username: 'alice',
+            email: 'alice@example.com',
+            display_name: 'Alice',
+            roles: ['user']
+          })
+        })
+      );
+    });
+
+    // A profile read is a nicety; losing it must not cost the user their login.
+    it('still signs in when the /auth/me read fails, falling back to the token identity', async () => {
+      await mockStorage.local.set({
+        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123'
+      });
+
+      global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: null });
+
+      await listeners['tabUpdate'](
+        999,
+        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
+        { id: 999 }
+      );
+
+      // Session established, identity taken from the token response, and
+      // display_name degraded to the username rather than left undefined —
+      // an undefined display_name is exactly what crashed the panel.
+      expect(mockAuthSaveState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({
+            user_id: 'user-789',
+            username: 'alice',
+            display_name: 'alice'
+          })
+        })
+      );
     });
 
     it('should ignore URLs when state parameter does not match expectedState (CSRF protection)', async () => {
@@ -449,6 +552,24 @@ describe('Background Service Worker', () => {
 
     const storeAuth = (payload: any) => new Promise<any>((resolve) => {
       listeners['message']({ action: 'storeAuth', payload }, { id: 'test-copilot-id' }, resolve);
+    });
+
+    // copilot#185. This payload was previously stored raw, so a bridge payload
+    // without `user` became a persisted authState with `user: undefined` — which
+    // every later reader had to survive, and one of them didn't. Reject it whole
+    // and write NOTHING, so the user stays logged out and can retry rather than
+    // holding a session that breaks the panel on the next render.
+    it('rejects a bridge payload with no user and persists nothing', async () => {
+      const { user: _omitted, ...noUser } = bridgePayload;
+
+      const result = await storeAuth(noUser);
+
+      expect(result).toEqual(expect.objectContaining({ success: false }));
+      expect(mockAuthSaveState).not.toHaveBeenCalled();
+      // Critically: no half-written session — the token keys must not land either.
+      const stored = await mockStorage.local.get(['access_token', 'refresh_token']);
+      expect(stored.access_token).toBeUndefined();
+      expect(stored.refresh_token).toBeUndefined();
     });
 
     it('persists the refresh_token (TokenManager keys) so a bridge session can auto-refresh', async () => {

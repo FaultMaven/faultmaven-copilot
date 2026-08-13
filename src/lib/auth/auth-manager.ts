@@ -91,6 +91,17 @@ class AuthManager {
     const authState = await this.getAuthState();
     if (!authState) return null;
 
+    // A stored authState with no `user` is structurally invalid — it can only
+    // come from a writer that persisted an unvalidated payload. Treat it as "no
+    // session" rather than dereferencing it: throwing here surfaces as
+    // `Cannot read properties of undefined (reading 'display_name')` inside
+    // whatever component asked, which renders as an unrecoverable error page
+    // instead of a login prompt (copilot#185).
+    if (!authState.user) {
+      log.warn('Stored authState has no user; treating as unauthenticated');
+      return null;
+    }
+
     return {
       user_id: authState.user.user_id,
       username: authState.user.username,

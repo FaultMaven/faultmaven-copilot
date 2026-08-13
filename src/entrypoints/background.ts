@@ -22,6 +22,21 @@ export default defineBackground({
         expiresAt: payload?.expires_at,
       });
       try {
+        // Validate BEFORE any storage write. This payload arrives from the
+        // dashboard bridge and was previously persisted raw, so a malformed one
+        // became a stored authState with `user: undefined` that every later
+        // reader had to survive. Reject it whole — a bridge session we cannot
+        // represent should leave the user logged out and able to retry, not
+        // half-written with tokens but no identity (copilot#185).
+        if (!payload?.access_token || !payload?.user?.user_id) {
+          log.warn('Rejecting malformed bridge auth payload', {
+            hasToken: !!payload?.access_token,
+            hasUser: !!payload?.user
+          });
+          sendResponse({ success: false, error: 'Malformed auth payload' });
+          return;
+        }
+
         // Persist the TokenManager keys (not just the composite authState) so a
         // bridge-established session can auto-refresh like an OAuth-established one.
         // Previously only saveAuthState() ran, which writes the `authState` key but
@@ -262,30 +277,78 @@ export default defineBackground({
 
         const tokens = await tokenResponse.json();
 
-        // Validate token response (per AuthTokenResponse in backend). Require a
-        // numeric expires_in so we never store `expires_at: NaN` (which reads as
-        // never-expiring / corrupt), matching the guard in TokenManager.
+        // Validate against the contract THIS endpoint returns. /auth/oauth/token
+        // answers with `TokenResponse` (faultmaven modules/auth/api/oauth.py),
+        // which is FLAT: access_token, refresh_token, token_type, expires_in,
+        // refresh_expires_in, user_id, username. It carries no nested `user`
+        // object and no display_name.
+        //
+        // This previously required `tokens.user`, per `AuthTokenResponse` — the
+        // model returned by /auth/login and /auth/sso/exchange, NOT by this
+        // endpoint. Under AUTH_MODE=local the OAuth path was never the sign-in
+        // route, so the mismatch stayed latent until the cloud cutover made it
+        // the only one, and every sign-in failed on `tokens.user.display_name`
+        // (copilot#185).
+        //
+        // Require a numeric expires_in so we never store `expires_at: NaN`
+        // (which reads as never-expiring / corrupt), matching TokenManager.
         if (
           typeof tokens.access_token !== 'string' ||
           typeof tokens.expires_in !== 'number' ||
-          !tokens.user
+          typeof tokens.user_id !== 'string' ||
+          typeof tokens.username !== 'string'
         ) {
           throw new Error('Invalid token response: missing required fields');
         }
 
         log.info('Tokens received successfully');
 
-        // Use complete user object from API response (per AuthTokenResponse.user: UserProfile)
-        // Backend returns full user object with all required fields
-        const user = {
-          user_id: tokens.user.user_id,
-          username: tokens.user.username,
-          email: tokens.user.email,
-          display_name: tokens.user.display_name,
-          is_dev_user: tokens.user.is_dev_user,
-          is_active: true,  // User is active if they successfully authenticated
-          roles: tokens.user.roles || ['user']
+        // The profile (email, display_name, roles) is not in the token response,
+        // so read it from /auth/me with the freshly-minted access token.
+        //
+        // Deliberately a direct fetch rather than the shared authenticatedFetch:
+        // the tokens are not in storage yet at this point, and storing them
+        // first to satisfy that helper would leave a half-built session behind
+        // if the profile read then failed.
+        //
+        // A profile read failing must NOT fail an otherwise-successful sign-in:
+        // fall back to the identity the token response already proved, with
+        // display_name defaulting to the username, so the panel renders a
+        // plainer session instead of bouncing the user back to login.
+        const fallbackUser = {
+          user_id: tokens.user_id,
+          username: tokens.username,
+          email: '',
+          display_name: tokens.username,
+          is_dev_user: false,
+          is_active: true,
+          roles: ['user'] as string[]
         };
+        let user = fallbackUser;
+        try {
+          const profileResponse = await fetchWithTimeout(`${apiUrl}/api/v1/auth/me`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${tokens.access_token}` }
+          });
+          if (profileResponse.ok) {
+            const profile = await profileResponse.json();
+            user = {
+              user_id: profile.user_id ?? fallbackUser.user_id,
+              username: profile.username ?? fallbackUser.username,
+              email: profile.email ?? fallbackUser.email,
+              display_name: profile.display_name || profile.username || fallbackUser.display_name,
+              is_dev_user: profile.is_dev_user ?? false,
+              is_active: true,
+              roles: profile.roles || ['user']
+            };
+          } else {
+            log.warn('Profile read after OAuth login returned non-OK; using token identity', {
+              status: profileResponse.status
+            });
+          }
+        } catch (profileError) {
+          log.warn('Profile read after OAuth login failed; using token identity', profileError);
+        }
 
         // Store tokens and user info. storage.set MERGES — it never removes keys —
         // so clear a stale refresh_expires_at from a prior session rather than
