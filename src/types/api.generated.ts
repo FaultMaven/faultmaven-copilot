@@ -7807,6 +7807,13 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description The health check itself failed. The body keeps the same shape as a successful report — `status` plus a static `error` — so a caller reading the body is unaffected by the status code. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     local_login_api_v1_auth_login_post: {
