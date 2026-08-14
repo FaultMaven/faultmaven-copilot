@@ -5840,14 +5840,23 @@ export interface components {
         };
         /**
          * OperatorAction
-         * @description The metadata/content boundary D8/D9 governs.
+         * @description What an operator did that this table has to remember.
          *
-         *     ``LIST`` is ambient metadata (ids, org, state, timestamps, counts — never
-         *     titles). ``CONTENT_OPEN`` is tenant content: title, transcript, evidence.
-         *     Title counts as content because it is user free-text and leaks.
+         *     Two are the metadata/content boundary D8/D9 governs. ``LIST`` is ambient
+         *     metadata (ids, org, state, timestamps, counts — never titles).
+         *     ``CONTENT_OPEN`` is tenant content: title, transcript, evidence. Title
+         *     counts as content because it is user free-text and leaks.
+         *
+         *     ``ROLE_GRANTED`` / ``ROLE_REVOKED`` are not data access — they record
+         *     changes to *who is an operator*. They live here because ``platform_admin``
+         *     is deployment-scoped (ADR-012 D9) and so has no organization to stamp it
+         *     with; see migration 042 and ``cli._operator_role_audit`` for why the
+         *     RLS-tenanted ``user_audit_log`` cannot hold them.
+         *
+         *     So read this enum as "operator events", of which data access is two.
          * @enum {string}
          */
-        OperatorAction: "list" | "content_open";
+        OperatorAction: "list" | "content_open" | "role_granted" | "role_revoked";
         /**
          * ProblemVerificationData
          * @description Problem verification details for INVESTIGATING phase.
