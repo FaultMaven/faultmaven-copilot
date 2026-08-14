@@ -53,9 +53,10 @@ tab that is active at that moment. The extension does not monitor your browsing.
 See the privacy policy for full detail.
 ```
 
-**Privacy policy URL:** `https://faultmaven.ai/privacy`
-*(Publish `PRIVACY.md` at this URL before submitting. A public GitHub-hosted page
-is also acceptable if a website page is not yet available.)*
+**Privacy policy URL:** `https://faultmaven.ai/privacy/extension`
+*(Live and returning 200. This is the extension-specific policy published by
+faultmaven-website#14 — not the general `/privacy` page, which covers the
+product as a whole and is a separate document.)*
 
 ---
 
@@ -122,7 +123,7 @@ requires an account to test. Please use these steps:
 
 1. Click the extension icon to open the side panel.
 2. It defaults to FaultMaven Cloud (https://app.faultmaven.ai). Sign in with:
-   - Email: <REVIEWER TEST ACCOUNT EMAIL>
+   - Email: faultmavenuser+cws@gmail.com
    - Password: <REVIEWER TEST ACCOUNT PASSWORD>
 3. Start a new case and type a troubleshooting question, e.g.
    "Why is my pod crash-looping?"
@@ -133,8 +134,27 @@ Page capture is user-initiated only; the extension does not read pages in the
 background. Optional host permissions are requested per-site at capture time.
 ```
 
-> ⚠️ **Action item:** create a dedicated reviewer test account on FaultMaven Cloud
-> and fill in the credentials above before submitting.
+> ⚠️ **Action item — the account above does NOT exist yet.** The address is
+> decided; the account is not provisioned. Do not submit until it is, and until
+> a real password replaces the placeholder.
+>
+> Cloud is `AUTH_MODE=oauth` + `TENANT_PROVIDER=multi`, so this is not a
+> self-service signup — the reviewer account needs its **own** WorkOS
+> Organization and a `fm-provision-sso-org` tenant mapping *before* its first
+> sign-in, or the login fails closed. Follow
+> [`docs/operations/account-provisioning.md`](https://github.com/FaultMaven/faultmaven/blob/main/docs/operations/account-provisioning.md)
+> in the `faultmaven` repo (§ "Vendor, reviewer and demo accounts").
+>
+> Two things to confirm before handing credentials to Google:
+>
+> 1. **Sign in end-to-end from a different network.** If AuthKit challenges an
+>    unfamiliar device or geography with an emailed code, the reviewer stalls
+>    behind a code only we can see. That is a store-review failure, not a bug
+>    report.
+> 2. **The dashboard must be running a build that maps `sso_org_unmapped`**
+>    (dash#79, fixed in `2b1316b`). On an older build any provisioning slip
+>    renders as "Sign-in failed. Please try again." — advice that can never
+>    work.
 
 ---
 
