@@ -8,6 +8,30 @@ import { enforceUserDataScope } from '../lib/auth/user-scope';
 import { createLogger } from '../lib/utils/logger';
 import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
 
+/**
+ * A callback whose `state` does not match the pending authorization request.
+ *
+ * The PKCE verifier and state live at FIXED storage keys, so there is exactly
+ * one slot: starting a second flow (the retry the panel offers after its wait
+ * timeout) overwrites the first. The abandoned tab can still complete, and its
+ * callback then arrives carrying the SUPERSEDED state.
+ *
+ * That failure must not be cleaned up after. `cleanupOAuthState()` removes
+ * whatever is in the slot — which by definition is the *other*, live flow — so
+ * treating this like an ordinary exchange failure killed both tabs: the stale
+ * one by the mismatch, the live one by the cleanup that followed it, which then
+ * failed with "No pending authorization request found".
+ *
+ * Distinguished by type rather than by message so the cleanup decision cannot
+ * drift when the wording changes.
+ */
+class StaleAuthCallbackError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StaleAuthCallbackError';
+  }
+}
+
 export default defineBackground({
   main() {
     const log = createLogger('Background');
@@ -246,10 +270,16 @@ export default defineBackground({
           throw new Error('No pending authorization request found. Please try logging in again.');
         }
 
-        // Verify state parameter (CSRF protection)
+        // Verify state parameter (CSRF protection). A mismatch also covers the
+        // benign-but-common case of a superseded flow completing late — see
+        // StaleAuthCallbackError; either way this code is not exchanged, and
+        // either way the pending flow in storage is NOT ours to clean up.
         if (state !== storage.auth_state) {
           log.error('State mismatch', { expected: storage.auth_state, received: state });
-          throw new Error('State parameter mismatch - possible CSRF attack');
+          throw new StaleAuthCallbackError(
+            'State parameter mismatch - this callback does not belong to the pending ' +
+              'sign-in. If you retried, finish signing in on the most recent tab.'
+          );
         }
 
         log.info('State verified, exchanging authorization code for tokens');
@@ -401,11 +431,18 @@ export default defineBackground({
       } catch (error: any) {
         log.error('OAuth callback failed:', error);
 
-        // Clean up PKCE state on error
-        try {
-          await cleanupOAuthState();
-        } catch (cleanupError) {
-          log.warn('Failed to cleanup OAuth state after error:', cleanupError);
+        // Clean up PKCE state on error — but ONLY when the failure belongs to the
+        // flow currently in storage. A StaleAuthCallbackError means the state did
+        // not match, i.e. the slot holds a DIFFERENT (live) request, and wiping it
+        // would take that one down too.
+        if (error instanceof StaleAuthCallbackError) {
+          log.info('Superseded callback; leaving the pending flow in storage intact');
+        } else {
+          try {
+            await cleanupOAuthState();
+          } catch (cleanupError) {
+            log.warn('Failed to cleanup OAuth state after error:', cleanupError);
+          }
         }
 
         const errorMessage = error instanceof Error ? error.message : 'Authentication failed';

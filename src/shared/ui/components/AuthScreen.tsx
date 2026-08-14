@@ -17,6 +17,18 @@ import { LocalLoginForm } from './LocalLoginForm';
 
 const log = createLogger('AuthScreen');
 
+/**
+ * How long the panel waits for an SSO flow to report back before restoring the
+ * sign-in button.
+ *
+ * Deliberately shorter than the background's 5-minute pending-flow deadline: a
+ * late success is still honoured (the auth_state_changed listener does not check
+ * this state), so the only cost of erring short is offering the user a retry
+ * they may not need. The only cost of erring long is a disabled button and a
+ * spinner with no way out — which is the defect this exists to close.
+ */
+const SSO_WAIT_TIMEOUT_MS = 3 * 60 * 1000;
+
 interface AuthScreenProps {
   onAuthSuccess: () => void;
 }
@@ -26,6 +38,10 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  // Deliberately NOT `error`: that renders the full-screen "Authentication
+  // Error" block whose only affordance is reloading the panel. A stalled
+  // sign-in wants the sign-in button back and an explanation beside it.
+  const [waitTimedOut, setWaitTimedOut] = useState(false);
 
   // Fetch auth configuration on mount
   useEffect(() => {
@@ -43,6 +59,34 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
     loadAuthConfig();
   }, []);
+
+  // Stop waiting for a sign-in that is never going to report back.
+  //
+  // `isAuthenticating` is cleared in exactly one other place: the catch below,
+  // which only fires if *initiating* the flow failed. Once the authorization tab
+  // opens, the sole exit is an `auth_state_changed` broadcast — so anything that
+  // ends the flow without one (the consent page erroring, the user closing the
+  // tab or denying, a dropped network) left the panel spinning "Authenticating…"
+  // forever, with the button disabled and no way back but reloading the panel.
+  //
+  // The background's own 5-minute deadline cannot cover this: it is evaluated
+  // inside the tab-update handler, so a tab that simply stops navigating never
+  // triggers it, and it notifies the panel of nothing when it does fire.
+  //
+  // This only restores the affordance — it cancels nothing. A late success still
+  // arrives on the listener below and still calls onAuthSuccess, so erring short
+  // costs the user nothing.
+  useEffect(() => {
+    if (!isAuthenticating) return;
+
+    const timer = setTimeout(() => {
+      log.warn('SSO sign-in did not report back before the wait timeout');
+      setIsAuthenticating(false);
+      setWaitTimedOut(true);
+    }, SSO_WAIT_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [isAuthenticating]);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -63,6 +107,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   async function handleSSOLogin() {
     setIsAuthenticating(true);
     setError(null);
+    setWaitTimedOut(false);
 
     try {
       // Send message to background script to initiate OIDC flow
@@ -143,6 +188,11 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
               <p className="text-fm-text-tertiary mb-4 text-center">
                 {"Sign in using your organization's SSO"}
               </p>
+              {waitTimedOut && (
+                <p role="status" className="text-fm-text-tertiary text-sm mb-4 text-center">
+                  Sign-in has not completed yet. Finish signing in on the other tab, or try again.
+                </p>
+              )}
               <button
                 onClick={handleSSOLogin}
                 disabled={isAuthenticating}
