@@ -5687,12 +5687,24 @@ export interface components {
         /**
          * LogoutResponse
          * @description Logout response model
+         *
+         *     ``revoked_tokens`` counts tokens revoked by identifier — the presented one.
+         *     It is not the reach of the sign-out: ``all_sessions_ended`` is, and the two
+         *     answer different questions on purpose. A watermark revokes an unbounded set,
+         *     so there is no count to report for it.
          * @example {
+         *       "all_sessions_ended": true,
          *       "message": "Logged out successfully",
          *       "revoked_tokens": 1
          *     }
          */
         LogoutResponse: {
+            /**
+             * All Sessions Ended
+             * @description Whether every session for this account was ended, not just this one. A deliberate sign-out is account-scoped: the dashboard and the browser extension hold independent token chains, so ending only the presented one leaves the other signed in as the previous user. False means the account-wide revocation did not take and other clients may still be active — the caller should say so rather than report a clean sign-out.
+             * @default false
+             */
+            all_sessions_ended: boolean;
             /**
              * Message
              * @description Logout confirmation message
@@ -5701,7 +5713,7 @@ export interface components {
             message: string;
             /**
              * Revoked Tokens
-             * @description Number of tokens that were revoked
+             * @description Number of tokens revoked by identifier (the presented one)
              */
             revoked_tokens: number;
         };
