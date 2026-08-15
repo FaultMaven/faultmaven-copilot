@@ -7,29 +7,37 @@
 > `https://<extension-id>.chromiumapp.org/` (Chrome) or
 > `https://<uuid>.extensions.allizom.org/` (Firefox) — **not**
 > `chrome-extension://<id>/callback.html`. Two deployment-side changes are
-> required before that flow can complete, and neither has landed:
+> required before that flow can complete, and neither has been deployed:
 >
 > 1. **Backend** — `oauth_redirect_uri_patterns`
 >    (`faultmaven/config/settings.py`) admits only the two `callback.html`
 >    patterns, so `GET /auth/oauth/authorize` rejects the new redirect URI with
 >    a 400 before any consent screen renders.
+>    *In flight:* [faultmaven#1065](https://github.com/FaultMaven/faultmaven/pull/1065)
+>    adds `^https://[a-p]{32}\.chromiumapp\.org/?$` and
+>    `^https://[a-f0-9]{40}\.extensions\.allizom\.org/?$`, keeping the
+>    `callback.html` patterns for older builds.
 > 2. **Dashboard** — `OAuthAuthorizePage.redirectToExtension()` completes the
 >    approve path with `window.history.replaceState(...)` and never navigates to
 >    `redirect_uri`. `launchWebAuthFlow` settles only on a real navigation to
 >    the redirect URI, so it never resolves. `SAFE_REDIRECT_SCHEMES` on the deny
 >    path likewise admits only `chrome-extension:`/`moz-extension:`.
+>    *Unclaimed:* [faultmaven-dashboard#89](https://github.com/FaultMaven/faultmaven-dashboard/issues/89).
 >
-> **Until both land, sign-in via the extension does not work.** The redirect-URI
-> sections below still document the `callback.html` configuration; treat them as
-> describing the *deployed* backend, not the extension's current request.
+> **Until both are deployed, sign-in via the extension does not work.** The
+> redirect-URI sections below still document the `callback.html` configuration;
+> treat them as describing the *currently deployed* backend, not the extension's
+> current request.
 >
-> Note also that switching redirect style is **not** an anti-impersonation
-> measure. A hostile extension requests its own
+> Note also that switching redirect style is **not**, by itself, an
+> anti-impersonation measure. A hostile extension requests its own
 > `https://<their-id>.chromiumapp.org/` exactly as it previously requested
-> `chrome-extension://<their-id>/callback.html`, so a pattern that wildcards the
-> id admits both equally. Pinning this extension's real id in
-> `oauth_redirect_uri_patterns` is what closes that gap, and it does so for
-> either redirect style.
+> `chrome-extension://<their-id>/callback.html`, and a pattern that wildcards the
+> id admits both equally — which the defaults above still do, deliberately, so
+> unpacked dev builds keep working. Pinning this extension's published id in
+> `OAUTH_REDIRECT_URI_PATTERNS` is what closes that gap, and it does so for
+> either redirect style. The genuine win of `launchWebAuthFlow` is window
+> lifecycle: the browser opens the sign-in window and closes it on redirect.
 
 ## Overview
 
