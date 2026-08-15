@@ -5,24 +5,35 @@
 > The extension now signs in through `identity.launchWebAuthFlow`, so its
 > redirect URI is the browser-derived
 > `https://<extension-id>.chromiumapp.org/` (Chrome) or
-> `https://<uuid>.extensions.allizom.org/` (Firefox) — **not**
-> `chrome-extension://<id>/callback.html`. Two deployment-side changes are
-> required before that flow can complete, and neither has been deployed:
+> `https://<40-hex-digest>.extensions.allizom.org/` (Firefox) — **not**
+> `chrome-extension://<id>/callback.html`. Note the Firefox host is a **40-char
+> hex digest** of the add-on id, not the hyphenated 36-char per-install UUID
+> that forms the `moz-extension://` origin; they are different values for the
+> same add-on and only the digest appears in the redirect host.
+>
+> Two deployment-side changes are required before that flow can complete, and
+> neither has been deployed:
 >
 > 1. **Backend** — `oauth_redirect_uri_patterns`
 >    (`faultmaven/config/settings.py`) admits only the two `callback.html`
 >    patterns, so `GET /auth/oauth/authorize` rejects the new redirect URI with
 >    a 400 before any consent screen renders.
 >    *In flight:* [faultmaven#1065](https://github.com/FaultMaven/faultmaven/pull/1065)
->    adds `^https://[a-p]{32}\.chromiumapp\.org/?$` and
->    `^https://[a-f0-9]{40}\.extensions\.allizom\.org/?$`, keeping the
->    `callback.html` patterns for older builds.
+>    **replaces** that default with `^https://[a-p]{32}\.chromiumapp\.org/?$` and
+>    `^https://[a-f0-9]{40}\.extensions\.allizom\.org/?$`. It does **not** keep
+>    the `callback.html` patterns: they are gone from the shipped default, on the
+>    grounds that leaving them left every unconfigured deployment accepting a
+>    form an extension serves for itself. A deployment that still runs pre-#192
+>    builds must re-add them explicitly via `OAUTH_REDIRECT_URI_PATTERNS`.
 > 2. **Dashboard** — `OAuthAuthorizePage.redirectToExtension()` completes the
 >    approve path with `window.history.replaceState(...)` and never navigates to
 >    `redirect_uri`. `launchWebAuthFlow` settles only on a real navigation to
 >    the redirect URI, so it never resolves. `SAFE_REDIRECT_SCHEMES` on the deny
 >    path likewise admits only `chrome-extension:`/`moz-extension:`.
->    *Unclaimed:* [faultmaven-dashboard#89](https://github.com/FaultMaven/faultmaven-dashboard/issues/89).
+>    *In flight:* [faultmaven-dashboard#90](https://github.com/FaultMaven/faultmaven-dashboard/pull/90)
+>    navigates on approve and matches the two `launchWebAuthFlow` hosts as full
+>    anchored URIs — deliberately not by adding `https:` as a scheme, which would
+>    be wider than the server policy it backs up and an open redirect to any host.
 >
 > **Until both are deployed, sign-in via the extension does not work.** The
 > redirect-URI sections below still document the `callback.html` configuration;
@@ -68,6 +79,7 @@ This document summarizes the complete OAuth 2.0 Authorization Code Flow with PKC
 
 **Configuration:** `faultmaven/faultmaven/config/settings.py`
 ```python
+# Currently deployed — superseded by faultmaven#1065, see the banner above.
 oauth_redirect_uri_patterns: List[str] = [
     r"^chrome-extension://[a-z]{32}/callback.html$",
     r"^moz-extension://[a-f0-9-]{36}/callback.html$",
@@ -306,7 +318,9 @@ OAUTH_REQUIRE_HTTPS_REDIRECT=false # Allow chrome-extension:// URLs
 ```bash
 OAUTH_REQUIRE_CONSENT=true         # Show consent screen
 OAUTH_REQUIRE_HTTPS_REDIRECT=true  # Enforce HTTPS
-OAUTH_REDIRECT_URI_PATTERNS='["^chrome-extension://abcd1234.../callback.html$"]'
+# Post-#1065 form, pinned to one published extension id (see faultmaven#1066).
+# Pinning is what makes this identify OUR build rather than any extension.
+OAUTH_REDIRECT_URI_PATTERNS='["^https://<published-32-char-id>\\.chromiumapp\\.org/?$"]'
 ```
 
 **Dashboard:** Set `VITE_API_URL=https://api.faultmaven.ai`
@@ -358,11 +372,21 @@ state = hex(random(16))  // 32 characters
 
 Backend validates redirect URIs against allowlist patterns:
 ```python
+# Currently deployed. faultmaven#1065 replaces both entries with the
+# launchWebAuthFlow hosts — see the banner at the top of this document.
 oauth_redirect_uri_patterns = [
     r"^chrome-extension://[a-z]{32}/callback.html$",  # Chrome
     r"^moz-extension://[a-f0-9-]{36}/callback.html$", # Firefox
 ]
 ```
+
+Note these patterns wildcard the extension id, so they identify *an* extension,
+not *this* one. Pinning the published id is tracked in
+[faultmaven#1066](https://github.com/FaultMaven/faultmaven/issues/1066); until
+that lands, a hostile extension can present `client_id=faultmaven-copilot` with
+its own redirect and be accepted. The consent screen does not catch this — it
+renders the client *name*, so the impostor's prompt also reads "FaultMaven
+Copilot".
 
 ## Known Issues & Technical Debt
 
