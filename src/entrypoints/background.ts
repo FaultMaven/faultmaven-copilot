@@ -132,78 +132,59 @@ export default defineBackground({
       }
     }
 
-    // === Monitor OAuth Tab for Success Page (MV3 service-worker resilient) ===
-    // The listener is registered once at the top level of the worker (see
-    // main() below) and reads the pending-OAuth context from storage on each
-    // navigation. This survives service-worker eviction: the worker is woken by
-    // the tab-update event and reconstructs context from storage. The old
-    // implementation relied on an in-memory closure + setTimeout, both of which
-    // were destroyed if the SW slept while the user was on the login page (the
-    // common case), silently stranding the OAuth flow.
-    const OAUTH_PENDING_KEY = 'oauth_pending';
-
-    // Single-flight guard for OAuth callback processing, keyed by authorization
-    // code. Both ingress paths — the tab monitor (handleOAuthTabUpdate) and the
-    // callback.html AUTH_CALLBACK message — fire for the same redirect. Without
-    // this they race to exchange the SAME single-use code: one wins, the other
-    // gets "code already used" / "no pending request". Both ingresses are kept
-    // (each covers cases the other misses, e.g. a slept service worker); the
-    // dedup makes running both harmless.
+    // Single-flight guard for OAuth callback processing, keyed by
+    // authorization code. The code is single-use, so two ingresses racing to
+    // exchange the same one means a winner and a spurious
+    // "code already used" for the loser.
+    //
+    // Sign-in now has ONE ingress — identity.launchWebAuthFlow resolves with
+    // the redirect directly — so the race it was written for is gone.
+    //
+    // AUTH_CALLBACK (public/auth-callback.js) is still *registered* on the
+    // message listener but is no longer *reachable* from sign-in: the redirect
+    // target is the browser's virtual chromiumapp.org URL, so callback.html is
+    // never navigated to. It is kept as the re-entry point the flow needs if
+    // the redirect ever returns to an in-extension page again — and with it
+    // gone as a live path, note that sign-in now depends on this service worker
+    // surviving the entire interactive login inside one pending call. A worker
+    // evicted mid-login strands the flow with no recovery path; that resilience
+    // was what the removed tab monitor bought.
     const inFlightAuthCallbacks = new Map<string, Promise<{ success: boolean; user?: any; error?: string }>>();
 
-    async function handleOAuthTabUpdate(tabId: number, changeInfo: any, tab: any) {
-      // Only navigation events can carry the OAuth redirect; skip the frequent
-      // status/title/favicon updates to avoid needless storage reads.
-      const url = changeInfo?.url || (changeInfo?.status === 'complete' ? tab?.url : undefined);
-      if (!url) return;
-
-      let pending: any;
+    // Remove this flow's PKCE material — but only when the slot still holds it.
+    //
+    // The verifier, state and redirect_uri live at FIXED storage keys, so there
+    // is exactly one slot: a second sign-in (the retry the panel offers after
+    // its wait timeout) overwrites the first. Cleaning up unconditionally on
+    // the first flow's failure therefore deletes the SECOND, live flow's
+    // material, and that flow then dies with "No pending authorization request
+    // found" — the same defect StaleAuthCallbackError exists to prevent on the
+    // exchange path. Compare against the state this flow minted first.
+    //
+    // An unknown `flowState` (we failed before minting one) is treated as "not
+    // mine": a leftover verifier is harmless — it is unusable without its
+    // matching state and the next flow overwrites it — whereas wiping a live
+    // flow's material is not.
+    async function cleanupOwnOAuthState(flowState?: string): Promise<void> {
       try {
-        const stored = await browser.storage.local.get([OAUTH_PENDING_KEY]);
-        pending = stored[OAUTH_PENDING_KEY];
-      } catch {
-        return;
-      }
-      if (!pending || pending.tabId !== tabId) return;
-
-      // Expire stale flows (replaces the old setTimeout-based cleanup).
-      if (typeof pending.deadline === 'number' && Date.now() > pending.deadline) {
-        log.warn('OAuth flow timed out; clearing pending state');
-        await cleanupOAuthState();
-        return;
-      }
-
-      let code: string | null = null;
-      let state: string | null = null;
-      try {
-        const parsedUrl = new URL(url);
-        code = parsedUrl.searchParams.get('code');
-        state = parsedUrl.searchParams.get('state');
-      } catch {
-        return; // not a navigable URL yet
-      }
-
-      if (code && state && state === pending.expectedState) {
-        log.info('OAuth authorization code detected in monitored tab');
-        // Clear pending first so the parallel callback.html → AUTH_CALLBACK path
-        // does not double-process the same authorization code.
-        await browser.storage.local.remove(OAUTH_PENDING_KEY);
-
-        await handleAuthCallback({ code, state }, (response) => {
-          log.info('OAuth callback handled (tab monitor):', response);
-        });
-
-        try {
-          await browser.tabs.remove(tabId);
-        } catch (e) {
-          log.warn('Could not close OAuth tab:', e);
+        const { auth_state } = await browser.storage.local.get(['auth_state']);
+        if (auth_state && auth_state !== flowState) {
+          log.info('A newer sign-in owns the pending OAuth state; leaving it intact');
+          return;
         }
+        await cleanupOAuthState();
+      } catch (cleanupError) {
+        log.warn('Failed to cleanup OAuth state:', cleanupError);
       }
     }
 
     // === Dashboard OAuth Login Handler ===
     async function handleInitiateDashboardOAuth(sendResponse: (response?: any) => void) {
       log.info('Initiating Dashboard OAuth flow');
+
+      // Set the moment this flow mints its state, so the error path can tell
+      // "clean up after myself" from "a newer flow owns the slot".
+      let flowState: string | undefined;
 
       try {
         // Check if storage is available before proceeding
@@ -213,41 +194,68 @@ export default defineBackground({
 
         // Initiate Dashboard OAuth flow (generates PKCE parameters and stores them)
         const oauthResponse = await initiateDashboardOAuth();
+        flowState = oauthResponse.state;
 
         log.info('Dashboard OAuth URL:', oauthResponse.authorization_url);
 
-        // Open Dashboard authorization page in new tab
-        const tab = await browser.tabs.create({
+        // The browser owns the sign-in window: it opens it, and it closes it
+        // the instant the flow redirects to our chromiumapp.org URL. That is
+        // the whole reason this replaced tabs.create + onUpdated + tabs.remove
+        // — the window disappearing on success is the platform's job, not a
+        // race we run against our own tab listener.
+        //
+        // Resolves with the full redirect URL (code + state in the query), or
+        // rejects when the user closes the window or the flow fails.
+        const redirectUrl = await browser.identity.launchWebAuthFlow({
           url: oauthResponse.authorization_url,
-          active: true
+          interactive: true,
         });
 
-        if (!tab.id) {
-          throw new Error('Failed to create OAuth tab');
+        if (!redirectUrl) {
+          throw new Error('Sign-in was cancelled.');
         }
 
-        log.info('Dashboard OAuth initiated, authorization tab opened');
+        const returned = new URL(redirectUrl);
+        const code = returned.searchParams.get('code');
+        const state = returned.searchParams.get('state');
+        const oauthError = returned.searchParams.get('error');
 
-        // Persist pending-OAuth context so the top-level tab listener can
-        // complete the flow even if the service worker is evicted during login.
-        await browser.storage.local.set({
-          [OAUTH_PENDING_KEY]: {
-            tabId: tab.id,
-            expectedState: oauthResponse.state,
-            deadline: Date.now() + 5 * 60 * 1000
-          }
+        if (oauthError) {
+          // The authorization server refused. Its slug is not shown to the
+          // user — it is an error oracle, and there is nothing actionable in it.
+          log.warn('Authorization refused', { oauthError });
+          throw new Error('Sign-in could not be completed.');
+        }
+
+        // Compare against the state WE generated. launchWebAuthFlow only
+        // guarantees the redirect reached this extension; it says nothing about
+        // which authorization request produced it.
+        if (!code || !state || state !== oauthResponse.state) {
+          throw new Error('Sign-in could not be completed.');
+        }
+
+        // Answer with what actually happened. handleAuthCallback never throws:
+        // exchangeCodeForTokens catches everything and reports
+        // { success: false, error }. While that result was only logged, a failed
+        // token exchange, a 401 from /auth/me and a superseded callback all fell
+        // through to `status: 'success'` below — and AuthScreen treats anything
+        // but 'error' as done, so the panel sat on "Authenticating…" for the
+        // whole SSO_WAIT_TIMEOUT_MS with no message and no way back.
+        let callbackResult: { success: boolean; user?: any; error?: string } | undefined;
+        await handleAuthCallback({ code, state }, (response) => {
+          callbackResult = response;
         });
+        log.info('OAuth callback handled (auth window)', { success: !!callbackResult?.success });
+
+        if (!callbackResult?.success) {
+          throw new Error(callbackResult?.error || 'Sign-in could not be completed.');
+        }
 
         sendResponse({ status: 'success', state: oauthResponse.state });
       } catch (error: any) {
-        log.error('Failed to initiate Dashboard OAuth:', error);
+        log.error('Dashboard OAuth sign-in failed:', error);
 
-        // Clean up on error
-        try {
-          await cleanupOAuthState();
-        } catch (cleanupError) {
-          log.warn('Failed to cleanup OAuth state:', cleanupError);
-        }
+        await cleanupOwnOAuthState(flowState);
 
         const errorMessage = error instanceof Error ? error.message : 'Failed to initiate Dashboard OAuth';
         sendResponse({ status: 'error', message: errorMessage });
@@ -266,7 +274,16 @@ export default defineBackground({
         // Retrieve stored PKCE verifier and state
         const storage = await browser.storage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
 
-        if (!storage.pkce_verifier || !storage.auth_state) {
+        // redirect_uri is required, not defaulted. RFC 6749 §4.1.3 makes the
+        // token request's redirect_uri identical to the authorization request's,
+        // and only initiateDashboardOAuth knows which one that was — it writes
+        // all three keys in one set(). A literal fallback here is a second,
+        // silently-drifting copy of that decision: the one it used to carry
+        // (`runtime.getURL('/callback.html')`) stopped being reachable the moment
+        // the flow moved to identity.getRedirectURL(), so it could only ever turn
+        // a missing key into an opaque redirect_uri mismatch from the server.
+        // Failing here instead names the actual problem and offers the fix.
+        if (!storage.pkce_verifier || !storage.auth_state || !storage.redirect_uri) {
           throw new Error('No pending authorization request found. Please try logging in again.');
         }
 
@@ -296,7 +313,7 @@ export default defineBackground({
             code,
             code_verifier: storage.pkce_verifier,
             client_id: 'faultmaven-copilot',
-            redirect_uri: storage.redirect_uri || browser.runtime.getURL('/callback.html')
+            redirect_uri: storage.redirect_uri
           })
         });
 
@@ -459,13 +476,12 @@ export default defineBackground({
         return;
       }
 
-      // Single-flight on the authorization code: the tab-monitor and callback.html
-      // ingress both fire for the same redirect. Dedup so the single-use code is
-      // exchanged exactly once; the loser awaits and receives the same result
-      // instead of racing a second (doomed) token exchange.
+      // Single-flight on the authorization code. Dedup so the single-use code is
+      // exchanged exactly once; a second caller awaits and receives the same
+      // result instead of racing a second (doomed) token exchange.
       //
-      // Keyed on code alone: the sharer's `state` is intentionally not re-validated
-      // here — both ingresses parse code+state from the SAME redirect URL, and the
+      // Keyed on code alone: a sharer's `state` is intentionally not re-validated
+      // here — every caller parses code+state from the SAME redirect URL, and the
       // listener already rejects any sender that isn't one of this extension's own
       // contexts (sender.id check), so there is no untrusted second `state` to guard.
       // The first caller's state IS validated against auth_state inside the exchange.
@@ -560,9 +576,6 @@ export default defineBackground({
     if (browser.permissions?.onRemoved) {
       browser.permissions.onRemoved.addListener(() => reconcileAuthBridgeRegistration());
     }
-
-    // === OAuth Tab Monitor (registered top-level so it survives SW eviction) ===
-    browser.tabs.onUpdated.addListener(handleOAuthTabUpdate);
 
     // === Action Click Handler ===
     browser.action.onClicked.addListener(async (tab: any) => {

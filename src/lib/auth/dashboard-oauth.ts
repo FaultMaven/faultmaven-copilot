@@ -6,10 +6,18 @@
  *
  * Flow:
  * 1. Extension generates PKCE parameters
- * 2. Extension opens Dashboard /auth/authorize page
+ * 2. Extension opens Dashboard /auth/authorize in the browser's own auth window
+ *    (identity.launchWebAuthFlow)
  * 3. User logs into Dashboard and approves consent
- * 4. Dashboard redirects to chrome-extension://{id}/callback with authorization code
+ * 4. Dashboard navigates to https://{extension-id}.chromiumapp.org/ with the
+ *    authorization code; the browser recognises that target, closes the auth
+ *    window, and hands the URL back to launchWebAuthFlow
  * 5. Extension exchanges code for tokens using PKCE verifier
+ *
+ * ⚠️ Steps 2-4 require deployment-side support that does not exist yet — see
+ * OAUTH_IMPLEMENTATION.md ("Redirect URI: pending cross-repo support"). The
+ * backend's `oauth_redirect_uri_patterns` does not admit the chromiumapp.org
+ * target, and the Dashboard's authorize page does not navigate to redirect_uri.
  */
 
 import { browser } from 'wxt/browser';
@@ -58,8 +66,23 @@ export async function initiateDashboardOAuth(): Promise<DashboardOAuthInitiateRe
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
 
-    // Get callback URL (extension's callback.html)
-    const redirectUri = browser.runtime.getURL('/callback.html');
+    // Redirect target for identity.launchWebAuthFlow:
+    // `https://<extension-id>.chromiumapp.org/` (Chrome) or
+    // `https://<uuid>.extensions.allizom.org/` (Firefox). This is the ONLY
+    // target launchWebAuthFlow recognises: it watches the auth window for a
+    // navigation matching this URL, and that match is what closes the window
+    // and resolves the call. `runtime.getURL('/callback.html')` would never
+    // resolve it, which is why the old flow needed a real page plus a
+    // tabs.onUpdated watcher to notice the redirect at all.
+    //
+    // NOT an anti-impersonation measure, despite what this change's commit
+    // message claims. A hostile extension requests its OWN redirect target —
+    // `https://<their-id>.chromiumapp.org/` — exactly as it previously
+    // requested `chrome-extension://<their-id>/callback.html`, so any server
+    // pattern wildcarding the id admits both equally. What closes that gap is
+    // pinning this extension's real id in `oauth_redirect_uri_patterns`, and
+    // that works the same for either redirect style.
+    const redirectUri = browser.identity.getRedirectURL();
 
     log.info('Initiating Dashboard OAuth flow', { redirectUri });
 

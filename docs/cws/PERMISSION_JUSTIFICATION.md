@@ -17,8 +17,16 @@ Grants temporary access to the currently active tab so the user can capture its 
 
 Needed for two things, neither of which involves monitoring browsing:
 
-1. **OAuth login flow** — detect when the sign-in redirect completes by reading the redirect URL on the login tab (`tabs.onUpdated`), then close that tab.
-2. **Dashboard navigation** — open or focus the FaultMaven dashboard tab when the user follows an "open in Dashboard" link.
+1. **Dashboard navigation** — open or focus the FaultMaven dashboard tab when the user follows an "open in Dashboard" link (`tabs.query` by dashboard URL, then `tabs.update` or `tabs.create`).
+2. **Page capture target** — read the active tab's URL and title (`tabs.query({ active: true, currentWindow: true })`) when the user clicks "Page Capture" in the side panel, so the capture is attributed to the page the user is looking at.
+
+The extension registers no tab listeners and never observes navigation.
+
+### `identity`
+
+Used for sign-in only, via a single `identity.launchWebAuthFlow` call made when the user clicks "Sign in". The browser opens the FaultMaven authorization page in its own auth window and closes that window as soon as the flow redirects back, handing the extension the authorization code. This replaced an implementation that opened a normal tab and watched it with `tabs.onUpdated` — letting the browser own the sign-in window removes both the tab listener and the need to close the tab ourselves.
+
+The extension does not call `identity.getProfileUserInfo` and does not read the user's Google account identity; the permission is used exclusively to run the OAuth 2.0 + PKCE authorization-code flow against the user's own FaultMaven deployment.
 
 ### `scripting`
 Used to execute the page capture script (`scripting.executeScript`) on the active tab *only when explicitly requested by the user*. This allows the extension to extract DOM content (text, error messages, stack traces) to provide context to the AI copilot.

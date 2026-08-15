@@ -6,7 +6,7 @@ const {
   listeners,
   mockStorage,
   mockAuthSaveState,
-  mockAuthClearState
+  mockAuthClearState, mockIdentity
 } = vi.hoisted(() => {
   (global as any).defineBackground = (config: any) => config;
   const listeners: Record<string, any> = {};
@@ -42,7 +42,15 @@ const {
     }
   };
 
+  // identity owns the sign-in window: the browser opens it and closes it on
+  // redirect, which is why there is no tab to create, watch or remove.
+  const mockIdentity = {
+    getRedirectURL: vi.fn(() => 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'),
+    launchWebAuthFlow: vi.fn()
+  };
+
   const mockBrowserObj = {
+    identity: mockIdentity,
     runtime: {
       id: 'test-copilot-id',
       onMessage: {
@@ -86,6 +94,7 @@ const {
     mockBrowser: mockBrowserObj,
     listeners,
     mockStorage: mockStorageObj,
+    mockIdentity,
     mockAuthSaveState,
     mockAuthClearState
   };
@@ -234,45 +243,74 @@ describe('Background Service Worker', () => {
     roles: ['user']
   };
 
-  describe('OAuth Redirect Tab Monitoring', () => {
-    it('should complete OAuth callback and close tab when matching redirect URL is parsed', async () => {
+  describe('Sign-in via the browser auth window', () => {
+    const REDIRECT = 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/';
+
+    /**
+     * Run a full sign-in.
+     *
+     * The auth window echoes back the state the flow actually generated, the
+     * way a real authorization server does — the state is minted inside
+     * initiateDashboardOAuth, so a test cannot pre-decide it. Pass
+     * `stateOverride` to simulate a mismatched/forged redirect.
+     */
+    async function signIn(
+      { code = 'code-123', stateOverride }: { code?: string; stateOverride?: string } = {}
+    ) {
+      mockIdentity.launchWebAuthFlow.mockImplementationOnce(async () => {
+        const stored = await mockStorage.local.get(['auth_state']);
+        const state = stateOverride ?? stored.auth_state;
+        return `${REDIRECT}?code=${code}&state=${state}`;
+      });
+      return await new Promise<any>((resolve) => {
+        const handled = listeners['message'](
+          { action: 'initiateOIDCLogin' },
+          { id: 'test-copilot-id' },
+          resolve
+        );
+        if (handled !== true) resolve(undefined);
+      });
+    }
+
+    it('completes sign-in from the auth window without creating or closing a tab', async () => {
       // Store pending OAuth flow metadata
       await mockStorage.local.set({
-        oauth_pending: {
-          tabId: 999,
-          expectedState: 'state-123',
-          deadline: Date.now() + 5 * 60 * 1000
-        },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
 
       // Mock token exchange + profile read
       const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
       global.fetch = mockFetch;
 
-      // Trigger tab update
-      await listeners['tabUpdate'](
-        999,
-        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
-        { id: 999 }
-      );
+      await signIn();
 
       // Verify fetch was called with token request
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/auth/oauth/token',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({
-            grant_type: 'authorization_code',
-            code: 'code-123',
-            code_verifier: 'verifier-123',
-            client_id: 'faultmaven-copilot',
-            redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
-          })
+          // The verifier and state are minted inside the flow, so the test
+          // asserts the SHAPE and the values it actually controls — pinning a
+          // pre-seeded verifier would only prove the seed was ignored.
+          body: expect.any(String)
         })
       );
+
+      const tokenCall = mockFetch.mock.calls.find((c: any[]) =>
+        String(c[0]).endsWith('/auth/oauth/token')
+      );
+      expect(tokenCall).toBeDefined();
+      const sentBody = JSON.parse(tokenCall![1].body);
+      expect(sentBody).toMatchObject({
+        grant_type: 'authorization_code',
+        code: 'code-123',
+        client_id: 'faultmaven-copilot',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
+      });
+      expect(typeof sentBody.code_verifier).toBe('string');
+      expect(sentBody.code_verifier.length).toBeGreaterThan(20);
 
       // Verify authManager.saveAuthState was called
       expect(mockAuthSaveState).toHaveBeenCalledWith(
@@ -283,17 +321,125 @@ describe('Background Service Worker', () => {
       );
 
       // Verify tab was closed
-      expect(mockBrowser.tabs.remove).toHaveBeenCalledWith(999);
+      // No tab to close: identity.launchWebAuthFlow owns the sign-in window and
+      // the browser closes it on redirect. The extension creating and removing
+      // a tab is exactly what this replaced.
+      expect(mockBrowser.tabs.create).not.toHaveBeenCalled();
+      expect(mockBrowser.tabs.remove).not.toHaveBeenCalled();
 
       // Verify pending OAuth state was cleared
-      const stored = await mockStorage.local.get(['oauth_pending']);
-      expect(stored.oauth_pending).toBeUndefined();
+      const stored = await mockStorage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+      expect(stored.pkce_verifier).toBeUndefined();
+      expect(stored.auth_state).toBeUndefined();
+      expect(stored.redirect_uri).toBeUndefined();
+    });
+
+    /** Drive sign-in with a hand-written auth-window outcome. */
+    async function signInWith(launchWebAuthFlow: () => Promise<string>) {
+      mockIdentity.launchWebAuthFlow.mockImplementationOnce(launchWebAuthFlow);
+      return await new Promise<any>((resolve) => {
+        const handled = listeners['message'](
+          { action: 'initiateOIDCLogin' },
+          { id: 'test-copilot-id' },
+          resolve
+        );
+        if (handled !== true) resolve(undefined);
+      });
+    }
+
+    // handleAuthCallback never throws — exchangeCodeForTokens catches everything
+    // and answers { success: false, error }. While that result was only logged,
+    // a failed token exchange fell through to `status: 'success'`, and
+    // AuthScreen (which errors only on 'error') then sat on "Authenticating…"
+    // for the full SSO_WAIT_TIMEOUT_MS with no message and no way back.
+    it('reports an error to the panel when the token exchange fails', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: 'invalid_grant', error_description: 'code already used' })
+      });
+
+      const response = await signIn();
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+      expect(response.message).toMatch(/code already used/i);
+    });
+
+    // The same failure one step later: tokens minted, profile read refused.
+    it('reports an error to the panel when the profile read fails', async () => {
+      global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: null });
+
+      const response = await signIn();
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+      expect(mockAuthSaveState).not.toHaveBeenCalled();
+    });
+
+    // The PKCE verifier, state and redirect_uri live at FIXED storage keys, so
+    // there is one slot. The retry the panel offers after its wait timeout
+    // starts a SECOND flow that takes that slot, and the abandoned first window
+    // can still fail afterwards (the user closes it). Cleaning up
+    // unconditionally on that failure deleted the LIVE flow's material, which
+    // then died with "No pending authorization request found" — the defect
+    // StaleAuthCallbackError already prevents on the exchange path.
+    it("leaves a newer flow's pending state intact when an abandoned flow fails", async () => {
+      const response = await signInWith(async () => {
+        // The user gives up and starts over: flow #2 takes the slot while this
+        // window is still open. Only then is this one closed.
+        await mockStorage.local.set({
+          pkce_verifier: 'verifier-second',
+          auth_state: 'state-second',
+          redirect_uri: REDIRECT
+        });
+        throw new Error('The user did not approve access.');
+      });
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+
+      const after = await mockStorage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+      expect(after.pkce_verifier).toBe('verifier-second');
+      expect(after.auth_state).toBe('state-second');
+      expect(after.redirect_uri).toBe(REDIRECT);
+    });
+
+    // The converse, so the guard above cannot be satisfied by never cleaning up.
+    it('clears its own pending state when the flow it started fails', async () => {
+      const response = await signInWith(async () => {
+        throw new Error('The user did not approve access.');
+      });
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+
+      const after = await mockStorage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+      expect(after.pkce_verifier).toBeUndefined();
+      expect(after.auth_state).toBeUndefined();
+      expect(after.redirect_uri).toBeUndefined();
+    });
+
+    // RFC 6749 §4.1.3: the token request's redirect_uri must equal the
+    // authorization request's. Only initiateDashboardOAuth knows which one that
+    // was, so a missing key is a broken pending flow — say so, rather than
+    // substituting a literal and letting the server answer with an opaque
+    // redirect_uri mismatch.
+    it('refuses the exchange when the pending flow has no redirect_uri', async () => {
+      await mockStorage.local.set({ pkce_verifier: 'verifier-123', auth_state: 'state-123' });
+      const mockFetch = vi.fn();
+      global.fetch = mockFetch;
+
+      const result = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({ success: false }));
+      expect(result.error).toMatch(/no pending authorization request/i);
     });
 
     it('clears a stale refresh_expires_at when the OAuth token response has none', async () => {
       await mockStorage.local.set({
         pkce_verifier: 'v', auth_state: 's',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
         refresh_expires_at: 123 // stale value from a previous session
       });
       global.fetch = vi.fn().mockResolvedValue({
@@ -317,7 +463,10 @@ describe('Background Service Worker', () => {
     });
 
     it('rejects an OAuth token response with a non-numeric expires_in (no NaN expires_at stored)', async () => {
-      await mockStorage.local.set({ pkce_verifier: 'v', auth_state: 's' });
+      await mockStorage.local.set({
+        pkce_verifier: 'v', auth_state: 's',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
+      });
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ access_token: 'a', token_type: 'bearer', refresh_token: 'r', user_id: 'u', username: 'x' })
@@ -332,48 +481,43 @@ describe('Background Service Worker', () => {
       expect(stored.access_token).toBeUndefined();
     });
 
-    it('exchanges the code exactly once when both ingress paths fire for the same redirect', async () => {
+    it('exchanges an authorization code exactly once when AUTH_CALLBACK double-fires', async () => {
+      // Sign-in itself now has a SINGLE ingress — launchWebAuthFlow resolves
+      // with the redirect directly, so the old tab-monitor/callback-page race
+      // is gone. AUTH_CALLBACK remains wired, and the code is single-use: two
+      // deliveries of the same one must still exchange once, or the loser gets
+      // a spurious "code already used".
       await mockStorage.local.set({
-        oauth_pending: {
-          tabId: 999,
-          expectedState: 'state-123',
-          deadline: Date.now() + 5 * 60 * 1000
-        },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
 
       const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
       global.fetch = mockFetch;
 
-      // Fire BOTH ingress paths for the same authorization code, concurrently:
-      // the tab monitor AND the callback.html AUTH_CALLBACK message.
-      const p1 = listeners['tabUpdate'](
-        999,
-        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
-        { id: 999 }
-      );
-      const p2 = new Promise<void>((resolve) => {
-        listeners['message'](
-          { type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
-          { id: 'test-copilot-id' },
-          () => resolve()
-        );
-      });
-      await Promise.all([p1, p2]);
+      const fire = () =>
+        new Promise<void>((resolve) => {
+          listeners['message'](
+            { type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+            { id: 'test-copilot-id' },
+            () => resolve()
+          );
+        });
 
-      // The single-use code must be exchanged exactly ONCE (not raced twice).
-      expect(tokenExchangeCalls(mockFetch)).toBe(1);
-      expect(mockAuthSaveState).toHaveBeenCalledTimes(1);
+      await Promise.all([fire(), fire()]);
+
+      const tokenCalls = mockFetch.mock.calls.filter((c: any[]) =>
+        String(c[0]).endsWith('/auth/oauth/token')
+      );
+      expect(tokenCalls).toHaveLength(1);
     });
 
     it('gives BOTH racing ingress paths the same success result (loser shares, not errors)', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -383,8 +527,7 @@ describe('Background Service Worker', () => {
         })
       });
 
-      const p1 = listeners['tabUpdate'](999,
-        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' }, { id: 999 });
+      const p1 = signIn({ code: 'code-123' });
       const messageResult = await new Promise<any>((resolve) => {
         listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
           { id: 'test-copilot-id' }, resolve);
@@ -397,7 +540,11 @@ describe('Background Service Worker', () => {
     });
 
     it('AUTH_CALLBACK with a mismatched state is rejected without exchanging (CSRF)', async () => {
-      await mockStorage.local.set({ pkce_verifier: 'verifier-123', auth_state: 'state-123' });
+      await mockStorage.local.set({
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
+      });
       const mockFetch = vi.fn();
       global.fetch = mockFetch;
 
@@ -422,7 +569,7 @@ describe('Background Service Worker', () => {
       await mockStorage.local.set({
         pkce_verifier: 'verifier-second',
         auth_state: 'state-second',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
       const mockFetch = vi.fn();
       global.fetch = mockFetch;
@@ -447,7 +594,7 @@ describe('Background Service Worker', () => {
       await mockStorage.local.set({
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
       global.fetch = vi.fn().mockResolvedValue({
         ok: false,
@@ -469,10 +616,9 @@ describe('Background Service Worker', () => {
 
     it('does not re-exchange the same code after a completed flow (replay rejected)', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
-        redirect_uri: 'chrome-extension://test-copilot-id/callback.html'
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -504,19 +650,15 @@ describe('Background Service Worker', () => {
     // `tokens.user.display_name`. The profile must come from /auth/me instead.
     it('completes sign-in on the flat TokenResponse and fills the profile from /auth/me', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
 
       const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
       global.fetch = mockFetch;
 
-      await listeners['tabUpdate'](
-        999,
-        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
-        { id: 999 }
-      );
+      await signIn({ code: 'code-123' });
 
       // The profile read is what supplies display_name/email/roles.
       expect(mockFetch).toHaveBeenCalledWith(
@@ -545,9 +687,9 @@ describe('Background Service Worker', () => {
     // successful sign-in resolved as { success: true, user: undefined }.
     it('resolves the callback with the profile-built user, not the absent tokens.user', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
       global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
 
@@ -574,48 +716,31 @@ describe('Background Service Worker', () => {
     // Failing the sign-in costs one retry; the alternative costs up to 7 days.
     it('fails the sign-in when the /auth/me read fails, persisting no session', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
 
       global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: null });
 
-      await listeners['tabUpdate'](
-        999,
-        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=state-123' },
-        { id: 999 }
-      );
+      await signIn({ code: 'code-123' });
 
       expect(mockAuthSaveState).not.toHaveBeenCalled();
       const stored = await mockStorage.local.get(['access_token']);
       expect(stored.access_token).toBeUndefined();
     });
 
-    it('should ignore URLs when state parameter does not match expectedState (CSRF protection)', async () => {
-      await mockStorage.local.set({
-        oauth_pending: {
-          tabId: 999,
-          expectedState: 'state-123',
-          deadline: Date.now() + 5 * 60 * 1000
-        },
-        pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
-      });
-
+    it('refuses a redirect whose state is not the one this flow minted (CSRF)', async () => {
+      // launchWebAuthFlow only guarantees the redirect reached THIS extension.
+      // It says nothing about which authorization request produced it, so the
+      // state still has to be checked against the one we generated.
       const mockFetch = vi.fn();
       global.fetch = mockFetch;
 
-      // Trigger tab update with malicious state
-      await listeners['tabUpdate'](
-        999,
-        { url: 'https://app.faultmaven.ai/callback?code=code-123&state=hacker-state' },
-        { id: 999 }
-      );
+      await signIn({ code: 'code-123', stateOverride: 'attacker-chosen-state' });
 
-      // Verification: Fetch token should NOT run and tab should NOT close
+      // The code is never exchanged.
       expect(mockFetch).not.toHaveBeenCalled();
-      expect(mockBrowser.tabs.remove).not.toHaveBeenCalled();
     });
   });
 

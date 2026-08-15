@@ -201,7 +201,9 @@ The extension supports two authentication modes, determined by backend configura
 - PKCE-based OAuth flow via Dashboard
 - Used for cloud deployments
 - Implemented in `src/lib/auth/dashboard-oauth.ts`
-- Flow: extension opens the Dashboard `/auth/authorize` page (PKCE), then exchanges the returned code at `POST /api/v1/auth/oauth/token`
+- Flow: the extension calls `identity.launchWebAuthFlow`, which opens the Dashboard `/auth/authorize` page (PKCE) in a browser-owned auth window; the extension then exchanges the returned code at `POST /api/v1/auth/oauth/token`
+- The redirect URI is browser-derived (`https://<id>.chromiumapp.org/`, or a 40-hex `.extensions.allizom.org` host on Firefox) and is the **only** target `launchWebAuthFlow` settles on — it resolves on a real navigation there and nothing else, which is why the Dashboard's approve path must navigate rather than rewrite the address bar. There is no tab watcher: the browser opens the window and closes it itself on redirect.
+- `state` is still verified against the value this flow minted. `launchWebAuthFlow` proves only that the redirect reached *this* extension, not which request produced it.
 
 Auth mode is auto-detected via `GET /api/v1/auth/config`.
 
@@ -612,8 +614,12 @@ EventBus.on('auth_state_changed', (event) => {
 Key permissions (Manifest v3):
 - `storage` - Local data persistence
 - `sidePanel` - Side panel UI
-- `activeTab`, `tabs` - Tab access for content capture
+- `activeTab`, `tabs` - Tab access for content capture, and opening/focusing the Dashboard tab
 - `scripting` - Content script injection
+- `identity` - Sign-in only, via a single `identity.launchWebAuthFlow` call. Never
+  `identity.getProfileUserInfo`: the extension does not read the browser account
+  identity. Store review compares this against
+  `docs/cws/PERMISSION_JUSTIFICATION.md`, so the two must be changed together.
 
 Host permissions (see `wxt.config.ts` for the authoritative list):
 - Static `host_permissions`: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
