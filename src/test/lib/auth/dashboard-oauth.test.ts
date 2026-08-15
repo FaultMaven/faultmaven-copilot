@@ -110,9 +110,6 @@ describe('Dashboard OAuth', () => {
       expect(url.searchParams.get('redirect_uri')).toBe(
         'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
       );
-      expect(url.searchParams.get('redirect_uri')).toBe(
-        'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
-      );
       expect(url.searchParams.get('state')).toBe(result.state);
       expect(url.searchParams.get('code_challenge')).toBe(result.code_challenge);
       expect(url.searchParams.get('code_challenge_method')).toBe('S256');

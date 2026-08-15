@@ -29,13 +29,12 @@ export default defineConfig({
     // `identity` powers the sign-in window (identity.launchWebAuthFlow). The
     // browser owns that window: it opens it, and it CLOSES it the moment the
     // flow redirects back — which is why sign-in no longer leaves a tab behind
-    // for us to hunt down and remove.
+    // for us to hunt down and remove. That window lifecycle is the whole reason
+    // for the permission; it is not a security boundary (see the redirect-URI
+    // note in lib/auth/dashboard-oauth.ts).
     //
-    // It also fixes an impersonation gap. launchWebAuthFlow redirects to
-    // `https://<extension-id>.chromiumapp.org/`, and the browser derives that
-    // host from THIS extension's id — another extension cannot claim it. The
-    // old `chrome-extension://<id>/callback.html` redirect had no such
-    // guarantee: the backend pattern admitted any id.
+    // Keep docs/cws/PERMISSION_JUSTIFICATION.md in step with this list — Chrome
+    // Web Store review compares the two.
     permissions: [
       "storage", "sidePanel", "activeTab", "tabs", "scripting", "identity"
     ],

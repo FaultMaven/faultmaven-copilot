@@ -1,8 +1,39 @@
 # OAuth Implementation - Completion Summary
 
+> ## ⚠️ Redirect URI: pending cross-repo support
+>
+> The extension now signs in through `identity.launchWebAuthFlow`, so its
+> redirect URI is the browser-derived
+> `https://<extension-id>.chromiumapp.org/` (Chrome) or
+> `https://<uuid>.extensions.allizom.org/` (Firefox) — **not**
+> `chrome-extension://<id>/callback.html`. Two deployment-side changes are
+> required before that flow can complete, and neither has landed:
+>
+> 1. **Backend** — `oauth_redirect_uri_patterns`
+>    (`faultmaven/config/settings.py`) admits only the two `callback.html`
+>    patterns, so `GET /auth/oauth/authorize` rejects the new redirect URI with
+>    a 400 before any consent screen renders.
+> 2. **Dashboard** — `OAuthAuthorizePage.redirectToExtension()` completes the
+>    approve path with `window.history.replaceState(...)` and never navigates to
+>    `redirect_uri`. `launchWebAuthFlow` settles only on a real navigation to
+>    the redirect URI, so it never resolves. `SAFE_REDIRECT_SCHEMES` on the deny
+>    path likewise admits only `chrome-extension:`/`moz-extension:`.
+>
+> **Until both land, sign-in via the extension does not work.** The redirect-URI
+> sections below still document the `callback.html` configuration; treat them as
+> describing the *deployed* backend, not the extension's current request.
+>
+> Note also that switching redirect style is **not** an anti-impersonation
+> measure. A hostile extension requests its own
+> `https://<their-id>.chromiumapp.org/` exactly as it previously requested
+> `chrome-extension://<their-id>/callback.html`, so a pattern that wildcards the
+> id admits both equally. Pinning this extension's real id in
+> `oauth_redirect_uri_patterns` is what closes that gap, and it does so for
+> either redirect style.
+
 ## Overview
 
-This document summarizes the complete OAuth 2.0 Authorization Code Flow with PKCE implementation for the FaultMaven Copilot browser extension. The implementation is now **100% complete** and functional.
+This document summarizes the complete OAuth 2.0 Authorization Code Flow with PKCE implementation for the FaultMaven Copilot browser extension.
 
 ## What Was Implemented
 
@@ -80,11 +111,19 @@ submitOAuthApproval(approval) → OAuthApprovalResponse
 - Exchanges authorization code using PKCE verifier
 - Stores tokens in chrome.storage.local
 
-**Callback Handler:** [callback.html](public/callback.html) + [auth-callback.js](public/auth-callback.js)
+**Callback Handler:** [callback.html](public/callback.html) + [auth-callback.js](public/auth-callback.js) — **dormant**
 - Extracts authorization code and state from URL
 - Sends AUTH_CALLBACK message to background script
 - Handles OAuth errors
 - Shows success/error UI
+
+> Not reached by the current flow: the redirect target is the browser's virtual
+> `chromiumapp.org` URL, so this page is never navigated to. `AUTH_CALLBACK` is
+> still handled in `background.ts` and kept as the re-entry point the flow needs
+> if the redirect ever returns to an in-extension page again. One consequence of
+> it being dormant: sign-in now depends on the service worker surviving the whole
+> interactive login inside a single pending `launchWebAuthFlow` call, with no
+> message-driven recovery if the worker is evicted mid-login.
 
 **Token Manager:** [token-manager.ts](src/lib/auth/token-manager.ts)
 - Auto-refreshes access tokens before expiry (<5 min)
@@ -191,8 +230,11 @@ submitOAuthApproval(approval) → OAuthApprovalResponse
    - Should see "Sign In" button
 
 2. **Click "Sign In"**
-   - New tab opens to Dashboard `/auth/authorize`
-   - URL contains: `?response_type=code&client_id=faultmaven-copilot&redirect_uri=chrome-extension://...&state=...&code_challenge=...`
+   - The browser's own auth window opens to Dashboard `/auth/authorize`
+     (`identity.launchWebAuthFlow`) — not a normal tab
+   - URL contains: `?response_type=code&client_id=faultmaven-copilot&redirect_uri=https://<extension-id>.chromiumapp.org/&state=...&code_challenge=...`
+   - ⚠️ Against a backend without the pattern change above, this step ends in a
+     400 from `GET /auth/oauth/authorize` instead of a consent screen
 
 3. **Dashboard Login** (if not already logged in)
    - Redirected to `/login`
@@ -206,10 +248,13 @@ submitOAuthApproval(approval) → OAuthApprovalResponse
    - Click "Approve" or "Deny"
 
 5. **Redirect to Extension**
-   - Browser redirects to `chrome-extension://{id}/callback.html?code=...&state=...`
-   - See "Authenticating FaultMaven Copilot..." spinner
-   - After 2 seconds: "Authentication Successful! You can close this window."
-   - Tab closes automatically
+   - Dashboard navigates to `https://<extension-id>.chromiumapp.org/?code=...&state=...`
+   - The browser recognises its own redirect target, closes the auth window, and
+     hands the URL back to `launchWebAuthFlow` — the extension neither renders a
+     page nor closes a tab
+   - ⚠️ Against a Dashboard without the navigation change above, this step never
+     happens: the approve path rewrites history in place, so the auth window
+     stays open and `launchWebAuthFlow` never resolves
 
 6. **Extension Authenticated**
    - Extension side panel shows authenticated state

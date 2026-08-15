@@ -275,11 +275,6 @@ describe('Background Service Worker', () => {
     it('completes sign-in from the auth window without creating or closing a tab', async () => {
       // Store pending OAuth flow metadata
       await mockStorage.local.set({
-        oauth_pending: {
-          tabId: 999,
-          expectedState: 'state-123',
-          deadline: Date.now() + 5 * 60 * 1000
-        },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
         redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
@@ -333,8 +328,112 @@ describe('Background Service Worker', () => {
       expect(mockBrowser.tabs.remove).not.toHaveBeenCalled();
 
       // Verify pending OAuth state was cleared
-      const stored = await mockStorage.local.get(['oauth_pending']);
-      expect(stored.oauth_pending).toBeUndefined();
+      const stored = await mockStorage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+      expect(stored.pkce_verifier).toBeUndefined();
+      expect(stored.auth_state).toBeUndefined();
+      expect(stored.redirect_uri).toBeUndefined();
+    });
+
+    /** Drive sign-in with a hand-written auth-window outcome. */
+    async function signInWith(launchWebAuthFlow: () => Promise<string>) {
+      mockIdentity.launchWebAuthFlow.mockImplementationOnce(launchWebAuthFlow);
+      return await new Promise<any>((resolve) => {
+        const handled = listeners['message'](
+          { action: 'initiateOIDCLogin' },
+          { id: 'test-copilot-id' },
+          resolve
+        );
+        if (handled !== true) resolve(undefined);
+      });
+    }
+
+    // handleAuthCallback never throws — exchangeCodeForTokens catches everything
+    // and answers { success: false, error }. While that result was only logged,
+    // a failed token exchange fell through to `status: 'success'`, and
+    // AuthScreen (which errors only on 'error') then sat on "Authenticating…"
+    // for the full SSO_WAIT_TIMEOUT_MS with no message and no way back.
+    it('reports an error to the panel when the token exchange fails', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: 'invalid_grant', error_description: 'code already used' })
+      });
+
+      const response = await signIn();
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+      expect(response.message).toMatch(/code already used/i);
+    });
+
+    // The same failure one step later: tokens minted, profile read refused.
+    it('reports an error to the panel when the profile read fails', async () => {
+      global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: null });
+
+      const response = await signIn();
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+      expect(mockAuthSaveState).not.toHaveBeenCalled();
+    });
+
+    // The PKCE verifier, state and redirect_uri live at FIXED storage keys, so
+    // there is one slot. The retry the panel offers after its wait timeout
+    // starts a SECOND flow that takes that slot, and the abandoned first window
+    // can still fail afterwards (the user closes it). Cleaning up
+    // unconditionally on that failure deleted the LIVE flow's material, which
+    // then died with "No pending authorization request found" — the defect
+    // StaleAuthCallbackError already prevents on the exchange path.
+    it("leaves a newer flow's pending state intact when an abandoned flow fails", async () => {
+      const response = await signInWith(async () => {
+        // The user gives up and starts over: flow #2 takes the slot while this
+        // window is still open. Only then is this one closed.
+        await mockStorage.local.set({
+          pkce_verifier: 'verifier-second',
+          auth_state: 'state-second',
+          redirect_uri: REDIRECT
+        });
+        throw new Error('The user did not approve access.');
+      });
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+
+      const after = await mockStorage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+      expect(after.pkce_verifier).toBe('verifier-second');
+      expect(after.auth_state).toBe('state-second');
+      expect(after.redirect_uri).toBe(REDIRECT);
+    });
+
+    // The converse, so the guard above cannot be satisfied by never cleaning up.
+    it('clears its own pending state when the flow it started fails', async () => {
+      const response = await signInWith(async () => {
+        throw new Error('The user did not approve access.');
+      });
+
+      expect(response).toEqual(expect.objectContaining({ status: 'error' }));
+
+      const after = await mockStorage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
+      expect(after.pkce_verifier).toBeUndefined();
+      expect(after.auth_state).toBeUndefined();
+      expect(after.redirect_uri).toBeUndefined();
+    });
+
+    // RFC 6749 §4.1.3: the token request's redirect_uri must equal the
+    // authorization request's. Only initiateDashboardOAuth knows which one that
+    // was, so a missing key is a broken pending flow — say so, rather than
+    // substituting a literal and letting the server answer with an opaque
+    // redirect_uri mismatch.
+    it('refuses the exchange when the pending flow has no redirect_uri', async () => {
+      await mockStorage.local.set({ pkce_verifier: 'verifier-123', auth_state: 'state-123' });
+      const mockFetch = vi.fn();
+      global.fetch = mockFetch;
+
+      const result = await new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'code-123', state: 'state-123' },
+          { id: 'test-copilot-id' }, resolve);
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({ success: false }));
+      expect(result.error).toMatch(/no pending authorization request/i);
     });
 
     it('clears a stale refresh_expires_at when the OAuth token response has none', async () => {
@@ -364,7 +463,10 @@ describe('Background Service Worker', () => {
     });
 
     it('rejects an OAuth token response with a non-numeric expires_in (no NaN expires_at stored)', async () => {
-      await mockStorage.local.set({ pkce_verifier: 'v', auth_state: 's' });
+      await mockStorage.local.set({
+        pkce_verifier: 'v', auth_state: 's',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
+      });
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ access_token: 'a', token_type: 'bearer', refresh_token: 'r', user_id: 'u', username: 'x' })
@@ -413,7 +515,6 @@ describe('Background Service Worker', () => {
 
     it('gives BOTH racing ingress paths the same success result (loser shares, not errors)', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
         redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
@@ -439,7 +540,11 @@ describe('Background Service Worker', () => {
     });
 
     it('AUTH_CALLBACK with a mismatched state is rejected without exchanging (CSRF)', async () => {
-      await mockStorage.local.set({ pkce_verifier: 'verifier-123', auth_state: 'state-123' });
+      await mockStorage.local.set({
+        pkce_verifier: 'verifier-123',
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
+      });
       const mockFetch = vi.fn();
       global.fetch = mockFetch;
 
@@ -511,7 +616,6 @@ describe('Background Service Worker', () => {
 
     it('does not re-exchange the same code after a completed flow (replay rejected)', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 300000 },
         pkce_verifier: 'verifier-123',
         auth_state: 'state-123',
         redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
@@ -546,9 +650,9 @@ describe('Background Service Worker', () => {
     // `tokens.user.display_name`. The profile must come from /auth/me instead.
     it('completes sign-in on the flat TokenResponse and fills the profile from /auth/me', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
 
       const mockFetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
@@ -583,9 +687,9 @@ describe('Background Service Worker', () => {
     // successful sign-in resolved as { success: true, user: undefined }.
     it('resolves the callback with the profile-built user, not the absent tokens.user', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
       global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: PROFILE_RESPONSE });
 
@@ -612,9 +716,9 @@ describe('Background Service Worker', () => {
     // Failing the sign-in costs one retry; the alternative costs up to 7 days.
     it('fails the sign-in when the /auth/me read fails, persisting no session', async () => {
       await mockStorage.local.set({
-        oauth_pending: { tabId: 999, expectedState: 'state-123', deadline: Date.now() + 5 * 60 * 1000 },
         pkce_verifier: 'verifier-123',
-        auth_state: 'state-123'
+        auth_state: 'state-123',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'
       });
 
       global.fetch = mockOAuthFetch(TOKEN_RESPONSE, { profile: null });

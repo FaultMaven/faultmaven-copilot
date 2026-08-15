@@ -138,15 +138,53 @@ export default defineBackground({
     // "code already used" for the loser.
     //
     // Sign-in now has ONE ingress — identity.launchWebAuthFlow resolves with
-    // the redirect directly — so the race it was written for is gone. The guard
-    // stays because AUTH_CALLBACK (public/auth-callback.js) is still wired, and
-    // because the cost of keeping it is a Map while the cost of being wrong is
-    // a failed sign-in.
+    // the redirect directly — so the race it was written for is gone.
+    //
+    // AUTH_CALLBACK (public/auth-callback.js) is still *registered* on the
+    // message listener but is no longer *reachable* from sign-in: the redirect
+    // target is the browser's virtual chromiumapp.org URL, so callback.html is
+    // never navigated to. It is kept as the re-entry point the flow needs if
+    // the redirect ever returns to an in-extension page again — and with it
+    // gone as a live path, note that sign-in now depends on this service worker
+    // surviving the entire interactive login inside one pending call. A worker
+    // evicted mid-login strands the flow with no recovery path; that resilience
+    // was what the removed tab monitor bought.
     const inFlightAuthCallbacks = new Map<string, Promise<{ success: boolean; user?: any; error?: string }>>();
+
+    // Remove this flow's PKCE material — but only when the slot still holds it.
+    //
+    // The verifier, state and redirect_uri live at FIXED storage keys, so there
+    // is exactly one slot: a second sign-in (the retry the panel offers after
+    // its wait timeout) overwrites the first. Cleaning up unconditionally on
+    // the first flow's failure therefore deletes the SECOND, live flow's
+    // material, and that flow then dies with "No pending authorization request
+    // found" — the same defect StaleAuthCallbackError exists to prevent on the
+    // exchange path. Compare against the state this flow minted first.
+    //
+    // An unknown `flowState` (we failed before minting one) is treated as "not
+    // mine": a leftover verifier is harmless — it is unusable without its
+    // matching state and the next flow overwrites it — whereas wiping a live
+    // flow's material is not.
+    async function cleanupOwnOAuthState(flowState?: string): Promise<void> {
+      try {
+        const { auth_state } = await browser.storage.local.get(['auth_state']);
+        if (auth_state && auth_state !== flowState) {
+          log.info('A newer sign-in owns the pending OAuth state; leaving it intact');
+          return;
+        }
+        await cleanupOAuthState();
+      } catch (cleanupError) {
+        log.warn('Failed to cleanup OAuth state:', cleanupError);
+      }
+    }
 
     // === Dashboard OAuth Login Handler ===
     async function handleInitiateDashboardOAuth(sendResponse: (response?: any) => void) {
       log.info('Initiating Dashboard OAuth flow');
+
+      // Set the moment this flow mints its state, so the error path can tell
+      // "clean up after myself" from "a newer flow owns the slot".
+      let flowState: string | undefined;
 
       try {
         // Check if storage is available before proceeding
@@ -156,6 +194,7 @@ export default defineBackground({
 
         // Initiate Dashboard OAuth flow (generates PKCE parameters and stores them)
         const oauthResponse = await initiateDashboardOAuth();
+        flowState = oauthResponse.state;
 
         log.info('Dashboard OAuth URL:', oauthResponse.authorization_url);
 
@@ -195,20 +234,28 @@ export default defineBackground({
           throw new Error('Sign-in could not be completed.');
         }
 
+        // Answer with what actually happened. handleAuthCallback never throws:
+        // exchangeCodeForTokens catches everything and reports
+        // { success: false, error }. While that result was only logged, a failed
+        // token exchange, a 401 from /auth/me and a superseded callback all fell
+        // through to `status: 'success'` below — and AuthScreen treats anything
+        // but 'error' as done, so the panel sat on "Authenticating…" for the
+        // whole SSO_WAIT_TIMEOUT_MS with no message and no way back.
+        let callbackResult: { success: boolean; user?: any; error?: string } | undefined;
         await handleAuthCallback({ code, state }, (response) => {
-          log.info('OAuth callback handled (auth window):', response);
+          callbackResult = response;
         });
+        log.info('OAuth callback handled (auth window)', { success: !!callbackResult?.success });
+
+        if (!callbackResult?.success) {
+          throw new Error(callbackResult?.error || 'Sign-in could not be completed.');
+        }
 
         sendResponse({ status: 'success', state: oauthResponse.state });
       } catch (error: any) {
-        log.error('Failed to initiate Dashboard OAuth:', error);
+        log.error('Dashboard OAuth sign-in failed:', error);
 
-        // Clean up on error
-        try {
-          await cleanupOAuthState();
-        } catch (cleanupError) {
-          log.warn('Failed to cleanup OAuth state:', cleanupError);
-        }
+        await cleanupOwnOAuthState(flowState);
 
         const errorMessage = error instanceof Error ? error.message : 'Failed to initiate Dashboard OAuth';
         sendResponse({ status: 'error', message: errorMessage });
@@ -227,7 +274,16 @@ export default defineBackground({
         // Retrieve stored PKCE verifier and state
         const storage = await browser.storage.local.get(['pkce_verifier', 'auth_state', 'redirect_uri']);
 
-        if (!storage.pkce_verifier || !storage.auth_state) {
+        // redirect_uri is required, not defaulted. RFC 6749 §4.1.3 makes the
+        // token request's redirect_uri identical to the authorization request's,
+        // and only initiateDashboardOAuth knows which one that was — it writes
+        // all three keys in one set(). A literal fallback here is a second,
+        // silently-drifting copy of that decision: the one it used to carry
+        // (`runtime.getURL('/callback.html')`) stopped being reachable the moment
+        // the flow moved to identity.getRedirectURL(), so it could only ever turn
+        // a missing key into an opaque redirect_uri mismatch from the server.
+        // Failing here instead names the actual problem and offers the fix.
+        if (!storage.pkce_verifier || !storage.auth_state || !storage.redirect_uri) {
           throw new Error('No pending authorization request found. Please try logging in again.');
         }
 
@@ -257,7 +313,7 @@ export default defineBackground({
             code,
             code_verifier: storage.pkce_verifier,
             client_id: 'faultmaven-copilot',
-            redirect_uri: storage.redirect_uri || browser.runtime.getURL('/callback.html')
+            redirect_uri: storage.redirect_uri
           })
         });
 
@@ -420,13 +476,12 @@ export default defineBackground({
         return;
       }
 
-      // Single-flight on the authorization code: the tab-monitor and callback.html
-      // ingress both fire for the same redirect. Dedup so the single-use code is
-      // exchanged exactly once; the loser awaits and receives the same result
-      // instead of racing a second (doomed) token exchange.
+      // Single-flight on the authorization code. Dedup so the single-use code is
+      // exchanged exactly once; a second caller awaits and receives the same
+      // result instead of racing a second (doomed) token exchange.
       //
-      // Keyed on code alone: the sharer's `state` is intentionally not re-validated
-      // here — both ingresses parse code+state from the SAME redirect URL, and the
+      // Keyed on code alone: a sharer's `state` is intentionally not re-validated
+      // here — every caller parses code+state from the SAME redirect URL, and the
       // listener already rejects any sender that isn't one of this extension's own
       // contexts (sender.id check), so there is no untrusted second `state` to guard.
       // The first caller's state IS validated against auth_state inside the exchange.
@@ -521,8 +576,6 @@ export default defineBackground({
     if (browser.permissions?.onRemoved) {
       browser.permissions.onRemoved.addListener(() => reconcileAuthBridgeRegistration());
     }
-
-    // === OAuth Tab Monitor (registered top-level so it survives SW eviction) ===
 
     // === Action Click Handler ===
     browser.action.onClicked.addListener(async (tab: any) => {

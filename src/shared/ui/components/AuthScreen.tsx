@@ -63,15 +63,16 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   // Stop waiting for a sign-in that is never going to report back.
   //
   // `isAuthenticating` is cleared in exactly one other place: the catch below,
-  // which only fires if *initiating* the flow failed. Once the authorization tab
-  // opens, the sole exit is an `auth_state_changed` broadcast — so anything that
-  // ends the flow without one (the consent page erroring, the user closing the
-  // tab or denying, a dropped network) left the panel spinning "Authenticating…"
-  // forever, with the button disabled and no way back but reloading the panel.
+  // which fires when the background reports the flow failed. Once the auth
+  // window opens, the sole exit is an `auth_state_changed` broadcast — so
+  // anything that ends the flow without one (the consent page erroring, a
+  // dropped network) left the panel spinning "Authenticating…" forever, with the
+  // button disabled and no way back but reloading the panel.
   //
-  // The background's own 5-minute deadline cannot cover this: it is evaluated
-  // inside the tab-update handler, so a tab that simply stops navigating never
-  // triggers it, and it notifies the panel of nothing when it does fire.
+  // Nothing in the background covers this on its own. identity.launchWebAuthFlow
+  // settles only on a redirect back or on the user closing the window; a window
+  // that simply stops navigating leaves that promise pending indefinitely, and a
+  // pending promise notifies the panel of nothing.
   //
   // This only restores the affordance — it cancels nothing. A late success still
   // arrives on the listener below and still calls onAuthSuccess, so erring short
