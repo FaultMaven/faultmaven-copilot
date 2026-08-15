@@ -4069,6 +4069,11 @@ export interface components {
              */
             expires_in: number;
             /**
+             * Idp Logout Url
+             * @description Where to send the browser to end the identity provider's own session. Populated only for SSO logins; null for password and dev logins, which have no IdP session. A client signing a user out must navigate here after clearing local state: revoking FaultMaven's token does not end the IdP session, so omitting it leaves the next sign-in answered silently, the account unswitchable, and a shared browser one click from being signed back in.
+             */
+            idp_logout_url?: string | null;
+            /**
              * Refresh Token
              * @description Long-lived refresh token used to mint a new access token via POST /auth/refresh without re-authenticating. Issued in local mode; clients should persist it and refresh before the access token expires.
              */
@@ -7852,7 +7857,10 @@ export interface operations {
     logout_api_v1_auth_logout_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The session being ended. Optional: supplied, the IdP's own session is ended server-side as well, which does not depend on the browser completing the logout redirect. */
+                "X-Session-Id"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -7865,6 +7873,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
