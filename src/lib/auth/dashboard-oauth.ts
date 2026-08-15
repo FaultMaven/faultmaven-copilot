@@ -58,8 +58,15 @@ export async function initiateDashboardOAuth(): Promise<DashboardOAuthInitiateRe
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
 
-    // Get callback URL (extension's callback.html)
-    const redirectUri = browser.runtime.getURL('/callback.html');
+    // Redirect target for identity.launchWebAuthFlow:
+    // `https://<extension-id>.chromiumapp.org/`. The browser both derives that
+    // host from this extension's own id — so no other extension can claim it —
+    // and treats a redirect to it as the signal to close the auth window.
+    //
+    // Deliberately NOT `runtime.getURL('/callback.html')`: that redirect is
+    // reachable by any extension the backend's id-agnostic pattern admits, and
+    // it needs a real page plus tab-watching code to notice the redirect at all.
+    const redirectUri = browser.identity.getRedirectURL();
 
     log.info('Initiating Dashboard OAuth flow', { redirectUri });
 

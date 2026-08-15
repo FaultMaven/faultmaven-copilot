@@ -26,8 +26,18 @@ export default defineConfig({
       "96": "icon/px96-square-dark.png",
       "128": "icon/px128-square-dark.png"
     },
+    // `identity` powers the sign-in window (identity.launchWebAuthFlow). The
+    // browser owns that window: it opens it, and it CLOSES it the moment the
+    // flow redirects back — which is why sign-in no longer leaves a tab behind
+    // for us to hunt down and remove.
+    //
+    // It also fixes an impersonation gap. launchWebAuthFlow redirects to
+    // `https://<extension-id>.chromiumapp.org/`, and the browser derives that
+    // host from THIS extension's id — another extension cannot claim it. The
+    // old `chrome-extension://<id>/callback.html` redirect had no such
+    // guarantee: the backend pattern admitted any id.
     permissions: [
-      "storage", "sidePanel", "activeTab", "tabs", "scripting"
+      "storage", "sidePanel", "activeTab", "tabs", "scripting", "identity"
     ],
     host_permissions: [
       "https://app.faultmaven.ai/*",

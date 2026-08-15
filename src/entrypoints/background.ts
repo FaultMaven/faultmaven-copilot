@@ -132,74 +132,17 @@ export default defineBackground({
       }
     }
 
-    // === Monitor OAuth Tab for Success Page (MV3 service-worker resilient) ===
-    // The listener is registered once at the top level of the worker (see
-    // main() below) and reads the pending-OAuth context from storage on each
-    // navigation. This survives service-worker eviction: the worker is woken by
-    // the tab-update event and reconstructs context from storage. The old
-    // implementation relied on an in-memory closure + setTimeout, both of which
-    // were destroyed if the SW slept while the user was on the login page (the
-    // common case), silently stranding the OAuth flow.
-    const OAUTH_PENDING_KEY = 'oauth_pending';
-
-    // Single-flight guard for OAuth callback processing, keyed by authorization
-    // code. Both ingress paths — the tab monitor (handleOAuthTabUpdate) and the
-    // callback.html AUTH_CALLBACK message — fire for the same redirect. Without
-    // this they race to exchange the SAME single-use code: one wins, the other
-    // gets "code already used" / "no pending request". Both ingresses are kept
-    // (each covers cases the other misses, e.g. a slept service worker); the
-    // dedup makes running both harmless.
+    // Single-flight guard for OAuth callback processing, keyed by
+    // authorization code. The code is single-use, so two ingresses racing to
+    // exchange the same one means a winner and a spurious
+    // "code already used" for the loser.
+    //
+    // Sign-in now has ONE ingress — identity.launchWebAuthFlow resolves with
+    // the redirect directly — so the race it was written for is gone. The guard
+    // stays because AUTH_CALLBACK (public/auth-callback.js) is still wired, and
+    // because the cost of keeping it is a Map while the cost of being wrong is
+    // a failed sign-in.
     const inFlightAuthCallbacks = new Map<string, Promise<{ success: boolean; user?: any; error?: string }>>();
-
-    async function handleOAuthTabUpdate(tabId: number, changeInfo: any, tab: any) {
-      // Only navigation events can carry the OAuth redirect; skip the frequent
-      // status/title/favicon updates to avoid needless storage reads.
-      const url = changeInfo?.url || (changeInfo?.status === 'complete' ? tab?.url : undefined);
-      if (!url) return;
-
-      let pending: any;
-      try {
-        const stored = await browser.storage.local.get([OAUTH_PENDING_KEY]);
-        pending = stored[OAUTH_PENDING_KEY];
-      } catch {
-        return;
-      }
-      if (!pending || pending.tabId !== tabId) return;
-
-      // Expire stale flows (replaces the old setTimeout-based cleanup).
-      if (typeof pending.deadline === 'number' && Date.now() > pending.deadline) {
-        log.warn('OAuth flow timed out; clearing pending state');
-        await cleanupOAuthState();
-        return;
-      }
-
-      let code: string | null = null;
-      let state: string | null = null;
-      try {
-        const parsedUrl = new URL(url);
-        code = parsedUrl.searchParams.get('code');
-        state = parsedUrl.searchParams.get('state');
-      } catch {
-        return; // not a navigable URL yet
-      }
-
-      if (code && state && state === pending.expectedState) {
-        log.info('OAuth authorization code detected in monitored tab');
-        // Clear pending first so the parallel callback.html → AUTH_CALLBACK path
-        // does not double-process the same authorization code.
-        await browser.storage.local.remove(OAUTH_PENDING_KEY);
-
-        await handleAuthCallback({ code, state }, (response) => {
-          log.info('OAuth callback handled (tab monitor):', response);
-        });
-
-        try {
-          await browser.tabs.remove(tabId);
-        } catch (e) {
-          log.warn('Could not close OAuth tab:', e);
-        }
-      }
-    }
 
     // === Dashboard OAuth Login Handler ===
     async function handleInitiateDashboardOAuth(sendResponse: (response?: any) => void) {
@@ -216,26 +159,44 @@ export default defineBackground({
 
         log.info('Dashboard OAuth URL:', oauthResponse.authorization_url);
 
-        // Open Dashboard authorization page in new tab
-        const tab = await browser.tabs.create({
+        // The browser owns the sign-in window: it opens it, and it closes it
+        // the instant the flow redirects to our chromiumapp.org URL. That is
+        // the whole reason this replaced tabs.create + onUpdated + tabs.remove
+        // — the window disappearing on success is the platform's job, not a
+        // race we run against our own tab listener.
+        //
+        // Resolves with the full redirect URL (code + state in the query), or
+        // rejects when the user closes the window or the flow fails.
+        const redirectUrl = await browser.identity.launchWebAuthFlow({
           url: oauthResponse.authorization_url,
-          active: true
+          interactive: true,
         });
 
-        if (!tab.id) {
-          throw new Error('Failed to create OAuth tab');
+        if (!redirectUrl) {
+          throw new Error('Sign-in was cancelled.');
         }
 
-        log.info('Dashboard OAuth initiated, authorization tab opened');
+        const returned = new URL(redirectUrl);
+        const code = returned.searchParams.get('code');
+        const state = returned.searchParams.get('state');
+        const oauthError = returned.searchParams.get('error');
 
-        // Persist pending-OAuth context so the top-level tab listener can
-        // complete the flow even if the service worker is evicted during login.
-        await browser.storage.local.set({
-          [OAUTH_PENDING_KEY]: {
-            tabId: tab.id,
-            expectedState: oauthResponse.state,
-            deadline: Date.now() + 5 * 60 * 1000
-          }
+        if (oauthError) {
+          // The authorization server refused. Its slug is not shown to the
+          // user — it is an error oracle, and there is nothing actionable in it.
+          log.warn('Authorization refused', { oauthError });
+          throw new Error('Sign-in could not be completed.');
+        }
+
+        // Compare against the state WE generated. launchWebAuthFlow only
+        // guarantees the redirect reached this extension; it says nothing about
+        // which authorization request produced it.
+        if (!code || !state || state !== oauthResponse.state) {
+          throw new Error('Sign-in could not be completed.');
+        }
+
+        await handleAuthCallback({ code, state }, (response) => {
+          log.info('OAuth callback handled (auth window):', response);
         });
 
         sendResponse({ status: 'success', state: oauthResponse.state });
@@ -562,7 +523,6 @@ export default defineBackground({
     }
 
     // === OAuth Tab Monitor (registered top-level so it survives SW eviction) ===
-    browser.tabs.onUpdated.addListener(handleOAuthTabUpdate);
 
     // === Action Click Handler ===
     browser.action.onClicked.addListener(async (tab: any) => {

@@ -6,7 +6,7 @@ import {
 } from '../../../lib/auth/dashboard-oauth';
 
 // Mock browser environment
-const { mockBrowserStorage, mockBrowserRuntime } = vi.hoisted(() => {
+const { mockBrowserStorage, mockBrowserRuntime, mockBrowserIdentity } = vi.hoisted(() => {
   const mockStorage = {
     local: {
       get: vi.fn().mockResolvedValue({}),
@@ -19,9 +19,18 @@ const { mockBrowserStorage, mockBrowserRuntime } = vi.hoisted(() => {
     getURL: vi.fn((path: string) => `chrome-extension://abcdefghijklmnopqrstuvwxyzabcd${path}`)
   };
 
+  // identity.getRedirectURL is what launchWebAuthFlow redirects back to. The
+  // browser derives that host from the extension's own id — which is exactly
+  // why it replaced the forgeable chrome-extension:// callback page.
+  const mockIdentity = {
+    getRedirectURL: vi.fn(() => 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/'),
+    launchWebAuthFlow: vi.fn()
+  };
+
   return {
     mockBrowserStorage: mockStorage,
-    mockBrowserRuntime: mockRuntime
+    mockBrowserRuntime: mockRuntime,
+    mockBrowserIdentity: mockIdentity
   };
 });
 
@@ -29,7 +38,8 @@ const { mockBrowserStorage, mockBrowserRuntime } = vi.hoisted(() => {
 vi.mock('wxt/browser', () => ({
   browser: {
     storage: mockBrowserStorage,
-    runtime: mockBrowserRuntime
+    runtime: mockBrowserRuntime,
+    identity: mockBrowserIdentity
   }
 }));
 
@@ -80,7 +90,7 @@ describe('Dashboard OAuth', () => {
         expect.objectContaining({
           pkce_verifier: expect.any(String),
           auth_state: result.state,
-          redirect_uri: expect.stringContaining('chrome-extension://'),
+          redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
           auth_initiated_at: expect.any(Number)
         })
       );
@@ -97,8 +107,12 @@ describe('Dashboard OAuth', () => {
       // Verify query parameters
       expect(url.searchParams.get('response_type')).toBe('code');
       expect(url.searchParams.get('client_id')).toBe('faultmaven-copilot');
-      expect(url.searchParams.get('redirect_uri')).toContain('chrome-extension://');
-      expect(url.searchParams.get('redirect_uri')).toContain('/callback.html');
+      expect(url.searchParams.get('redirect_uri')).toBe(
+        'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
+      );
+      expect(url.searchParams.get('redirect_uri')).toBe(
+        'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
+      );
       expect(url.searchParams.get('state')).toBe(result.state);
       expect(url.searchParams.get('code_challenge')).toBe(result.code_challenge);
       expect(url.searchParams.get('code_challenge_method')).toBe('S256');
@@ -107,10 +121,13 @@ describe('Dashboard OAuth', () => {
       expect(url.searchParams.get('scope')).toContain('cases:write');
     });
 
-    it('uses browser.runtime.getURL for redirect_uri', async () => {
+    it('uses the browser-derived identity redirect, not an in-extension page', async () => {
       await initiateDashboardOAuth();
 
-      expect(mockBrowserRuntime.getURL).toHaveBeenCalledWith('/callback.html');
+      // Not runtime.getURL('/callback.html'): that redirect is claimable by any
+      // extension the backend's id-agnostic pattern admits.
+      expect(mockBrowserIdentity.getRedirectURL).toHaveBeenCalled();
+      expect(mockBrowserRuntime.getURL).not.toHaveBeenCalledWith('/callback.html');
     });
 
     it('generates unique state and verifier on each call', async () => {
