@@ -1,3 +1,5 @@
+import type { components } from '~/types/api.generated';
+
 // Authentication
 export interface AuthState {
   access_token: string;
@@ -21,11 +23,13 @@ export interface AuthUser {
   name: string;
 }
 
-/** The tenant a session is bound to, as `/auth/me` names it. */
-export interface AccountOrganization {
-  organization_id: string;
-  name: string;
-}
+/** The tenant a session is bound to, as `/auth/me` names it.
+ *
+ * Aliased to the generated schema rather than restated. It was hand-written
+ * while faultmaven#1068 was in flight and the field did not exist in the spec;
+ * now that it does, a rename or reshape there has to break this build instead
+ * of silently leaving the organization row empty at runtime. */
+export type AccountOrganization = components['schemas']['OrganizationSummary'];
 
 export interface UserProfile {
   user_id: string;
