@@ -58,10 +58,16 @@ export interface AuthSlice {
   currentUser: User | null;
   loggingIn: boolean;
   authError: string | null;
+  /** Set when a deliberate sign-out could not be confirmed to have ended every
+   *  session for the account. Not an error — the local sign-out succeeded — but
+   *  the Dashboard runs on its own token chain and may still be signed in, so
+   *  saying nothing would report a reach this client never verified. */
+  signOutNotice: string | null;
 
   // Actions
   initializeAuth: () => Promise<void>;
   logout: () => Promise<void>;
+  clearSignOutNotice: () => void;
   checkRole: (role: string) => boolean;
   checkIsAdmin: () => boolean;
 }
@@ -75,6 +81,7 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
     currentUser: null,
     loggingIn: false,
     authError: null,
+    signOutNotice: null,
 
     initializeAuth: async () => {
       // 1. Initial auth check
@@ -176,10 +183,15 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       // Rethrowing before left the app half-logged-out (tokens gone but
       // isAuthenticated still true, no broadcast) AND skipped the caller's local
       // data purge, leaking the prior user's conversations into storage (#143).
+      // Pessimistic: anything that prevents a confirmation — a throw, an
+      // unconfirmed outcome — leaves the notice set. The local sign-out still
+      // succeeds either way; what is unknown is whether it reached the other
+      // client.
+      let allSessionsEnded = false;
       try {
         log.info('Attempting logout');
-        await logoutAuth();
-        log.info('Logout successful');
+        ({ allSessionsEnded } = await logoutAuth());
+        log.info('Logout successful', { allSessionsEnded });
       } catch (error) {
         log.warn('Backend logout failed; completing local logout anyway', error);
       } finally {
@@ -187,7 +199,10 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
           isAuthenticated: false,
           currentUser: null,
           loggingIn: false,
-          authError: null
+          authError: null,
+          signOutNotice: allSessionsEnded
+            ? null
+            : 'Signed out here. We could not confirm your other FaultMaven sessions ended — if you were signed in to the Dashboard, sign out there too.'
         });
 
         EventBus.emit({
@@ -196,6 +211,8 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
         });
       }
     },
+
+    clearSignOutNotice: () => set({ signOutNotice: null }),
 
     checkRole: (role) => {
       return hasRole(get().currentUser, role);

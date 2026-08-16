@@ -5,6 +5,7 @@ import { getAuthConfig } from "../../auth/auth-config";
 import { tokenManager } from "../../auth/token-manager";
 import { authenticatedFetch, authenticatedFetchWithRetry, prepareBody } from "../client";
 import { UserProfile } from "../types";
+import type { components } from "~/types/api.generated";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { fetchWithTimeout } from "../../utils/fetch-timeout";
 import { createLogger } from '~/lib/utils/logger';
@@ -17,6 +18,16 @@ const OAUTH_CLIENT_ID = 'faultmaven-copilot';
 
 // Best-effort revoke should never stall logout; bound it well under any UI wait.
 const REVOKE_TIMEOUT_MS = 10_000;
+
+/** What a sign-out actually achieved, as far as this client can verify. */
+export interface LogoutOutcome {
+  /** True only when the server confirmed every session for the account ended.
+   *  False covers "the server said it did not take" and "we never got an
+   *  answer" alike, because they mean the same thing to the user: another
+   *  client — typically the Dashboard, on its own token chain — may still be
+   *  signed in as them. */
+  allSessionsEnded: boolean;
+}
 
 /**
  * Best-effort server-side revocation of the refresh token on logout (RFC 7009).
@@ -94,7 +105,13 @@ export async function getCurrentUser(): Promise<UserProfile> {
   return response.json();
 }
 
-export async function logoutAuth(): Promise<void> {
+export async function logoutAuth(): Promise<LogoutOutcome> {
+  // Pessimistic until the server says otherwise. Every path that fails to
+  // produce a confirmation — offline, a non-2xx, a body that will not parse, a
+  // backend predating the field — leaves this false, which is what the user is
+  // told. Never inferred from the request merely having been sent.
+  let allSessionsEnded = false;
+
   try {
     // Revoke the refresh token server-side while the local copy still exists
     // (the finally block below destroys it). /auth/logout only revokes the
@@ -109,6 +126,14 @@ export async function logoutAuth(): Promise<void> {
     if (!response.ok) {
       throw await createHttpErrorFromResponse(response);
     }
+
+    // `=== true` is load-bearing at runtime even though the field is typed
+    // non-optional: a body that will not parse, or one from a backend older
+    // than the field, reads as unconfirmed — which is exactly what it is.
+    const body = (await response
+      .json()
+      .catch(() => null)) as components['schemas']['LogoutResponse'] | null;
+    allSessionsEnded = body?.all_sessions_ended === true;
   } finally {
     // Clear ALL local auth data (authState + tokens) regardless of response
     // status. clearAuthState() alone would leave the token keys behind, so the
@@ -128,4 +153,6 @@ export async function logoutAuth(): Promise<void> {
       }
     }
   }
+
+  return { allSessionsEnded };
 }

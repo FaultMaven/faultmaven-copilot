@@ -14,6 +14,7 @@ import { browser } from 'wxt/browser';
 import { getAuthConfig, AuthConfig } from '../../../lib/auth/auth-config';
 import { createLogger } from '../../../lib/utils/logger';
 import { LocalLoginForm } from './LocalLoginForm';
+import { useAppStore } from '../../../lib/state/store';
 
 const log = createLogger('AuthScreen');
 
@@ -37,6 +38,8 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const signOutNotice = useAppStore((state) => state.signOutNotice);
+  const clearSignOutNotice = useAppStore((state) => state.clearSignOutNotice);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   // Deliberately NOT `error`: that renders the full-screen "Authentication
   // Error" block whose only affordance is reloading the panel. A stalled
@@ -177,6 +180,27 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             Sign in to get started
           </p>
         </div>
+
+        {/* An unconfirmed account-wide sign-out. Rendered above the sign-in
+            control, not as an error: signing out here DID work, and the only
+            action it asks for concerns a different client. role="status"
+            rather than "alert" for the same reason — this is information, not
+            a failure to recover from. */}
+        {signOutNotice && (
+          <div
+            role="status"
+            className="mb-4 flex items-start gap-3 rounded-lg border border-fm-warning-border bg-fm-warning-bg p-3"
+          >
+            <p className="text-sm text-fm-text-secondary flex-1">{signOutNotice}</p>
+            <button
+              onClick={clearSignOutNotice}
+              aria-label="Dismiss"
+              className="shrink-0 text-fm-text-tertiary hover:text-fm-text-primary transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Authentication UI */}
         <div className="bg-fm-surface rounded-xl border border-fm-border p-6">
