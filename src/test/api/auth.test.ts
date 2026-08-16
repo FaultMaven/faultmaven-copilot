@@ -405,11 +405,19 @@ describe('Authentication API', () => {
         refresh_expires_at: Date.now() + 604800000
       });
 
+      // A real Response has a json(); the endpoint answers LogoutResponse, and
+      // the reach of the sign-out is read from it.
       global.fetch = vi.fn().mockResolvedValue({
-        ok: true
+        ok: true,
+        json: async () => ({
+          message: 'Logged out successfully',
+          revoked_tokens: 1,
+          all_sessions_ended: true
+        })
       });
 
-      await logoutAuth();
+      const outcome = await logoutAuth();
+      expect(outcome.allSessionsEnded).toBe(true);
 
       // Verify logout API call
       expect(fetch).toHaveBeenCalledWith(
@@ -533,8 +541,10 @@ describe('Authentication API', () => {
         return Promise.resolve(mockFetchResponse({ ok: true }));
       });
 
-      // Logout resolves despite the revoke failure...
-      await expect(logoutAuth()).resolves.toBeUndefined();
+      // Logout resolves despite the revoke failure, and reports the sign-out as
+      // unconfirmed: this body carries no `all_sessions_ended`, which is what a
+      // backend predating the field looks like. Unconfirmed, not assumed.
+      await expect(logoutAuth()).resolves.toEqual({ allSessionsEnded: false });
       // ...the logout endpoint was still called...
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/auth/logout',

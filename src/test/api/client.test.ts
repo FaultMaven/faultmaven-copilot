@@ -18,6 +18,14 @@ const fetchWithTimeout = vi.fn();
 vi.mock('../../lib/utils/fetch-timeout', () => ({
   fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
 }));
+// The synchronous fence handleAuthError raises before tearing down, so an
+// in-flight writer whose continuation is already queued skips its post-await
+// writes instead of repopulating state that is about to be cleared.
+const bumpEpoch = vi.fn().mockReturnValue(1);
+vi.mock('../../lib/state/session-epoch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  bumpEpoch: () => bumpEpoch(),
+}));
 const storageRemove = vi.fn().mockResolvedValue(undefined);
 const storageGet = vi.fn().mockResolvedValue({});
 vi.mock('wxt/browser', () => ({
@@ -53,6 +61,54 @@ describe('authenticatedFetch — error branding', () => {
       AuthenticationError
     );
     expect(clearAllAuthData).toHaveBeenCalled();
+  });
+
+  // The revoked-token case, which account-scoped logout (faultmaven#1065) turned
+  // from a rare admin action into what a sign-out on the OTHER client does to
+  // this one. The teardown has to fence BEFORE it clears: a turn already
+  // in flight resumes after its await and would otherwise write the previous
+  // user's message back into a store that had just been emptied.
+  it('fences in-flight writers before clearing, on a revoked credential', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer revoked-token' });
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+      json: async () => ({ detail: 'Token has been revoked. Please re-authenticate.' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/cases/abc/turns')).rejects.toBeInstanceOf(
+      AuthenticationError
+    );
+
+    // Both, and in this order. Clearing without fencing leaves the race open;
+    // fencing without clearing leaves a dead credential attached to every
+    // later request.
+    expect(bumpEpoch).toHaveBeenCalled();
+    expect(clearAllAuthData).toHaveBeenCalled();
+    expect(bumpEpoch.mock.invocationCallOrder[0]).toBeLessThan(
+      clearAllAuthData.mock.invocationCallOrder[0]
+    );
+  });
+
+  // A revoked token reaches the client as 401 on every route since #1065's
+  // status fix. Before it, session routes answered 403, which classifies as a
+  // permission problem: no teardown, tokens kept, and the panel rendered
+  // "Access Denied. Contact your administrator." at a signed-out user.
+  it('does not tear down on a 403, which is authorization and not a dead credential', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer live-token' });
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 403,
+      headers: { get: () => null },
+      json: async () => ({ detail: 'Forbidden' })
+    } as any);
+
+    await expect(authenticatedFetch('/api/v1/admin/cases')).rejects.toMatchObject({
+      status: 403
+    });
+    expect(clearAllAuthData).not.toHaveBeenCalled();
+    expect(bumpEpoch).not.toHaveBeenCalled();
   });
 
   // Regression: issue #99 — a 401 on a request that carried NO Authorization
