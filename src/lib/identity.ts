@@ -52,26 +52,30 @@ export function identityColor(userId: string | undefined | null): string {
  * part — the account always has at least one of these, so the monogram never
  * renders empty. Non-letter characters are skipped so `sterlan.yu` and
  * `sterlan_yu` both give "SY" rather than "S." or "S_".
+ *
+ * Each source is tried until one actually yields characters, rather than
+ * committing to the first non-empty one: a display name of "🙂" or "---" is
+ * non-empty yet loses everything to the filter, and the username underneath it
+ * usually gives real initials.
  */
 export function accountInitials(
   displayName?: string | null,
   username?: string | null,
   email?: string | null,
 ): string {
-  const source =
-    displayName?.trim() ||
-    username?.trim() ||
-    email?.split('@')[0]?.trim() ||
-    '';
+  for (const source of [displayName, username, email?.split('@')[0]]) {
+    const words = (source ?? '')
+      .split(/[\s._-]+/)
+      .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ''))
+      .filter(Boolean);
 
-  const words = source
-    .split(/[\s._-]+/)
-    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ''))
-    .filter(Boolean);
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    if (words.length > 1) {
+      return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+    }
+  }
 
-  if (words.length === 0) return '?';
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  return '?';
 }
 
 /** The elevated role worth surfacing, or null. `platform_admin` is the

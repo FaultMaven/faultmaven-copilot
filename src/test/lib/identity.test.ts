@@ -64,6 +64,14 @@ describe('accountInitials', () => {
     expect(accountInitials(undefined, undefined, 'rae.kelmen@faultmaven.ai')).toBe('RK');
   });
 
+  it('falls through a source that survives nothing of the filter', () => {
+    // "🙂" and "---" are non-empty, so a first-non-empty-source chain would
+    // stop there and render "?" while a perfectly good username sat unused.
+    expect(accountInitials('🙂', 'sterlan.yu')).toBe('SY');
+    expect(accountInitials('---', 'prometheus')).toBe('PR');
+    expect(accountInitials('   ', undefined, 'rae.kelmen@faultmaven.ai')).toBe('RK');
+  });
+
   it('never renders empty', () => {
     // The monogram is the only identity element in the collapsed rail, so an
     // empty string there would erase it entirely.
