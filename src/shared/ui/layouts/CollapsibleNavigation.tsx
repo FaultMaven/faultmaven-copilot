@@ -14,8 +14,13 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import ConversationsList from '../components/ConversationsList';
 import { useConfiguredEndpoint } from '../hooks/useConfiguredEndpoint';
 import { NAVIGATION_WIDTH, TRANSITION } from './constants';
+import { AccountRow } from '../components/AccountRow';
+import type { User } from '~/lib/api/types';
 
 export interface CollapsibleNavigationProps {
+  // Signed-in account, rendered above the footer controls. Nullable because the
+  // nav renders during the window where auth state is still resolving.
+  currentUser: User | null;
   // Collapse state
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -50,6 +55,7 @@ export interface CollapsibleNavigationProps {
 }
 
 export function CollapsibleNavigation({
+  currentUser,
   isCollapsed,
   onToggleCollapse,
   activeTab,
@@ -170,8 +176,9 @@ export function CollapsibleNavigation({
           </button>
         </div>
 
-        {/* Bottom: Settings + Logout */}
+        {/* Bottom: Account + Settings + Logout */}
         <div className="flex-shrink-0 flex flex-col items-center pb-3 gap-2 border-t border-fm-border pt-2">
+          <AccountRow user={currentUser} collapsed />
           <button
             onClick={() => {
               if (typeof browser !== 'undefined' && browser.runtime) {
@@ -306,8 +313,10 @@ export function CollapsibleNavigation({
         </ErrorBoundary>
       </div>
 
-      {/* Footer: Settings + Logout (compact icon row) */}
-      <div className="flex-shrink-0 flex items-center justify-center gap-2 px-2 py-2 border-t border-fm-border">
+      {/* Footer: Account, then Settings + Logout (compact icon row) */}
+      <div className="flex-shrink-0 flex flex-col gap-2 px-2 py-2 border-t border-fm-border">
+        <AccountRow user={currentUser} collapsed={false} />
+      <div className="flex items-center justify-center gap-2">
         <button
           onClick={() => {
             if (typeof browser !== 'undefined' && browser.runtime) {
@@ -326,6 +335,7 @@ export function CollapsibleNavigation({
         >
           <LogoutIcon />
         </button>
+      </div>
       </div>
     </div>
   );

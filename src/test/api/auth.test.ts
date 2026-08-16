@@ -7,7 +7,7 @@ import {
   getUserCases,
   createCase
 } from '../../lib/api';
-import { AuthenticationError, SessionExpiredError } from '../../lib/errors/types';
+import { AuthenticationError } from '../../lib/errors/types';
 
 // Mock config
 vi.mock('../../config', () => ({
@@ -337,9 +337,60 @@ describe('Authentication API', () => {
         json: { detail: 'Unauthorized' }
       }));
 
-      await expect(getCurrentUser()).rejects.toThrow(SessionExpiredError);
+      // The recoverable classification routes into the retry wrapper's refresh,
+      // which fails here too (everything 401s) — so what surfaces is that
+      // failure, not the original SessionExpiredError.
+      await expect(getCurrentUser()).rejects.toThrow();
       // The token-clearing teardown must not have fired.
       expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
+    });
+
+    // getCurrentUser goes through authenticatedFetchWithRetry, not the bare
+    // authenticatedFetch. The bare helper REMOVES sessionId from storage and
+    // throws; a caller reading this for display swallows the rejection, so
+    // without the wrapper's refresh the panel would be left with no persisted
+    // session id and the next real request would have to 401 its way to one.
+    it('refreshes and retries on an expired session rather than leaving it cleared', async () => {
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'valid-token', token_type: 'bearer', expires_at: Date.now() + 86400000 },
+        access_token: 'valid-token',
+        token_type: 'bearer',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'valid-refresh',
+        refresh_expires_at: Date.now() + 604800000
+      });
+
+      const userResponse = { user_id: 'user_123', username: 'testuser', email: 'test@example.com' };
+      let meCalls = 0;
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (String(url).includes('/auth/me')) {
+          meCalls += 1;
+          if (meCalls === 1) {
+            return mockFetchResponse({
+              status: 401,
+              ok: false,
+              json: { detail: 'Session expired', error_code: 'SESSION_EXPIRED' },
+              headers: { 'x-error-code': 'SESSION_EXPIRED' }
+            });
+          }
+          return mockFetchResponse({ json: userResponse });
+        }
+        if (String(url).includes('/sessions')) {
+          return mockFetchResponse({
+            json: { session_id: 'session-new', created_at: 'now', status: 'active', last_activity: 'now' }
+          });
+        }
+        return mockFetchResponse({ json: {} });
+      });
+
+      await expect(getCurrentUser()).resolves.toEqual(userResponse);
+
+      // The replacement session was persisted, so the retry (and everything
+      // after it) carries X-Session-Id.
+      expect(mockBrowserStorage.local.set).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'session-new' })
+      );
+      expect(meCalls).toBe(2);
     });
   });
 

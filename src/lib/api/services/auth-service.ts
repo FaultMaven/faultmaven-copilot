@@ -3,7 +3,7 @@ import config, { getApiUrl } from "../../../config";
 import { authManager } from "../../auth/auth-manager";
 import { getAuthConfig } from "../../auth/auth-config";
 import { tokenManager } from "../../auth/token-manager";
-import { authenticatedFetch, prepareBody } from "../client";
+import { authenticatedFetch, authenticatedFetchWithRetry, prepareBody } from "../client";
 import { UserProfile } from "../types";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { fetchWithTimeout } from "../../utils/fetch-timeout";
@@ -70,8 +70,19 @@ async function revokeRefreshTokenBestEffort(): Promise<void> {
   }
 }
 
+/**
+ * Read the signed-in account's profile from `/auth/me`.
+ *
+ * Uses `authenticatedFetchWithRetry`, not the bare `authenticatedFetch`. A 401
+ * SESSION_EXPIRED inside the bare helper *removes* `sessionId` from storage and
+ * throws — so a caller that swallows the rejection (this is read for display,
+ * see AccountRow) would leave the panel with no persisted session id and no
+ * refresh, and the next real request would have to 401 its way to a new one.
+ * The retry wrapper runs the single-flighted `refreshSession()` and persists the
+ * replacement, which is the only thing that makes a swallowed failure harmless.
+ */
 export async function getCurrentUser(): Promise<UserProfile> {
-  const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/auth/me`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/auth/me`, {
     method: 'GET',
     credentials: 'include'
   });

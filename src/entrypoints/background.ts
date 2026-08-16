@@ -359,10 +359,11 @@ export default defineBackground({
         // if the profile read then failed.
         //
         // A failed read FAILS THE SIGN-IN rather than degrading to a guessed
-        // identity. Nothing re-reads the profile once it is stored: the only
-        // other /auth/me caller (auth-service.ts getCurrentUser) has no
-        // production callers, and TokenManager copies the stored `user` forward
-        // verbatim on every refresh (token-manager.ts:257). So a fallback
+        // identity. Nothing ever CORRECTS the profile once it is stored:
+        // TokenManager copies the stored `user` forward verbatim on every
+        // refresh (token-manager.ts:257), and the other /auth/me caller
+        // (auth-service.ts getCurrentUser, read by the side panel's AccountRow)
+        // feeds a display row only — it never writes back here. So a fallback
         // `roles: ['user']` would outlive the outage that caused it and
         // silently strip an admin's access for the life of the refresh window —
         // up to 7 days — with nothing to signal why. Losing one login attempt

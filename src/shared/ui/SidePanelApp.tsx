@@ -80,7 +80,7 @@ function SidePanelAppContent() {
   const reconcileActiveCaseState = useAppStore((state) => state.reconcileActiveCaseState);
 
   // --- Auth & Session ---
-  const { isAuthenticated, isAdmin, logout } = useAuth();
+  const { isAuthenticated, isAdmin, logout, currentUser } = useAuth();
   const shouldInitializeSession = hasCompletedFirstRun === true;
   const { sessionId, clearSession } = useSessionManagement(shouldInitializeSession);
 
@@ -289,6 +289,7 @@ function SidePanelAppContent() {
           onError={(error) => log.error('Navigation boundary caught error', { error })}
         >
           <CollapsibleNavigation
+            currentUser={currentUser}
             isCollapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             activeTab={activeTab}
