@@ -12,6 +12,7 @@ import { browser } from "wxt/browser";
 import { getUserCases, authManager, UserCase } from "../api";
 import { OptimisticConversationItem } from "../optimistic";
 import { createLogger } from '~/lib/utils/logger';
+import { isPlaceholderCaseTitle } from '../state/case-title';
 
 const log = createLogger('PersistenceManager');
 
@@ -231,8 +232,19 @@ export class PersistenceManager {
         // Extract metadata only
         // Note: userCase now contains organization_id, description, closure_reason, closed_at
         // These fields are preserved in the UserCase objects returned by getUserCases()
-        recoveredTitles[userCase.case_id] = userCase.title || `Chat-${new Date(userCase.created_at || Date.now()).toLocaleString()}`;
-        recoveredTitleSources[userCase.case_id] = 'backend';
+        // Recover ONLY a title worth preferring over the backend's own. This
+        // loop used to copy every case's backend title into the store — the same
+        // seeding removed from the two turn hooks (fm#1069) — which pins a
+        // `Case-YYMMDD-N` placeholder ahead of the real title the server writes
+        // later, because the store wins in `selectCaseTitle`. It also minted a
+        // synthetic `Chat-<date>` for untitled cases, a value no backend ever
+        // held. Neither belongs in a map whose job is to remember what the user
+        // chose; a case with no store entry renders its backend title, which is
+        // both current and correct.
+        if (userCase.title && !isPlaceholderCaseTitle(userCase.title)) {
+          recoveredTitles[userCase.case_id] = userCase.title;
+          recoveredTitleSources[userCase.case_id] = 'backend';
+        }
 
         // Mark conversations as empty (will be lazy-loaded on case open)
         // Empty array signals UI that conversation needs to be fetched

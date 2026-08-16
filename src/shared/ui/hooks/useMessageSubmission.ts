@@ -12,7 +12,6 @@ import {
   TurnRequest,
   QueryIntent,
   authManager,
-  generateCaseTitle,
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
@@ -41,8 +40,15 @@ import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
 
-// Minimum messages before auto-generating title (must match ConversationItem.tsx)
-export const TITLE_GENERATION_THRESHOLD = 5;
+// There is deliberately no TITLE_GENERATION_THRESHOLD here any more.
+//
+// Auto-titling is the server's job: POST /cases/{id}/turns names a case still
+// carrying its `Case-YYMMDD-N` placeholder once it has enough substance to name,
+// in the background. This hook used to do it too, gated on `turn_number >= 5` —
+// a copy of a backend policy, written in TypeScript, that drifted from it and
+// blocked exactly the upload-driven cases the backend gate was relaxed to allow
+// (fm#1069). Two triggers for one job is how they disagree; the client keeps the
+// user-initiated "Generate title" action in ConversationsList and nothing else.
 
 export function useMessageSubmission() {
   const [submitting, setSubmitting] = useState(false);
@@ -72,7 +78,6 @@ export function useMessageSubmission() {
   // Selected store state
   const sessionId = useAppStore((state) => state.sessionId);
   const activeCaseId = useAppStore((state) => state.activeCaseId);
-  const titleSources = useAppStore((state) => state.titleSources);
   const conversations = useAppStore((state) => state.conversations);
 
   // Selected store actions
@@ -144,11 +149,19 @@ export function useMessageSubmission() {
       });
 
       setConversationTitles(prev => {
+        const optimisticTitle = prev[optimisticId];
+        if (optimisticId === realCaseId || !optimisticTitle) return prev;
+
+        // Carry a title the user set on the optimistic case over to the real id —
+        // and nothing else. This used to write `newCase.title`, which for a
+        // just-created case is the backend placeholder `Case-YYMMDD-N`. Because
+        // the store wins over the backend title in `selectCaseTitle`, that pinned
+        // the placeholder ahead of the real title the server writes moments later,
+        // and the sidebar kept showing `Case-YYMMDD-N` for a case that had been
+        // named (fm#1069). With no entry, the backend title renders.
         const updated = { ...prev };
-        updated[realCaseId] = newCase.title;
-        if (optimisticId !== realCaseId && updated[optimisticId]) {
-          delete updated[optimisticId];
-        }
+        updated[realCaseId] = optimisticTitle;
+        delete updated[optimisticId];
         return updated;
       });
 
@@ -191,6 +204,9 @@ export function useMessageSubmission() {
   ) => {
     const controller = new AbortController();
     inFlightControllers.current.add(controller);
+    // Set when this turn moved the case to a new state — see the refresh at the
+    // end of this function for why that suppresses the post-turn list refetch.
+    let caseStateChanged = false;
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight (or its poll loop is running) must not let the success
     // handler write the response / complete the pending op / set a title back
@@ -223,6 +239,10 @@ export function useMessageSubmission() {
                   oldStatus: prev.state,
                   newStatus: response.case_state
                 });
+                // Recorded because a state change makes SidePanelApp's transition
+                // effect refresh the case list on its own; the post-turn refresh
+                // below stands down rather than asking for the same list twice.
+                caseStateChanged = true;
                 return { ...prev, state: response.case_state as UserCase['state'] };
               }
               return prev;
@@ -359,38 +379,21 @@ export function useMessageSubmission() {
       pendingOpsManager.complete(aiMessageId);
       log.info('Message submission completed and UI updated');
 
-      const currentTurn = response.turn_number ?? 0;
-      const titleSource = titleSources[caseId];
-      const shouldAutoGenerateTitle =
-        currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSource;
-
-      if (shouldAutoGenerateTitle) {
-        log.info('Turn threshold reached, auto-generating smart title', {
-          caseId,
-          turn: currentTurn,
-          threshold: TITLE_GENERATION_THRESHOLD
-        });
-        try {
-          const titleResult = await generateCaseTitle(caseId, { max_words: 6 });
-          // Re-check the epoch after the title-gen await: a logout during the
-          // (multi-second) LLM call must not write the ended session's title back
-          // into the purged store, which the subscriber would then persist (#143).
-          if (epoch !== getEpoch()) {
-            log.info('Session ended during title generation — discarding title write', { caseId });
-          } else if (titleResult.title) {
-            setConversationTitles(prev => ({
-              ...prev,
-              [caseId]: titleResult.title
-            }));
-            setTitleSources(prev => ({
-              ...prev,
-              [caseId]: 'backend'
-            }));
-            log.info('Smart title auto-generated', { caseId, title: titleResult.title });
-          }
-        } catch (error) {
-          log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
-        }
+      // The backend may have named this case while processing the turn (see
+      // POST /cases/{id}/turns). Refetch the list so a title the client never
+      // asked for still reaches the sidebar.
+      //
+      // Not gated on the store: it holds an entry only for cases the user
+      // renamed or generated a title for, so "no store entry" does not mean "no
+      // server title", and gating on it would skip the refresh for every case
+      // loaded from the server.
+      //
+      // Skipped when the turn changed case_state, because SidePanelApp's
+      // transition effect then runs reconcileActiveCaseState, which invalidates
+      // the list cache and bumps this same counter itself. Firing both would
+      // spend two list GETs to answer one question.
+      if (!caseStateChanged) {
+        triggerRefreshSessions();
       }
 
     } catch (error) {

@@ -48,7 +48,8 @@ export interface CollapsibleNavigationProps {
   onCaseSelect: (caseId: string) => void;
   onNewChat: () => void;
   onLogout: () => void;
-  onCaseTitleChange: (caseId: string, newTitle: string) => void;
+  /** See `ConversationsList` — `source` says whether a backend write is still owed. */
+  onCaseTitleChange: (caseId: string, newTitle: string, source: 'user' | 'backend') => void;
   onPinToggle: (caseId: string) => void;
   onAfterDelete?: (deletedCaseId: string, remaining: Array<{ case_id: string; updated_at?: string; created_at?: string }>) => void;
   onCasesLoaded?: (cases: any[]) => void;

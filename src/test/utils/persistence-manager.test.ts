@@ -139,6 +139,45 @@ describe('PersistenceManager', () => {
   });
 
   describe('recoverConversationsFromBackend', () => {
+    it('does not recover placeholder titles into the store (fm#1069)', async () => {
+      // Recovery used to copy EVERY backend title into conversationTitles with
+      // source 'backend'. Because the store wins in selectCaseTitle, a recovered
+      // `Case-YYMMDD-N` pins the placeholder ahead of the real title the server
+      // writes later — reintroducing, on the recovery path, exactly the seeding
+      // this change removed from the two turn hooks.
+      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
+
+      const base = {
+        owner_id: 'user1',
+        organization_id: 'org1',
+        created_at: '2026-08-16T00:00:00Z',
+        updated_at: '2026-08-16T01:00:00Z',
+        state: 'investigating' as const,
+        message_count: 2,
+        closure_reason: null,
+        closed_at: null
+      };
+
+      vi.mocked(getUserCases).mockResolvedValue([
+        { ...base, case_id: 'named', title: 'Postgres pool exhaustion' },
+        { ...base, case_id: 'placeholder6', title: 'Case-260816-1' },
+        { ...base, case_id: 'placeholder4', title: 'Case-1106-1' },
+        { ...base, case_id: 'untitled', title: '' }
+      ]);
+
+      await PersistenceManager.recoverConversationsFromBackend();
+
+      const saved = mockBrowser.storage.local.set.mock.calls
+        .map(([arg]: any[]) => arg)
+        .find((arg: any) => arg && 'conversationTitles' in arg);
+
+      expect(saved.conversationTitles).toEqual({ named: 'Postgres pool exhaustion' });
+      expect(saved.titleSources).toEqual({ named: 'backend' });
+      // The untitled case must not get a synthetic `Chat-<date>` either — that is
+      // a value no backend ever held, pinned ahead of one it will.
+      expect(Object.keys(saved.conversationTitles)).not.toContain('untitled');
+    });
+
     it('should successfully recover conversations from backend', async () => {
       // Setup mocks for successful recovery
       vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);

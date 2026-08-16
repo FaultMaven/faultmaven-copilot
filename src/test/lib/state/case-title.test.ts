@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectCaseTitle } from '~lib/state/case-title';
+import { selectCaseTitle, isPlaceholderCaseTitle } from '~lib/state/case-title';
 
 describe('selectCaseTitle', () => {
   it('prefers the store title over the backend title', () => {
@@ -47,4 +47,85 @@ describe('selectCaseTitle', () => {
     expect(titleFor('A')).toBe('Renamed A');
     expect(titleFor('B')).toBe('Generated B'); // unaffected
   });
+});
+
+/**
+ * fm#1069: a placeholder pinned in the store shadowed the server-generated title.
+ *
+ * The store wins over the backend title, and several paths seeded it with
+ * whatever the backend last reported — including the `Case-YYMMDD-N` a case is
+ * born with. Fixing the writers is not enough on its own: `conversationTitles`
+ * is persisted to `browser.storage.local`, so an entry written by an older build
+ * outlives the code that wrote it and keeps winning after upgrade. The selector
+ * is where that is answered, because it is the only thing every read goes
+ * through.
+ */
+describe('selectCaseTitle — placeholder titles never win', () => {
+  it('falls through to the backend title when the store holds a placeholder', () => {
+    expect(
+      selectCaseTitle(
+        { store: 'Case-260816-1', backend: 'Postgres pool exhaustion' },
+        'Untitled Case'
+      )
+    ).toBe('Postgres pool exhaustion');
+  });
+
+  it('also skips the pre-2026-01-28 four-digit placeholder form', () => {
+    // Entries persisted by builds from before the generator became year-safe.
+    expect(
+      selectCaseTitle(
+        { store: 'Case-1106-1', backend: 'Kafka consumer lag' },
+        'Untitled Case'
+      )
+    ).toBe('Kafka consumer lag');
+  });
+
+  it('still shows a placeholder when that is genuinely all there is', () => {
+    // Skipping the store must not degrade a case the server has not named yet.
+    expect(
+      selectCaseTitle({ store: 'Case-260816-1', backend: 'Case-260816-1' }, 'Untitled Case')
+    ).toBe('Case-260816-1');
+    expect(selectCaseTitle({ store: 'Case-260816-1' }, 'Untitled Case')).toBe('Untitled Case');
+  });
+
+  it('keeps honouring a real stored title over the backend', () => {
+    // The store's actual purpose — an optimistic user rename — is untouched.
+    expect(
+      selectCaseTitle({ store: 'My own name', backend: 'Server name' }, 'Untitled Case')
+    ).toBe('My own name');
+  });
+
+  it('does not mistake a real title that merely contains the shape', () => {
+    expect(
+      selectCaseTitle(
+        { store: 'Re: Case-260101-1', backend: 'Server name' },
+        'Untitled Case'
+      )
+    ).toBe('Re: Case-260101-1');
+    expect(
+      selectCaseTitle(
+        { store: 'Case-260101-1 follow-up', backend: 'Server name' },
+        'Untitled Case'
+      )
+    ).toBe('Case-260101-1 follow-up');
+  });
+});
+
+describe('isPlaceholderCaseTitle', () => {
+  it.each(['Case-260816-1', 'Case-1106-1', 'Case-991231-999', '  Case-260101-1  '])(
+    'recognises %s',
+    (title) => expect(isPlaceholderCaseTitle(title)).toBe(true)
+  );
+
+  it.each([
+    'Postgres pool exhaustion',
+    'Re: Case-260101-1',
+    'Case-260101-1 follow-up',
+    'Case-26011-1',
+    'Case-260101',
+    'case-260101-1',
+    '',
+    null,
+    undefined
+  ])('leaves %s alone', (title) => expect(isPlaceholderCaseTitle(title as any)).toBe(false));
 });
