@@ -12,6 +12,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { CaseSnapshot, isCaseTransition } from "../../lib/state/case-reconcile";
+import { applyCaseTitleChange } from "../../lib/state/case-title-change";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch, markSessionEnding } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
@@ -329,42 +330,20 @@ function SidePanelAppContent() {
             onCaseSelect={handleCaseSelect}
             onNewChat={handleNewChatFromNav}
             onLogout={handleLogout}
-            onCaseTitleChange={async (caseId: string, newTitle: string) => {
-              // Capture prior title + provenance so a failed backend PUT rolls BOTH
-              // back together. Leaving titleSources at 'user' after a failed rename
-              // would permanently gate off auto title-generation for this case
-              // (useDataUpload / useMessageSubmission check `!titleSources[caseId]`).
-              const { conversationTitles: prevTitles, titleSources: prevSources } = useAppStore.getState();
-              const priorTitle = prevTitles[caseId];
-              const priorSource = prevSources[caseId];
-
-              setConversationTitles(prev => ({ ...prev, [caseId]: newTitle }));
-              setTitleSources(prev => ({ ...prev, [caseId]: 'user' }));
-              try {
-                await updateCaseTitle(caseId, newTitle);
-                log.info('[SidePanelApp] Case title updated successfully', { caseId, newTitle });
-              } catch (error) {
-                log.error('[SidePanelApp] Failed to update case title', { caseId, newTitle, error });
-                showError({
+            onCaseTitleChange={(caseId: string, newTitle: string, source: 'user' | 'backend') =>
+              applyCaseTitleChange(caseId, newTitle, source, {
+                readStore: () => useAppStore.getState(),
+                setConversationTitles,
+                setTitleSources,
+                persistTitle: updateCaseTitle,
+                onPersistError: (error) => showError({
                   title: 'Failed to update title',
                   message: error instanceof Error ? error.message : 'Unknown error',
                   type: 'error'
-                });
-                // Restore both maps to their exact pre-optimistic values.
-                setConversationTitles(prev => {
-                  const next = { ...prev };
-                  if (priorTitle === undefined) delete next[caseId];
-                  else next[caseId] = priorTitle;
-                  return next;
-                });
-                setTitleSources(prev => {
-                  const next = { ...prev };
-                  if (priorSource === undefined) delete next[caseId];
-                  else next[caseId] = priorSource;
-                  return next;
-                });
-              }
-            }}
+                }),
+                log
+              })
+            }
             onPinToggle={(id) => {
               const newSet = new Set(pinnedCases);
               if (newSet.has(id)) newSet.delete(id);

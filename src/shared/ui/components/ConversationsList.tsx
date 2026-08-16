@@ -50,7 +50,18 @@ interface ConversationsListProps {
   onFirstCaseDetected?: () => void;
   onAfterDelete?: (deletedCaseId: string, remaining: Array<{ case_id: string; updated_at?: string; created_at?: string }>) => void;
   onCasesLoaded?: (cases: UserCase[]) => void;
-  onCaseTitleChange?: (caseId: string, newTitle: string) => void;
+  /**
+   * A case's title changed. `source` says who already owns the write, and the
+   * handler needs it to decide whether a backend call is still owed:
+   *
+   * - `'user'`  — the user typed this title here. Nothing has persisted it yet,
+   *               so the handler must PUT it (and roll back if that fails).
+   * - `'backend'` — the backend generated AND persisted it (POST /title writes
+   *               the row itself). Only the store needs updating; a PUT here is
+   *               a redundant write that 409s on a terminal case and rolls the
+   *               generated title straight back out of the UI (fm#1069).
+   */
+  onCaseTitleChange?: (caseId: string, newTitle: string, source: 'user' | 'backend') => void;
   pinnedCases?: Set<string>;
   onPinToggle?: (caseId: string) => void;
 }
@@ -183,7 +194,7 @@ export function ConversationsList({
     // Notify parent — it owns the optimistic store write (conversationTitles +
     // titleSources) AND the backend sync/rollback (SidePanelApp.onCaseTitleChange).
     // The store is authoritative and read first, so there is no separate local copy.
-    onCaseTitleChange?.(caseId, title);
+    onCaseTitleChange?.(caseId, title, 'user');
   };
 
   const handleGenerateTitle = async (caseId: string, sessionIdGuess?: string) => {
@@ -210,11 +221,13 @@ export function ConversationsList({
       // ✅ SENTRY BREADCRUMB: This info log will be attached to error reports
       log.info('Smart title generated', { caseId, source });
 
-      // Backend already persisted the title; notify parent to mirror it into the
-      // store (conversationTitles + titleSources) so auto-generation doesn't
-      // overwrite it. The parent's redundant PUT is harmless (idempotent, same
-      // title). The store is the single source read by `getCaseTitle`.
-      onCaseTitleChange?.(caseId, newTitle);
+      // POST /title generated AND persisted the row. Mirror it into the store
+      // only — the PUT the parent used to issue here was not harmless: on a
+      // terminal case it hits `require_case_not_terminal` and comes back 409,
+      // and the parent's failure path then rolls the freshly generated title
+      // back out of the UI and shows an error for a write that had already
+      // succeeded (fm#1069).
+      onCaseTitleChange?.(caseId, newTitle, 'backend');
 
       // Show different messages based on whether title was newly generated or already existed
       if (source === 'existing') {

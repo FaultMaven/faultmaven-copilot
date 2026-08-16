@@ -3,7 +3,6 @@ import { browser } from 'wxt/browser';
 import {
   createCase,
   submitTurn,
-  generateCaseTitle,
   TurnRequest,
   TurnResponse,
   AttachmentResult,
@@ -24,7 +23,6 @@ import { createLogger } from '../../../lib/utils/logger';
 import type { ErrorContext } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
-import { TITLE_GENERATION_THRESHOLD } from './useMessageSubmission';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
@@ -59,15 +57,12 @@ export function useDataUpload() {
   const sessionId = useAppStore((state) => state.sessionId);
   const activeCaseId = useAppStore((state) => state.activeCaseId);
   const conversations = useAppStore((state) => state.conversations);
-  const titleSources = useAppStore((state) => state.titleSources);
 
   // Selected store actions
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
   const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
   const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversations = useAppStore((state) => state.setConversations);
-  const setConversationTitles = useAppStore((state) => state.setConversationTitles);
-  const setTitleSources = useAppStore((state) => state.setTitleSources);
   const setCaseEvidence = useAppStore((state) => state.setCaseEvidence);
   const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
@@ -233,29 +228,13 @@ export function useDataUpload() {
     // (if this was a retry) clears.
     pendingOpsManager.complete(aiMessageId);
 
-    const currentTurn = turnResponse.turn_number ?? 0;
-    if (currentTurn >= TITLE_GENERATION_THRESHOLD && !titleSources[targetCaseId]) {
-      log.info('Turn threshold reached, auto-generating smart title', {
-        caseId: targetCaseId,
-        turn: currentTurn,
-        threshold: TITLE_GENERATION_THRESHOLD
-      });
-      try {
-        const titleResult = await generateCaseTitle(targetCaseId, { max_words: 6 });
-        // Re-check the epoch after the title-gen await: a logout during the
-        // (multi-second) LLM call must not write the ended session's title back
-        // into the purged store, which the subscriber would then persist (#143).
-        if (epoch !== getEpoch()) {
-          log.info('Session ended during title generation — discarding title write', { caseId: targetCaseId });
-        } else if (titleResult.title) {
-          setConversationTitles(prev => ({ ...prev, [targetCaseId]: titleResult.title }));
-          setTitleSources(prev => ({ ...prev, [targetCaseId]: 'backend' }));
-          log.info('Smart title auto-generated', { caseId: targetCaseId, title: titleResult.title });
-        }
-      } catch (error) {
-        log.debug('Auto title generation skipped', { reason: 'insufficient context or error', error });
-      }
-    }
+    // Auto-titling moved to the server (POST /cases/{id}/turns names a case still
+    // holding its `Case-YYMMDD-N` placeholder in the background). The client-side
+    // copy that lived here was gated on `turn_number >= 5`, which is precisely
+    // what kept an upload-driven case — the user types nothing and attaches a
+    // 40MB log — unnamed forever (fm#1069). Refetch so the server's title reaches
+    // the sidebar.
+    triggerRefreshSessions();
 
     return { success: true, message: "" };
   };
@@ -342,9 +321,14 @@ export function useDataUpload() {
             [newCaseId]: []
           }));
 
-          if (caseData.title) {
-            setConversationTitles(prev => ({ ...prev, [newCaseId]: caseData.title }));
-          }
+          // Deliberately NOT seeding conversationTitles with `caseData.title`.
+          // A freshly created case's title is the backend placeholder
+          // `Case-YYMMDD-N`, and the store wins over the backend title in
+          // `selectCaseTitle` — so pinning it here would shadow the real title
+          // the server writes moments later, and the sidebar would show the
+          // placeholder forever even though the case had been named (fm#1069).
+          // The store is for titles a user chose or explicitly generated; the
+          // backend's own title already renders as the second source.
 
           await browser.storage.local.set({ faultmaven_current_case: targetCaseId });
           triggerRefreshSessions();

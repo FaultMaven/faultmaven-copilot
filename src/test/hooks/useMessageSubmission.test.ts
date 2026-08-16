@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useMessageSubmission, TITLE_GENERATION_THRESHOLD } from '../../shared/ui/hooks/useMessageSubmission';
+import { useMessageSubmission } from '../../shared/ui/hooks/useMessageSubmission';
 import * as api from '../../lib/api';
 import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '../../lib/optimistic';
 import { useAppStore } from '../../lib/state/store';
@@ -333,28 +333,30 @@ describe('useMessageSubmission', () => {
       expect(conv.some((m: any) => m.response?.includes('stale'))).toBe(false);
     });
 
-    it('does not write an auto-generated title back into a store purged mid-title-gen (#143)', async () => {
+    // The #143 hazard — a logout landing DURING the multi-second title-generation
+    // LLM call, whose result then lands in the purged store — is closed by
+    // construction now: this hook does not generate titles at all. The backend
+    // names a placeholder-titled case in the background when the turn is
+    // processed (fm#1069), so there is no client-side title round-trip left for a
+    // logout to race. The test below pins that absence; if a client-side trigger
+    // is ever reintroduced here, it fails and #143 has to be answered again.
+    it('never generates a title client-side, at any turn number (#143, fm#1069)', async () => {
       useAppStore.setState({
         activeCaseId: 'case-123',
         conversations: { 'case-123': [] },
-        conversationTitles: { 'case-123': 'Original' },
-        titleSources: {} // no source → eligible for auto-generation
+        conversationTitles: {},
+        titleSources: {} // no source — under the old code this made it "eligible"
       });
 
-      // The turn itself succeeds (epoch stable); the logout lands DURING the
-      // subsequent multi-second title-generation LLM call.
+      // Turn 5 is the exact turn number the removed client gate fired on.
       (api.submitTurn as any).mockResolvedValue({
         agent_response: 'ok',
-        turn_number: TITLE_GENERATION_THRESHOLD, // triggers auto-title
+        turn_number: 5,
         milestones_completed: [],
         case_state: 'inquiry',
         progress_made: false,
         is_stuck: false,
         attachments_processed: []
-      });
-      (api.generateCaseTitle as any).mockImplementation(async () => {
-        bumpEpoch();
-        return { title: 'Generated Title (stale — session already ended)' };
       });
 
       const { result } = renderHook(() => useMessageSubmission());
@@ -362,10 +364,31 @@ describe('useMessageSubmission', () => {
         await result.current.handleQuerySubmit('the fifth turn');
       });
 
-      expect(api.generateCaseTitle).toHaveBeenCalled();
-      // The generated title for the ended session must NOT overwrite the store
-      // (the subscriber would otherwise persist it into the purged storage).
-      expect(useAppStore.getState().conversationTitles['case-123']).toBe('Original');
+      expect(api.generateCaseTitle).not.toHaveBeenCalled();
+      // ...and nothing was written to the title store, so a server-set title is
+      // free to render via selectCaseTitle's backend source.
+      expect(useAppStore.getState().conversationTitles['case-123']).toBeUndefined();
+    });
+
+    it('refetches the case list after a turn so a server-set title reaches the sidebar', async () => {
+      const before = useAppStore.getState().refreshSessions;
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok',
+        turn_number: 1,
+        milestones_completed: [],
+        case_state: 'inquiry',
+        progress_made: false,
+        is_stuck: false,
+        attachments_processed: []
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('why is the pod crashing?');
+      });
+
+      expect(useAppStore.getState().refreshSessions).toBeGreaterThan(before);
     });
   });
 
