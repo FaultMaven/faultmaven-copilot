@@ -370,6 +370,32 @@ describe('useMessageSubmission', () => {
       expect(useAppStore.getState().conversationTitles['case-123']).toBeUndefined();
     });
 
+    it('does not refetch twice when the turn also changed case state', async () => {
+      // A state change makes SidePanelApp's transition effect run
+      // reconcileActiveCaseState, which invalidates the list cache and bumps this
+      // same counter itself. Firing both spends two list GETs to answer one
+      // question.
+      const before = useAppStore.getState().refreshSessions;
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'Starting the investigation.',
+        turn_number: 2,
+        milestones_completed: [],
+        case_state: 'investigating', // activeCase starts at 'inquiry'
+        progress_made: true,
+        is_stuck: false,
+        attachments_processed: []
+      });
+
+      const { result } = renderHook(() => useMessageSubmission());
+      await act(async () => {
+        await result.current.handleQuerySubmit('Yes, let us investigate');
+      });
+
+      expect(useAppStore.getState().activeCase?.state).toBe('investigating');
+      expect(useAppStore.getState().refreshSessions).toBe(before);
+    });
+
     it('refetches the case list after a turn so a server-set title reaches the sidebar', async () => {
       const before = useAppStore.getState().refreshSessions;
 

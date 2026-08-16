@@ -204,6 +204,9 @@ export function useMessageSubmission() {
   ) => {
     const controller = new AbortController();
     inFlightControllers.current.add(controller);
+    // Set when this turn moved the case to a new state — see the refresh at the
+    // end of this function for why that suppresses the post-turn list refetch.
+    let caseStateChanged = false;
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight (or its poll loop is running) must not let the success
     // handler write the response / complete the pending op / set a title back
@@ -236,6 +239,10 @@ export function useMessageSubmission() {
                   oldStatus: prev.state,
                   newStatus: response.case_state
                 });
+                // Recorded because a state change makes SidePanelApp's transition
+                // effect refresh the case list on its own; the post-turn refresh
+                // below stands down rather than asking for the same list twice.
+                caseStateChanged = true;
                 return { ...prev, state: response.case_state as UserCase['state'] };
               }
               return prev;
@@ -372,15 +379,22 @@ export function useMessageSubmission() {
       pendingOpsManager.complete(aiMessageId);
       log.info('Message submission completed and UI updated');
 
-      // The backend may have named this case in the background while answering
-      // the turn (see POST /cases/{id}/turns). Refetch the list so a title the
-      // client never asked for still reaches the sidebar. Unconditional: the
-      // store holds an entry only for cases the user renamed or generated a
-      // title for, so "no store entry" does not mean "no server title", and
-      // gating on it would skip the refresh for every case loaded from the
-      // server. One small list GET per turn, which also keeps recency ordering
-      // honest.
-      triggerRefreshSessions();
+      // The backend may have named this case while processing the turn (see
+      // POST /cases/{id}/turns). Refetch the list so a title the client never
+      // asked for still reaches the sidebar.
+      //
+      // Not gated on the store: it holds an entry only for cases the user
+      // renamed or generated a title for, so "no store entry" does not mean "no
+      // server title", and gating on it would skip the refresh for every case
+      // loaded from the server.
+      //
+      // Skipped when the turn changed case_state, because SidePanelApp's
+      // transition effect then runs reconcileActiveCaseState, which invalidates
+      // the list cache and bumps this same counter itself. Firing both would
+      // spend two list GETs to answer one question.
+      if (!caseStateChanged) {
+        triggerRefreshSessions();
+      }
 
     } catch (error) {
       log.debug('Caught error from resilientOperation (handled in onFailure)', error);
