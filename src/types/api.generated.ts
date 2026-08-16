@@ -5875,6 +5875,31 @@ export interface components {
          */
         OperatorAction: "list" | "content_open" | "role_granted" | "role_revoked";
         /**
+         * OrganizationSummary
+         * @description The tenant a session is bound to, named for display.
+         *
+         *     Deliberately the id and the name only. This exists so a client can tell the
+         *     user *which tenant they are writing into*, not so it can make authorization
+         *     decisions — those are made server-side from the token's organization claim,
+         *     never from anything echoed back here.
+         * @example {
+         *       "name": "Northwind Engineering",
+         *       "organization_id": "9f2b1c7e-1f3a-4c5d-8e91-0a2b3c4d5e6f"
+         *     }
+         */
+        OrganizationSummary: {
+            /**
+             * Name
+             * @description Human-readable organization name
+             */
+            name: string;
+            /**
+             * Organization Id
+             * @description Organization identifier
+             */
+            organization_id: string;
+        };
+        /**
          * ProblemVerificationData
          * @description Problem verification details for INVESTIGATING phase.
          */
@@ -6918,6 +6943,10 @@ export interface components {
          *       "email": "john.doe@faultmaven.local",
          *       "is_dev_user": true,
          *       "last_login": "2025-01-15T14:30:00Z",
+         *       "organization": {
+         *         "name": "Northwind Engineering",
+         *         "organization_id": "9f2b1c7e-1f3a-4c5d-8e91-0a2b3c4d5e6f"
+         *       },
          *       "roles": [
          *         "user",
          *         "admin"
@@ -6953,6 +6982,8 @@ export interface components {
              * @description Last login timestamp (ISO format)
              */
             last_login?: string | null;
+            /** @description The organization this session is bound to, or null when there is no usable tenant for this request or its row could not be read. Under multi-tenant this is the tenant a case is written into; under single-tenant it is the deployment's one organization. Absence means 'nothing to show', never 'no access' — the request itself already succeeded, so a client must not read null as a permission signal. */
+            organization?: components["schemas"]["OrganizationSummary"] | null;
             /**
              * Roles
              * @description User roles for access control (e.g., ['user'], ['user', 'admin'])
