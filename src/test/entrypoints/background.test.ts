@@ -709,9 +709,10 @@ describe('Background Service Worker', () => {
       );
     });
 
-    // A degraded profile must never be persisted. Nothing re-reads it once
-    // stored (auth-service's getCurrentUser has no callers) and TokenManager
-    // copies it forward on every refresh, so a guessed `roles: ['user']` would
+    // A degraded profile must never be persisted. Nothing corrects it once
+    // stored (auth-service's getCurrentUser feeds the AccountRow display only,
+    // never this record) and TokenManager copies it forward on every refresh,
+    // so a guessed `roles: ['user']` would
     // silently strip an admin's access for the life of the refresh window.
     // Failing the sign-in costs one retry; the alternative costs up to 7 days.
     it('fails the sign-in when the /auth/me read fails, persisting no session', async () => {
