@@ -21,6 +21,12 @@ export interface AuthUser {
   name: string;
 }
 
+/** The tenant a session is bound to, as `/auth/me` names it. */
+export interface AccountOrganization {
+  organization_id: string;
+  name: string;
+}
+
 export interface UserProfile {
   user_id: string;
   username: string;
@@ -29,6 +35,9 @@ export interface UserProfile {
   created_at: string;
   is_dev_user: boolean;
   roles?: string[];
+  /** Absent when there is no tenant worth naming, or its row was unreadable.
+   *  Never a permission signal — `/auth/me` already succeeded. */
+  organization?: AccountOrganization | null;
 }
 
 export interface AuthTokenResponse {
