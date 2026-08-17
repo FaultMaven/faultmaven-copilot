@@ -7,6 +7,17 @@ import type { Components } from 'react-markdown';
 import { cleanResponseText } from '../../../lib/utils/text-processor';
 import EvidenceRequestCard from './EvidenceRequestCard';
 import { ConfirmationButtons } from './ConfirmationButtons';
+import { MermaidDiagram } from './MermaidDiagram';
+
+/** Flatten a code fence's children to its raw source text. */
+function fenceText(node: React.ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(fenceText).join('');
+  if (React.isValidElement(node)) {
+    return fenceText((node.props as { children?: React.ReactNode }).children);
+  }
+  return '';
+}
 
 interface InlineSourcesRendererProps {
   content: string;
@@ -345,6 +356,12 @@ function createMarkdownComponents(): Partial<Components> {
         );
       }
 
+      // Mermaid fences (e.g. the Causal Map embedded in the closure-turn
+      // resolution summary) render as diagrams, not source text.
+      if (match[1] === 'mermaid') {
+        return <MermaidDiagram chart={fenceText(children).trim()} />;
+      }
+
       return (
         <pre className="bg-fm-codeblock text-fm-codeblock-text p-3 rounded-md overflow-x-auto my-2 border border-fm-codeblock-border">
           <code className={`language-${match[1]} text-xs font-mono`} {...props}>
@@ -352,6 +369,15 @@ function createMarkdownComponents(): Partial<Components> {
           </code>
         </pre>
       );
+    },
+    // Unwrap the markdown <pre> around a routed diagram (the code renderer
+    // above already returns a block-level element for every fenced case).
+    pre: ({ children, ...props }) => {
+      const child = Array.isArray(children) ? children[0] : children;
+      if (React.isValidElement(child) && child.type === MermaidDiagram) {
+        return <>{child}</>;
+      }
+      return <pre {...props}>{children}</pre>;
     },
     h1: ({ children }) => (
       <h1 className="text-lg font-semibold mt-4 mb-2">{children}</h1>
