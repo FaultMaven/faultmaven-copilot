@@ -14,6 +14,11 @@ on:
 jobs:
   extension-e2e:
     runs-on: ubuntu-latest
+    # The only workflow here that was unbounded, so a hung step ran until
+    # GitHub's 6-hour default. Measured healthy execution is ~90s; the
+    # slowest successful run was ~7min (browser download variance), so 20
+    # leaves ~3x headroom and matches release.yml, the heaviest job here.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       
