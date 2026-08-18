@@ -19,6 +19,11 @@ export default defineConfig({
     version: "1.0.0",
     description: "__MSG_appDescription__",
     default_locale: 'en',
+    // The panel is opened programmatically from the toolbar-icon handler
+    // (sidePanel.open, Chrome 116+), so an older Chromium would install the
+    // extension and then fail at the one action that reveals its entire UI.
+    // Declare the floor instead and let the browser refuse the install.
+    minimum_chrome_version: "116",
     icons: {
       "16": "icon/px16-square-dark.png",
       "32": "icon/px32-square-dark.png",
