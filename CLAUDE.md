@@ -626,6 +626,20 @@ Host permissions (see `wxt.config.ts` for the authoritative list):
 - Static `host_permissions`: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
 - `optional_host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`, **and `http://*/*`, `https://*/*`** (user-granted at runtime — needed for page capture on arbitrary sites and self-hosted backends on any origin; justified in the store listing)
 - CSP `connect-src 'self' http: https:` — the side panel can connect to any origin (self-hosted backend URLs)
+- `minimum_chrome_version: "116"` — the floor for `sidePanel.open()`, which the toolbar-icon handler calls. Emitted for the **Chrome target only**: the `manifest` block is shared by every target and WXT keeps this key in the Firefox MV2 output, where AMO warns on it
+
+Page capture covers http/https tabs only. `file://` is **not** grantable at
+runtime — Chrome governs it solely through the "Allow access to file URLs"
+switch on the extension's details page, so `permissions.request()` rejects the
+origin ("Only permissions specified in the manifest may be requested"). The
+capture path checks the scheme up front (`usePageContent.ts`) and says what to
+do instead: serve the page over http://, or attach the file to the message.
+That check is an **allowlist** — `blob:`, `data:`, `filesystem:` and
+`chrome-search:` have no origin the browser can grant either, and a denylist
+let them reach the origin builder, where `permissions.contains()` threw a raw
+browser error on a pattern like `blob:///*`. Browser-internal pages, `file://`
+and the extension galleries are named ahead of the allowlist only because each
+earns a more useful message.
 
 ## API Types
 
