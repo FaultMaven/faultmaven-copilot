@@ -9,16 +9,6 @@ import EvidenceRequestCard from './EvidenceRequestCard';
 import { ConfirmationButtons } from './ConfirmationButtons';
 import { MermaidDiagram } from './MermaidDiagram';
 
-/** Flatten a code fence's children to its raw source text. */
-function fenceText(node: React.ReactNode): string {
-  if (typeof node === 'string') return node;
-  if (Array.isArray(node)) return node.map(fenceText).join('');
-  if (React.isValidElement(node)) {
-    return fenceText((node.props as { children?: React.ReactNode }).children);
-  }
-  return '';
-}
-
 interface InlineSourcesRendererProps {
   content: string;
   sources?: Source[];
@@ -359,7 +349,7 @@ function createMarkdownComponents(): Partial<Components> {
       // Mermaid fences (e.g. the Causal Map embedded in the closure-turn
       // resolution summary) render as diagrams, not source text.
       if (match[1] === 'mermaid') {
-        return <MermaidDiagram chart={fenceText(children).trim()} />;
+        return <MermaidDiagram chart={extractText(children).trim()} />;
       }
 
       return (
@@ -372,10 +362,15 @@ function createMarkdownComponents(): Partial<Components> {
     },
     // Unwrap the markdown <pre> around a routed diagram (the code renderer
     // above already returns a block-level element for every fenced case).
-    pre: ({ children, ...props }) => {
+    // The child here is an element of the custom `code` component that has
+    // not run yet, so detect mermaid by the fence className, not the type.
+    pre: ({ node, children, ...props }) => {
       const child = Array.isArray(children) ? children[0] : children;
-      if (React.isValidElement(child) && child.type === MermaidDiagram) {
-        return <>{child}</>;
+      if (
+        React.isValidElement(child) &&
+        /\blanguage-mermaid\b/.test((child.props as { className?: string }).className ?? '')
+      ) {
+        return <>{children}</>;
       }
       return <pre {...props}>{children}</pre>;
     },
