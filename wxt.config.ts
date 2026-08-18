@@ -14,7 +14,7 @@ export default defineConfig({
       },
     },
   }),
-  manifest: {
+  manifest: ({ browser }) => ({
     name: "__MSG_appName__",
     version: "1.0.0",
     description: "__MSG_appDescription__",
@@ -23,7 +23,13 @@ export default defineConfig({
     // (sidePanel.open, Chrome 116+), so an older Chromium would install the
     // extension and then fail at the one action that reveals its entire UI.
     // Declare the floor instead and let the browser refuse the install.
-    minimum_chrome_version: "116",
+    //
+    // Chrome-only, and the guard is load-bearing: this `manifest` block is
+    // shared by every target, and WXT does NOT strip the key from the Firefox
+    // MV2 output the way it strips `side_panel` — it is a legal Chrome MV2 key,
+    // so AMO receives it as an unknown property and warns. release.yml
+    // publishes that zip.
+    ...(browser === 'chrome' ? { minimum_chrome_version: "116" } : {}),
     icons: {
       "16": "icon/px16-square-dark.png",
       "32": "icon/px32-square-dark.png",
@@ -77,5 +83,5 @@ export default defineConfig({
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }
-  }
+  })
 });

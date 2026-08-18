@@ -26,6 +26,10 @@ vi.mock('wxt/browser', () => ({
 describe('usePageContent — capture provenance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks resets calls, NOT implementations: the scheme block below
+    // repoints tabs.query permanently, so each block must state the tab it
+    // wants or the suite only passes in source order.
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]);
     // The extractor runs in the page context; simulate a page by invoking the
     // serialized func against jsdom's document/window.
     executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
@@ -68,6 +72,9 @@ describe('usePageContent — schemes the browser will not inject into', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]);
+    (browser.permissions.contains as any).mockResolvedValue(true);
+    (browser.permissions.request as any).mockResolvedValue(true);
   });
 
   const activeTabIs = (url: string) => {
@@ -86,12 +93,44 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     expect(executeScript).not.toHaveBeenCalled();
   });
 
-  it('refuses the Web Store, which the browser blocks by policy', async () => {
-    activeTabIs('https://chromewebstore.google.com/detail/faultmaven/abc');
+  it.each([
+    'https://chromewebstore.google.com/detail/faultmaven/abc',
+    'https://chrome.google.com/webstore/detail/faultmaven/abc',
+    'https://addons.mozilla.org/en-US/firefox/addon/faultmaven/',
+  ])('refuses the extension gallery %s, which the browser blocks by policy', async (url) => {
+    activeTabIs(url);
     const { result } = renderHook(() => usePageContent());
 
-    await expect(result.current.handlePageInject()).rejects.toThrow(/Web Store/);
+    await expect(result.current.handlePageInject()).rejects.toThrow(/extension gallery/);
     expect(browser.permissions.request).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('captures a host that merely starts with the gallery name', async () => {
+    // `chromewebstore.google.com.example.com` is an ordinary page. A prefix
+    // match would refuse it with an explanation that is simply untrue.
+    activeTabIs('https://chromewebstore.google.com.example.com/status');
+    const { result } = renderHook(() => usePageContent());
+
+    await expect(result.current.handlePageInject()).resolves.toContain('[captured_at:');
+    expect(executeScript).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['blob:', 'blob:https://grafana.example/6c8f-1f2a-4c3d'],
+    ['data:', 'data:text/html,<h1>report</h1>'],
+    ['filesystem:', 'filesystem:https://grafana.example/temporary/report.html'],
+    ['chrome-search:', 'chrome-search://local-ntp/local-ntp.html'],
+  ])('refuses %s, which has no origin the browser can grant', async (_label, url) => {
+    activeTabIs(url);
+    const { result } = renderHook(() => usePageContent());
+
+    // These used to reach the origin builder and produce a pattern like
+    // `blob:///*`, so permissions.contains() threw the raw browser error.
+    await expect(result.current.handlePageInject()).rejects.toThrow(
+      /http:\/\/ and https:\/\/ pages only|browser internal pages/
+    );
+    expect(browser.permissions.contains).not.toHaveBeenCalled();
     expect(executeScript).not.toHaveBeenCalled();
   });
 

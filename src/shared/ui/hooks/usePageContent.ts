@@ -17,29 +17,63 @@ export function usePageContent() {
         throw new Error("No active tab found");
       }
 
-      // Schemes an extension script can never enter. The browser refuses
-      // injection into its own pages, and Chrome additionally blocks the Web
-      // Store by policy. Reject them here so the user gets a sentence that
-      // says what to do instead of a raw browser error.
+      // What the capture path can actually enter is http/https, and the checks
+      // below are an ALLOWLIST for that reason: every other scheme reaches the
+      // same dead end. `new URL(...).host` is empty or meaningless for them, so
+      // the origin pattern built further down comes out as `blob:///*` or
+      // `chrome-search://local-ntp/*` — not a pattern the browser accepts — and
+      // permissions.contains() throws the raw error at the user. The named
+      // cases come first only because each earns a more useful sentence than
+      // the catch-all.
       const tabUrlStr = tab.url ?? '';
-      if (/^(chrome-extension|chrome-untrusted|moz-extension|devtools|view-source|chrome|edge|brave|about):/.test(tabUrlStr)) {
+      let tabUrl: URL | null = null;
+      try {
+        tabUrl = new URL(tabUrlStr);
+      } catch {
+        tabUrl = null; // no URL, or one the browser will not let us parse
+      }
+      const scheme = tabUrl?.protocol ?? '';
+
+      const INTERNAL_SCHEMES = new Set([
+        'chrome:', 'about:', 'edge:', 'brave:', 'opera:', 'vivaldi:',
+        'devtools:', 'view-source:', 'moz-extension:',
+      ]);
+      // `chrome-` covers chrome-extension:, chrome-untrusted: and chrome-search:
+      // (the New Tab page on several builds) without listing each one.
+      if (INTERNAL_SCHEMES.has(scheme) || scheme.startsWith('chrome-')) {
         throw new Error("Cannot analyze browser internal pages (chrome://, about:, etc.)");
       }
-      if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)\b/.test(tabUrlStr)) {
-        throw new Error("The browser blocks extensions from reading the Web Store. Open the page you want to capture in another tab.");
-      }
 
-      // Local files are a separate case, and the reason is not obvious.
+      // Local files are their own case, and the reason is not obvious.
       // `file://` access is NOT a runtime-grantable permission: Chrome governs
       // it solely through the "Allow access to file URLs" switch on the
-      // extension's own details page, and `permissions.request()` rejects the
+      // extension's details page, and `permissions.request()` rejects the
       // origin outright ("Only permissions specified in the manifest may be
       // requested") — which is exactly the error this used to surface. Say so,
       // and name the two routes that do work today.
-      if (tabUrlStr.startsWith('file://')) {
+      if (scheme === 'file:') {
         throw new Error(
           "Local files (file://) can't be captured. Serve the file over http:// (e.g. `python3 -m http.server`) and capture that tab, or attach the file to your message instead."
         );
+      }
+
+      // Both browsers block injection into their own extension gallery.
+      // Matched on the parsed host, not a prefix: `chromewebstore.google.com`
+      // as a *prefix* also matches `chromewebstore.google.com.example.com`,
+      // which is an ordinary capturable page.
+      const host = tabUrl?.hostname ?? '';
+      const isExtensionGallery =
+        host === 'chromewebstore.google.com' ||
+        host === 'addons.mozilla.org' ||
+        (host === 'chrome.google.com' && (tabUrl?.pathname ?? '').startsWith('/webstore'));
+      if (isExtensionGallery) {
+        throw new Error("The browser blocks extensions from reading the extension gallery. Open the page you want to capture in another tab.");
+      }
+
+      // The allowlist itself. Anything left — blob:, data:, filesystem:, a URL
+      // that would not parse — has no origin the browser can grant.
+      if (!tabUrl || (scheme !== 'http:' && scheme !== 'https:')) {
+        throw new Error("Page capture works on http:// and https:// pages only.");
       }
 
       let capturedContent = '';
@@ -50,11 +84,9 @@ export function usePageContent() {
       try {
         // Ensure we have host permission for this tab's origin
         // (activeTab only activates on toolbar icon click, not side-panel button clicks)
-        // Only http/https reach here (every other scheme was rejected above),
-        // so the origin pattern always has a host and is always a pattern the
-        // manifest's optional_host_permissions can actually cover.
-        if (tabUrlStr) {
-          const tabUrl = new URL(tabUrlStr);
+        // The allowlist above guarantees an http/https URL with a host, so the
+        // pattern is always one optional_host_permissions can cover.
+        {
           const origin = `${tabUrl.protocol}//${tabUrl.host}/*`;
 
           const hasPermission = await browser.permissions.contains({ origins: [origin] });
