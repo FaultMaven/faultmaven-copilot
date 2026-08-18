@@ -3839,8 +3839,6 @@ export interface components {
              * Format: date-time
              */
             last_activity_at: string;
-            /** Milestones Completed */
-            milestones_completed: number;
             /** Organization Id */
             organization_id: string;
             /** Resolved At */
@@ -3850,12 +3848,10 @@ export interface components {
              * @default copilot
              */
             source: string;
+            stage: components["schemas"]["InvestigationStage"] | null;
             state: components["schemas"]["CaseState"];
-            /**
-             * Total Milestones
-             * @default 8
-             */
-            total_milestones: number;
+            /** Turns Without Progress */
+            turns_without_progress: number;
             /**
              * Updated At
              * Format: date-time
@@ -4660,8 +4656,6 @@ export interface components {
              * Format: date-time
              */
             last_activity_at: string;
-            /** Milestones Completed */
-            milestones_completed: number;
             /** Organization Id */
             organization_id: string;
             /** Resolved At */
@@ -4673,14 +4667,12 @@ export interface components {
              * @default copilot
              */
             source: string;
+            stage: components["schemas"]["InvestigationStage"] | null;
             state: components["schemas"]["CaseState"];
             /** Title */
             title: string;
-            /**
-             * Total Milestones
-             * @default 8
-             */
-            total_milestones: number;
+            /** Turns Without Progress */
+            turns_without_progress: number;
             /**
              * Updated At
              * Format: date-time
@@ -5425,17 +5417,14 @@ export interface components {
          * InvestigationStage
          * @description Investigation stage within the Investigating Phase.
          *
-         *     These three stages are pure DERIVED DISPLAY labels in the unified
-         *     opportunistic flow. They are re-derived from the action-compliance
-         *     gates (see ``InvestigationProgress.current_stage``); they do NOT drive
-         *     prompt dispatch and there is NO path fork or prospective routing.
+         *     These three stages are pure DERIVED labels in the unified opportunistic
+         *     flow. They are re-derived from the action-compliance gates (see
+         *     ``InvestigationProgress.current_stage``); they do NOT drive prompt
+         *     dispatch and there is NO path fork or prospective routing.
          *
-         *     - DIAGNOSIS → "Investigating" (default view)
-         *     - MITIGATION → "Mitigating" (an optional inserted sub-activity)
-         *     - TREATMENT → "Resolving"
-         *
-         *     MITIGATION is not a separate path — it is an optional "stop the
-         *     bleeding" insert that surfaces while the investigation continues.
+         *     DIAGNOSIS is the default. MITIGATION is not a separate path — it is an
+         *     optional "stop the bleeding" insert that surfaces while the
+         *     investigation continues. TREATMENT follows solution acceptance.
          * @enum {string}
          */
         InvestigationStage: "diagnosis" | "mitigation" | "treatment";
@@ -6163,7 +6152,7 @@ export interface components {
             key_insights?: string[];
             /**
              * Milestones Completed
-             * @description Total milestones completed (should be 8)
+             * @description Count of milestones completed over the case's life. A raw count, not a fraction: milestones complete opportunistically and a case can resolve without traversing the mitigation path, so there is no fixed total to compare against.
              */
             milestones_completed: number;
             /**
