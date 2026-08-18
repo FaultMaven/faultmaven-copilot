@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
+import { browser } from 'wxt/browser';
 import { usePageContent } from '../../shared/ui/hooks/usePageContent';
 
 vi.mock('../../lib/utils/logger', () => ({
@@ -60,5 +61,63 @@ describe('usePageContent — capture provenance', () => {
     expect(content).toContain('[source_url: https://grafana.example/dash?panel=1]');
 
     Object.defineProperty(window, 'location', { value: orig, writable: true, configurable: true });
+  });
+});
+
+describe('usePageContent — schemes the browser will not inject into', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
+  });
+
+  const activeTabIs = (url: string) => {
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url }]);
+  };
+
+  it('refuses a file:// tab without asking for a permission Chrome cannot grant', async () => {
+    activeTabIs('file:///home/user/docs/ops-dashboard.html');
+    const { result } = renderHook(() => usePageContent());
+
+    await expect(result.current.handlePageInject()).rejects.toThrow(/file:\/\//);
+
+    // The old failure mode: requesting `file:///*` throws
+    // "Only permissions specified in the manifest may be requested".
+    expect(browser.permissions.request).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('refuses the Web Store, which the browser blocks by policy', async () => {
+    activeTabIs('https://chromewebstore.google.com/detail/faultmaven/abc');
+    const { result } = renderHook(() => usePageContent());
+
+    await expect(result.current.handlePageInject()).rejects.toThrow(/Web Store/);
+    expect(browser.permissions.request).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'chrome://extensions',
+    'chrome-extension://abcdef/options.html',
+    'devtools://devtools/bundled/inspector.html',
+    'view-source:https://grafana.example/dashboard',
+    'about:blank',
+  ])('refuses the browser-internal page %s', async (url) => {
+    activeTabIs(url);
+    const { result } = renderHook(() => usePageContent());
+
+    await expect(result.current.handlePageInject()).rejects.toThrow(/browser internal pages/);
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('still captures an ordinary https page', async () => {
+    activeTabIs('https://grafana.example/dashboard');
+    document.title = 'Prod Grafana';
+    document.body.innerHTML = '<h1>Prod Grafana</h1><p>errors 5%</p>';
+    const { result } = renderHook(() => usePageContent());
+
+    const content = await result.current.handlePageInject();
+
+    expect(executeScript).toHaveBeenCalledTimes(1);
+    expect(content).toContain('[captured_at:');
   });
 });

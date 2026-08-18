@@ -17,10 +17,29 @@ export function usePageContent() {
         throw new Error("No active tab found");
       }
 
-      // Check if tab URL is valid for content script injection
-      if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') ||
-          tab.url.startsWith('about:') || tab.url.startsWith('edge://') || tab.url.startsWith('brave://'))) {
+      // Schemes an extension script can never enter. The browser refuses
+      // injection into its own pages, and Chrome additionally blocks the Web
+      // Store by policy. Reject them here so the user gets a sentence that
+      // says what to do instead of a raw browser error.
+      const tabUrlStr = tab.url ?? '';
+      if (/^(chrome-extension|chrome-untrusted|moz-extension|devtools|view-source|chrome|edge|brave|about):/.test(tabUrlStr)) {
         throw new Error("Cannot analyze browser internal pages (chrome://, about:, etc.)");
+      }
+      if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)\b/.test(tabUrlStr)) {
+        throw new Error("The browser blocks extensions from reading the Web Store. Open the page you want to capture in another tab.");
+      }
+
+      // Local files are a separate case, and the reason is not obvious.
+      // `file://` access is NOT a runtime-grantable permission: Chrome governs
+      // it solely through the "Allow access to file URLs" switch on the
+      // extension's own details page, and `permissions.request()` rejects the
+      // origin outright ("Only permissions specified in the manifest may be
+      // requested") — which is exactly the error this used to surface. Say so,
+      // and name the two routes that do work today.
+      if (tabUrlStr.startsWith('file://')) {
+        throw new Error(
+          "Local files (file://) can't be captured. Serve the file over http:// (e.g. `python3 -m http.server`) and capture that tab, or attach the file to your message instead."
+        );
       }
 
       let capturedContent = '';
@@ -31,8 +50,11 @@ export function usePageContent() {
       try {
         // Ensure we have host permission for this tab's origin
         // (activeTab only activates on toolbar icon click, not side-panel button clicks)
-        if (tab.url) {
-          const tabUrl = new URL(tab.url);
+        // Only http/https reach here (every other scheme was rejected above),
+        // so the origin pattern always has a host and is always a pattern the
+        // manifest's optional_host_permissions can actually cover.
+        if (tabUrlStr) {
+          const tabUrl = new URL(tabUrlStr);
           const origin = `${tabUrl.protocol}//${tabUrl.host}/*`;
 
           const hasPermission = await browser.permissions.contains({ origins: [origin] });
