@@ -618,12 +618,13 @@ Key permissions (Manifest v3):
 - `scripting` - Content script injection
 - `identity` - Sign-in only, via a single `identity.launchWebAuthFlow` call. Never
   `identity.getProfileUserInfo`: the extension does not read the browser account
-  identity. Store review compares this against
-  `docs/cws/PERMISSION_JUSTIFICATION.md`, so the two must be changed together.
+  identity. Store review compares this against the permission justifications in
+  the Chrome Web Store listing (maintained with the submission collateral,
+  outside this repo), so a permission change requires updating the listing too.
 
 Host permissions (see `wxt.config.ts` for the authoritative list):
 - Static `host_permissions`: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
-- `optional_host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`, **and `http://*/*`, `https://*/*`** (user-granted at runtime — needed for page capture on arbitrary sites and self-hosted backends on any origin; justification in `docs/cws/PERMISSION_JUSTIFICATION.md`)
+- `optional_host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`, **and `http://*/*`, `https://*/*`** (user-granted at runtime — needed for page capture on arbitrary sites and self-hosted backends on any origin; justified in the store listing)
 - CSP `connect-src 'self' http: https:` — the side panel can connect to any origin (self-hosted backend URLs)
 
 ## API Types
