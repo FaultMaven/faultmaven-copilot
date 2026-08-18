@@ -33,8 +33,9 @@ export default defineConfig({
     // for the permission; it is not a security boundary (see the redirect-URI
     // note in lib/auth/dashboard-oauth.ts).
     //
-    // Keep docs/cws/PERMISSION_JUSTIFICATION.md in step with this list — Chrome
-    // Web Store review compares the two.
+    // Keep the Chrome Web Store listing's permission justifications in step
+    // with this list — store review compares the two. (The submission
+    // collateral is maintained outside this repo.)
     permissions: [
       "storage", "sidePanel", "activeTab", "tabs", "scripting", "identity"
     ],
