@@ -625,6 +625,15 @@ Host permissions (see `wxt.config.ts` for the authoritative list):
 - Static `host_permissions`: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
 - `optional_host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`, **and `http://*/*`, `https://*/*`** (user-granted at runtime — needed for page capture on arbitrary sites and self-hosted backends on any origin; justification in `docs/cws/PERMISSION_JUSTIFICATION.md`)
 - CSP `connect-src 'self' http: https:` — the side panel can connect to any origin (self-hosted backend URLs)
+- `minimum_chrome_version: "116"` — the floor for `sidePanel.open()`, which the toolbar-icon handler calls
+
+Page capture covers http/https tabs only. `file://` is **not** grantable at
+runtime — Chrome governs it solely through the "Allow access to file URLs"
+switch on the extension's details page, so `permissions.request()` rejects the
+origin ("Only permissions specified in the manifest may be requested"). The
+capture path rejects `file://`, browser-internal pages, `view-source:`,
+`devtools://` and the Web Store up front (`usePageContent.ts`) and says what to
+do instead: serve the page over http://, or attach the file to the message.
 
 ## API Types
 
