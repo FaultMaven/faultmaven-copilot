@@ -128,14 +128,20 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('strips the URL fragment from the captured page URL before submission', async () => {
-    // OAuth implicit flows and SPA dashboards carry secrets in the fragment
-    // (e.g. #access_token=…) — it must never reach pastedContent/sourceUrl.
+  it('submits the vetted URL returned by the capture, never a re-queried tab URL', async () => {
+    // The hook returns the fragment-stripped URL of the tab it injected into.
+    // Poison tabs.query: if the component re-queries the active tab (the old
+    // TOCTOU — the user can switch tabs while the capture's permission prompt
+    // is open), it would pick up a different page's URL with a secret in the
+    // fragment.
     const { browser } = await import('wxt/browser');
     (browser.tabs.query as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 1, url: 'https://app.example.com/dashboard?range=1h#access_token=SECRET123' },
+      { id: 2, url: 'https://other-tab.example.com/#access_token=SECRET123' },
     ]);
-    const mockPageInject = vi.fn().mockResolvedValue('captured page text');
+    const mockPageInject = vi.fn().mockResolvedValue({
+      content: 'captured page text',
+      url: 'https://app.example.com/dashboard?range=1h',
+    });
 
     render(
       <UnifiedInputBar
@@ -158,6 +164,8 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     expect(payload.sourceUrl).toBe('https://app.example.com/dashboard?range=1h');
     expect(payload.sourceUrl).not.toContain('SECRET123');
     expect(payload.pastedContent).not.toContain('SECRET123');
+    // The component must not have consulted the active tab at all.
+    expect(browser.tabs.query).not.toHaveBeenCalled();
   });
 
   it('routes a normal short query via onQuerySubmit, not the pasted_content path', async () => {

@@ -8,12 +8,14 @@ export function usePageContent() {
   const [pageContent, setPageContent] = useState<string>("");
   const [injectionStatus, setInjectionStatus] = useState<{ message: string; type: 'success' | 'error' | '' }>({ message: "", type: "" });
 
-  const getPageContent = async (): Promise<string> => {
+  const getPageContent = async (): Promise<{ content: string; url: string }> => {
     try {
       setInjectionStatus({ message: "🔄 Analyzing page content...", type: "" });
+      // tabs.query can resolve to [] (window closing, no qualifying active
+      // tab) — guard the destructured element, not just its fields.
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
 
-      if (!tab.id) {
+      if (!tab?.id) {
         throw new Error("No active tab found");
       }
 
@@ -75,6 +77,14 @@ export function usePageContent() {
       if (!tabUrl || (scheme !== 'http:' && scheme !== 'https:')) {
         throw new Error("Page capture works on http:// and https:// pages only.");
       }
+
+      // The URL reported alongside the capture. Derived HERE, from the same
+      // vetted tab the extractor is injected into — callers must not re-query
+      // the active tab afterward: the user can switch tabs while the
+      // permission prompt below is open, and a second query would then name a
+      // page the content did not come from. Fragment dropped for the same
+      // reason as the extractor's [source_url:] preamble (tokens live there).
+      const capturedPageUrl = `${tabUrl.origin}${tabUrl.pathname}${tabUrl.search}`;
 
       let capturedContent = '';
 
@@ -165,14 +175,15 @@ export function usePageContent() {
               const inp = el as HTMLInputElement;
               // Never capture sensitive input VALUES into case evidence: passwords,
               // hidden fields (CSRF/session tokens), and inputs the page marks as
-              // secret via autocomplete (current/new-password, one-time-code,
-              // cc-number/cc-csc). The label/field still appears; only the value is
-              // dropped. (Backend PII redaction is cloud-only, so this is the last
-              // line of defense for self-hosted.)
+              // secret via autocomplete (current/new-password, one-time-code, and
+              // the whole cc-* payment family — name and expiry are sensitive too,
+              // not just number/csc). The label/field still appears; only the value
+              // is dropped. (Backend PII redaction is cloud-only, so this is the
+              // last line of defense for self-hosted.)
               const type = (inp.type || '').toLowerCase();
               if (type === 'password' || type === 'hidden') return null;
               const ac = (inp.getAttribute('autocomplete') || '').toLowerCase();
-              if (/(^|\s)(current-password|new-password|one-time-code|cc-number|cc-csc)(\s|$)/.test(ac)) return null;
+              if (/(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/.test(ac)) return null;
               if (type === 'checkbox' || type === 'radio')
                 return inp.checked ? (inp.value || 'checked') : null;
               return inp.value?.trim() || null;
@@ -276,11 +287,11 @@ export function usePageContent() {
             // and signed params there (e.g. #access_token=…), and it must not
             // land in case evidence. origin + path + query are kept (query is
             // often the dashboard/time-range context).
-            let srcUrl = window.location.href;
+            let srcUrl = window.location.href.split('#')[0];
             try {
               const u = new URL(window.location.href);
               srcUrl = `${u.origin}${u.pathname}${u.search}`;
-            } catch { /* non-standard URL — fall back to href */ }
+            } catch { /* non-standard URL — fragment-stripped href fallback */ }
             const preamble: string[] = [
               `[captured_at: ${new Date().toISOString()}]`,
               `[source_url: ${srcUrl}]`
@@ -315,7 +326,7 @@ export function usePageContent() {
           capturedContent = result.result;
           setPageContent(capturedContent);
           setInjectionStatus({ message: "✅ Page content captured successfully!", type: "success" });
-          return capturedContent;
+          return { content: capturedContent, url: capturedPageUrl };
         }
       } catch (injectionError: any) {
         log.error("Programmatic injection failed:", injectionError);
@@ -347,10 +358,10 @@ export function usePageContent() {
     }
   };
 
-  const handlePageInject = async (): Promise<string> => {
-    // Capture the page content and return it directly (not from state)
-    const content = await getPageContent();
-    return content;
+  const handlePageInject = async (): Promise<{ content: string; url: string }> => {
+    // Capture the page content and return it directly (not from state),
+    // paired with the vetted URL of the tab it was captured from.
+    return await getPageContent();
   };
 
   return {

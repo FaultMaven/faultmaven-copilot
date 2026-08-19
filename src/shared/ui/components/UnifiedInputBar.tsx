@@ -14,7 +14,6 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { browser } from 'wxt/browser';
 import { createLogger } from '~/lib/utils/logger';
 import { PasteDataScratchpad } from './PasteDataScratchpad';
 
@@ -45,7 +44,7 @@ export interface UnifiedInputBarProps {
   // Callbacks
   onQuerySubmit: (query: string) => void;
   onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
-  onPageInject?: () => Promise<string>;
+  onPageInject?: () => Promise<{ content: string; url: string }>;
 
   // Configuration
   maxLength?: number;
@@ -343,7 +342,12 @@ export function UnifiedInputBar({
     setValidationError(null);
 
     try {
-      const pageHtmlContent = await onPageInject();
+      // The hook returns the URL of the tab it actually injected into —
+      // already allowlist-vetted and fragment-stripped. Do NOT re-query the
+      // active tab here: the user can switch tabs while the capture's
+      // permission prompt is open, and a second query would attribute the
+      // captured content to the wrong page.
+      const { content: pageHtmlContent, url: pageUrl } = await onPageInject();
 
       if (!pageHtmlContent || pageHtmlContent.trim().length === 0) {
         throw new Error('No page content captured');
@@ -358,24 +362,8 @@ export function UnifiedInputBar({
       }
 
       setCapturedPageContent(pageHtmlContent);
-
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (tab.url) {
-        // Drop the fragment (#…) before this URL is embedded in the turn body
-        // and sent as source_url: SPA dashboards and OAuth implicit flows
-        // routinely carry tokens there (e.g. #access_token=…). Mirrors the
-        // same normalization the injected extractor applies to its
-        // [source_url:] preamble (usePageContent.ts).
-        let capturedUrl = tab.url;
-        try {
-          const u = new URL(tab.url);
-          capturedUrl = `${u.origin}${u.pathname}${u.search}`;
-        } catch { /* non-standard URL — fall back to raw */ }
-        setCapturedPageUrl(capturedUrl);
-        log.debug('Page captured', { url: capturedUrl, bytes: pageHtmlContent.length });
-      } else {
-        throw new Error('Could not retrieve current page URL');
-      }
+      setCapturedPageUrl(pageUrl);
+      log.debug('Page captured', { url: pageUrl, bytes: pageHtmlContent.length });
     } catch (error: any) {
       log.error('Page capture failed', error);
       setValidationError({
