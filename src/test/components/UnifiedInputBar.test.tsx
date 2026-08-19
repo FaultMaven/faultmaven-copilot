@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { INPUT_LIMITS } from '../../shared/ui/layouts/constants';
 
 // Mock browser API from wxt
@@ -126,6 +126,38 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     expect(
       screen.queryByText(/Large text detected/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('strips the URL fragment from the captured page URL before submission', async () => {
+    // OAuth implicit flows and SPA dashboards carry secrets in the fragment
+    // (e.g. #access_token=…) — it must never reach pastedContent/sourceUrl.
+    const { browser } = await import('wxt/browser');
+    (browser.tabs.query as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 1, url: 'https://app.example.com/dashboard?range=1h#access_token=SECRET123' },
+    ]);
+    const mockPageInject = vi.fn().mockResolvedValue('captured page text');
+
+    render(
+      <UnifiedInputBar
+        onQuerySubmit={mockQuerySubmit}
+        onTurnSubmit={mockTurnSubmit}
+        onPageInject={mockPageInject}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Analyze current page/i }));
+    // The staged-page chip renders once capture completes and the URL is set
+    await waitFor(() => {
+      expect(screen.getByText(/app\.example\.com/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+    const payload = mockTurnSubmit.mock.calls[0][0];
+    expect(payload.inputType).toBe('page_capture');
+    expect(payload.sourceUrl).toBe('https://app.example.com/dashboard?range=1h');
+    expect(payload.sourceUrl).not.toContain('SECRET123');
+    expect(payload.pastedContent).not.toContain('SECRET123');
   });
 
   it('routes a normal short query via onQuerySubmit, not the pasted_content path', async () => {

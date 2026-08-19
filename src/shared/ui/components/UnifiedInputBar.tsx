@@ -361,8 +361,18 @@ export function UnifiedInputBar({
 
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       if (tab.url) {
-        setCapturedPageUrl(tab.url);
-        log.debug('Page captured', { url: tab.url, bytes: pageHtmlContent.length });
+        // Drop the fragment (#…) before this URL is embedded in the turn body
+        // and sent as source_url: SPA dashboards and OAuth implicit flows
+        // routinely carry tokens there (e.g. #access_token=…). Mirrors the
+        // same normalization the injected extractor applies to its
+        // [source_url:] preamble (usePageContent.ts).
+        let capturedUrl = tab.url;
+        try {
+          const u = new URL(tab.url);
+          capturedUrl = `${u.origin}${u.pathname}${u.search}`;
+        } catch { /* non-standard URL — fall back to raw */ }
+        setCapturedPageUrl(capturedUrl);
+        log.debug('Page captured', { url: capturedUrl, bytes: pageHtmlContent.length });
       } else {
         throw new Error('Could not retrieve current page URL');
       }
