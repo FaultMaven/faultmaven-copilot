@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { INPUT_LIMITS } from '../../shared/ui/layouts/constants';
 
 // Mock browser API from wxt
@@ -126,6 +126,46 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     expect(
       screen.queryByText(/Large text detected/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('submits the vetted URL returned by the capture, never a re-queried tab URL', async () => {
+    // The hook returns the fragment-stripped URL of the tab it injected into.
+    // Poison tabs.query: if the component re-queries the active tab (the old
+    // TOCTOU — the user can switch tabs while the capture's permission prompt
+    // is open), it would pick up a different page's URL with a secret in the
+    // fragment.
+    const { browser } = await import('wxt/browser');
+    (browser.tabs.query as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 2, url: 'https://other-tab.example.com/#access_token=SECRET123' },
+    ]);
+    const mockPageInject = vi.fn().mockResolvedValue({
+      content: 'captured page text',
+      url: 'https://app.example.com/dashboard?range=1h',
+    });
+
+    render(
+      <UnifiedInputBar
+        onQuerySubmit={mockQuerySubmit}
+        onTurnSubmit={mockTurnSubmit}
+        onPageInject={mockPageInject}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Analyze current page/i }));
+    // The staged-page chip renders once capture completes and the URL is set
+    await waitFor(() => {
+      expect(screen.getByText(/app\.example\.com/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+    const payload = mockTurnSubmit.mock.calls[0][0];
+    expect(payload.inputType).toBe('page_capture');
+    expect(payload.sourceUrl).toBe('https://app.example.com/dashboard?range=1h');
+    expect(payload.sourceUrl).not.toContain('SECRET123');
+    expect(payload.pastedContent).not.toContain('SECRET123');
+    // The component must not have consulted the active tab at all.
+    expect(browser.tabs.query).not.toHaveBeenCalled();
   });
 
   it('routes a normal short query via onQuerySubmit, not the pasted_content path', async () => {

@@ -40,7 +40,7 @@ describe('usePageContent — capture provenance', () => {
   it('embeds the source URL in the captured content preamble', async () => {
     const { result } = renderHook(() => usePageContent());
 
-    const content = await result.current.handlePageInject();
+    const { content } = await result.current.handlePageInject();
 
     // Provenance line must be present and carry the page URL (jsdom location).
     expect(content).toMatch(/\[source_url: https?:\/\/[^\]]+\]/);
@@ -57,7 +57,7 @@ describe('usePageContent — capture provenance', () => {
     });
 
     const { result } = renderHook(() => usePageContent());
-    const content = await result.current.handlePageInject();
+    const { content } = await result.current.handlePageInject();
 
     expect(content).not.toContain('access_token');
     expect(content).not.toContain('supersecret');
@@ -65,6 +65,27 @@ describe('usePageContent — capture provenance', () => {
     expect(content).toContain('[source_url: https://grafana.example/dash?panel=1]');
 
     Object.defineProperty(window, 'location', { value: orig, writable: true, configurable: true });
+  });
+
+  it('returns the injected tab\'s URL, fragment-stripped, alongside the content', async () => {
+    // The returned url is what the submit path sends as source_url — it must
+    // come from the tab the extractor ran in and must never carry the hash.
+    (browser.tabs.query as any).mockResolvedValue([
+      { id: 1, url: 'https://grafana.example/dash?panel=1#access_token=supersecret' }
+    ]);
+    const { result } = renderHook(() => usePageContent());
+
+    const { url } = await result.current.handlePageInject();
+
+    expect(url).toBe('https://grafana.example/dash?panel=1');
+  });
+
+  it('fails with the friendly message when tabs.query returns no tab', async () => {
+    (browser.tabs.query as any).mockResolvedValue([]);
+    const { result } = renderHook(() => usePageContent());
+
+    // Not a TypeError from dereferencing undefined.
+    await expect(result.current.handlePageInject()).rejects.toThrow('No active tab found');
   });
 });
 
@@ -112,7 +133,8 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     activeTabIs('https://chromewebstore.google.com.example.com/status');
     const { result } = renderHook(() => usePageContent());
 
-    await expect(result.current.handlePageInject()).resolves.toContain('[captured_at:');
+    const { content } = await result.current.handlePageInject();
+    expect(content).toContain('[captured_at:');
     expect(executeScript).toHaveBeenCalledTimes(1);
   });
 
@@ -154,7 +176,7 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     document.body.innerHTML = '<h1>Prod Grafana</h1><p>errors 5%</p>';
     const { result } = renderHook(() => usePageContent());
 
-    const content = await result.current.handlePageInject();
+    const { content } = await result.current.handlePageInject();
 
     expect(executeScript).toHaveBeenCalledTimes(1);
     expect(content).toContain('[captured_at:');

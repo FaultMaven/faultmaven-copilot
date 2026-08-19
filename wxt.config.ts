@@ -53,8 +53,13 @@ export default defineConfig({
     // Keep the Chrome Web Store listing's permission justifications in step
     // with this list — store review compares the two. (The submission
     // collateral is maintained outside this repo.)
+    // No `activeTab`: it only activates on a toolbar-icon click, and our
+    // toolbar click just opens the side panel — page capture runs from a
+    // side-panel button, where activeTab never activates, so the capture path
+    // requests per-origin host permission instead (usePageContent.ts). A
+    // declared-but-unused permission is a CWS rejection trigger.
     permissions: [
-      "storage", "sidePanel", "activeTab", "tabs", "scripting", "identity"
+      "storage", "sidePanel", "tabs", "scripting", "identity"
     ],
     host_permissions: [
       "https://app.faultmaven.ai/*",

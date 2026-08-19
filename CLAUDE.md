@@ -614,7 +614,7 @@ EventBus.on('auth_state_changed', (event) => {
 Key permissions (Manifest v3):
 - `storage` - Local data persistence
 - `sidePanel` - Side panel UI
-- `activeTab`, `tabs` - Tab access for content capture, and opening/focusing the Dashboard tab
+- `tabs` - Reading the active tab's URL for content capture, and opening/focusing the Dashboard tab. (No `activeTab`: it only activates on a toolbar-icon click, which here just opens the side panel — capture runs from a side-panel button and uses per-origin optional host permissions instead.)
 - `scripting` - Content script injection
 - `identity` - Sign-in only, via a single `identity.launchWebAuthFlow` call. Never
   `identity.getProfileUserInfo`: the extension does not read the browser account
