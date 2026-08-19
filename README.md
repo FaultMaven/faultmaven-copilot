@@ -26,7 +26,7 @@ FaultMaven is an AI-powered troubleshooting copilot that works a problem the way
 
 This extension connects to your FaultMaven backend (self-hosted or Cloud) to provide:
 
-- **Context Capture**: Automatically scrapes relevant logs, stack traces, and DOM elements from your active tab
+- **Context Capture**: One click captures the relevant logs, stack traces, and page content from your active tab — never automatic, never in the background
 - **In-Flow Chat**: Diagnose issues without leaving your dashboard or console
 - **Deep Linking**: References your Knowledge Base articles directly in the chat
 - **Session Persistence**: Maintain conversation context across browser sessions

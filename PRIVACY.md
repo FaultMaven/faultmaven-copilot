@@ -38,10 +38,12 @@ only as a result of actions you take. Specifically:
 
 | Data | When | Where it goes | Why |
 |------|------|---------------|-----|
-| **Page content** (visible text of the current tab) | Only when you explicitly click "capture page" for the active tab | Your configured FaultMaven backend | So the assistant can analyze logs, stack traces, and dashboard data you are looking at |
+| **Page content** (visible text of the current tab, including values you have typed into ordinary form fields — but never passwords, hidden fields, or one-time-code / payment-card fields) | Only when you explicitly click "capture page" for the active tab | Your configured FaultMaven backend | So the assistant can analyze logs, stack traces, and dashboard data you are looking at |
+| **The captured page's URL** (with the `#fragment` removed, since fragments can carry tokens) | With each page capture you submit | Your configured FaultMaven backend | So captured evidence is traceable to its source page |
 | **Messages, questions, and pasted text** | When you send them in the chat | Your configured FaultMaven backend | To answer your troubleshooting questions |
 | **Files you upload** | When you attach a file | Your configured FaultMaven backend | To analyze the logs and other data you provide |
 | **Authentication tokens** | During and after login | Stored locally; sent to your backend on each request to authenticate you | To keep you signed in securely |
+| **A random client identifier** (a UUID generated locally; contains no personal information) | When a working session is created | Your configured FaultMaven backend | To associate your session with this browser install and deduplicate requests |
 
 **Page capture is never automatic.** The extension only reads page content when
 you initiate a capture, and only from the tab that is active at that moment. It
@@ -59,14 +61,24 @@ permission prompt that you can decline.
 The extension stores the following in your browser's local extension storage
 (`chrome.storage.local`) so the app can function:
 
-- Authentication tokens and session identifiers (access token, session ID, PKCE
-  verifiers, redirect URI)
+- Authentication tokens and session identifiers (access token, refresh token,
+  session ID, PKCE verifiers, redirect URI)
+- Your user profile as returned by your backend (email, display name, roles),
+  used to show who is signed in
 - Your settings (the backend URL you configured)
-- Limited cached case/conversation state for the case you are currently viewing
-- First-run and backend-capability flags
+- Cached conversation state: the case you are viewing plus a bounded number of
+  recently viewed cases (each capped to its most recent messages), along with
+  case titles, pinned-case IDs, and related bookkeeping
+- A randomly generated client identifier and data-owner scope ID
+- First-run, UI, and backend-capability flags
 
-This data stays on your device. It is cleared when you log out or uninstall the
-extension. You can also clear it via your browser's extension settings.
+This data stays on your device. Logging out clears your authentication tokens,
+profile, and cached conversation data. A few non-identifying items survive
+logout (the random client identifier, pinned-case IDs, your configured backend
+URL, and first-run/capability flags) so your settings are intact when you sign
+back in; signing in as a *different* user purges the previous user's data.
+Uninstalling the extension removes everything, and you can also clear the data
+via your browser's extension settings.
 
 ---
 
@@ -105,8 +117,9 @@ submitting data you are not authorized to share.
 |------------|---------|
 | `storage` | Store auth tokens, session, and settings locally |
 | `sidePanel` | Render the assistant in the browser side panel |
-| `activeTab` + `scripting` | Capture the current tab's content **only** when you initiate a capture |
-| `tabs` | Detect completion of the OAuth login redirect and manage the login tab |
+| `scripting` | Inject the page-content extractor **only** when you initiate a capture, and register the sign-in bridge on your configured Dashboard origin only |
+| `tabs` | Read the active tab's URL when you capture a page, and find or open your FaultMaven Dashboard tab when you click a Dashboard link |
+| `identity` | Open the browser-managed sign-in window for OAuth login (`launchWebAuthFlow`). The extension never reads your browser profile identity |
 | Host access to your FaultMaven backend | Communicate with the API you authenticate against |
 | Optional host access to other sites | Granted on demand, per site, the first time you capture that site |
 

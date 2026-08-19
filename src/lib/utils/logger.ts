@@ -66,12 +66,6 @@ export const logger = {
     } else {
       console.error(`[${component}]`, message);
     }
-
-    // Future: Send to error tracking service in production
-    if (!IS_DEV && error instanceof Error) {
-      // TODO: Integrate with Sentry, LogRocket, or similar
-      // reportError(component, message, error);
-    }
   },
 
   /**

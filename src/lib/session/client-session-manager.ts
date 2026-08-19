@@ -125,15 +125,9 @@ export class ClientSessionManager {
     // Include auth headers so backend can associate session with authenticated user
     const authHeaders = await getAuthHeaders();
 
-    // Debug: Log if Authorization header is present
-    const hasAuth = 'Authorization' in authHeaders;
-    const authHeaderValue = hasAuth ? (authHeaders as any)['Authorization'] : 'none';
-    const authPreview = authHeaderValue !== 'none'
-      ? authHeaderValue.substring(0, 20) + '...'
-      : 'none';
+    // Debug: log presence only — never any part of the Authorization value
     log.info('Session creation auth headers:', {
-      hasAuthorization: hasAuth,
-      authorizationPreview: authPreview
+      hasAuthorization: 'Authorization' in authHeaders
     });
 
     const response = await fetchWithTimeout(`${apiUrl}/api/v1/sessions`, {

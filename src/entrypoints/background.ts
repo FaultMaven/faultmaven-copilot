@@ -140,12 +140,13 @@ export default defineBackground({
     // Sign-in now has ONE ingress — identity.launchWebAuthFlow resolves with
     // the redirect directly — so the race it was written for is gone.
     //
-    // AUTH_CALLBACK (public/auth-callback.js) is still *registered* on the
-    // message listener but is no longer *reachable* from sign-in: the redirect
-    // target is the browser's virtual chromiumapp.org URL, so callback.html is
-    // never navigated to. It is kept as the re-entry point the flow needs if
-    // the redirect ever returns to an in-extension page again — and with it
-    // gone as a live path, note that sign-in now depends on this service worker
+    // AUTH_CALLBACK is still *registered* on the message listener but has no
+    // live sender: the redirect target is the browser's virtual
+    // chromiumapp.org URL, and the old in-extension callback page
+    // (public/callback.html + auth-callback.js) has been deleted. The handler
+    // is kept as the re-entry point the flow needs if the redirect ever
+    // returns to an in-extension page again — and with no live path into it,
+    // note that sign-in now depends on this service worker
     // surviving the entire interactive login inside one pending call. A worker
     // evicted mid-login strands the flow with no recovery path; that resilience
     // was what the removed tab monitor bought.
@@ -540,13 +541,14 @@ export default defineBackground({
         return true; // Indicate async response
       }
 
-      // OAuth callback from callback.html
+      // OAuth callback re-entry point — no live sender today (see the
+      // AUTH_CALLBACK note above the single-flight guard)
       if (request.type === "AUTH_CALLBACK") {
         handleAuthCallback({ code: request.code, state: request.state }, sendResponse);
         return true; // Indicate async response
       }
 
-      // OAuth error from callback.html
+      // OAuth error re-entry point — same status as AUTH_CALLBACK above
       if (request.type === "AUTH_ERROR") {
         handleAuthError({ error: request.error, error_description: request.error_description });
         sendResponse({ status: "received" });

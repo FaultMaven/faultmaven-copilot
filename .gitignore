@@ -53,3 +53,7 @@ coverage/
 # Also excluded from vitest in vitest.config.ts — .gitignore alone would not stop
 # the test runner collecting a second, stale copy of the suite.
 .worktrees/
+
+# Playwright artifacts
+playwright-report/
+test-results/
