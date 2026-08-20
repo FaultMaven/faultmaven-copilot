@@ -347,6 +347,16 @@ export function useMessageSubmission() {
               return {
                 ...item,
                 optimistic: false,
+                // The local turn_number was a PREDICTION (`highestTurn + 1`
+                // below); take the backend's, as the agent item already does.
+                // A user message and its agent reply share a turn_number by
+                // backend design, so both rows land on the same real value.
+                // Without this the user row keeps a number that is merely
+                // usually right, and the id reconciliation in the delta merge
+                // (#213) — which matches on turn AND slot — silently misses it
+                // whenever the prediction was off, putting back the duplicate
+                // it exists to prevent.
+                turn_number: response.turn_number,
                 originalId: userMessageId
               } as OptimisticConversationItem;
             } else if (item.id === aiMessageId) {

@@ -517,9 +517,10 @@ Two invariants to keep when touching the mapper:
    row, and cleared by the next `CONVERSATION_CACHE_VERSION` bump. Do not paper
    over it with a compensating skipped-row counter — that double-counts on the
    capped-conversation over-read and skips a *real* message, the worse direction.
-   The repair is upstream and tracked in #213: reconcile `opt_`-id rows to their
-   backend `message_id` in the merge (or carry ids on `TurnResponse`), after
-   which a re-read dedups and the skew stops mattering.
+   Since #213 the skew is largely defanged: a re-read locally-submitted turn is
+   reconciled to its backend id rather than duplicated. The offset stays
+   inexact — the tail is re-read on each open — but it no longer corrupts the
+   conversation.
 2. **A notice carries `turn_number` but never displays it.** The merge's
    turn-floor guard needs the number to place the row; the *claim* of turn
    membership is suppressed in `ChatWindow` because the value is only whichever
@@ -561,12 +562,22 @@ Two things are blocked, and they have different causes — do not conflate them:
   precisely when it would have helped: a no-op when local and backend counts
   agree, a duplicated turn when they do not.
 
-That same hole makes the existing re-open path duplicate the last turn if a
-notice lands *between* backend-sourced rows and locally-submitted ones (submit a
-turn, let the job finish, submit more turns, then re-open). **Tracked in #213**,
-with a proposed client-side fix (adopt the backend `message_id` when an incoming
-row matches an `opt_`-id local row on turn *and* slot). Until it lands, treat
-"which rows the client can identify" as the constraint on any new fetch site.
+That hole is closed at merge time by `lib/state/reconcile-message-ids.ts`
+(#213): an incoming backend row that matches a local **committed** row still
+carrying an `opt_` id, on **turn number AND slot**, adopts that row's identity
+instead of being appended as a second copy. It is self-healing — after the first
+delta fetch following a turn the row carries a backend id and dedups by id
+forever after — and it refuses an ambiguous `(turn, slot)` rather than guessing.
+
+⚠️ **Slot matching is the load-bearing part.** A notice shares a turn number with
+the exchange it landed during but never its slot, so matching on turn alone would
+let a locally-submitted turn swallow the notice — quietly undoing #209. Tests pin
+this in both the unit and slice layers.
+
+`useMessageSubmission` also takes the backend `turn_number` for the **user** row
+on turn success, not just the agent row. The old value was a prediction
+(`highestTurn + 1`), and the reconciliation matches on turn, so a wrong
+prediction would silently miss and restore the duplicate.
 
 The Dashboard classifies the same rows the same way, in
 `lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —

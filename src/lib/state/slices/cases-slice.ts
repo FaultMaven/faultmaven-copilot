@@ -19,6 +19,7 @@ import { createLogger } from '../../../lib/utils/logger';
 import { isCommittedMessage } from '../../../lib/utils/memory-manager';
 import { selectCaseTitle } from '../case-title';
 import { messageKind } from '../message-kind';
+import { reconcileOptimisticIds } from '../reconcile-message-ids';
 import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
@@ -238,10 +239,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // carries no message ids for the client to adopt — so a re-read turn
           // can append as a duplicate. The blast radius is one case, only if it
           // holds a blank row, and it clears on the next
-          // CONVERSATION_CACHE_VERSION bump. The real repair is tracked in #213:
-          // reconcile an `opt_`-id local row to its backend message_id when an
-          // incoming row matches it on turn AND slot, after which a re-read
-          // dedups and this skew stops mattering.
+          // CONVERSATION_CACHE_VERSION bump. Since #213 the consequence is
+          // milder still: a re-read locally-submitted turn is reconciled to its
+          // backend id rather than appended twice, so the skew costs a repeated
+          // fetch of the tail but no longer corrupts the conversation.
           //
           // A parallel skipped-row counter was considered
           // and rejected — it double-counts on the capped-conversation
@@ -269,8 +270,18 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             });
           if (incoming.length > 0) {
             let appended = 0;
+            let reconciledCount = 0;
             set((state) => {
-              const existing = state.conversations[caseId] || [];
+              const stored = state.conversations[caseId] || [];
+
+              // Give locally-minted turns their backend identity BEFORE dedup
+              // (#213). `useMessageSubmission` mints `opt_msg_*` ids and
+              // `TurnResponse` carries none to adopt, so without this a re-read
+              // of a turn the client submitted matches nothing by id and
+              // appends a second copy. Matching on turn AND slot is what keeps
+              // a notice — which shares a turn with the exchange it landed
+              // during, but never its slot — from being swallowed here.
+              const { rows: existing, adopted } = reconcileOptimisticIds(stored, incoming);
               const existingIds = new Set(existing.map((m) => m.id));
 
               // Turn floor: the lowest turn_number we still hold locally. When a very
@@ -289,14 +300,21 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
               const minLocalTurn = committedTurns.length ? Math.min(...committedTurns) : 0;
 
               // Append only messages that are (a) not already present (id dedup, vs
-              // offset drift / races) and (b) not below the retained-turn floor.
+              // offset drift / races), (b) not just adopted onto a local row by
+              // the reconciliation above, and (c) not below the retained-turn
+              // floor.
               const fresh = incoming.filter(
                 (m) =>
                   !existingIds.has(m.id) &&
+                  !adopted.has(m.id) &&
                   (typeof m.turn_number !== 'number' || m.turn_number >= minLocalTurn)
               );
-              if (fresh.length === 0) return state;
+              // `existing !== stored` means a row adopted a backend id, which is
+              // a state change even when nothing new is appended — returning
+              // `state` here would discard it.
+              if (fresh.length === 0 && existing === stored) return state;
               appended = fresh.length;
+              reconciledCount = adopted.size;
 
               let splitAt = existing.length;
               for (let i = existing.length - 1; i >= 0; i--) {
@@ -318,8 +336,16 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             // `appended` is the post-dedup count actually merged; the raw
             // fetch size would over-report on the capped-conversation
             // over-read, where everything is dropped by the merge.
-            if (appended > 0) {
-              log.info('Conversation delta applied', { caseId, added: appended, offset });
+            if (appended > 0 || reconciledCount > 0) {
+              log.info('Conversation delta applied', {
+                caseId,
+                added: appended,
+                // Rows that adopted a backend id instead of being appended as a
+                // duplicate. Logged because it is the only outward sign the
+                // reconciliation ran (#213).
+                reconciled: reconciledCount,
+                offset
+              });
             }
           }
         })

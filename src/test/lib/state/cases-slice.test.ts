@@ -237,6 +237,42 @@ describe('cases-slice', () => {
       expect(api.getCaseConversation).toHaveBeenCalledWith('case-blank', { offset: 2 });
     });
 
+    it('reconciles a locally-submitted turn instead of duplicating it (#213)', async () => {
+      // The regression this closes. A turn the client submitted keeps its
+      // client-minted `opt_msg_*` id — `TurnResponse` carries no backend id to
+      // adopt — so an over-read that re-reads it matched nothing by id and
+      // appended a second copy. Reachable whenever the offset stops being an
+      // exact index: here, a notice the client does not hold yet.
+      useAppStore.setState({
+        conversations: {
+          'case-dup': [
+            { id: 'm-1-u', question: 'old q', turn_number: 1, optimistic: false } as any,
+            { id: 'opt_msg_a', question: 'generate a runbook', turn_number: 2, optimistic: false } as any,
+            { id: 'opt_msg_b', response: 'Creating your runbook draft.', turn_number: 2, optimistic: false } as any
+          ]
+        }
+      });
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'm-2-u', role: 'user', content: 'generate a runbook', turn_number: 2 },
+          { message_id: 'm-2-a', role: 'assistant', content: 'Creating your runbook draft.', turn_number: 2 },
+          { message_id: 'm-2-sys', role: 'system', content: 'Runbook generation failed.', turn_number: 2 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-dup');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-dup'];
+      // The turn appears ONCE, now under its backend ids…
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1-u', 'm-2-u', 'm-2-a', 'm-2-sys']);
+      // …and the notice, which shares turn 2 with that exchange, is appended
+      // rather than swallowed by the reconciliation.
+      expect((conv.find((m: any) => m.id === 'm-2-sys') as any).notice).toContain(
+        'Runbook generation failed'
+      );
+    });
+
     it('counts a notice in the delta offset, matching what the backend counts', async () => {
       // The offset is a count of backend rows, and the backend counts system
       // rows too. Admitting them makes the hint exact where dropping made it
