@@ -493,11 +493,16 @@ retry instruction lived only inside the message they could not see (#209).
 
 Two invariants to keep when touching the mapper:
 
-1. **Exactly one slot per row.** A row with none is a contentless ghost —
-   invisible in `ChatWindow`, yet committed, so its `message_id` permanently
-   blocks a corrected re-fetch through the id dedup. This is what the old
-   allow-list filter was protecting; `notice` now enforces it structurally, so
-   do not reinstate the filter to get the guarantee back.
+1. **Every committed row renders something.** A row that renders nothing is a
+   contentless ghost — invisible in `ChatWindow`, yet committed, so its
+   `message_id` permanently blocks a corrected re-fetch through the id dedup.
+   This is what the old allow-list filter was protecting, and it takes **two**
+   guards, not one: `notice` gives every *role* a slot, and a **blank-content
+   filter** drops rows whose content is empty or whitespace-only. Kind decides
+   which slot; it cannot make an empty string render, and every content guard in
+   `ChatWindow` is a truthiness test. Skipping a blank row only under-counts the
+   offset (the tolerated direction) and leaves the id free for a later re-fetch,
+   which a committed ghost does not.
 2. **A notice carries `turn_number` but never displays it.** The merge's
    turn-floor guard needs the number to place the row; the *claim* of turn
    membership is suppressed in `ChatWindow` because the value is only whichever
@@ -513,8 +518,8 @@ backend does not emit one today, so nothing client-side can key a poll off
 anything but response text.
 
 The Dashboard classifies the same rows the same way, in
-`lib/cases/messageAttribution.ts` — kept as a parallel copy, not shared code.
-Change one, look at the other.
+`lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —
+kept as a parallel copy, not shared code. Change one, look at the other.
 
 ### Persistence Contract (what reaches `browser.storage.local`)
 

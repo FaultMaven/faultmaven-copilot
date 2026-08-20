@@ -40,9 +40,9 @@ export type MessageKind = 'user' | 'assistant' | 'notice';
 /**
  * Classify a backend message role for display.
  *
- * Mirrors `messageKind` in faultmaven-dashboard (`lib/cases/messageAttribution.ts`)
- * — the two clients render the same transcript and should not disagree about
- * what a row is. Kept as a copy rather than a shared package: this is nine lines
+ * Mirrors `messageKind` in faultmaven-dashboard (`lib/cases/messageAttribution.ts`,
+ * on `main` since faultmaven-dashboard#105) — the two clients render the same
+ * transcript and should not disagree about what a row is. Kept as a copy rather than a shared package: this is nine lines
  * with no dependencies, and the repos share no runtime code today.
  */
 export function messageKind(role: string): MessageKind {

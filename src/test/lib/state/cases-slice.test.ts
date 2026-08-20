@@ -193,6 +193,40 @@ describe('cases-slice', () => {
       }
     });
 
+    it('skips a blank-content row rather than committing an invisible one', async () => {
+      // Kind decides WHICH slot is populated; it cannot make an empty string
+      // render. Every content guard in ChatWindow is a truthiness test, so a row
+      // whose content is empty or whitespace-only would commit invisibly and
+      // block a corrected re-fetch of that message_id forever through the id
+      // dedup — the same dead end the replaced allow-list was guarding against,
+      // reachable for ANY role, not just the newly admitted one.
+      //
+      // Skipping only ever under-counts the offset (the tolerated direction),
+      // and leaves the id free for a later re-fetch.
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
+          { message_id: 'm-blank-sys', role: 'system', content: '', turn_number: 1 },
+          { message_id: 'm-ws-sys', role: 'system', content: '   \n  ', turn_number: 1 },
+          { message_id: 'm-blank-user', role: 'user', content: '', turn_number: 1 },
+          { message_id: 'm-2', role: 'assistant', content: 'looking into it', turn_number: 1 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-blank');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-blank'];
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-2']);
+
+      // The invariant, stated as it is actually enforced: every committed row
+      // has exactly one slot populated with something that renders.
+      for (const m of conv as any[]) {
+        const populated = [m.question, m.response, m.notice].filter(Boolean);
+        expect(populated, `row ${m.id}`).toHaveLength(1);
+      }
+    });
+
     it('counts a notice in the delta offset, matching what the backend counts', async () => {
       // The offset is a count of backend rows, and the backend counts system
       // rows too. Admitting them makes the hint exact where dropping made it

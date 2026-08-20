@@ -204,44 +204,52 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
             return;
           }
-          // Every row maps to exactly one populated content slot, chosen by
-          // `messageKind`: `question`, `response`, or `notice`. Nothing is
-          // dropped.
+          // Every retained row populates exactly one content slot, chosen by
+          // `messageKind`: `question`, `response`, or `notice`. No row is
+          // dropped for its ROLE.
           //
           // The previous allow-list kept only user/assistant and discarded the
           // rest, because an unmapped row would commit with BOTH `question` and
           // `response` undefined — invisible in ChatWindow, yet holding a
           // message_id that permanently blocks a corrected re-fetch through the
-          // id-dedup below. `notice` closes that hazard by construction: a
-          // non-conversational row is now renderable, so there is no contentless
-          // item to commit. The invariant to preserve when touching this map is
-          // "exactly one of the three is set", NOT the allow-list that used to
-          // enforce it.
+          // id-dedup below. Dropping was also silence, and silence was the
+          // defect (#209): the runbook-conversion FAILURE notice travels on
+          // `role: "system"` and was the only signal the user would ever get.
+          // `notice` replaces the allow-list — a non-conversational row is now
+          // renderable, so an unrecognised role no longer has to be discarded to
+          // keep it out of the store.
           //
-          // Dropping was also silence, and silence was the defect (#209): the
-          // runbook-conversion FAILURE notice travels on `role: "system"` and
-          // was the only signal the user would ever get.
+          // The BLANK-content guard below is the other half, and it is what
+          // actually makes the invariant hold rather than merely describing it.
+          // Kind decides which slot; it cannot make an empty string render. A row
+          // whose content is empty or whitespace-only would populate its slot
+          // with a falsy value, and every render guard in ChatWindow is a
+          // truthiness test — so it would commit invisibly and re-create exactly
+          // the id-dedup dead end above, for any role. Skipping is the same
+          // tolerated direction the offset comment describes (it can only
+          // UNDER-count), and unlike a committed ghost it leaves the message_id
+          // free for a later corrected re-fetch. There is nothing to show either
+          // way; the difference is whether the client can ever recover.
           //
           // `turn_number` is carried on a notice even though it is never shown
           // (see ChatWindow): the turn-floor guard below needs it to place the
           // row against a bounded local suffix. What is suppressed is the CLAIM
           // that the notice belongs to that turn, not the ordering fact.
-          //
-          // Admitting these rows also makes the offset MORE accurate, not less:
-          // it counts backend rows, and the backend counts system rows too.
-          const incoming: OptimisticConversationItem[] = (data.messages ?? []).map((msg) => {
-            const kind = messageKind(msg.role);
-            return {
-              id: msg.message_id,
-              timestamp: msg.created_at,
-              turn_number: msg.turn_number,
-              optimistic: false,
-              originalId: msg.message_id,
-              question: kind === 'user' ? msg.content : undefined,
-              response: kind === 'assistant' ? msg.content : undefined,
-              notice: kind === 'notice' ? msg.content : undefined
-            };
-          });
+          const incoming: OptimisticConversationItem[] = (data.messages ?? [])
+            .filter((msg) => (msg.content ?? '').trim() !== '')
+            .map((msg) => {
+              const kind = messageKind(msg.role);
+              return {
+                id: msg.message_id,
+                timestamp: msg.created_at,
+                turn_number: msg.turn_number,
+                optimistic: false,
+                originalId: msg.message_id,
+                question: kind === 'user' ? msg.content : undefined,
+                response: kind === 'assistant' ? msg.content : undefined,
+                notice: kind === 'notice' ? msg.content : undefined
+              };
+            });
           if (incoming.length > 0) {
             let appended = 0;
             set((state) => {
