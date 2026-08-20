@@ -238,9 +238,12 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // carries no message ids for the client to adopt — so a re-read turn
           // can append as a duplicate. The blast radius is one case, only if it
           // holds a blank row, and it clears on the next
-          // CONVERSATION_CACHE_VERSION bump. The real repair is upstream: ids on
-          // TurnResponse, or an offset tracked explicitly rather than derived
-          // from the item count. A parallel skipped-row counter was considered
+          // CONVERSATION_CACHE_VERSION bump. The real repair is tracked in #213:
+          // reconcile an `opt_`-id local row to its backend message_id when an
+          // incoming row matches it on turn AND slot, after which a re-read
+          // dedups and this skew stops mattering.
+          //
+          // A parallel skipped-row counter was considered
           // and rejected — it double-counts on the capped-conversation
           // over-read, turning a duplicate into a SKIPPED real message, which is
           // the worse direction.

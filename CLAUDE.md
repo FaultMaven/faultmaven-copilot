@@ -517,8 +517,9 @@ Two invariants to keep when touching the mapper:
    row, and cleared by the next `CONVERSATION_CACHE_VERSION` bump. Do not paper
    over it with a compensating skipped-row counter — that double-counts on the
    capped-conversation over-read and skips a *real* message, the worse direction.
-   The repair is upstream: message ids on `TurnResponse`, or an offset tracked
-   explicitly instead of derived from the item count.
+   The repair is upstream and tracked in #213: reconcile `opt_`-id rows to their
+   backend `message_id` in the merge (or carry ids on `TurnResponse`), after
+   which a re-read dedups and the skew stops mattering.
 2. **A notice carries `turn_number` but never displays it.** The merge's
    turn-floor guard needs the number to place the row; the *claim* of turn
    membership is suppressed in `ChatWindow` because the value is only whichever
@@ -562,10 +563,10 @@ Two things are blocked, and they have different causes — do not conflate them:
 
 That same hole makes the existing re-open path duplicate the last turn if a
 notice lands *between* backend-sourced rows and locally-submitted ones (submit a
-turn, let the job finish, submit more turns, then re-open). Closing it needs
-`TurnResponse` to carry message ids, or a turn-and-slot dedup layered onto the
-merge. Until then, treat "which rows the client can identify" as the constraint
-on any new fetch site.
+turn, let the job finish, submit more turns, then re-open). **Tracked in #213**,
+with a proposed client-side fix (adopt the backend `message_id` when an incoming
+row matches an `opt_`-id local row on turn *and* slot). Until it lands, treat
+"which rows the client can identify" as the constraint on any new fetch site.
 
 The Dashboard classifies the same rows the same way, in
 `lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —
