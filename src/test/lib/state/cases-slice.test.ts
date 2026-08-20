@@ -193,22 +193,19 @@ describe('cases-slice', () => {
       }
     });
 
-    it('skips a blank-content row rather than committing an invisible one', async () => {
-      // Kind decides WHICH slot is populated; it cannot make an empty string
-      // render. Every content guard in ChatWindow is a truthiness test, so a row
-      // whose content is empty or whitespace-only would commit invisibly and
-      // block a corrected re-fetch of that message_id forever through the id
-      // dedup — the same dead end the replaced allow-list was guarding against,
-      // reachable for ANY role, not just the newly admitted one.
-      //
-      // Skipping only ever under-counts the offset (the tolerated direction),
-      // and leaves the id free for a later re-fetch.
+    it('keeps a blank-content row so the offset stays an exact backend index', async () => {
+      // A blank row renders nothing, and that is correct — there is nothing to
+      // render. Skipping it would be worse than an invisible item: `offset` is a
+      // local count used as an index into the backend list, so one dropped row
+      // leaves the local copy permanently short, every later open re-reads the
+      // tail, and the id dedup cannot absorb it — locally-submitted turns keep
+      // their client-minted `opt_msg_*` ids forever (`useMessageSubmission`
+      // never adopts the backend `message_id`), so a re-read of one appends as a
+      // DUPLICATE. Counting the row is what keeps the prefix exact.
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
-          { message_id: 'm-blank-sys', role: 'system', content: '', turn_number: 1 },
-          { message_id: 'm-ws-sys', role: 'system', content: '   \n  ', turn_number: 1 },
-          { message_id: 'm-blank-user', role: 'user', content: '', turn_number: 1 },
+          { message_id: 'm-blank', role: 'system', content: '', turn_number: 1 },
           { message_id: 'm-2', role: 'assistant', content: 'looking into it', turn_number: 1 }
         ]
       });
@@ -217,14 +214,14 @@ describe('cases-slice', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       const conv = useAppStore.getState().conversations['case-blank'];
-      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-2']);
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-blank', 'm-2']);
 
-      // The invariant, stated as it is actually enforced: every committed row
-      // has exactly one slot populated with something that renders.
-      for (const m of conv as any[]) {
-        const populated = [m.question, m.response, m.notice].filter(Boolean);
-        expect(populated, `row ${m.id}`).toHaveLength(1);
-      }
+      // Counted, so the next open offsets past all three rather than re-reading
+      // the assistant turn.
+      (api.getCaseConversation as any).mockClear();
+      useAppStore.getState().handleCaseSelect('case-blank');
+      await Promise.resolve();
+      expect(api.getCaseConversation).toHaveBeenCalledWith('case-blank', { offset: 3 });
     });
 
     it('counts a notice in the delta offset, matching what the backend counts', async () => {

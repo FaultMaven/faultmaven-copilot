@@ -12,7 +12,12 @@ import { authManager } from '../../../lib/api';
 import { IdMappingState, idMappingManager } from '../../../lib/optimistic';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
-import { useAppStore, PERSISTED_STATE_KEYS } from '../../../lib/state/store';
+import {
+  useAppStore,
+  PERSISTED_STATE_KEYS,
+  CONVERSATION_CACHE_VERSION,
+  CONVERSATION_CACHE_VERSION_KEY
+} from '../../../lib/state/store';
 import { memoryManager } from '../../../lib/utils/memory-manager';
 
 const log = createLogger('DataRecovery');
@@ -106,7 +111,33 @@ export function useDataRecovery(
         // Read the persisted store-state keys (shared constant, kept in sync with
         // the write side in store.ts) plus idMappings, which is persisted from
         // idMappingManager rather than store state and so is not in that list.
-        const stored = await browser.storage.local.get([...PERSISTED_STATE_KEYS, 'idMappings']);
+        const stored = await browser.storage.local.get([
+          ...PERSISTED_STATE_KEYS,
+          'idMappings',
+          CONVERSATION_CACHE_VERSION_KEY
+        ]);
+
+        // Discard conversations written by a build whose mapper admitted a
+        // different set of backend rows. The delta fetch offsets by the local
+        // committed count, so a cache that is short by the rows an older build
+        // dropped (pre-v2: every `role: "system"` notice) has an offset pointing
+        // PAST them — they are unreachable for the life of that cache. Starting
+        // the case at offset 0 re-reads the whole list in backend order instead.
+        // Cheap and lossless: committed messages all live on the backend, and
+        // titles / pins / id-mappings are untouched.
+        const cachedVersion = stored[CONVERSATION_CACHE_VERSION_KEY];
+        if (stored.conversations && cachedVersion !== CONVERSATION_CACHE_VERSION) {
+          log.info('Discarding conversation cache from an older schema', {
+            cachedVersion: cachedVersion ?? 'none',
+            currentVersion: CONVERSATION_CACHE_VERSION,
+            caseCount: Object.keys(stored.conversations).length
+          });
+          delete stored.conversations;
+          await browser.storage.local.remove([
+            'conversations',
+            CONVERSATION_CACHE_VERSION_KEY
+          ]);
+        }
 
         log.debug('Retrieved from storage', {
           titleCount: stored.conversationTitles ? Object.keys(stored.conversationTitles).length : 0,

@@ -219,37 +219,35 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // renderable, so an unrecognised role no longer has to be discarded to
           // keep it out of the store.
           //
-          // The BLANK-content guard below is the other half, and it is what
-          // actually makes the invariant hold rather than merely describing it.
-          // Kind decides which slot; it cannot make an empty string render. A row
-          // whose content is empty or whitespace-only would populate its slot
-          // with a falsy value, and every render guard in ChatWindow is a
-          // truthiness test — so it would commit invisibly and re-create exactly
-          // the id-dedup dead end above, for any role. Skipping is the same
-          // tolerated direction the offset comment describes (it can only
-          // UNDER-count), and unlike a committed ghost it leaves the message_id
-          // free for a later corrected re-fetch. There is nothing to show either
-          // way; the difference is whether the client can ever recover.
+          // A row whose content is blank renders nothing, and that is correct —
+          // there is nothing to render. It is still MAPPED AND COUNTED, and must
+          // stay that way. Skipping it looks tidier and is worse: `offset` is a
+          // count of local rows used as an index into the backend list, so
+          // dropping one puts the local copy permanently one short, every later
+          // open re-reads the tail, and the id-dedup that is supposed to absorb
+          // an over-read cannot see those rows — `useMessageSubmission` mints
+          // `opt_msg_*` ids and never swaps them for the backend `message_id`,
+          // so a locally-submitted turn re-read from the backend appends as a
+          // DUPLICATE rather than deduping. A blank row costs an invisible item;
+          // skipping it costs a permanently skewed offset. Keep it.
           //
           // `turn_number` is carried on a notice even though it is never shown
           // (see ChatWindow): the turn-floor guard below needs it to place the
           // row against a bounded local suffix. What is suppressed is the CLAIM
           // that the notice belongs to that turn, not the ordering fact.
-          const incoming: OptimisticConversationItem[] = (data.messages ?? [])
-            .filter((msg) => (msg.content ?? '').trim() !== '')
-            .map((msg) => {
-              const kind = messageKind(msg.role);
-              return {
-                id: msg.message_id,
-                timestamp: msg.created_at,
-                turn_number: msg.turn_number,
-                optimistic: false,
-                originalId: msg.message_id,
-                question: kind === 'user' ? msg.content : undefined,
-                response: kind === 'assistant' ? msg.content : undefined,
-                notice: kind === 'notice' ? msg.content : undefined
-              };
-            });
+          const incoming: OptimisticConversationItem[] = (data.messages ?? []).map((msg) => {
+            const kind = messageKind(msg.role);
+            return {
+              id: msg.message_id,
+              timestamp: msg.created_at,
+              turn_number: msg.turn_number,
+              optimistic: false,
+              originalId: msg.message_id,
+              question: kind === 'user' ? msg.content : undefined,
+              response: kind === 'assistant' ? msg.content : undefined,
+              notice: kind === 'notice' ? msg.content : undefined
+            };
+          });
           if (incoming.length > 0) {
             let appended = 0;
             set((state) => {

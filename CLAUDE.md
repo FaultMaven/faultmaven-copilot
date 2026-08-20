@@ -493,21 +493,34 @@ retry instruction lived only inside the message they could not see (#209).
 
 Two invariants to keep when touching the mapper:
 
-1. **Every committed row renders something.** A row that renders nothing is a
-   contentless ghost — invisible in `ChatWindow`, yet committed, so its
-   `message_id` permanently blocks a corrected re-fetch through the id dedup.
-   This is what the old allow-list filter was protecting, and it takes **two**
-   guards, not one: `notice` gives every *role* a slot, and a **blank-content
-   filter** drops rows whose content is empty or whitespace-only. Kind decides
-   which slot; it cannot make an empty string render, and every content guard in
-   `ChatWindow` is a truthiness test. Skipping a blank row only under-counts the
-   offset (the tolerated direction) and leaves the id free for a later re-fetch,
-   which a committed ghost does not.
+1. **Every row is mapped and counted — never dropped.** A row with no slot was
+   the hazard the old allow-list guarded against, and `notice` removes it by
+   giving every role a slot. What must NOT be reintroduced is dropping: `offset`
+   is a count of local rows used as an **index into the backend list**, so it is
+   only meaningful while the local copy is a lossless prefix. Drop one row and
+   the local copy is permanently short, every later open re-reads the tail, and
+   the id dedup cannot absorb it — `useMessageSubmission` mints `opt_msg_*` ids
+   and never adopts the backend `message_id`, so a re-read locally-submitted turn
+   appends as a **duplicate**. This applies to blank-content rows too: they
+   render nothing (correctly — there is nothing to render), and are still
+   counted. An invisible item is cheap; a skewed offset is not.
 2. **A notice carries `turn_number` but never displays it.** The merge's
    turn-floor guard needs the number to place the row; the *claim* of turn
    membership is suppressed in `ChatWindow` because the value is only whichever
    turn was open when the background job finished. `formatTimestampWithTurn` is
    called without the turn for exactly this reason.
+
+**Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
+persisted `conversations` map, and `useDataRecovery` discards a cache carrying a
+different version. This exists because of the offset rule above: a cache written
+by a build that admitted a **different set of backend rows** is short by the ones
+it dropped, so its offset points *past* them and they are unreachable for the
+life of that cache. Pre-v2 builds filtered out every `role: "system"` row — so
+without this gate the #209 fix would reach new notices only, and miss the already
+stuck case the user is actually waiting on. Discarding is lossless (committed
+messages all live on the backend; titles, pins and id-mappings are untouched) and
+re-reads each case at offset 0 in backend order. **Bump the version whenever a
+change alters which backend rows reach the store.**
 
 **Delivery.** There is no push channel (no SSE/WebSocket) and no background poll
 for case messages — `submitTurn`'s polling is scoped to one in-flight turn. A
