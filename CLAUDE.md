@@ -704,5 +704,6 @@ means they came from somewhere else — a live server or an unrelated build — 
 is the fm#880 failure mode above.
 
 Worked example: copilot #207 was paired with faultmaven#1119 (which lifted the
-`pydantic` ceiling, moving the schema shape). Merged in that order, drift went
-green on re-run with no change to the generated file.
+`pydantic` ceiling, moving the schema shape). Merged core-first —
+faultmaven#1119, then copilot #207 — drift went green on re-run with no change
+to the generated file.
