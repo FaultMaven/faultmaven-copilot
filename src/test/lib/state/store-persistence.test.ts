@@ -30,7 +30,11 @@ vi.mock('../../../lib/state/session-epoch', () => ({
   isSessionEnding: () => sessionEnding.value
 }));
 
-import { debouncedPersist } from '../../../lib/state/store';
+import {
+  debouncedPersist,
+  CONVERSATION_CACHE_VERSION,
+  CONVERSATION_CACHE_VERSION_KEY
+} from '../../../lib/state/store';
 
 // Let the debounced async persistence body run to completion.
 const drain = async () => {
@@ -153,6 +157,29 @@ describe('store debouncedPersist', () => {
 // pending persist, not flush it — a flush would write the ending session's
 // snapshotted in-memory state (possibly a prior user's just-purged residue) back
 // to storage after the purge, re-homing it under the new owner.
+describe('CONVERSATION_CACHE_VERSION', () => {
+  it('rejects caches written before the merge reconciled locally-minted ids', () => {
+    // Stated as the property, not the number, because the number is not the
+    // point: a v2 cache may hold a turn ALREADY duplicated by the bug #213
+    // fixed, and such a cache cannot repair itself — the reconciliation skips an
+    // incoming row whose id is already present, and the inflated committed count
+    // pushes `offset` past the backend's row count, so the fetch returns an
+    // empty page and the merge never runs again. It may also hold turn numbers
+    // that were client-side PREDICTIONS, which the matcher would trust.
+    //
+    // If this fails because someone lowered the version, the question to answer
+    // is not "which number" but "may this build trust a cache the previous one
+    // wrote?" — see the constant's doc comment.
+    expect(CONVERSATION_CACHE_VERSION).toBeGreaterThan(2);
+  });
+
+  it('is stamped with the conversations it describes, and cleared with them', () => {
+    // The version must never outlive the map it refers to: a stale stamp on an
+    // absent cache would let the next build trust conversations it did not write.
+    expect(CONVERSATION_CACHE_VERSION_KEY).toBe('conversationCacheVersion');
+  });
+});
+
 describe('store beforeunload teardown (#164)', () => {
   const pending = () => ({
     ...emptyState(),

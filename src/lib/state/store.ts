@@ -35,6 +35,21 @@ export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & Pend
  * reach new notices only, and miss the case that already has a stuck runbook
  * conversion, which is the one the user is waiting on.
  *
+ * v3 (#213) discards caches written before the delta merge reconciled
+ * locally-minted ids. Two reasons, and the first is not merely cosmetic:
+ *
+ *  - A cache that ALREADY holds a duplicated turn cannot repair itself. The
+ *    reconciliation skips an incoming row whose id is already present, so the
+ *    backend rows can never claim the `opt_` ones — and the inflated committed
+ *    count pushes `offset` past the backend's row count, so the fetch returns an
+ *    empty page, `incoming` is empty, and the merge never runs again. That case
+ *    is frozen for new messages too, not just stuck with the duplicate.
+ *  - Rows written by an older build carry a `highestTurn + 1` PREDICTION as
+ *    their turn number. The matcher trusts turn numbers, so a wrong prediction
+ *    could match a different backend turn in the same slot and adopt its content
+ *    — replacing what the user actually said. Discarding is the only way to be
+ *    sure every turn number in the cache came from the backend.
+ *
  * A version mismatch discards the cached conversations at hydrate
  * (`useDataRecovery`), so each case reopens at offset 0 and re-reads the whole
  * list — notices included, in backend order, with backend message_ids. Nothing
@@ -43,10 +58,11 @@ export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & Pend
  * cache written by an older build was the alternative and is worse: a recovered
  * mid-list row would append at the END, out of order.
  *
- * Bump this whenever a change alters WHICH backend rows reach the store, since
- * that is exactly what invalidates the prefix assumption.
+ * Bump this whenever a change alters WHICH backend rows reach the store, or what
+ * the store may assume about the rows it already holds. Both invalidate the
+ * prefix assumption the offset depends on.
  */
-export const CONVERSATION_CACHE_VERSION = 2;
+export const CONVERSATION_CACHE_VERSION = 3;
 
 /** Storage key holding {@link CONVERSATION_CACHE_VERSION} for the persisted map. */
 export const CONVERSATION_CACHE_VERSION_KEY = 'conversationCacheVersion';

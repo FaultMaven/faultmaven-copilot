@@ -109,8 +109,11 @@ export function reconcileOptimisticIds(
   }
   if (byKey.size === 0) return { rows: existing, adopted };
 
-  // localId -> the backend row that claims it.
-  const claims = new Map<string, OptimisticConversationItem>();
+  // localId -> the backend row that claims it, and the slot they matched on.
+  const claims = new Map<
+    string,
+    { row: OptimisticConversationItem; slot: MessageSlot }
+  >();
   const consumed = new Set<string>();
 
   for (const row of incoming) {
@@ -128,7 +131,7 @@ export function reconcileOptimisticIds(
     if (consumed.has(target.id)) continue;
 
     consumed.add(target.id);
-    claims.set(target.id, row);
+    claims.set(target.id, { row, slot });
     adopted.add(row.id);
   }
 
@@ -139,15 +142,20 @@ export function reconcileOptimisticIds(
     if (!claim) return row;
     return {
       ...row,
-      id: claim.id,
-      originalId: claim.id,
+      id: claim.row.id,
+      originalId: claim.row.id,
       // The backend copy is authoritative for both: content may have been
       // redacted server-side, and the local turn_number was a client-side
       // prediction for the user row.
-      turn_number: claim.turn_number,
-      question: claim.question,
-      response: claim.response,
-      notice: claim.notice
+      turn_number: claim.row.turn_number,
+      // ONLY the slot they matched on. Writing all three would clear the other
+      // two, and `ChatWindow` renders `question` and `response` off the same
+      // item independently — so a row with two truthy slots is renderable, and
+      // adopting on one would silently delete the other. No current path mints
+      // such a row (the optimistic items carry `response: ''` beside a real
+      // `question`), but the content it would destroy is not recoverable: the
+      // backend row carrying it may already sit behind the delta offset.
+      [claim.slot]: claim.row[claim.slot]
     };
   });
 

@@ -546,23 +546,24 @@ its outcome no matter how many further turns they submit — they must navigate 
 another case and back. State it that way; "visible on case open" reads as
 "next time you look" and understates it.
 
-Two things are blocked, and they have different causes — do not conflate them:
+Two options exist, with different causes — do not conflate them:
 
-- **Live push** needs a structured "background job started" marker on the turn
-  response. There is no SSE/WebSocket, `submitTurn`'s polling is scoped to one
-  in-flight turn, and every arm of the backend's runbook handler returns the same
-  `metadata` dict, so nothing client-side can key a poll off anything but
-  response text.
+- **Live push** is still blocked. It needs a structured "background job started"
+  marker on the turn response. There is no SSE/WebSocket, `submitTurn`'s polling
+  is scoped to one in-flight turn, and every arm of the backend's runbook handler
+  returns the same `metadata` dict, so nothing client-side can key a poll off
+  anything but response text.
 - **Re-running the delta merge after each turn** — the cheap option, needing no
-  backend change — is blocked by the **id hole**, not by that marker.
-  `useMessageSubmission` mints `opt_msg_*` ids and `TurnResponse` carries no
-  message ids at all, so the client cannot adopt the backend's. A refresh whose
-  fetch returns anything therefore re-reads the locally-submitted turn under its
-  backend id, which cannot dedup and appends as a **duplicate**. It fails
-  precisely when it would have helped: a no-op when local and backend counts
-  agree, a duplicated turn when they do not.
+  backend change — **is no longer blocked**. It was, but not by that marker: by
+  the id hole. A refresh whose fetch returned anything re-read the
+  locally-submitted turn under its backend id, which could not dedup and appended
+  a **duplicate** — failing precisely when it would have helped. Since #213 that
+  re-read reconciles instead, so such a refresh is a no-op when local and backend
+  counts agree and surfaces the notice when they do not. Nothing implements it
+  yet; it is now a cost/benefit call about one extra request per turn, not an
+  impossibility. **Until it is built, the limitation in the heading stands.**
 
-That hole is closed at merge time by `lib/state/reconcile-message-ids.ts`
+The hole is closed at merge time by `lib/state/reconcile-message-ids.ts`
 (#213): an incoming backend row that matches a local **committed** row still
 carrying an `opt_` id, on **turn number AND slot**, adopts that row's identity
 instead of being appended as a second copy. It is self-healing — after the first

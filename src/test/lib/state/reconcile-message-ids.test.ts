@@ -70,6 +70,25 @@ describe('reconcileOptimisticIds', () => {
     expect(rows[0].originalId).toBe('m-9');
   });
 
+  it('writes only the slot that matched, leaving any other content intact', () => {
+    // `ChatWindow` renders `question` and `response` off the same item
+    // independently, so a row with two truthy slots is renderable. Adopting on
+    // the question match must not clear the response — the content is not
+    // recoverable, since the backend row carrying it may already sit behind the
+    // delta offset. No current path mints such a row; this pins the property so
+    // one could not silently lose data later.
+    const existing = [
+      row({ id: 'opt_msg_1', question: 'q', response: 'a', turn_number: 3 })
+    ];
+    const incoming = [row({ id: 'm-3-u', question: 'q from backend', turn_number: 3 })];
+
+    const { rows } = reconcileOptimisticIds(existing, incoming);
+
+    expect(rows[0].id).toBe('m-3-u');
+    expect(rows[0].question).toBe('q from backend');
+    expect(rows[0].response).toBe('a'); // untouched
+  });
+
   it('never swallows a notice sharing a turn with the exchange it landed during', () => {
     // The failure that would quietly undo #209. A notice carries the turn that
     // was open when its background job finished — the same turn as a local
