@@ -499,17 +499,26 @@ in-chat notification because this client could not honour it.
 
 Two invariants to keep when touching the mapper:
 
-1. **Every row is mapped and counted — never dropped.** A row with no slot was
-   the hazard the old allow-list guarded against, and `notice` removes it by
-   giving every role a slot. What must NOT be reintroduced is dropping: `offset`
-   is a count of local rows used as an **index into the backend list**, so it is
-   only meaningful while the local copy is a lossless prefix. Drop one row and
-   the local copy is permanently short, every later open re-reads the tail, and
-   the id dedup cannot absorb it — `useMessageSubmission` mints `opt_msg_*` ids
-   and never adopts the backend `message_id`, so a re-read locally-submitted turn
-   appends as a **duplicate**. This applies to blank-content rows too: they
-   render nothing (correctly — there is nothing to render), and are still
-   counted. An invisible item is cheap; a skewed offset is not.
+1. **No committed row may be one that renders nothing.** Two guards hold this:
+   `notice` gives every *role* a slot (so nothing is dropped for its role), and a
+   **blank-content filter** skips rows whose content is empty or whitespace-only.
+   Kind decides which slot is populated and cannot make an empty string render,
+   and every content guard in `ChatWindow` is a truthiness test — so a blank row
+   would sit in the conversation as an item the user can never see.
+   `QueryRequest.query` is `min_length=1` on the backend, which admits a
+   whitespace-only message, so this is reachable.
+
+   ⚠️ **The blank filter has a known, accepted cost.** `offset` is a count of
+   local rows used as an **index into the backend list**, so it is only exact
+   while the local copy is a lossless prefix. Skipping a row leaves that case's
+   offset permanently one short: later opens re-read the tail, and the id dedup
+   cannot absorb it (see the id hole below), so a re-read locally-submitted turn
+   can append as a **duplicate**. Bounded to one case, only when it holds a blank
+   row, and cleared by the next `CONVERSATION_CACHE_VERSION` bump. Do not paper
+   over it with a compensating skipped-row counter — that double-counts on the
+   capped-conversation over-read and skips a *real* message, the worse direction.
+   The repair is upstream: message ids on `TurnResponse`, or an offset tracked
+   explicitly instead of derived from the item count.
 2. **A notice carries `turn_number` but never displays it.** The merge's
    turn-floor guard needs the number to place the row; the *claim* of turn
    membership is suppressed in `ChatWindow` because the value is only whichever

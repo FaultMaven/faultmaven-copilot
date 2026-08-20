@@ -195,19 +195,21 @@ describe('cases-slice', () => {
       }
     });
 
-    it('keeps a blank-content row so the offset stays an exact backend index', async () => {
-      // A blank row renders nothing, and that is correct — there is nothing to
-      // render. Skipping it would be worse than an invisible item: `offset` is a
-      // local count used as an index into the backend list, so one dropped row
-      // leaves the local copy permanently short, every later open re-reads the
-      // tail, and the id dedup cannot absorb it — locally-submitted turns keep
-      // their client-minted `opt_msg_*` ids forever (`useMessageSubmission`
-      // never adopts the backend `message_id`), so a re-read of one appends as a
-      // DUPLICATE. Counting the row is what keeps the prefix exact.
+    it('skips a blank-content row rather than committing an unviewable one', async () => {
+      // Kind decides WHICH slot is populated; it cannot make an empty string
+      // render, and every content guard in ChatWindow is a truthiness test. So a
+      // blank row would sit in the conversation as an item the user can never
+      // see. `QueryRequest.query` is `min_length=1` on the backend, which admits
+      // a whitespace-only message — reachable, not theoretical.
+      //
+      // The accepted cost is in the mapper comment: this case's offset is then
+      // permanently one short. Asserted below so the trade is visible in the
+      // test rather than only in prose.
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
-          { message_id: 'm-blank', role: 'system', content: '', turn_number: 1 },
+          { message_id: 'm-blank-sys', role: 'system', content: '', turn_number: 1 },
+          { message_id: 'm-ws-user', role: 'user', content: '   \n  ', turn_number: 1 },
           { message_id: 'm-2', role: 'assistant', content: 'looking into it', turn_number: 1 }
         ]
       });
@@ -216,14 +218,23 @@ describe('cases-slice', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       const conv = useAppStore.getState().conversations['case-blank'];
-      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-blank', 'm-2']);
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-2']);
 
-      // Counted, so the next open offsets past all three rather than re-reading
-      // the assistant turn.
+      // Every committed row renders something — the property the skip buys.
+      for (const m of conv as any[]) {
+        const populated = [m.question, m.response, m.notice].filter(Boolean);
+        expect(populated, `row ${m.id}`).toHaveLength(1);
+      }
+
+      // …and the price: the next open offsets by 2, not by the 4 rows the
+      // backend actually holds. Pinned deliberately — if a future change makes
+      // the offset exact again (ids on TurnResponse, or an explicitly tracked
+      // offset), this expectation is the one that should be updated, and the
+      // mapper comment with it.
       (api.getCaseConversation as any).mockClear();
       useAppStore.getState().handleCaseSelect('case-blank');
       await Promise.resolve();
-      expect(api.getCaseConversation).toHaveBeenCalledWith('case-blank', { offset: 3 });
+      expect(api.getCaseConversation).toHaveBeenCalledWith('case-blank', { offset: 2 });
     });
 
     it('counts a notice in the delta offset, matching what the backend counts', async () => {

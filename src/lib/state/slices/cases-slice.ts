@@ -220,35 +220,50 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // renderable, so an unrecognised role no longer has to be discarded to
           // keep it out of the store.
           //
-          // A row whose content is blank renders nothing, and that is correct —
-          // there is nothing to render. It is still MAPPED AND COUNTED, and must
-          // stay that way. Skipping it looks tidier and is worse: `offset` is a
-          // count of local rows used as an index into the backend list, so
-          // dropping one puts the local copy permanently one short, every later
-          // open re-reads the tail, and the id-dedup that is supposed to absorb
-          // an over-read cannot see those rows — `useMessageSubmission` mints
-          // `opt_msg_*` ids and never swaps them for the backend `message_id`,
-          // so a locally-submitted turn re-read from the backend appends as a
-          // DUPLICATE rather than deduping. A blank row costs an invisible item;
-          // skipping it costs a permanently skewed offset. Keep it.
+          // Blank-content rows are skipped: no committed item may be one that
+          // renders nothing. Kind decides WHICH slot is populated and cannot
+          // make an empty string render, and every content guard in ChatWindow
+          // is a truthiness test, so such a row would sit in the conversation
+          // as an item the user can never see. `QueryRequest.query` is
+          // `min_length=1`, which admits a whitespace-only message, so this is
+          // reachable rather than theoretical.
+          //
+          // Known cost, accepted deliberately — do not "fix" it by adding a
+          // compensating counter without reading this: `offset` is a count of
+          // local rows used as an INDEX into the backend list, so skipping one
+          // leaves that case's offset permanently one short. Later opens
+          // re-read the tail, and the id-dedup that would normally absorb an
+          // over-read cannot see locally-submitted turns —
+          // `useMessageSubmission` mints `opt_msg_*` ids and `TurnResponse`
+          // carries no message ids for the client to adopt — so a re-read turn
+          // can append as a duplicate. The blast radius is one case, only if it
+          // holds a blank row, and it clears on the next
+          // CONVERSATION_CACHE_VERSION bump. The real repair is upstream: ids on
+          // TurnResponse, or an offset tracked explicitly rather than derived
+          // from the item count. A parallel skipped-row counter was considered
+          // and rejected — it double-counts on the capped-conversation
+          // over-read, turning a duplicate into a SKIPPED real message, which is
+          // the worse direction.
           //
           // `turn_number` is carried on a notice even though it is never shown
           // (see ChatWindow): the turn-floor guard below needs it to place the
           // row against a bounded local suffix. What is suppressed is the CLAIM
           // that the notice belongs to that turn, not the ordering fact.
-          const incoming: OptimisticConversationItem[] = (data.messages ?? []).map((msg) => {
-            const kind = messageKind(msg.role);
-            return {
-              id: msg.message_id,
-              timestamp: msg.created_at,
-              turn_number: msg.turn_number,
-              optimistic: false,
-              originalId: msg.message_id,
-              question: kind === 'user' ? msg.content : undefined,
-              response: kind === 'assistant' ? msg.content : undefined,
-              notice: kind === 'notice' ? msg.content : undefined
-            };
-          });
+          const incoming: OptimisticConversationItem[] = (data.messages ?? [])
+            .filter((msg) => (msg.content ?? '').trim() !== '')
+            .map((msg) => {
+              const kind = messageKind(msg.role);
+              return {
+                id: msg.message_id,
+                timestamp: msg.created_at,
+                turn_number: msg.turn_number,
+                optimistic: false,
+                originalId: msg.message_id,
+                question: kind === 'user' ? msg.content : undefined,
+                response: kind === 'assistant' ? msg.content : undefined,
+                notice: kind === 'notice' ? msg.content : undefined
+              };
+            });
           if (incoming.length > 0) {
             let appended = 0;
             set((state) => {
