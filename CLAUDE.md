@@ -517,9 +517,10 @@ Two invariants to keep when touching the mapper:
    row, and cleared by the next `CONVERSATION_CACHE_VERSION` bump. Do not paper
    over it with a compensating skipped-row counter — that double-counts on the
    capped-conversation over-read and skips a *real* message, the worse direction.
-   The repair is upstream and tracked in #213: reconcile `opt_`-id rows to their
-   backend `message_id` in the merge (or carry ids on `TurnResponse`), after
-   which a re-read dedups and the skew stops mattering.
+   Since #213 the skew is largely defanged: a re-read locally-submitted turn is
+   reconciled to its backend id rather than duplicated. The offset stays
+   inexact — the tail is re-read on each open — but it no longer corrupts the
+   conversation.
 2. **A notice carries `turn_number` but never displays it.** The merge's
    turn-floor guard needs the number to place the row; the *claim* of turn
    membership is suppressed in `ChatWindow` because the value is only whichever
@@ -545,28 +546,39 @@ its outcome no matter how many further turns they submit — they must navigate 
 another case and back. State it that way; "visible on case open" reads as
 "next time you look" and understates it.
 
-Two things are blocked, and they have different causes — do not conflate them:
+Two options exist, with different causes — do not conflate them:
 
-- **Live push** needs a structured "background job started" marker on the turn
-  response. There is no SSE/WebSocket, `submitTurn`'s polling is scoped to one
-  in-flight turn, and every arm of the backend's runbook handler returns the same
-  `metadata` dict, so nothing client-side can key a poll off anything but
-  response text.
+- **Live push** is still blocked. It needs a structured "background job started"
+  marker on the turn response. There is no SSE/WebSocket, `submitTurn`'s polling
+  is scoped to one in-flight turn, and every arm of the backend's runbook handler
+  returns the same `metadata` dict, so nothing client-side can key a poll off
+  anything but response text.
 - **Re-running the delta merge after each turn** — the cheap option, needing no
-  backend change — is blocked by the **id hole**, not by that marker.
-  `useMessageSubmission` mints `opt_msg_*` ids and `TurnResponse` carries no
-  message ids at all, so the client cannot adopt the backend's. A refresh whose
-  fetch returns anything therefore re-reads the locally-submitted turn under its
-  backend id, which cannot dedup and appends as a **duplicate**. It fails
-  precisely when it would have helped: a no-op when local and backend counts
-  agree, a duplicated turn when they do not.
+  backend change — **is no longer blocked**. It was, but not by that marker: by
+  the id hole. A refresh whose fetch returned anything re-read the
+  locally-submitted turn under its backend id, which could not dedup and appended
+  a **duplicate** — failing precisely when it would have helped. Since #213 that
+  re-read reconciles instead, so such a refresh is a no-op when local and backend
+  counts agree and surfaces the notice when they do not. Nothing implements it
+  yet; it is now a cost/benefit call about one extra request per turn, not an
+  impossibility. **Until it is built, the limitation in the heading stands.**
 
-That same hole makes the existing re-open path duplicate the last turn if a
-notice lands *between* backend-sourced rows and locally-submitted ones (submit a
-turn, let the job finish, submit more turns, then re-open). **Tracked in #213**,
-with a proposed client-side fix (adopt the backend `message_id` when an incoming
-row matches an `opt_`-id local row on turn *and* slot). Until it lands, treat
-"which rows the client can identify" as the constraint on any new fetch site.
+The hole is closed at merge time by `lib/state/reconcile-message-ids.ts`
+(#213): an incoming backend row that matches a local **committed** row still
+carrying an `opt_` id, on **turn number AND slot**, adopts that row's identity
+instead of being appended as a second copy. It is self-healing — after the first
+delta fetch following a turn the row carries a backend id and dedups by id
+forever after — and it refuses an ambiguous `(turn, slot)` rather than guessing.
+
+⚠️ **Slot matching is the load-bearing part.** A notice shares a turn number with
+the exchange it landed during but never its slot, so matching on turn alone would
+let a locally-submitted turn swallow the notice — quietly undoing #209. Tests pin
+this in both the unit and slice layers.
+
+`useMessageSubmission` also takes the backend `turn_number` for the **user** row
+on turn success, not just the agent row. The old value was a prediction
+(`highestTurn + 1`), and the reconciliation matches on turn, so a wrong
+prediction would silently miss and restore the duplicate.
 
 The Dashboard classifies the same rows the same way, in
 `lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —
