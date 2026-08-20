@@ -678,3 +678,31 @@ other frontend ended up with different names for the same schema (fm#880).
 When faultmaven's spec changes, `api-types-drift` goes red here until the types
 are regenerated and committed. That is the gate working — regenerate in a PR of
 its own rather than folding it into unrelated work.
+
+### Paired PRs: regenerating before the spec reaches `main`
+
+The warning above is about *provenance*, not about the branch name. Generating
+from the **committed `openapi.json` on the core faultmaven PR** is correct and is
+the normal flow for a spec change that has not merged yet:
+
+1. The core PR commits its regenerated `openapi.json`.
+2. Here, generate with `--spec` pointed at that PR's committed spec and open a
+   PR of its own whose description opens with **"Merge AFTER <core PR>"**.
+3. Merge the core PR first, then re-run `api-types-drift` here — the failed run
+   does not retrigger itself.
+
+`api-types-drift` is **expected to be red** on that PR until the core change is
+on `main`, because the job regenerates from `main`. That red is the merge order
+showing through, not a defect: the fix is to merge in order and re-run, never to
+edit `src/types/api.generated.ts` to satisfy the gate. Editing it green would
+make it wrong the moment the core PR lands.
+
+To tell a paired PR apart from a genuine drift failure, regenerate with `--spec`
+pointed at the core PR's committed spec and diff against the branch's committed
+file. An empty diff means the types are correct and merely early; a non-empty one
+means they came from somewhere else — a live server or an unrelated build — which
+is the fm#880 failure mode above.
+
+Worked example: copilot #207 was paired with faultmaven#1119 (which lifted the
+`pydantic` ceiling, moving the schema shape). Merged in that order, drift went
+green on re-run with no change to the generated file.
