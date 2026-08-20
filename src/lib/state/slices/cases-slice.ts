@@ -18,6 +18,7 @@ import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import { isCommittedMessage } from '../../../lib/utils/memory-manager';
 import { selectCaseTitle } from '../case-title';
+import { messageKind } from '../message-kind';
 import type { StoreState } from '../store';
 
 const log = createLogger('CasesSlice');
@@ -203,30 +204,69 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
             return;
           }
-          // Keep only the roles this strictly question/response model can
-          // display. 'system' rows (e.g. the runbook-conversion notification)
-          // are deliberately dropped, and this allow-list extends the same
-          // treatment to any role outside the contract vocabulary: an unmapped
-          // row would otherwise become an item with BOTH `question` and
-          // `response` undefined — invisible in ChatWindow, yet committed, so
-          // its message_id would permanently block a corrected re-fetch via
-          // the id-dedup below. Dropping is safe against the offset — it only
-          // ever UNDER-counts, the tolerated direction (see the offset
-          // comment: a lower-bound hint, with the turn-floor + id-dedup merge
-          // absorbing the over-read). Surfacing system turns to the user is a
-          // UI decision, tracked separately.
-          const messages = (data.messages ?? []).filter(
-            (msg) => msg.role === 'user' || msg.role === 'assistant'
-          );
-          const incoming: OptimisticConversationItem[] = messages.map((msg) => ({
-            id: msg.message_id,
-            timestamp: msg.created_at,
-            turn_number: msg.turn_number,
-            optimistic: false,
-            originalId: msg.message_id,
-            question: msg.role === 'user' ? msg.content : undefined,
-            response: msg.role === 'assistant' ? msg.content : undefined
-          }));
+          // Every retained row populates exactly one content slot, chosen by
+          // `messageKind`: `question`, `response`, or `notice`. No row is
+          // dropped for its ROLE.
+          //
+          // The previous allow-list kept only user/assistant and discarded the
+          // rest, because an unmapped row would commit with BOTH `question` and
+          // `response` undefined — invisible in ChatWindow, yet holding a
+          // message_id that permanently blocks a corrected re-fetch through the
+          // id-dedup below. Dropping was also silence, and silence was the
+          // defect (#209): the runbook-conversion FAILURE notice travels on
+          // `role: "system"` and is the only signal that the conversion failed
+          // at all, as well as where the way out is named.
+          // `notice` replaces the allow-list — a non-conversational row is now
+          // renderable, so an unrecognised role no longer has to be discarded to
+          // keep it out of the store.
+          //
+          // Blank-content rows are skipped: no committed item may be one that
+          // renders nothing. Kind decides WHICH slot is populated and cannot
+          // make an empty string render, and every content guard in ChatWindow
+          // is a truthiness test, so such a row would sit in the conversation
+          // as an item the user can never see. `QueryRequest.query` is
+          // `min_length=1`, which admits a whitespace-only message, so this is
+          // reachable rather than theoretical.
+          //
+          // Known cost, accepted deliberately — do not "fix" it by adding a
+          // compensating counter without reading this: `offset` is a count of
+          // local rows used as an INDEX into the backend list, so skipping one
+          // leaves that case's offset permanently one short. Later opens
+          // re-read the tail, and the id-dedup that would normally absorb an
+          // over-read cannot see locally-submitted turns —
+          // `useMessageSubmission` mints `opt_msg_*` ids and `TurnResponse`
+          // carries no message ids for the client to adopt — so a re-read turn
+          // can append as a duplicate. The blast radius is one case, only if it
+          // holds a blank row, and it clears on the next
+          // CONVERSATION_CACHE_VERSION bump. The real repair is tracked in #213:
+          // reconcile an `opt_`-id local row to its backend message_id when an
+          // incoming row matches it on turn AND slot, after which a re-read
+          // dedups and this skew stops mattering.
+          //
+          // A parallel skipped-row counter was considered
+          // and rejected — it double-counts on the capped-conversation
+          // over-read, turning a duplicate into a SKIPPED real message, which is
+          // the worse direction.
+          //
+          // `turn_number` is carried on a notice even though it is never shown
+          // (see ChatWindow): the turn-floor guard below needs it to place the
+          // row against a bounded local suffix. What is suppressed is the CLAIM
+          // that the notice belongs to that turn, not the ordering fact.
+          const incoming: OptimisticConversationItem[] = (data.messages ?? [])
+            .filter((msg) => (msg.content ?? '').trim() !== '')
+            .map((msg) => {
+              const kind = messageKind(msg.role);
+              return {
+                id: msg.message_id,
+                timestamp: msg.created_at,
+                turn_number: msg.turn_number,
+                optimistic: false,
+                originalId: msg.message_id,
+                question: kind === 'user' ? msg.content : undefined,
+                response: kind === 'assistant' ? msg.content : undefined,
+                notice: kind === 'notice' ? msg.content : undefined
+              };
+            });
           if (incoming.length > 0) {
             let appended = 0;
             set((state) => {

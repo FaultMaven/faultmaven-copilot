@@ -23,6 +23,34 @@ export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & Pend
 // from this list — so a key added here must also be handled there. `idMappings`
 // is persisted alongside these but is sourced from idMappingManager, not store
 // state, so it is handled explicitly at each site rather than listed here.
+/**
+ * Schema version of the persisted `conversations` map.
+ *
+ * The delta fetch in `handleCaseSelect` uses the local committed-message count
+ * as an OFFSET into the backend row list, which is only meaningful while the
+ * local copy is a lossless prefix of that list. Builds before v2 filtered
+ * `role: "system"` rows out at the mapper, so every cached conversation on such
+ * a build is short by exactly the rows it dropped — and the offset therefore
+ * points PAST them. They can never be re-requested: the fix for #209 would
+ * reach new notices only, and miss the case that already has a stuck runbook
+ * conversion, which is the one the user is waiting on.
+ *
+ * A version mismatch discards the cached conversations at hydrate
+ * (`useDataRecovery`), so each case reopens at offset 0 and re-reads the whole
+ * list — notices included, in backend order, with backend message_ids. Nothing
+ * is lost: committed messages all live on the backend (transient ones are never
+ * persisted), and titles, pins and id-mappings are untouched. Re-merging into a
+ * cache written by an older build was the alternative and is worse: a recovered
+ * mid-list row would append at the END, out of order.
+ *
+ * Bump this whenever a change alters WHICH backend rows reach the store, since
+ * that is exactly what invalidates the prefix assumption.
+ */
+export const CONVERSATION_CACHE_VERSION = 2;
+
+/** Storage key holding {@link CONVERSATION_CACHE_VERSION} for the persisted map. */
+export const CONVERSATION_CACHE_VERSION_KEY = 'conversationCacheVersion';
+
 export const PERSISTED_STATE_KEYS = [
   'conversationTitles',
   'titleSources',
@@ -80,8 +108,14 @@ export const debouncedPersist = debounce(
       );
       if (Object.keys(safeConversations).length > 0) {
         storageData.conversations = safeConversations;
+        // Stamp the schema alongside the data it describes, so the hydrate can
+        // tell a cache this build wrote from one an older build did. Written
+        // only when conversations are, and cleared with them, so the version can
+        // never outlive the map it refers to.
+        storageData[CONVERSATION_CACHE_VERSION_KEY] = CONVERSATION_CACHE_VERSION;
       } else {
         keysToRemove.push('conversations');
+        keysToRemove.push(CONVERSATION_CACHE_VERSION_KEY);
       }
 
       // NOTE: pendingOperations is deliberately NOT persisted. Its retry/rollback

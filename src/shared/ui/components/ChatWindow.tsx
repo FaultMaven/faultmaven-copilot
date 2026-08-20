@@ -18,6 +18,8 @@ import {
   formatFileSize,
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
+import MarkdownRenderer from "./MarkdownRenderer";
+import type { ConversationItem as StoreConversationItem } from "../../../lib/optimistic";
 import { SuggestionCard } from "./SuggestionCard";
 import { CommandValidationDisplay } from "./CommandValidationDisplay";
 import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
@@ -33,54 +35,31 @@ import type { CaseUIResponse, UserCase } from "../../../types/case";
 
 const log = createLogger('ChatWindow');
 
-// TypeScript interfaces
-interface ConversationItem {
-  id: string;
-  question?: string;
-  response?: string;
-  error?: boolean;
-  timestamp: string;
-  turn_number?: number; // Turn number for navigation
-  responseType?: string;
+/**
+ * What this component renders, as an EXTENSION of the store's conversation item
+ * rather than a second declaration of it.
+ *
+ * The two were previously independent copies of the same 24 fields. Because
+ * TypeScript is structural, that drift is silent in the direction that matters:
+ * a slot added to the store type but not here would be carried by the store,
+ * never seen by the renderer, and compile clean — which is exactly the failure
+ * this file was changed to fix (#209), one layer up. Adding `notice` had to be
+ * done twice; the next slot should not.
+ *
+ * Only the fields below are genuinely local: response-shape and presentational
+ * data that the store's item does not model.
+ */
+interface ConversationItem extends StoreConversationItem {
   confidenceScore?: number | null;
-  sources?: Source[];
 
-  // v3.1.0 Evidence-centric fields
-  evidenceRequests?: EvidenceRequest[];
-  investigationMode?: InvestigationMode;
-
-  suggestedActions?: SuggestedAction[] | null;
   commandValidation?: CommandValidation | null;
   problemDetected?: boolean;
   problemSummary?: string | null;
   severity?: 'low' | 'medium' | 'high' | 'critical' | null;
   scopeAssessment?: ScopeAssessment | null;
 
-  plan?: {
-    step_number: number;
-    action: string;
-    description: string;
-    estimated_time?: string;
-  } | null;
-  nextActionHint?: string | null;
-  requiresAction?: boolean;
-
-  // Hypothesis tracking fields (reconnected features)
-  newHypotheses?: Hypothesis[];
-  hypothesisTested?: string | null;
-  testResult?: TestResult | null;
-
-  // File attachments processed in this turn
-  attachments?: AttachmentResult[];
-
-  // Optimistic update metadata
-  optimistic?: boolean;
-  loading?: boolean;
-  failed?: boolean;
+  /** Set by the optimistic layer; see OptimisticConversationItem. */
   pendingOperationId?: string;
-  // Error handling
-  errorMessage?: string;
-  onRetry?: (itemId: string) => void | Promise<void>;
 }
 
 interface ChatWindowProps {
@@ -598,6 +577,55 @@ const ChatWindowComponent = function ChatWindow({
                     )}
 
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* System Notice — neither participant.
+              *
+              * The backend reports the outcome of background work it started on
+              * the user's behalf (today: runbook conversion) as a `role:
+              * "system"` transcript row. These were filtered out of the store
+              * entirely, so a FAILED conversion was completely silent: nothing
+              * said it had failed, and the way out named in that notice was
+              * unreadable (#209).
+              *
+              * Presented as neither side of the conversation: full width rather
+              * than a bubble, no avatar, tertiary label, quietest border in the
+              * file. It is a notification ABOUT the case, not a participant in
+              * it, and must not read as one. `role="note"` carries that same
+              * meaning to assistive tech, which cannot see any of the styling
+              * doing the work visually — without it the row is an unlabelled
+              * div among the conversation turns. (If this is ever delivered
+              * live rather than on case open, `role="status"` becomes the
+              * better fit, since it would then be an update to announce.) Markdown because the notices are
+              * written with it (`**Knowledge Base > Drafts**`) and
+              * MarkdownRenderer escapes embedded HTML.
+              *
+              * No turn label, deliberately. `turn_number` on this row is
+              * whichever turn happened to be open when the background job
+              * finished (the backend stamps `case.current_turn`), so printing it
+              * would claim the notice was part of an exchange it had no part in.
+              * Its position already carries the ordering — which is why
+              * `formatTimestampWithTurn` is called WITHOUT the turn here rather
+              * than the row being stripped of it upstream. Same call, same
+              * timestamp formatting, one omitted claim.
+              */}
+            {item.notice && (
+              <div className="px-4 py-2">
+                <div
+                  role="note"
+                  aria-label="System notice"
+                  className="bg-fm-surface/60 border border-fm-border-subtle rounded-fm-card px-3.5 py-2.5"
+                  data-notice-id={item.id}
+                >
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className="text-meta font-semibold text-fm-text-tertiary">System</span>
+                    <span className="text-micro text-fm-text-tertiary">
+                      {formatTimestampWithTurn(item.timestamp)}
+                    </span>
+                  </div>
+                  <MarkdownRenderer content={item.notice} className="break-words" />
                 </div>
               </div>
             )}

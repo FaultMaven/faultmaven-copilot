@@ -465,6 +465,113 @@ try {
 }
 ```
 
+### Transcript Message Kinds (user / assistant / **notice**)
+
+`GET /cases/{id}/messages` serves three roles — the backend CHECK constraint is
+`role IN ('user', 'assistant', 'system')` — and the delta mapper in
+`cases-slice.handleCaseSelect` maps every row to **exactly one** populated
+content slot on `OptimisticConversationItem`, chosen by `messageKind`
+(`lib/state/message-kind.ts`):
+
+| Kind | Slot | Rendered as |
+|------|------|-------------|
+| `user` | `question` | right-aligned bubble |
+| `assistant` | `response` | left-aligned FaultMaven card |
+| `notice` | `notice` | full-width quiet row labelled **System** |
+
+**`notice` is the default arm, not an equality test on `'system'`.** A role the
+backend adds later must not inherit the bug this replaced, and must never be
+presented as something a participant said. `messageKind` therefore takes a
+`string` rather than the generated `role` union — the union is what the contract
+*declares*, and the default arm is about what it does not.
+
+`system` is the channel the backend reports background work on
+(`milestone_engine._run_runbook_conversion`). These rows used to be filtered out
+of the store entirely, which made a **failed** runbook conversion completely
+silent: no draft appeared, nothing said one had failed, and the way out named in
+the notice ("write one yourself in the Dashboard under **Knowledge Base**") was
+unreadable (#209). faultmaven#1135 dropped the initiating turn's promise of an
+in-chat notification because this client could not honour it.
+
+⚠️ These notice strings live in faultmaven and have already been reworded once
+(#1135). Do not quote them anywhere a stale copy would mislead — cite
+`_run_runbook_conversion` and check `origin/main` before repeating any wording.
+
+Two invariants to keep when touching the mapper:
+
+1. **No committed row may be one that renders nothing.** Two guards hold this:
+   `notice` gives every *role* a slot (so nothing is dropped for its role), and a
+   **blank-content filter** skips rows whose content is empty or whitespace-only.
+   Kind decides which slot is populated and cannot make an empty string render,
+   and every content guard in `ChatWindow` is a truthiness test — so a blank row
+   would sit in the conversation as an item the user can never see.
+   `QueryRequest.query` is `min_length=1` on the backend, which admits a
+   whitespace-only message, so this is reachable.
+
+   ⚠️ **The blank filter has a known, accepted cost.** `offset` is a count of
+   local rows used as an **index into the backend list**, so it is only exact
+   while the local copy is a lossless prefix. Skipping a row leaves that case's
+   offset permanently one short: later opens re-read the tail, and the id dedup
+   cannot absorb it (see the id hole below), so a re-read locally-submitted turn
+   can append as a **duplicate**. Bounded to one case, only when it holds a blank
+   row, and cleared by the next `CONVERSATION_CACHE_VERSION` bump. Do not paper
+   over it with a compensating skipped-row counter — that double-counts on the
+   capped-conversation over-read and skips a *real* message, the worse direction.
+   The repair is upstream and tracked in #213: reconcile `opt_`-id rows to their
+   backend `message_id` in the merge (or carry ids on `TurnResponse`), after
+   which a re-read dedups and the skew stops mattering.
+2. **A notice carries `turn_number` but never displays it.** The merge's
+   turn-floor guard needs the number to place the row; the *claim* of turn
+   membership is suppressed in `ChatWindow` because the value is only whichever
+   turn was open when the background job finished. `formatTimestampWithTurn` is
+   called without the turn for exactly this reason.
+
+**Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
+persisted `conversations` map, and `useDataRecovery` discards a cache carrying a
+different version. This exists because of the offset rule above: a cache written
+by a build that admitted a **different set of backend rows** is short by the ones
+it dropped, so its offset points *past* them and they are unreachable for the
+life of that cache. Pre-v2 builds filtered out every `role: "system"` row — so
+without this gate the #209 fix would reach new notices only, and miss the already
+stuck case the user is actually waiting on. Discarding is lossless (committed
+messages all live on the backend; titles, pins and id-mappings are untouched) and
+re-reads each case at offset 0 in backend order. **Bump the version whenever a
+change alters which backend rows reach the store.**
+
+**Delivery — a notice is seen only when the case is re-opened.**
+`getCaseConversation` has exactly one call site: `cases-slice.handleCaseSelect`.
+So a user who starts a background job and then *stays in that case* will not see
+its outcome no matter how many further turns they submit — they must navigate to
+another case and back. State it that way; "visible on case open" reads as
+"next time you look" and understates it.
+
+Two things are blocked, and they have different causes — do not conflate them:
+
+- **Live push** needs a structured "background job started" marker on the turn
+  response. There is no SSE/WebSocket, `submitTurn`'s polling is scoped to one
+  in-flight turn, and every arm of the backend's runbook handler returns the same
+  `metadata` dict, so nothing client-side can key a poll off anything but
+  response text.
+- **Re-running the delta merge after each turn** — the cheap option, needing no
+  backend change — is blocked by the **id hole**, not by that marker.
+  `useMessageSubmission` mints `opt_msg_*` ids and `TurnResponse` carries no
+  message ids at all, so the client cannot adopt the backend's. A refresh whose
+  fetch returns anything therefore re-reads the locally-submitted turn under its
+  backend id, which cannot dedup and appends as a **duplicate**. It fails
+  precisely when it would have helped: a no-op when local and backend counts
+  agree, a duplicated turn when they do not.
+
+That same hole makes the existing re-open path duplicate the last turn if a
+notice lands *between* backend-sourced rows and locally-submitted ones (submit a
+turn, let the job finish, submit more turns, then re-open). **Tracked in #213**,
+with a proposed client-side fix (adopt the backend `message_id` when an incoming
+row matches an `opt_`-id local row on turn *and* slot). Until it lands, treat
+"which rows the client can identify" as the constraint on any new fetch site.
+
+The Dashboard classifies the same rows the same way, in
+`lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —
+kept as a parallel copy, not shared code. Change one, look at the other.
+
 ### Persistence Contract (what reaches `browser.storage.local`)
 
 The Zustand store persists via a debounced subscribe in `lib/state/store.ts`. Two rules keep a reload from corrupting state:
