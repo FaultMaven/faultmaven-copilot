@@ -124,16 +124,18 @@ describe('cases-slice', () => {
     it('keeps a system turn as a notice instead of dropping it (#209)', async () => {
       // The backend role CHECK admits 'system', and that is the channel the
       // runbook-conversion outcome travels on — including the FAILURE notice,
-      // which carries the only retry instruction the user will ever get. These
-      // rows used to be filtered out of the store entirely, so a failed
-      // conversion was completely silent in the extension.
+      // which is the only signal that the conversion failed at all. These rows
+      // used to be filtered out of the store entirely, so a failed conversion
+      // was completely silent in the extension.
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
           {
             message_id: 'm-2',
             role: 'system',
-            content: 'Runbook generation failed. Click **Generate runbook from this case** to retry.',
+            content:
+              'Runbook generation failed, so no draft was created for this case. ' +
+              'You can write one yourself in the Dashboard under **Knowledge Base**.',
             turn_number: 1
           },
           { message_id: 'm-3', role: 'assistant', content: 'looking into it', turn_number: 1 }

@@ -214,7 +214,8 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // message_id that permanently blocks a corrected re-fetch through the
           // id-dedup below. Dropping was also silence, and silence was the
           // defect (#209): the runbook-conversion FAILURE notice travels on
-          // `role: "system"` and was the only signal the user would ever get.
+          // `role: "system"` and is the only signal that the conversion failed
+          // at all, as well as where the way out is named.
           // `notice` replaces the allow-list — a non-conversational row is now
           // renderable, so an unrecognised role no longer has to be discarded to
           // keep it out of the store.

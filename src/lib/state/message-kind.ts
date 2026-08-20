@@ -6,14 +6,18 @@
  * strictly question/response, so every `system` row was filtered out at the
  * delta fetch. That silence was not cosmetic: `system` is the channel the
  * backend uses to report the outcome of background work it started on the
- * user's behalf, and the runbook-conversion FAILURE notices
+ * user's behalf, and the runbook-conversion FAILURE notices travel on it too
+ * (faultmaven `milestone_engine._run_runbook_conversion`, as of faultmaven#1135):
  *
- *     "Runbook generation failed. Click **Generate runbook from this case** to retry."
+ *     "Runbook generation failed, so no draft was created for this case. You can
+ *      write one yourself in the Dashboard under **Knowledge Base**."
  *
- * travel on it too. A failed conversion was therefore completely silent in the
- * extension: the user was told a draft was being created, none ever appeared,
- * and the retry instruction that would have rescued them was written into a
- * message they could not see (#209).
+ * A failed conversion was therefore completely silent in the extension: no
+ * draft appeared, nothing said one had failed, and the durable way out named in
+ * that sentence was written into a message the reader could not see (#209).
+ * faultmaven#1135 removed the initiating turn's promise of an in-chat
+ * notification precisely because this client could not honour it — which is the
+ * gap this closes, not a reason the channel stopped mattering.
  *
  * So a row is one of three kinds, and `notice` is the DEFAULT rather than a
  * special case for `system`. The parameter is `string`, not the generated

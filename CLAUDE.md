@@ -488,8 +488,14 @@ presented as something a participant said. `messageKind` therefore takes a
 `system` is the channel the backend reports background work on
 (`milestone_engine._run_runbook_conversion`). These rows used to be filtered out
 of the store entirely, which made a **failed** runbook conversion completely
-silent: the user was told a draft was being created, none appeared, and the
-retry instruction lived only inside the message they could not see (#209).
+silent: no draft appeared, nothing said one had failed, and the way out named in
+the notice ("write one yourself in the Dashboard under **Knowledge Base**") was
+unreadable (#209). faultmaven#1135 dropped the initiating turn's promise of an
+in-chat notification because this client could not honour it.
+
+⚠️ These notice strings live in faultmaven and have already been reworded once
+(#1135). Do not quote them anywhere a stale copy would mislead — cite
+`_run_runbook_conversion` and check `origin/main` before repeating any wording.
 
 Two invariants to keep when touching the mapper:
 
@@ -522,13 +528,35 @@ messages all live on the backend; titles, pins and id-mappings are untouched) an
 re-reads each case at offset 0 in backend order. **Bump the version whenever a
 change alters which backend rows reach the store.**
 
-**Delivery.** There is no push channel (no SSE/WebSocket) and no background poll
-for case messages — `submitTurn`'s polling is scoped to one in-flight turn. A
-notice that lands after the turn completes therefore becomes visible on the next
-**case open** (the delta fetch in `handleCaseSelect`), not live. Making it live
-needs a structured "background job started" marker on the turn response; the
-backend does not emit one today, so nothing client-side can key a poll off
-anything but response text.
+**Delivery — a notice is seen only when the case is re-opened.**
+`getCaseConversation` has exactly one call site: `cases-slice.handleCaseSelect`.
+So a user who starts a background job and then *stays in that case* will not see
+its outcome no matter how many further turns they submit — they must navigate to
+another case and back. State it that way; "visible on case open" reads as
+"next time you look" and understates it.
+
+Two things are blocked, and they have different causes — do not conflate them:
+
+- **Live push** needs a structured "background job started" marker on the turn
+  response. There is no SSE/WebSocket, `submitTurn`'s polling is scoped to one
+  in-flight turn, and every arm of the backend's runbook handler returns the same
+  `metadata` dict, so nothing client-side can key a poll off anything but
+  response text.
+- **Re-running the delta merge after each turn** — the cheap option, needing no
+  backend change — is blocked by the **id hole**, not by that marker.
+  `useMessageSubmission` mints `opt_msg_*` ids and `TurnResponse` carries no
+  message ids at all, so the client cannot adopt the backend's. A refresh whose
+  fetch returns anything therefore re-reads the locally-submitted turn under its
+  backend id, which cannot dedup and appends as a **duplicate**. It fails
+  precisely when it would have helped: a no-op when local and backend counts
+  agree, a duplicated turn when they do not.
+
+That same hole makes the existing re-open path duplicate the last turn if a
+notice lands *between* backend-sourced rows and locally-submitted ones (submit a
+turn, let the job finish, submit more turns, then re-open). Closing it needs
+`TurnResponse` to carry message ids, or a turn-and-slot dedup layered onto the
+merge. Until then, treat "which rows the client can identify" as the constraint
+on any new fetch site.
 
 The Dashboard classifies the same rows the same way, in
 `lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —

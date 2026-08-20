@@ -26,9 +26,15 @@ const activeCase = {
   closed_at: null
 } as unknown as UserCase;
 
-/** The verbatim failure notice `_run_runbook_conversion` writes on the backend. */
+/**
+ * The verbatim failure notice `_run_runbook_conversion` writes on the backend,
+ * as of faultmaven#1135. Kept verbatim so the Markdown assertion below is about
+ * real content rather than a convenient fixture — but note the wording has been
+ * revised once already, so check `origin/main` before trusting this copy.
+ */
 const FAILURE_NOTICE =
-  'Runbook generation failed. Click **Generate runbook from this case** to retry.';
+  'Runbook generation failed, so no draft was created for this case. ' +
+  'You can write one yourself in the Dashboard under **Knowledge Base**.';
 
 const conversation = [
   {
@@ -78,14 +84,14 @@ describe('ChatWindow — system notices', () => {
 
   it('renders a system notice that used to be dropped entirely (#209)', () => {
     // The regression: this row never reached the store, so a failed runbook
-    // conversion produced no signal at all — and the retry instruction the user
-    // needed lived only inside this message.
+    // conversion produced no signal at all — nothing said it had failed, and the
+    // way out it names was unreadable.
     const { container } = renderChat();
 
     const row = noticeRow(container);
     expect(row).not.toBeNull();
     expect(row!.textContent).toContain('Runbook generation failed');
-    expect(row!.textContent).toContain('Generate runbook from this case');
+    expect(row!.textContent).toContain('write one yourself in the Dashboard');
   });
 
   it('attributes the notice to neither participant', () => {
@@ -113,17 +119,26 @@ describe('ChatWindow — system notices', () => {
     expect(screen.getAllByText(/Turn 4 ·/).length).toBeGreaterThan(0);
   });
 
+  it('exposes the not-a-participant meaning to assistive tech', () => {
+    // The visual design (full width, no avatar, tertiary label) carries this on
+    // screen and carries none of it to a screen reader, which would otherwise
+    // meet an unlabelled div sitting among the conversation turns.
+    const { container } = renderChat();
+
+    const row = noticeRow(container)!;
+    expect(row.getAttribute('role')).toBe('note');
+    expect(row.getAttribute('aria-label')).toBe('System notice');
+  });
+
   it('renders the notice as Markdown rather than raw asterisks', () => {
-    // The backend writes these with Markdown emphasis (`**Knowledge > Drafts**`,
-    // `**Generate runbook from this case**`). Rendered as plain text the
-    // asterisks would show through, in the one message whose whole job is to
-    // tell the user what to do next.
+    // The backend writes these with Markdown emphasis (`**Knowledge Base**`,
+    // `**Knowledge Base > Drafts**`). Rendered as plain text the asterisks would
+    // show through, in the one message whose whole job is to tell the user what
+    // to do next.
     const { container } = renderChat();
     const row = noticeRow(container)!;
 
     expect(row.textContent).not.toContain('**');
-    expect(row.querySelector('strong')?.textContent).toBe(
-      'Generate runbook from this case'
-    );
+    expect(row.querySelector('strong')?.textContent).toBe('Knowledge Base');
   });
 });
