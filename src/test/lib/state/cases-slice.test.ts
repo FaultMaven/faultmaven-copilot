@@ -121,15 +121,21 @@ describe('cases-slice', () => {
       expect(conv.map((m: any) => m.id)).toEqual(['real-1', 'real-2']);
     });
 
-    it('drops system turns instead of creating empty ghost items', async () => {
-      // The backend role CHECK admits 'system' (e.g. the runbook-conversion
-      // notification). This conversation model is strictly question/response, so
-      // a system row would map to an item with BOTH fields undefined — invisible
-      // in ChatWindow, yet still holding an id and a turn slot.
+    it('keeps a system turn as a notice instead of dropping it (#209)', async () => {
+      // The backend role CHECK admits 'system', and that is the channel the
+      // runbook-conversion outcome travels on — including the FAILURE notice,
+      // which carries the only retry instruction the user will ever get. These
+      // rows used to be filtered out of the store entirely, so a failed
+      // conversion was completely silent in the extension.
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
-          { message_id: 'm-2', role: 'system', content: 'Runbook created', turn_number: 1 },
+          {
+            message_id: 'm-2',
+            role: 'system',
+            content: 'Runbook generation failed. Click **Generate runbook from this case** to retry.',
+            turn_number: 1
+          },
           { message_id: 'm-3', role: 'assistant', content: 'looking into it', turn_number: 1 }
         ]
       });
@@ -138,17 +144,28 @@ describe('cases-slice', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       const conv = useAppStore.getState().conversations['case-sys'];
-      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-3']);
-      // Nothing retained may be contentless — that is the defect being guarded.
-      expect(conv.every((m: any) => m.question || m.response)).toBe(true);
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-2', 'm-3']);
+
+      const notice = conv.find((m: any) => m.id === 'm-2') as any;
+      expect(notice.notice).toContain('Runbook generation failed');
+      // A notice is not attributed to either participant — the failure mode the
+      // Dashboard hit, where a non-conversational row rendered as "You".
+      expect(notice.question).toBeUndefined();
+      expect(notice.response).toBeUndefined();
+      // …but it does carry turn_number: the turn-floor merge below needs it to
+      // place the row. Suppressing the CLAIM of turn membership is ChatWindow's
+      // job, not this mapper's.
+      expect(notice.turn_number).toBe(1);
     });
 
-    it('drops an out-of-vocabulary role instead of committing a contentless item', async () => {
-      // The role filter is an ALLOW-list (user/assistant), not a 'system'
-      // deny-list. A role outside the contract vocabulary must degrade the
-      // same way 'system' does — dropped, offset under-counted — because a
-      // retained unmapped row would be an invisible committed item whose
-      // message_id permanently blocks a corrected re-fetch via id dedup.
+    it('maps an out-of-vocabulary role to a notice, not to a contentless item', async () => {
+      // `messageKind` classifies by DEFAULT to notice rather than testing for
+      // 'system', so a role the backend adds later does not reinstate the
+      // silence this replaced. The invariant that used to be enforced by
+      // dropping — no committed item may be contentless — is now structural:
+      // every row populates exactly one slot. A contentless item would be
+      // invisible in ChatWindow yet hold a message_id that permanently blocks a
+      // corrected re-fetch through the id dedup.
       (api.getCaseConversation as any).mockResolvedValue({
         messages: [
           { message_id: 'm-1', role: 'user', content: 'why is it broken', turn_number: 1 },
@@ -161,8 +178,38 @@ describe('cases-slice', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       const conv = useAppStore.getState().conversations['case-vocab'];
-      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-2']);
-      expect(conv.every((m: any) => m.question || m.response)).toBe(true);
+      expect(conv.map((m: any) => m.id)).toEqual(['m-1', 'm-x', 'm-2']);
+      expect((conv.find((m: any) => m.id === 'm-x') as any).notice).toBe(
+        'hypothetical future role'
+      );
+
+      // The structural invariant, stated over every row: exactly one content
+      // slot is populated. Neither zero (a ghost) nor two (an ambiguous row).
+      for (const m of conv as any[]) {
+        const populated = [m.question, m.response, m.notice].filter(
+          (v) => v !== undefined
+        );
+        expect(populated, `row ${m.id}`).toHaveLength(1);
+      }
+    });
+
+    it('counts a notice in the delta offset, matching what the backend counts', async () => {
+      // The offset is a count of backend rows, and the backend counts system
+      // rows too. Admitting them makes the hint exact where dropping made it
+      // under-count on every case that had one.
+      useAppStore.setState({
+        conversations: {
+          'case-off': [
+            { id: 'm1', optimistic: false } as any,
+            { id: 'm2', optimistic: false, notice: 'Your runbook draft is ready.' } as any
+          ]
+        }
+      });
+
+      useAppStore.getState().handleCaseSelect('case-off');
+      await Promise.resolve();
+
+      expect(api.getCaseConversation).toHaveBeenCalledWith('case-off', { offset: 2 });
     });
 
     it('does not re-grow a bounded (suffix) conversation: incoming below the local turn floor is dropped', async () => {

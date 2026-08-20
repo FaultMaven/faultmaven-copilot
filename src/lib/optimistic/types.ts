@@ -28,6 +28,22 @@ export interface ConversationItem {
   id: string;
   question?: string;
   response?: string;
+  /**
+   * A non-conversational notice about the case — the third content slot,
+   * alongside `question` and `response`.
+   *
+   * Set for backend rows classified `notice` by `messageKind` (`role: "system"`
+   * and anything outside the contract vocabulary): today, the outcome of
+   * background work such as runbook conversion. Exactly ONE of `question` /
+   * `response` / `notice` is populated on a delta-fetched item, which is what
+   * keeps a non-conversational row from committing as a contentless ghost —
+   * invisible in ChatWindow, yet holding a `message_id` that would permanently
+   * block a corrected re-fetch through the id dedup in `handleCaseSelect`.
+   *
+   * A notice is not attributed to either participant and claims no turn. See
+   * `lib/state/message-kind.ts`.
+   */
+  notice?: string;
   error?: boolean;
   timestamp: string;
   responseType?: string;

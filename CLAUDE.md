@@ -465,6 +465,57 @@ try {
 }
 ```
 
+### Transcript Message Kinds (user / assistant / **notice**)
+
+`GET /cases/{id}/messages` serves three roles — the backend CHECK constraint is
+`role IN ('user', 'assistant', 'system')` — and the delta mapper in
+`cases-slice.handleCaseSelect` maps every row to **exactly one** populated
+content slot on `OptimisticConversationItem`, chosen by `messageKind`
+(`lib/state/message-kind.ts`):
+
+| Kind | Slot | Rendered as |
+|------|------|-------------|
+| `user` | `question` | right-aligned bubble |
+| `assistant` | `response` | left-aligned FaultMaven card |
+| `notice` | `notice` | full-width quiet row labelled **System** |
+
+**`notice` is the default arm, not an equality test on `'system'`.** A role the
+backend adds later must not inherit the bug this replaced, and must never be
+presented as something a participant said. `messageKind` therefore takes a
+`string` rather than the generated `role` union — the union is what the contract
+*declares*, and the default arm is about what it does not.
+
+`system` is the channel the backend reports background work on
+(`milestone_engine._run_runbook_conversion`). These rows used to be filtered out
+of the store entirely, which made a **failed** runbook conversion completely
+silent: the user was told a draft was being created, none appeared, and the
+retry instruction lived only inside the message they could not see (#209).
+
+Two invariants to keep when touching the mapper:
+
+1. **Exactly one slot per row.** A row with none is a contentless ghost —
+   invisible in `ChatWindow`, yet committed, so its `message_id` permanently
+   blocks a corrected re-fetch through the id dedup. This is what the old
+   allow-list filter was protecting; `notice` now enforces it structurally, so
+   do not reinstate the filter to get the guarantee back.
+2. **A notice carries `turn_number` but never displays it.** The merge's
+   turn-floor guard needs the number to place the row; the *claim* of turn
+   membership is suppressed in `ChatWindow` because the value is only whichever
+   turn was open when the background job finished. `formatTimestampWithTurn` is
+   called without the turn for exactly this reason.
+
+**Delivery.** There is no push channel (no SSE/WebSocket) and no background poll
+for case messages — `submitTurn`'s polling is scoped to one in-flight turn. A
+notice that lands after the turn completes therefore becomes visible on the next
+**case open** (the delta fetch in `handleCaseSelect`), not live. Making it live
+needs a structured "background job started" marker on the turn response; the
+backend does not emit one today, so nothing client-side can key a poll off
+anything but response text.
+
+The Dashboard classifies the same rows the same way, in
+`lib/cases/messageAttribution.ts` — kept as a parallel copy, not shared code.
+Change one, look at the other.
+
 ### Persistence Contract (what reaches `browser.storage.local`)
 
 The Zustand store persists via a debounced subscribe in `lib/state/store.ts`. Two rules keep a reload from corrupting state:
