@@ -13,7 +13,7 @@
 
 ## About FaultMaven
 
-FaultMaven is an AI-powered troubleshooting copilot that works a problem the way a seasoned engineer does: goal-driven and methodical, with every step grounded in your own data — live telemetry, runbooks, docs, and past fixes — not generic guesses. And it never forgets what it learns: every problem it solves becomes knowledge it reuses.
+FaultMaven is an AI-powered troubleshooting copilot that works a problem the way a seasoned engineer does: goal-driven and methodical, with every step grounded in your own data — the logs, metrics, and configs you share, correlated with your runbooks, docs, and past fixes — not generic guesses. And it never forgets what it learns: every problem it solves becomes knowledge it reuses.
 
 **Learn More:**
 - **[Product Overview](https://faultmaven.ai/product)** — See what FaultMaven can do
@@ -28,7 +28,7 @@ This extension connects to your FaultMaven backend (self-hosted or Cloud) to pro
 
 - **Context Capture**: One click captures the relevant logs, stack traces, and page content from your active tab — never automatic, never in the background
 - **In-Flow Chat**: Diagnose issues without leaving your dashboard or console
-- **Deep Linking**: References your Knowledge Base articles directly in the chat
+- **Deep Linking**: The case header links through to the case's report and its runbooks in the Dashboard
 - **Session Persistence**: Maintain conversation context across browser sessions
 - **Knowledge Base Management**: Upload and manage runbooks, post-mortems, and documentation
 - **Rich Rendering**: AI responses displayed with proper formatting, code blocks, and syntax highlighting
