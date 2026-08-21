@@ -70,6 +70,13 @@ const UNIVERSAL_FILES = [
 // Tone/positioning rules apply to prose only — see the CORE_ONLY note above.
 const CORE_FILES = ['README.md', 'PRIVACY.md'];
 
+// JSON has no comment syntax, so the ALLOW marker cannot be placed on an
+// offending line without altering the shipped value. Terminology still applies
+// there — a retired name must not reach published metadata — so the rule stays
+// and only the GUIDANCE changes: point at the real remedy instead of an escape
+// hatch that isn't usable. Suppression itself is untouched.
+const isJson = (rel) => rel.endsWith('.json');
+
 function scan(rel, rules, hits) {
   const abs = join(ROOT, rel);
   if (!existsSync(abs)) return;
@@ -77,7 +84,7 @@ function scan(rel, rules, hits) {
   lines.forEach((line, i) => {
     if (line.includes(ALLOW)) return;
     for (const [re, msg] of rules) {
-      if (re.test(line)) hits.push(`${rel}:${i + 1}: ${msg}`);
+      if (re.test(line)) hits.push({ rel, line: i + 1, msg, json: isJson(rel) });
     }
   });
 }
@@ -88,8 +95,16 @@ for (const f of CORE_FILES) scan(f, CORE_ONLY, hits);
 
 if (hits.length) {
   console.error('Brand-messaging lint failed (canonical: faultmaven/.claude/skills/brand-messaging.md):\n');
-  for (const h of hits) console.error(`  ${h}`);
-  console.error("\nFix the wording, or append 'brand-lint: allow' to the line for a deliberate, justified use.");
+  for (const h of hits) {
+    const note = h.json ? '  (JSON — the marker cannot go on this line without changing the value; fix the value)' : '';
+    console.error(`  ${h.rel}:${h.line}: ${h.msg}${note}`);
+  }
+  // Only offer the escape hatch if some hit can actually use it.
+  if (hits.some((h) => !h.json)) {
+    console.error("\nFix the wording, or append 'brand-lint: allow' to the line for a deliberate, justified use.");
+  } else {
+    console.error('\nFix the wording.');
+  }
   process.exit(1);
 }
 console.log('Brand-messaging lint passed.');
