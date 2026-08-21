@@ -26,12 +26,17 @@ const ALLOW = 'brand-lint: allow';
 
 const UNIVERSAL = [
   [/\btroubleshooting assistant\b/i, "use 'troubleshooting copilot', not 'troubleshooting assistant'"],
+  // Retired overclaim (#821): FaultMaven has no reach into production — it works
+  // from what you paste, upload or capture.
+  [/\blive telemetry\b/i, "FaultMaven reads no live telemetry — say 'the logs, metrics, and configs you share'"],
   [/\bmicroservices?\s+backend\b/i, 'FaultMaven is a modular monolith, not microservices'],
   [/\bLocal Deployment\b/i, "use 'Standalone' (ADR-004); 'local' is reserved for AUTH_MODE/CHAT_PROVIDER"],
   [/\bdeploy locally\b/i, "use 'self-host' / 'Standalone' (ADR-004)"],
   [/\bEnterprise SaaS\b/i, "use 'FaultMaven Cloud'; there is no Enterprise tier"],
+  [/\bCommunity Edition\b/i, "retired tier name — use 'Standalone' (one unified codebase)"],
+  [/\bEnterprise Edition\b/i, "retired tier name — use 'Cloud' (one unified codebase)"],
   [/\bfaultmaven-deploy\b/i, 'obsolete repo — do not reference'],
-  [/\bfm-[a-z]+-service\b/i, 'obsolete microservice repo — do not reference'],
+  [/\bfm-[a-z]+-service\b(?!-)/i, 'obsolete microservice repo — do not reference'],
 ];
 
 const CORE_ONLY = [
@@ -41,7 +46,10 @@ const CORE_ONLY = [
   [/\butiliz(?:e|es|ed|ing|ation)\b/i, "use 'use', not 'utilize' (brand §5)"],
 ];
 
-const BRAND_FILES = ['README.md'];
+// README plus the two files that carry the STORE-FACING product description:
+// package.json's `description`, and the locale bundle that supplies the
+// extension's `name`/`description` to Chrome and Firefox.
+const BRAND_FILES = ['README.md', 'package.json', 'public/_locales/en/messages.json'];
 
 function scan(rel, rules, hits) {
   const abs = join(ROOT, rel);
