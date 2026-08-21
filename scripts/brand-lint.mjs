@@ -7,12 +7,15 @@
  * Copilot extension. Stdlib only.
  *
  * Two pattern classes, per the skill's "Authority by rule type", each with its
- * own file list — the split is canonical's and must be kept:
+ * own file list:
  *   - UNIVERSAL : terminology — every brand-facing surface, prose or not.
- *   - CORE_ONLY : positioning/audience/tone — PROSE surfaces only. Applying
- *     these to package.json would hard-fail on a dependency name or npm script
- *     containing 'leverage'/'utilize', and JSON carries no comment, so the
- *     'brand-lint: allow' escape hatch below cannot reach it.
+ *   - CORE_ONLY : positioning/audience/tone. Canonical applies these to its own
+ *     manifest (pyproject.toml) and excludes only CLAUDE.md, a dev guide — so
+ *     excluding package.json here is a JS-ecosystem judgement, NOT canonical's
+ *     rule: package.json carries dependency names and npm scripts, where
+ *     'leverage'/'utilize' show up as third-party names nobody can rename, and
+ *     JSON has no comment syntax, so the 'brand-lint: allow' escape hatch below
+ *     cannot reach them.
  *
  * The extension's src/ is application code / UI copy (a product-design concern,
  * out of brand-skill scope), so it is not scanned. 'AIOps platform' /
@@ -41,9 +44,10 @@ const UNIVERSAL = [
   [/\bEnterprise Edition\b/i, "retired tier name — use 'Cloud' (one unified codebase)"],
   [/\bfaultmaven-deploy\b/i, 'obsolete repo — do not reference'],
   // The exemption names the ONE thing it exempts: the fm-provision-service-account
-  // console entrypoint (faultmaven#887). A bare (?!-) also let fm-case-service-v2
-  // and fm-agent-service-archive through, which ARE retired repo names.
-  [/\bfm-[a-z]+-service\b(?!-account\b)/i, 'obsolete microservice repo — do not reference'],
+  // console entrypoint (faultmaven#887), singular or plural. A bare (?!-) also let
+  // fm-case-service-v2 and fm-agent-service-archive through, which ARE retired
+  // repo names. Kept in step with canonical via faultmaven#1148.
+  [/\bfm-[a-z]+-service\b(?!-accounts?\b)/i, 'obsolete microservice repo — do not reference'],
 ];
 
 const CORE_ONLY = [
