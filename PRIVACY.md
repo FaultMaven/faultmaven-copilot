@@ -38,7 +38,7 @@ only as a result of actions you take. Specifically:
 
 | Data | When | Where it goes | Why |
 |------|------|---------------|-----|
-| **Page content** (visible text of the current tab, including values you have typed into ordinary form fields — but never passwords, hidden fields, or one-time-code / payment-card fields) | Only when you explicitly click "capture page" for the active tab | Your configured FaultMaven backend | So the assistant can analyze logs, stack traces, and dashboard data you are looking at |
+| **Page content** (visible text of the current tab, including values you have typed into ordinary form fields — but never passwords, hidden fields, or one-time-code / payment-card fields) | Only when you explicitly click "capture page" for the active tab | Your configured FaultMaven backend | So the copilot can analyze logs, stack traces, and dashboard data you are looking at |
 | **The captured page's URL** (with the `#fragment` removed, since fragments can carry tokens) | With each page capture you submit | Your configured FaultMaven backend | So captured evidence is traceable to its source page |
 | **Messages, questions, and pasted text** | When you send them in the chat | Your configured FaultMaven backend | To answer your troubleshooting questions |
 | **Files you upload** | When you attach a file | Your configured FaultMaven backend | To analyze the logs and other data you provide |
@@ -116,7 +116,7 @@ submitting data you are not authorized to share.
 | Permission | Purpose |
 |------------|---------|
 | `storage` | Store auth tokens, session, and settings locally |
-| `sidePanel` | Render the assistant in the browser side panel |
+| `sidePanel` | Render the copilot in the browser side panel |
 | `scripting` | Inject the page-content extractor **only** when you initiate a capture, and register the sign-in bridge on your configured Dashboard origin only |
 | `tabs` | Read the active tab's URL when you capture a page, and find or open your FaultMaven Dashboard tab when you click a Dashboard link |
 | `identity` | Open the browser-managed sign-in window for OAuth login (`launchWebAuthFlow`). The extension never reads your browser profile identity |

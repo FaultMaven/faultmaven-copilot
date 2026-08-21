@@ -28,7 +28,7 @@ This extension connects to your FaultMaven backend (self-hosted or Cloud) to pro
 
 - **Context Capture**: One click captures the relevant logs, stack traces, and page content from your active tab — never automatic, never in the background
 - **In-Flow Chat**: Diagnose issues without leaving your dashboard or console
-- **Deep Linking**: The case header links straight through to the matching report and runbook in the Dashboard
+- **Deep Linking**: The case header links through to the case's report and its runbooks in the Dashboard
 - **Session Persistence**: Maintain conversation context across browser sessions
 - **Knowledge Base Management**: Upload and manage runbooks, post-mortems, and documentation
 - **Rich Rendering**: AI responses displayed with proper formatting, code blocks, and syntax highlighting

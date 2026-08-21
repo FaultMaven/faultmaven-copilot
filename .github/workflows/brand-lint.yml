@@ -7,7 +7,13 @@ name: Brand Lint
 on:
   pull_request:
     paths:
+      # Must list every file the script scans (UNIVERSAL_FILES / CORE_FILES) —
+      # a path missing here means the job never runs on the PR that breaks it,
+      # and the violation surfaces only on the post-merge push.
       - "README.md"
+      - "PRIVACY.md"
+      - "package.json"
+      - "public/_locales/en/messages.json"
       - "scripts/brand-lint.mjs"
       - ".github/workflows/brand-lint.yml"
   push:
