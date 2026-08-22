@@ -414,17 +414,6 @@ export async function createCase(
   return userCase;
 }
 
-export async function archiveCase(caseId: string): Promise<void> {
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/archive`, {
-    method: 'POST',
-    credentials: 'include'
-  });
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorBodyText(errorData) || `Failed to archive case: ${response.status}`);
-  }
-}
-
 /**
  * Delete a case by ID.
  *
