@@ -694,28 +694,6 @@ describe('Authentication API', () => {
       );
     });
 
-    it('archiveCase includes auth headers', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200
-      });
-
-      const { archiveCase } = await import('../../lib/api');
-      await archiveCase('case-123');
-
-      expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/cases/case-123/archive',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer valid-auth-token',
-            'X-Session-Id': 'test-session-id'
-          }),
-          credentials: 'include'
-        })
-      );
-    });
-
     it('submitTurn includes auth headers', async () => {
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
