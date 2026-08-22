@@ -123,17 +123,23 @@ jobs:
           FM_OPENAPI_SPEC: /tmp/openapi.json
         run: |
           pnpm run generate:api-types
-          git diff --exit-code src/types/api.generated.ts || {
-            echo "::error::src/types/api.generated.ts no longer matches the API's committed spec."
+          # `git status --porcelain`, not `git diff --exit-code`: the latter
+          # reports nothing for an UNTRACKED path, so a pull request that
+          # deleted the generated client would regenerate it here and pass
+          # having compared the contract against nothing.
+          if [ -n "$(git status --porcelain src/types/api.generated.ts)" ]; then
+            echo "::error::src/types/api.generated.ts no longer matches the pinned API contract."
             echo ""
             echo "Regenerate and commit it:"
             echo "    pnpm generate:api-types"
             echo "    git add src/types/api.generated.ts"
             echo ""
-            echo "If faultmaven's spec changed intentionally, this is expected —"
-            echo "regenerate here in a PR of its own."
+            echo "If you are adopting a new contract, move \`ref\` in"
+            echo "api-contract.pin.json in the same pull request — that is the"
+            echo "commit where this client accepts the change."
+            git --no-pager diff --stat src/types/api.generated.ts
             exit 1
-          }
+          fi
 
   # ============================================================================
   # Stage 2: Run Tests
