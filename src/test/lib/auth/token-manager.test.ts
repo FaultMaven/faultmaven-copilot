@@ -298,7 +298,7 @@ describe('TokenManager', () => {
     expect(stored.refresh_token).toBe('valid-refresh-token');
   }, 10000);
 
-  it('clears tokens and returns null on a DEFINITIVE (401) refresh rejection', async () => {
+  it('clears tokens and returns null on a DEFINITIVE (400) refresh rejection', async () => {
     const expiresAt = Date.now() + 2 * 60 * 1000;
     await mockBrowserStorage.local.set({
       access_token: 'expiring-access-token',
@@ -310,11 +310,21 @@ describe('TokenManager', () => {
       user: { user_id: '1' }
     });
 
-    // Server rejects the refresh token as invalid/revoked → HTTP 401.
+    // What the server actually answers for a revoked/expired refresh token
+    // under API contract 2.0.0: RFC 6749 §5.2 at **400**, not 401 with
+    // `detail`. Mocking the retired pairing left the definitive-path
+    // behaviour asserted only on a status the server no longer sends — so
+    // making 400 retryable (plausible: it is the natural status for a proxy
+    // mangling a body) would keep this test green while every real
+    // revoked-token user burned the retry ladder and KEPT stale tokens
+    // instead of being cleared and bounced to sign-in.
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
-      status: 401,
-      json: async () => ({ detail: 'Invalid or expired refresh token' })
+      status: 400,
+      json: async () => ({
+        error: 'invalid_grant',
+        error_description: 'Refresh token expired or revoked'
+      })
     });
     global.fetch = mockFetch;
 

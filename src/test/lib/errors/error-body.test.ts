@@ -81,6 +81,20 @@ describe('errorBodyText — the reader for both body shapes', () => {
     expect(errorBodyText({ detail: '', message: '' })).toBeUndefined();
   });
 
+  it('returns nothing for an RFC 6749 error body, so callers fall through', () => {
+    // The OAuth token and revocation endpoints answer
+    // `{error, error_description}` (API contract 2.0.0), which is deliberately
+    // NOT read here — `detail`/`message` is this helper's contract. Callers on
+    // those paths chain `errorBodyText(body) || body.error_description`, and
+    // that chain only reaches the description because this returns undefined.
+    expect(
+      errorBodyText({
+        error: 'invalid_grant',
+        error_description: 'Refresh token expired or revoked'
+      })
+    ).toBeUndefined();
+  });
+
   it('returns nothing for bodies that carry no text at all', () => {
     expect(errorBodyText({})).toBeUndefined();
     expect(errorBodyText({ error: 'service_unavailable' })).toBeUndefined();
