@@ -91,32 +91,55 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Fetch the API's committed spec
+      # The PINNED contract, not `main`. Fetching `main` meant the API
+      # repository publishing a change reached this client the moment it
+      # merged — turning this repository red with no commit here recording
+      # that anyone accepted it. Adoption is moving `ref` in
+      # api-contract.pin.json, and that PR is where this side says yes.
+      - name: Fetch the pinned API contract
         run: |
           set -euo pipefail
+          REPO=$(node -p "require('./api-contract.pin.json').repository")
+          REF=$(node -p "require('./api-contract.pin.json').ref")
+          echo "Contract: ${REPO}@${REF}"
           curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
-            https://raw.githubusercontent.com/FaultMaven/faultmaven/main/docs/reference/api/openapi.json \
+            "https://raw.githubusercontent.com/${REPO}/${REF}/docs/reference/api/openapi.json" \
             -o /tmp/openapi.json
           # A truncated or error-page download would regenerate an empty client
           # and the diff below would "pass" by matching nothing.
           python3 -c "import json,sys; d=json.load(open('/tmp/openapi.json')); sys.exit(0 if d.get('paths') else 1)"
+          # The pin names a contract version as well as a ref. If they
+          # disagree the ref is not the commit whoever wrote this file meant,
+          # and the client would be generated from a contract nobody reviewed.
+          PINNED_VERSION=$(node -p "require('./api-contract.pin.json').contractVersion")
+          FETCHED_VERSION=$(node -p "require('/tmp/openapi.json').info.version")
+          if [ "${PINNED_VERSION}" != "${FETCHED_VERSION}" ]; then
+            echo "::error::api-contract.pin.json says contractVersion ${PINNED_VERSION}, but the pinned ref serves ${FETCHED_VERSION}."
+            exit 1
+          fi
 
       - name: Regenerate and compare
         env:
           FM_OPENAPI_SPEC: /tmp/openapi.json
         run: |
           pnpm run generate:api-types
-          git diff --exit-code src/types/api.generated.ts || {
-            echo "::error::src/types/api.generated.ts no longer matches the API's committed spec."
+          # `git status --porcelain`, not `git diff --exit-code`: the latter
+          # reports nothing for an UNTRACKED path, so a pull request that
+          # deleted the generated client would regenerate it here and pass
+          # having compared the contract against nothing.
+          if [ -n "$(git status --porcelain src/types/api.generated.ts)" ]; then
+            echo "::error::src/types/api.generated.ts no longer matches the pinned API contract."
             echo ""
             echo "Regenerate and commit it:"
             echo "    pnpm generate:api-types"
             echo "    git add src/types/api.generated.ts"
             echo ""
-            echo "If faultmaven's spec changed intentionally, this is expected —"
-            echo "regenerate here in a PR of its own."
+            echo "If you are adopting a new contract, move \`ref\` in"
+            echo "api-contract.pin.json in the same pull request — that is the"
+            echo "commit where this client accepts the change."
+            git --no-pager diff --stat src/types/api.generated.ts
             exit 1
-          }
+          fi
 
   # ============================================================================
   # Stage 2: Run Tests
