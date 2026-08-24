@@ -16,7 +16,10 @@ export default defineConfig({
   }),
   manifest: ({ browser }) => ({
     name: "__MSG_appName__",
-    version: "1.0.0",
+    // No `version` here: WXT derives the manifest version from package.json,
+    // which is the single source. A second copy in this file drifted onto
+    // every release bump, and Chrome refuses an upload whose version does not
+    // strictly increase — so a missed copy here is a rejected upload.
     description: "__MSG_appDescription__",
     default_locale: 'en',
     // The panel is opened programmatically from the toolbar-icon handler
