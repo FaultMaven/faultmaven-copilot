@@ -68,6 +68,19 @@ jobs:
       - name: Verify built manifest versions match the tag
         run: |
           TAG_VERSION="${{ steps.version.outputs.version }}"
+          # Prerelease-suffixed tags are rejected outright rather than compared
+          # against WXT's suffix-stripped manifest version: a store manifest
+          # cannot carry the suffix, so a v1.2.0-rc.1 build produces manifest
+          # 1.2.0 — colliding with the eventual final at both CWS and AMO —
+          # and Chrome/Firefox zips get different {{version}} names (only
+          # Chromium receives version_name). Use a fourth version component
+          # for prereleases instead.
+          case "$TAG_VERSION" in
+            *-*)
+              echo "::error::Prerelease-suffixed tags are unsupported: WXT strips the suffix from the manifest, so the rc would collide with its final at store upload. Use a fourth version component instead (e.g. v${TAG_VERSION%%-*}.1)."
+              exit 1
+              ;;
+          esac
           CHROME_VERSION=$(node -p "require('./.output/chrome-mv3/manifest.json').version")
           FIREFOX_VERSION=$(node -p "require('./.output/firefox-mv2/manifest.json').version")
           echo "tag=$TAG_VERSION chrome=$CHROME_VERSION firefox=$FIREFOX_VERSION"
@@ -124,7 +137,11 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           body: ${{ steps.release-notes.outputs.notes }}
           draft: false
-          prerelease: ${{ contains(github.ref, '-') }}
+          # A path that stops matching WXT's artifact naming must fail the
+          # release, not publish one with zero assets (the action's default).
+          fail_on_unmatched_files: true
+          # No `prerelease:` flag: suffixed tags are rejected by the verify
+          # step above, so every release that reaches this step is a full one.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
