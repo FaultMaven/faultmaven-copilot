@@ -16,7 +16,8 @@ export default defineConfig({
   }),
   manifest: ({ browser }) => ({
     name: "__MSG_appName__",
-    version: "1.0.0",
+    // No `version`: WXT derives it from package.json (the single source);
+    // release.yml asserts the built manifests match the release tag.
     description: "__MSG_appDescription__",
     default_locale: 'en',
     // The panel is opened programmatically from the toolbar-icon handler

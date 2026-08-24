@@ -225,31 +225,44 @@ jobs:
       - name: Generate icons
         run: pnpm run generate-icons
 
-      - name: Build Chrome extension
-        run: pnpm run build
+      # Package with `pnpm zip` — the same command release.yml ships with —
+      # so CI exercises the artifact that actually reaches users, not a
+      # hand-rolled equivalent. WXT names artifacts
+      # faultmaven-copilot-<version>-<target>.zip from package.json.
+      - name: Build and package Chrome extension
+        run: pnpm zip
 
-      - name: Build Firefox extension
-        run: pnpm run build:firefox
+      - name: Build and package Firefox extension
+        run: pnpm zip:firefox
 
-      - name: Package Chrome extension
+      # package.json is the manifest version's only source (wxt.config.ts no
+      # longer sets one), and WXT's fallback when it goes missing is a
+      # warn-only 0.0.0 — so assert the derivation here, at PR time, rather
+      # than discovering it at store upload.
+      - name: Verify built manifest versions match package.json
         run: |
-          cd .output/chrome-mv3
-          zip -r ../../faultmaven-copilot-chrome.zip . -x "*.map"
-          cd ../..
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          CHROME_VERSION=$(node -p "require('./.output/chrome-mv3/manifest.json').version")
+          FIREFOX_VERSION=$(node -p "require('./.output/firefox-mv2/manifest.json').version")
+          echo "package.json=$PKG_VERSION chrome=$CHROME_VERSION firefox=$FIREFOX_VERSION"
+          if [ "$CHROME_VERSION" != "$PKG_VERSION" ] || [ "$FIREFOX_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Built manifest version does not match package.json ($PKG_VERSION): chrome=$CHROME_VERSION firefox=$FIREFOX_VERSION"
+            exit 1
+          fi
 
-      - name: Package Firefox extension
-        run: |
-          cd .output/firefox-mv2
-          zip -r ../../faultmaven-copilot-firefox.zip . -x "*.map"
-          cd ../..
-
+      # The globs deliberately exclude the -sources.zip that `wxt zip -b
+      # firefox` also emits.
       - name: Upload extension packages
         uses: actions/upload-artifact@v7
         with:
           name: extension-packages
           path: |
-            faultmaven-copilot-chrome.zip
-            faultmaven-copilot-firefox.zip
+            .output/faultmaven-copilot-*-chrome.zip
+            .output/faultmaven-copilot-*-firefox.zip
+          # .output/ is a dot-directory, which upload-artifact skips unless
+          # told otherwise — without this the globs match nothing.
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 7
 
       - name: Build summary
@@ -257,8 +270,10 @@ jobs:
         run: |
           echo "### ✅ Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Chrome Extension**: \`faultmaven-copilot-chrome.zip\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Firefox Extension**: \`faultmaven-copilot-firefox.zip\`" >> $GITHUB_STEP_SUMMARY
+          echo "Packages:" >> $GITHUB_STEP_SUMMARY
+          for f in .output/faultmaven-copilot-*-chrome.zip .output/faultmaven-copilot-*-firefox.zip; do
+            echo "- \`$(basename "$f")\`" >> $GITHUB_STEP_SUMMARY
+          done
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Next: Validating extension packages..." >> $GITHUB_STEP_SUMMARY
 
@@ -280,7 +295,7 @@ jobs:
       - name: Validate Chrome extension
         run: |
           echo "Validating Chrome extension..."
-          unzip -q faultmaven-copilot-chrome.zip -d /tmp/chrome-ext
+          unzip -q faultmaven-copilot-*-chrome.zip -d /tmp/chrome-ext
           
           # Check manifest.json exists
           if [ ! -f /tmp/chrome-ext/manifest.json ]; then
@@ -301,7 +316,7 @@ jobs:
       - name: Validate Firefox extension
         run: |
           echo "Validating Firefox extension..."
-          unzip -q faultmaven-copilot-firefox.zip -d /tmp/firefox-ext
+          unzip -q faultmaven-copilot-*-firefox.zip -d /tmp/firefox-ext
           
           # Check manifest.json exists
           if [ ! -f /tmp/firefox-ext/manifest.json ]; then
@@ -321,8 +336,8 @@ jobs:
 
       - name: Get package sizes
         run: |
-          CHROME_SIZE=$(du -h faultmaven-copilot-chrome.zip | cut -f1)
-          FIREFOX_SIZE=$(du -h faultmaven-copilot-firefox.zip | cut -f1)
+          CHROME_SIZE=$(du -h faultmaven-copilot-*-chrome.zip | cut -f1)
+          FIREFOX_SIZE=$(du -h faultmaven-copilot-*-firefox.zip | cut -f1)
           echo "Chrome package size: $CHROME_SIZE" >> $GITHUB_STEP_SUMMARY
           echo "Firefox package size: $FIREFOX_SIZE" >> $GITHUB_STEP_SUMMARY
 
@@ -409,10 +424,10 @@ jobs:
           if [ "${{ needs.validate.result }}" = "success" ]; then
             echo "✅ Extension packages are ready for release." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "To create a release, push a version tag:" >> $GITHUB_STEP_SUMMARY
+            echo "To create a release, push a tag matching package.json's version:" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "git tag v0.4.0" >> $GITHUB_STEP_SUMMARY
-            echo "git push origin v0.4.0" >> $GITHUB_STEP_SUMMARY
+            echo "git tag v<version>   # must equal package.json's version — release.yml enforces this" >> $GITHUB_STEP_SUMMARY
+            echo "git push origin v<version>" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           fi
 
