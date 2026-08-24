@@ -259,6 +259,9 @@ jobs:
           path: |
             .output/faultmaven-copilot-*-chrome.zip
             .output/faultmaven-copilot-*-firefox.zip
+          # .output/ is a dot-directory, which upload-artifact skips unless
+          # told otherwise — without this the globs match nothing.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
@@ -333,8 +336,8 @@ jobs:
 
       - name: Get package sizes
         run: |
-          CHROME_SIZE=$(du -h faultmaven-copilot-chrome.zip | cut -f1)
-          FIREFOX_SIZE=$(du -h faultmaven-copilot-firefox.zip | cut -f1)
+          CHROME_SIZE=$(du -h faultmaven-copilot-*-chrome.zip | cut -f1)
+          FIREFOX_SIZE=$(du -h faultmaven-copilot-*-firefox.zip | cut -f1)
           echo "Chrome package size: $CHROME_SIZE" >> $GITHUB_STEP_SUMMARY
           echo "Firefox package size: $FIREFOX_SIZE" >> $GITHUB_STEP_SUMMARY
 

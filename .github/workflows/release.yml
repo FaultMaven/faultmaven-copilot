@@ -73,11 +73,12 @@ jobs:
           # cannot carry the suffix, so a v1.2.0-rc.1 build produces manifest
           # 1.2.0 — colliding with the eventual final at both CWS and AMO —
           # and Chrome/Firefox zips get different {{version}} names (only
-          # Chromium receives version_name). Use a fourth version component
-          # for prereleases instead.
+          # Chromium receives version_name). This workflow cuts full releases
+          # only (everything it publishes shows as "Latest release"), so
+          # there is no rc lane: cut a plain distinct version instead.
           case "$TAG_VERSION" in
             *-*)
-              echo "::error::Prerelease-suffixed tags are unsupported: WXT strips the suffix from the manifest, so the rc would collide with its final at store upload. Use a fourth version component instead (e.g. v${TAG_VERSION%%-*}.1)."
+              echo "::error::Prerelease-suffixed tags are unsupported: WXT strips the suffix from the manifest, so the rc would collide with its final at store upload — and this workflow publishes full releases only. Cut a plain distinct version instead (bump the patch)."
               exit 1
               ;;
           esac
