@@ -5,6 +5,7 @@
 
 **The Browser Extension for In-Flow Troubleshooting**
 
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/faultmaven-copilot/fghoagggojmkdopidfopijfnlmchjcng)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 > **FaultMaven Copilot** is the browser-based interface for [FaultMaven](https://github.com/FaultMaven/faultmaven). It overlays AI troubleshooting intelligence directly onto your existing tools (AWS Console, Datadog, Grafana, or localhost).
@@ -39,22 +40,22 @@ This extension connects to your FaultMaven backend (self-hosted or Cloud) to pro
 
 ### Installation
 
-**Option 1: Manual Load (Development)**
+**[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/faultmaven-copilot/fghoagggojmkdopidfopijfnlmchjcng)** — Chrome, Edge, Brave and other Chromium browsers.
 
-Download the latest `faultmaven-copilot-<version>-chrome.zip` (or `-firefox.zip`) from [Releases](https://github.com/FaultMaven/faultmaven-copilot/releases) or build from source.
+That is the whole install, **whichever backend you use.** The store build ships the host permissions and presets for all of them: it defaults to FaultMaven Cloud so you can sign in immediately, and **Settings** switches it to a FaultMaven server you self-host — on this machine or anywhere on your network. Self-hosting is about where the *backend* runs; it does not require a different extension. See [Connection](#connection).
 
-**Chrome/Edge:**
+<details>
+<summary><strong>Running an unpacked build</strong></summary>
 
-1. Navigate to `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the `.output/chrome-mv3/` folder
+For development, or to run a build the store does not have yet:
 
-**Firefox:**
+1. `pnpm build` (or download `faultmaven-copilot-<version>-chrome.zip` from a [release](https://github.com/FaultMaven/faultmaven-copilot/releases))
+2. Navigate to `chrome://extensions`
+3. Enable **Developer mode**
+4. Click **Load unpacked**
+5. Select the `.output/chrome-mv3/` folder
 
-1. Navigate to `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on**
-3. Select any file in the `.output/firefox-mv2/` folder
+</details>
 
 ### Connection
 
