@@ -36,27 +36,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate icons
-        run: pnpm run generate-icons
-
-      - name: Build Chrome extension
-        run: pnpm run build
-
-      - name: Build Firefox extension
-        run: pnpm run build:firefox
-
-      - name: Package Chrome extension
-        run: |
-          cd .output/chrome-mv3
-          zip -r ../../faultmaven-copilot-chrome.zip . -x "*.map"
-          cd ../..
-
-      - name: Package Firefox extension
-        run: |
-          cd .output/firefox-mv2
-          zip -r ../../faultmaven-copilot-firefox.zip . -x "*.map"
-          cd ../..
-
       - name: Extract version from tag
         id: version
         run: |
@@ -64,42 +43,84 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      # `wxt zip` does NOT run the package.json `prebuild` hook (there is no
+      # `prezip` script), so icons must be generated explicitly.
+      - name: Generate icons
+        run: pnpm run generate-icons
+
+      # `pnpm zip` / `pnpm zip:firefox` build AND package: WXT names the
+      # artifact <name>-<version>-<target>.zip from package.json's version —
+      # the same versioned filename README.md tells users to download.
+      - name: Build and package Chrome extension
+        run: pnpm zip
+
+      - name: Build and package Firefox extension
+        run: pnpm zip:firefox
+
+      # The tag names the release; package.json (via WXT) versions the built
+      # manifest. Nothing else ties the two together, so assert it here:
+      # a tag pushed without the matching package.json bump must fail the
+      # release, not publish mislabeled artifacts that the Chrome Web Store
+      # then rejects for a non-increasing version. Comparing the BUILT
+      # manifests (not package.json) also catches WXT's silent fallbacks —
+      # e.g. version 0.0.0 when package.json's version is missing, or a
+      # prerelease suffix being stripped.
+      - name: Verify built manifest versions match the tag
+        run: |
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          CHROME_VERSION=$(node -p "require('./.output/chrome-mv3/manifest.json').version")
+          FIREFOX_VERSION=$(node -p "require('./.output/firefox-mv2/manifest.json').version")
+          echo "tag=$TAG_VERSION chrome=$CHROME_VERSION firefox=$FIREFOX_VERSION"
+          if [ "$CHROME_VERSION" != "$TAG_VERSION" ] || [ "$FIREFOX_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Built manifest version does not match tag v$TAG_VERSION (chrome=$CHROME_VERSION, firefox=$FIREFOX_VERSION). Bump package.json's version to $TAG_VERSION and re-tag."
+            exit 1
+          fi
+
+      # Multi-line outputs MUST use the delimiter syntax — a bare `notes=` line
+      # followed by plain lines is rejected by the runner ("Invalid format"),
+      # which would fail the job on every tag push.
       - name: Generate release notes
         id: release-notes
         run: |
           TAG=${GITHUB_REF#refs/tags/}
+          VERSION="${{ steps.version.outputs.version }}"
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          
-          if [ -z "$PREV_TAG" ]; then
-            echo "notes=## What's Changed" > $GITHUB_OUTPUT
-            echo "Initial release" >> $GITHUB_OUTPUT
-          else
-            echo "notes=## What's Changed" > $GITHUB_OUTPUT
-            git log --pretty=format:"- %s (%h)" ${PREV_TAG}..${TAG} >> $GITHUB_OUTPUT || echo "- See commit history" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "" >> $GITHUB_OUTPUT
-          echo "## Installation" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "### Chrome/Edge" >> $GITHUB_OUTPUT
-          echo "1. Download \`faultmaven-copilot-chrome.zip\`" >> $GITHUB_OUTPUT
-          echo "2. Extract the archive" >> $GITHUB_OUTPUT
-          echo "3. Go to \`chrome://extensions\`" >> $GITHUB_OUTPUT
-          echo "4. Enable Developer mode" >> $GITHUB_OUTPUT
-          echo "5. Click Load unpacked and select the extracted folder" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "### Firefox" >> $GITHUB_OUTPUT
-          echo "1. Download \`faultmaven-copilot-firefox.zip\`" >> $GITHUB_OUTPUT
-          echo "2. Extract the archive" >> $GITHUB_OUTPUT
-          echo "3. Go to \`about:debugging#/runtime/this-firefox\`" >> $GITHUB_OUTPUT
-          echo "4. Click Load Temporary Add-on and select any file in the extracted folder" >> $GITHUB_OUTPUT
 
+          {
+            echo "notes<<NOTES_EOF"
+            echo "## What's Changed"
+            if [ -z "$PREV_TAG" ]; then
+              echo "Initial release"
+            else
+              git log --pretty=format:"- %s (%h)" ${PREV_TAG}..${TAG} || echo "- See commit history"
+              echo ""
+            fi
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "### Chrome/Edge"
+            echo "1. Download \`faultmaven-copilot-${VERSION}-chrome.zip\`"
+            echo "2. Extract the archive"
+            echo "3. Go to \`chrome://extensions\`"
+            echo "4. Enable Developer mode"
+            echo "5. Click Load unpacked and select the extracted folder"
+            echo ""
+            echo "### Firefox"
+            echo "1. Download \`faultmaven-copilot-${VERSION}-firefox.zip\`"
+            echo "2. Extract the archive"
+            echo "3. Go to \`about:debugging#/runtime/this-firefox\`"
+            echo "4. Click Load Temporary Add-on and select any file in the extracted folder"
+            echo "NOTES_EOF"
+          } >> $GITHUB_OUTPUT
+
+      # Explicit versioned filenames — NOT `.output/*.zip`, which would also
+      # publish the Firefox sources zip that `wxt zip -b firefox` emits.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            faultmaven-copilot-chrome.zip
-            faultmaven-copilot-firefox.zip
+            .output/faultmaven-copilot-${{ steps.version.outputs.version }}-chrome.zip
+            .output/faultmaven-copilot-${{ steps.version.outputs.version }}-firefox.zip
           name: Release ${{ steps.version.outputs.version }}
           body: ${{ steps.release-notes.outputs.notes }}
           draft: false
@@ -115,5 +136,5 @@ jobs:
           echo "**Tag**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Release artifacts:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`faultmaven-copilot-chrome.zip\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`faultmaven-copilot-firefox.zip\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`faultmaven-copilot-${{ steps.version.outputs.version }}-chrome.zip\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`faultmaven-copilot-${{ steps.version.outputs.version }}-firefox.zip\`" >> $GITHUB_STEP_SUMMARY
