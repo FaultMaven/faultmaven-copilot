@@ -250,6 +250,13 @@ jobs:
             exit 1
           fi
 
+      # Resubmission guard. The store reviews the ARTIFACT, so whether a change
+      # needs a new version and an upload is a question about the built output,
+      # not about which files the diff touched. Runs here because this job has
+      # already produced that output with the same command release.yml ships.
+      - name: Check the shipped artifact against its baseline
+        run: pnpm extension:digest
+
       # The globs deliberately exclude the -sources.zip that `wxt zip -b
       # firefox` also emits.
       - name: Upload extension packages

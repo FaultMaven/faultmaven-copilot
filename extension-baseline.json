@@ -1,0 +1,29 @@
+{
+  "version": "1.0.1",
+  "manifestSurface": {
+    "permissions": [
+      "storage",
+      "sidePanel",
+      "tabs",
+      "scripting",
+      "identity"
+    ],
+    "host_permissions": [
+      "https://app.faultmaven.ai/*",
+      "https://api.faultmaven.ai/*"
+    ],
+    "optional_host_permissions": [
+      "http://localhost/*",
+      "http://127.0.0.1/*",
+      "http://*/*",
+      "https://*/*"
+    ],
+    "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
+    }
+  },
+  "package": {
+    "fileCount": 155,
+    "sha256": "3e4ccb9ef2dba4a203afb184f91b7f1c4e2ddfa5cb3dfae0af4563474ac7a002"
+  }
+}

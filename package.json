@@ -11,6 +11,8 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "extension:digest": "node scripts/extension-digest.mjs --check",
+    "extension:digest:write": "node scripts/extension-digest.mjs --write",
     "compile": "tsc --noEmit",
     "generate:api-types": "node scripts/generate-api-types.mjs",
     "lint": "eslint src --ext .ts,.tsx",
