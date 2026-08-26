@@ -11,6 +11,13 @@ env:
   NODE_VERSION: '20'
   PNPM_VERSION: '9'
 
+# Floor for the whole workflow: read the repository and nothing else. Every
+# job below states its own block; this one is what a job added later without
+# one would inherit, so a new job cannot silently pick up whatever the
+# repository default happens to be at the time.
+permissions:
+  contents: read
+
 jobs:
   # ============================================================================
   # Stage 1: Lint & Type Check
@@ -19,6 +26,10 @@ jobs:
     name: Lint & Type Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Checks out the repository and runs tsc. Writes only to
+    # $GITHUB_STEP_SUMMARY, which is a runner file, not an API scope.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -72,6 +83,10 @@ jobs:
     name: API Types Drift Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Checks out this repository; the pinned contract is fetched over
+    # unauthenticated raw.githubusercontent.com, not with GITHUB_TOKEN.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -149,6 +164,12 @@ jobs:
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Checkout plus the Codecov upload. Codecov authenticates with its own
+    # token, not GITHUB_TOKEN; its OIDC path is opt-in (`use_oidc`) and needs
+    # `id-token: write`, which is never granted by default and is not wanted
+    # here — so no scope is being taken away from it.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -203,6 +224,11 @@ jobs:
     needs: [lint, test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Checkout plus actions/upload-artifact, which uploads through the runner's
+    # own artifact service (it has no `github-token` input at all) — so the
+    # upload does not draw on GITHUB_TOKEN.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -292,6 +318,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # No checkout and no API call: it downloads the artifact this same run
+    # produced and unzips it. actions/download-artifact is scoped to the
+    # current run unless given an explicit `github-token`/`run-id`, which it is
+    # not here, so it needs no GITHUB_TOKEN scope. Nothing to grant.
+    permissions: {}
 
     steps:
       - name: Download extension packages
@@ -371,6 +402,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true
+    # Checkout plus `pnpm audit`, which queries the npm registry.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -410,6 +444,9 @@ jobs:
     needs: [lint, api-types-drift, test, build, validate, security]
     if: always()
     runs-on: ubuntu-latest
+    # Reads `needs.*.result` (workflow context, not an API scope) and writes
+    # $GITHUB_STEP_SUMMARY. No checkout, no API call.
+    permissions: {}
 
     steps:
       - name: Pipeline summary
