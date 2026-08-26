@@ -52,17 +52,43 @@ function walk(dir, out = []) {
   return out;
 }
 
+const rel = (base, f) => relative(base, f).split(sep).join('/');
+
 function computeDigest() {
   if (!existsSync(BUILD_DIR)) {
     console.error(`No build at ${relative(ROOT, BUILD_DIR)} — run \`pnpm zip\` first.`);
     process.exit(2);
   }
-  const files = walk(BUILD_DIR);
-  // Path separators are normalised so the digest is the same on any OS, and the
-  // list is sorted so it does not depend on readdir order.
-  const lines = files
-    .map((f) => `${relative(BUILD_DIR, f).split(sep).join('/')}\0${sha256(readFileSync(f))}`)
-    .sort();
+  const all = walk(BUILD_DIR).map((f) => [rel(BUILD_DIR, f), f]);
+
+  // icon/ is EXCLUDED from the content hash, and that exclusion is load-bearing
+  // rather than convenient. generate-icons renders 4 SVGs x 7 sizes through
+  // sharp at build time, and sharp's PNG encoder emits different bytes on
+  // different platforms for a pixel-identical image — measured: a CI runner and
+  // a dev machine agreed on all 127 other files and disagreed on all 28 icons.
+  // Hashing them would red every PR while proving nothing.
+  //
+  // Nothing is given up. What an icon IS comes from committed, deterministic
+  // repo content — the SVG sources and the generator — which `iconSources`
+  // hashes directly. And the icon INVENTORY is still recorded below, so adding
+  // or dropping a size (which does change the package) is still caught.
+  const shipped = all.filter(([r]) => !r.startsWith('icon/'));
+  const iconFiles = all.filter(([r]) => r.startsWith('icon/')).map(([r]) => r).sort();
+
+  const lines = shipped.map(([r, f]) => `${r}\0${sha256(readFileSync(f))}`).sort();
+
+  // Icon provenance: the SVGs the PNGs are rendered from, plus the renderer.
+  const iconSrcDir = join(ROOT, 'public', 'icon');
+  const iconSrcLines = existsSync(iconSrcDir)
+    ? walk(iconSrcDir)
+        .filter((f) => f.endsWith('.svg'))
+        .map((f) => `${rel(iconSrcDir, f)}\0${sha256(readFileSync(f))}`)
+        .sort()
+    : [];
+  const generator = join(ROOT, 'scripts', 'generate-icons.mjs');
+  if (existsSync(generator)) {
+    iconSrcLines.push(`generate-icons.mjs\0${sha256(readFileSync(generator))}`);
+  }
   const manifest = JSON.parse(readFileSync(join(BUILD_DIR, 'manifest.json'), 'utf8'));
   const perFile = {};
   for (const line of lines) {
@@ -77,7 +103,9 @@ function computeDigest() {
       optional_host_permissions: manifest.optional_host_permissions ?? [],
       content_security_policy: manifest.content_security_policy ?? {},
     },
-    package: { fileCount: files.length, sha256: sha256(lines.join('\n')) },
+    package: { fileCount: shipped.length, sha256: sha256(lines.join('\n')) },
+    iconSources: { fileCount: iconSrcLines.length, sha256: sha256(iconSrcLines.join('\n')) },
+    iconFiles,
     files: perFile,
   };
 }
@@ -101,8 +129,11 @@ const surfaceChanged =
 const packageChanged =
   base.package.sha256 !== current.package.sha256 ||
   base.package.fileCount !== current.package.fileCount;
+const iconsChanged =
+  base.iconSources?.sha256 !== current.iconSources.sha256 ||
+  JSON.stringify(base.iconFiles) !== JSON.stringify(current.iconFiles);
 
-if (!surfaceChanged && !packageChanged) {
+if (!surfaceChanged && !packageChanged && !iconsChanged) {
   console.log(`Extension artifact unchanged (${current.package.sha256.slice(0, 12)}, ${current.package.fileCount} files, v${current.version}).`);
   process.exit(0);
 }
@@ -146,6 +177,12 @@ if (packageChanged) {
     if (entries.length > 8) console.error(`        … ${entries.length - 8} more`);
   }
   console.error('');
+}
+if (iconsChanged) {
+  console.error('  → ICONS CHANGED (source SVGs, the generator, or the set of sizes).');
+  console.error('    The rendered PNGs are not hashed — sharp is not byte-reproducible');
+  console.error('    across platforms — so this is what a real icon change looks like.');
+  console.error('    Store listing icons are uploaded separately from the package.\n');
 }
 console.error('If the change is intended, accept it in THIS PR so the artifact change is');
 console.error('reviewable and recorded:\n');
