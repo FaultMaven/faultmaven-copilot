@@ -64,6 +64,11 @@ function computeDigest() {
     .map((f) => `${relative(BUILD_DIR, f).split(sep).join('/')}\0${sha256(readFileSync(f))}`)
     .sort();
   const manifest = JSON.parse(readFileSync(join(BUILD_DIR, 'manifest.json'), 'utf8'));
+  const perFile = {};
+  for (const line of lines) {
+    const [rel, hash] = line.split('\0');
+    perFile[rel] = hash;
+  }
   return {
     version: manifest.version,
     manifestSurface: {
@@ -73,6 +78,7 @@ function computeDigest() {
       content_security_policy: manifest.content_security_policy ?? {},
     },
     package: { fileCount: files.length, sha256: sha256(lines.join('\n')) },
+    files: perFile,
   };
 }
 
@@ -119,6 +125,27 @@ if (packageChanged) {
   console.error('    to the Chrome Web Store; it does not reach users otherwise.');
   console.error(`      baseline: ${base.package.sha256.slice(0, 12)} (${base.package.fileCount} files, v${base.version})`);
   console.error(`      built:    ${current.package.sha256.slice(0, 12)} (${current.package.fileCount} files, v${current.version})\n`);
+
+  // Which files, grouped by directory. Without this the aggregate says only
+  // THAT something changed — useless for judging whether it matters.
+  const baseFiles = base.files ?? {};
+  const names = new Set([...Object.keys(baseFiles), ...Object.keys(current.files)]);
+  const buckets = new Map();
+  for (const n of [...names].sort()) {
+    if (baseFiles[n] === current.files[n]) continue;
+    const dir = n.includes('/') ? n.slice(0, n.indexOf('/')) + '/' : '(root)';
+    if (!buckets.has(dir)) buckets.set(dir, []);
+    buckets.get(dir).push(
+      !(n in baseFiles) ? `+ ${n}` : !(n in current.files) ? `- ${n}` : `~ ${n}`,
+    );
+  }
+  console.error('    Files that differ:');
+  for (const [dir, entries] of buckets) {
+    console.error(`      ${dir}  (${entries.length})`);
+    for (const e of entries.slice(0, 8)) console.error(`        ${e}`);
+    if (entries.length > 8) console.error(`        … ${entries.length - 8} more`);
+  }
+  console.error('');
 }
 console.error('If the change is intended, accept it in THIS PR so the artifact change is');
 console.error('reviewable and recorded:\n');
