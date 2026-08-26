@@ -22,7 +22,7 @@ it from the artifact instead (below).
 over the built tree, and the manifest's permission surface. The `build` job runs
 `pnpm extension:digest`, which rebuilds and compares.
 
-- **Passes** → the artifact is byte-identical. The change is category C.
+- **Passes** → nothing that ships changed. The change is category C.
 - **Fails** → the artifact changed. Category A. Accept it *in the same PR*:
 
   ```bash
@@ -33,13 +33,23 @@ over the built tree, and the manifest's permission surface. The `build` job runs
   `git log extension-baseline.json` a true history of every package change since
   the last release tag — which is how you answer "is an upload owed?"
 
-**Icons are handled separately, and deliberately.** `generate-icons` renders 4
-SVGs x 7 sizes through sharp at build time, and sharp's PNG encoder is not
-byte-reproducible across platforms — measured: a CI runner and a dev machine
-agreed on all 117 other files and disagreed on all 28 icons. Hashing the rendered
-PNGs would red every PR while proving nothing. So the guard hashes what an icon
-actually *is*: the committed SVG sources and the generator script. The icon
-inventory is tracked too, so adding or dropping a size still fires.
+**Generated icons are handled separately, and deliberately.** `generate-icons`
+renders 4 SVGs x 7 sizes through sharp at build time, and sharp's PNG encoder is
+not byte-reproducible across platforms — measured: a CI runner and a dev machine
+agreed on all other files and disagreed on exactly those 28. Hashing the rendered
+PNGs would red every PR while proving nothing.
+
+Only those 28 are exempt, and the set comes from the generator's own
+`ICON_SIZES` / `VARIANTS` rather than from a path prefix — `public/icon/` holds
+32 PNGs, and the four `px64-*` are committed rather than rendered, so they are
+hashed like any other shipped file. What a *generated* icon is comes from the
+SVG sources, the generator, and the **sharp version** that renders them; all
+three are hashed, so a sharp bump that re-renders every icon is caught. The icon
+inventory is compared too, so adding or dropping a size still fires.
+
+Generate the baseline from a **clean** build (`rm -rf .output && pnpm zip`). A
+stale `.output` bakes whatever is lying there into the baseline; CI rebuilds from
+a fresh checkout and will reject it, but that costs a round trip.
 
 The guard shouts louder when the **manifest surface** changes — permissions,
 host permissions, CSP. Store review compares those against the listing's

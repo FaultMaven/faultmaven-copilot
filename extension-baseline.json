@@ -23,12 +23,12 @@
     }
   },
   "package": {
-    "fileCount": 117,
-    "sha256": "1d35266884d93db8c00cb0480dfe45a4937c60ede9babd074dffd5f6f5be7a4a"
+    "fileCount": 127,
+    "sha256": "f05fa83a9ef4f7fb08e3c3d5a47fa6147b09172ae6374666d4d699bc8109e1d8"
   },
   "iconSources": {
-    "fileCount": 7,
-    "sha256": "af2c11418b919ec25b5bd72fd2516df3d1dedaf44075467752425969bcd85392"
+    "fileCount": 8,
+    "sha256": "f2a762a6745feb7a11f12e1c75430387791fab3ece6183ea70471b6eaf8258f4"
   },
   "iconFiles": [
     "icon/design-dark.svg",
@@ -185,6 +185,16 @@
     "chunks/wardleyDiagram-T6FBY63Y-B6dQ_OOh.js": "ee41745dd045a0ead39d3afbbe028428f5a4c2d76546f206b5010d67aaec12f2",
     "chunks/xychartDiagram-ELKLHX3M-BEaE2Zr-.js": "932d15b301deb4f5d4b23996069fc185a66445b3db03f67029ea22fd32de1b5f",
     "content-scripts/auth-bridge.js": "16fd797fc8cc784a284c31d7ecf5ee9d0e366368298340c6edb58427fef01f31",
+    "icon/design-dark.svg": "c990f59c48ced0f8bf36c7b8337ea1681c6c1760e5e236453c24f45c7a704473",
+    "icon/design-light.svg": "65b1b361320de8ffffde74db14af15ea9223317eec79e4cbbe8718b5470235fd",
+    "icon/design-transparent.svg": "dda0bab5de69713722564fd1fdca5500ff757e9e5cd3c5dc9a10cb1751c6eb43",
+    "icon/px64-design-dark.png": "812db9c080763e88c6abd3808e5ac49ce9b65cc9cee11d31c72d143f913012a5",
+    "icon/px64-design-light.png": "cfd683140af9f084220a6a618a665e0ee2542409267a178313a8d8a68b2b9ca3",
+    "icon/px64-square-dark.png": "fede84557d3230f593cc797eef4855803c3a229cc5543a8c5863c266cefbb3a7",
+    "icon/px64-square-light.png": "4682ca084f41b0341e885098b80bb4e58c6e1d389faa78709d1fcfe098423650",
+    "icon/square-dark.svg": "ebf5f47118d88a07f4e30db80d58224b4868c53b5cb32bf7b98645ad705e4710",
+    "icon/square-light.svg": "055b776191c81d19c72c87914ec2bacca30e75e57aa3aa54986af06648034a06",
+    "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "30beae65d1fc8f1b95219508a61c29bf3c10e929c8b357359c02f0a8fd786bd4",
     "options.html": "7b2ec625efec57235f4c801ae3de3b10d1c64d0b695d3c2973631f5ba9f05096",
     "sidepanel_manual.html": "ec47b214a50d0915eb2a4972033297716b0649ad58d9141ee2b30fcf46a925b0"

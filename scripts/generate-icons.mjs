@@ -2,13 +2,14 @@
 import fs from 'fs/promises';
 import sharp from 'sharp';
 import path from 'path';
+import { pathToFileURL } from 'node:url';
 
 // Logo ratio 590:189 ≈ 3.12:1 (width:height)
 const DESIGN_RATIO = 590/189;
 const SQUARE_RATIO = 1;
 
-const ICON_SIZES = [16, 32, 48, 96, 128, 256, 512];
-const VARIANTS = [
+export const ICON_SIZES = [16, 32, 48, 96, 128, 256, 512];
+export const VARIANTS = [
   { 
     svg: 'design-dark.svg',
     prefix: 'design-dark',
@@ -61,4 +62,9 @@ async function generateIcons() {
   }
 }
 
-generateIcons().catch(console.error);
+// Only render when run as a script. extension-digest.mjs imports ICON_SIZES and
+// VARIANTS so the set of GENERATED icons has one definition; importing must not
+// rewrite 28 PNGs as a side effect.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  generateIcons().catch(console.error);
+}

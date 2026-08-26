@@ -37,6 +37,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { ICON_SIZES, VARIANTS } from './generate-icons.mjs';
 
 const ROOT = process.cwd();
 const BUILD_DIR = join(ROOT, '.output', 'chrome-mv3');
@@ -61,34 +62,61 @@ function computeDigest() {
   }
   const all = walk(BUILD_DIR).map((f) => [rel(BUILD_DIR, f), f]);
 
-  // icon/ is EXCLUDED from the content hash, and that exclusion is load-bearing
-  // rather than convenient. generate-icons renders 4 SVGs x 7 sizes through
-  // sharp at build time, and sharp's PNG encoder emits different bytes on
-  // different platforms for a pixel-identical image — measured: a CI runner and
-  // a dev machine agreed on all 127 other files and disagreed on all 28 icons.
-  // Hashing them would red every PR while proving nothing.
+  // Only the icons generate-icons RENDERS are excluded from the content hash,
+  // and the excluded set is derived from the generator's own constants rather
+  // than from a path prefix. That distinction is the whole point: public/icon/
+  // holds 32 PNGs but only 28 are rendered (px64 is not in ICON_SIZES), so a
+  // prefix exclusion silently stopped hashing four files that ship and are
+  // byte-stable. Anything under icon/ that the generator does not produce is
+  // hashed like any other shipped file.
   //
-  // Nothing is given up. What an icon IS comes from committed, deterministic
-  // repo content — the SVG sources and the generator — which `iconSources`
-  // hashes directly. And the icon INVENTORY is still recorded below, so adding
-  // or dropping a size (which does change the package) is still caught.
-  const shipped = all.filter(([r]) => !r.startsWith('icon/'));
+  // The 28 are excluded because sharp's PNG encoder is not byte-reproducible
+  // across platforms — measured: a CI runner and a dev machine agreed on all
+  // 127 other files and disagreed on exactly those 28. Hashing them would red
+  // every PR while proving nothing.
+  //
+  // Nothing is given up: what a generated icon IS comes from the SVG sources,
+  // the generator, and the sharp version that renders them — all hashed by
+  // `iconSources` — and the icon inventory is compared, so adding or dropping
+  // a size still fires.
+  const GENERATED = new Set(
+    VARIANTS.flatMap((v) => ICON_SIZES.map((size) => `icon/px${size}-${v.prefix}.png`)),
+  );
+  const shipped = all.filter(([r]) => !GENERATED.has(r));
   const iconFiles = all.filter(([r]) => r.startsWith('icon/')).map(([r]) => r).sort();
 
   const lines = shipped.map(([r, f]) => `${r}\0${sha256(readFileSync(f))}`).sort();
 
   // Icon provenance: the SVGs the PNGs are rendered from, plus the renderer.
+  // Fail closed. A missing directory or renderer used to yield an empty list and
+  // a valid-looking digest; accept that baseline once and SVG edits pass green
+  // forever after. An absent input is a broken checkout, not "no icons".
   const iconSrcDir = join(ROOT, 'public', 'icon');
-  const iconSrcLines = existsSync(iconSrcDir)
-    ? walk(iconSrcDir)
-        .filter((f) => f.endsWith('.svg'))
-        .map((f) => `${rel(iconSrcDir, f)}\0${sha256(readFileSync(f))}`)
-        .sort()
-    : [];
   const generator = join(ROOT, 'scripts', 'generate-icons.mjs');
-  if (existsSync(generator)) {
-    iconSrcLines.push(`generate-icons.mjs\0${sha256(readFileSync(generator))}`);
+  for (const required of [iconSrcDir, generator]) {
+    if (!existsSync(required)) {
+      console.error(`Missing ${relative(ROOT, required)} — cannot establish icon provenance.`);
+      process.exit(2);
+    }
   }
+  const iconSrcLines = walk(iconSrcDir)
+    .filter((f) => f.endsWith('.svg'))
+    .map((f) => `${rel(iconSrcDir, f)}\0${sha256(readFileSync(f))}`)
+    .sort();
+  if (iconSrcLines.length === 0) {
+    console.error(`No .svg sources under ${relative(ROOT, iconSrcDir)} — cannot establish icon provenance.`);
+    process.exit(2);
+  }
+  iconSrcLines.push(`generate-icons.mjs\0${sha256(readFileSync(generator))}`);
+  // The renderer itself. The SVGs and the generator say what to draw; sharp
+  // decides the pixels, so a sharp bump can re-render every icon. Without this
+  // that lands with the guard green and no resubmission flagged.
+  const sharpPkg = join(ROOT, 'node_modules', 'sharp', 'package.json');
+  if (!existsSync(sharpPkg)) {
+    console.error('sharp is not installed — cannot pin the icon renderer. Run `pnpm install`.');
+    process.exit(2);
+  }
+  iconSrcLines.push(`sharp@${JSON.parse(readFileSync(sharpPkg, 'utf8')).version}`);
   const manifest = JSON.parse(readFileSync(join(BUILD_DIR, 'manifest.json'), 'utf8'));
   const perFile = {};
   for (const line of lines) {
@@ -131,6 +159,7 @@ const packageChanged =
   base.package.fileCount !== current.package.fileCount;
 const iconsChanged =
   base.iconSources?.sha256 !== current.iconSources.sha256 ||
+  base.iconSources?.fileCount !== current.iconSources.fileCount ||
   JSON.stringify(base.iconFiles) !== JSON.stringify(current.iconFiles);
 
 if (!surfaceChanged && !packageChanged && !iconsChanged) {
@@ -150,6 +179,12 @@ if (surfaceChanged) {
     if (a !== b) console.error(`      ${k}:\n        baseline: ${a}\n        built:    ${b}`);
   }
   console.error('');
+}
+if (iconsChanged) {
+  console.error('  → ICONS CHANGED (source SVGs, the generator, or the set of sizes).');
+  console.error('    The rendered PNGs are not hashed — sharp is not byte-reproducible');
+  console.error('    across platforms — so this is what a real icon change looks like.');
+  console.error('    Store listing icons are uploaded separately from the package.\n');
 }
 if (packageChanged) {
   console.error('  → PACKAGE CHANGED. This must ship as a new version and be uploaded');
@@ -178,15 +213,7 @@ if (packageChanged) {
   }
   console.error('');
 }
-if (iconsChanged) {
-  console.error('  → ICONS CHANGED (source SVGs, the generator, or the set of sizes).');
-  console.error('    The rendered PNGs are not hashed — sharp is not byte-reproducible');
-  console.error('    across platforms — so this is what a real icon change looks like.');
-  console.error('    Store listing icons are uploaded separately from the package.\n');
-}
 console.error('If the change is intended, accept it in THIS PR so the artifact change is');
 console.error('reviewable and recorded:\n');
-console.error('    pnpm zip && pnpm extension:digest:write\n');
-console.error('Expected extension-baseline.json:\n');
-console.error(JSON.stringify(current, null, 2));
+console.error('    pnpm zip && pnpm extension:digest:write');
 process.exit(1);
