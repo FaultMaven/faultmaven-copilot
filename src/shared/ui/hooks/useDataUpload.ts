@@ -391,8 +391,15 @@ export function useDataUpload() {
       }
 
       if (payload.pastedContent?.trim()) {
+        // Compact UTC stamp for the optimistic attachment name:
+        // 2026-08-26T12:34:56.789Z -> 20260826T123456 (YYYYMMDDTHHMMSS).
+        // Stripping `-`/`:` and taking the first 15 characters keeps the `T`
+        // as the date/time separator and drops the fractional seconds and the
+        // `Z`. A `.replace('T', 'T')` used to sit in this chain implying the
+        // separator was rewritten here; it replaced 'T' with itself and did
+        // nothing, so removing it leaves the produced name byte-identical.
         const ts = new Date().toISOString()
-          .replace(/[-:]/g, '').replace('T', 'T').slice(0, 15);
+          .replace(/[-:]/g, '').slice(0, 15);
         const isPage = payload.inputType === 'page_capture';
         localAttachments.push({
           evidence_id: '',

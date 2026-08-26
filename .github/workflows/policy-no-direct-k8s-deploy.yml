@@ -14,11 +14,18 @@ on:
       - '**/*.yaml'
       - '**/*.sh'
 
+permissions:
+  contents: read
+
 jobs:
   check-no-k8s-deploy:
     name: Check for K8s Deployment Logic
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Full-history checkout, then greps the working tree. Nothing is written
+    # back and no API is called.
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code

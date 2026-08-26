@@ -11,9 +11,18 @@ on:
   schedule:
     - cron: '0 6 * * 1'                # Weekly Monday 6am UTC
 
+permissions:
+  contents: read
+
 jobs:
   extension-e2e:
     runs-on: ubuntu-latest
+    # Checkout, pnpm install, `wxt build`, a Playwright browser download, and
+    # actions/upload-artifact for traces on failure. The registry and browser
+    # CDN are unauthenticated; upload-artifact uses the runner's artifact
+    # service rather than GITHUB_TOKEN. Read is all that is used.
+    permissions:
+      contents: read
     # The only workflow here that was unbounded, so a hung step ran until
     # GitHub's 6-hour default. Measured healthy execution is ~90s; the
     # slowest successful run was ~7min (browser download variance), so 20
