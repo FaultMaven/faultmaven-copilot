@@ -114,6 +114,12 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
     shortLabel: 'Stabilized',
     description: 'A verified mitigation relieved the symptom; root-cause analysis was deferred.',
   },
+  closed_restatement_held: {
+    label: 'Cause not stated distinctly',
+    shortLabel: 'Not Distinct',
+    description:
+      'The evidence supported a cause, but it was never stated distinctly from the problem — what was missing was a mechanism, not more data.',
+  },
   closed_insufficient_evidence: {
     label: 'Insufficient evidence',
     shortLabel: 'Insufficient Evidence',

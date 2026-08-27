@@ -483,6 +483,7 @@ describe('Case Service', () => {
       expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
         'closed_insufficient_evidence',
         'closed_rca_infeasible',
+        'closed_restatement_held',
         'inquiry_only',
         'mitigation_sufficient',
         'other',
