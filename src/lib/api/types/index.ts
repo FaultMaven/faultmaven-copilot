@@ -170,7 +170,22 @@ export interface AttachmentResult {
   processing_status: string;
   /** ISO 8601 timestamp of when the attachment was processed */
   uploaded_at?: string;
-  /** Input origin: file_upload | text_paste | page_capture */
+  /**
+   * Input origin: file_upload | text_paste | page_capture.
+   *
+   * This is the field that actually carries the origin. Read it via
+   * `attachmentOrigin()` rather than directly, so the fallback for rows
+   * predating the current tag values stays in one place.
+   */
+  upload_source?: string;
+  /**
+   * @deprecated NOT the input origin, despite the name and this field's
+   * former doc comment. The backend fills it with the preprocessing DATA
+   * classification (`logs` | `metrics` | `configuration` | `code` | `text` |
+   * `image`) from `uploaded_file.data_type`. It has never carried an origin,
+   * so every comparison against `page_capture` / `text_paste` was dead.
+   * Use `upload_source`.
+   */
   source_type?: string;
 }
 
