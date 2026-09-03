@@ -23,6 +23,11 @@
     ".wxt/types/**/*.ts", // Important: Includes WXT's auto-generated global types
     "src/**/*.ts",
     "src/**/*.tsx",
+    // The host-independence proof (playground/). Typechecked here on purpose:
+    // it compiles the shared UI against a non-extension host, so `pnpm compile`
+    // is what would catch the proof silently rotting away from src/shared/ui.
+    "playground/**/*.ts",
+    "playground/**/*.tsx",
     "wxt.config.ts",       // Include your WXT config file
     "tailwind.config.cjs", // Include your Tailwind config
     "postcss.config.cjs"   // Include your PostCSS config

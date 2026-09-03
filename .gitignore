@@ -57,3 +57,6 @@ coverage/
 # Playwright artifacts
 playwright-report/
 test-results/
+
+# Host-independence proof build output (playground/vite.config.ts)
+playground/dist/
