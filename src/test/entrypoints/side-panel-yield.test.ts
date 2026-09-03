@@ -1,22 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
- * The side panel yields on Dashboard tabs (#229).
+ * The side panel yields on Dashboard tabs that host their own panel (#229).
  *
- * INVARIANT: on a tab whose origin is a configured Dashboard origin the panel
- * is not visible; on every other tab it behaves exactly as before.
+ * INVARIANT: on a tab whose origin is a configured Dashboard origin AND whose
+ * page advertises that it hosts the built-in copilot panel, the extension's
+ * panel is not visible. On every other tab — INCLUDING a Dashboard that does
+ * not advertise — it behaves exactly as before.
  *
  * These drive the BACKGROUND ENTRYPOINT rather than the yield module directly,
- * for two reasons. It binds the wiring — the navigation listener and the
- * settings-change reconcile are as much a part of the invariant as the rule
- * itself — and it means every assertion here is a behavioural one that a build
- * without the feature fails by doing nothing, rather than by failing to import.
+ * for two reasons. It binds the wiring — the navigation listener, the
+ * settings-change reconcile and the advertisement message are as much a part of
+ * the invariant as the rule itself — and it means every assertion here is a
+ * behavioural one that a build without the feature fails by doing nothing,
+ * rather than by failing to import.
  *
- * The two failure directions are not symmetric. Suppressing the panel on a
- * NON-Dashboard tab removes the product from the only surface it has there, so
- * that direction is tested harder than the redundancy this issue exists to
- * remove: the origin set is exercised with a look-alike host, a look-alike
- * port, and the release path after navigating away.
+ * The two failure directions are not symmetric. Suppressing the panel on a tab
+ * that has no built-in panel of its own removes the product from the only
+ * surface it has there, so that direction is tested hardest: a Dashboard origin
+ * that stays silent, a look-alike host, a look-alike port, an advertisement
+ * from somewhere it must not be honoured, and the release after navigating away.
  */
 
 const {
@@ -67,7 +70,12 @@ const {
   const mockBrowserObj: any = {
     runtime: {
       id: 'test-copilot-id',
-      onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
+      onMessage: {
+        addListener: vi.fn((fn: any) => {
+          listeners.message = fn;
+        }),
+        removeListener: vi.fn(),
+      },
       onInstalled: { addListener: vi.fn(), removeListener: vi.fn() },
       sendMessage: vi.fn().mockResolvedValue(undefined),
       getURL: vi.fn((path: string) => `chrome-extension://test-copilot-id${path}`),
@@ -193,13 +201,31 @@ async function configureDashboardUrl(url: string) {
   await settle();
 }
 
+/**
+ * Deliver the advertisement the way the auth-bridge content script does: a
+ * runtime message whose tab and origin are attributed BY THE BROWSER, never by
+ * the payload.
+ */
+async function advertisePanel(tabId: number, origin: string) {
+  expect(
+    typeof listeners.message,
+    'the worker registered no runtime.onMessage listener'
+  ).toBe('function');
+  listeners.message(
+    { action: 'dashboardPanelAvailable' },
+    { id: 'test-copilot-id', tab: { id: tabId }, origin },
+    vi.fn()
+  );
+  await settle();
+}
+
 /** What the browser would do with this tab: is the panel shown on it? */
 async function panelIsVisibleOn(tabId: number): Promise<boolean> {
   const options = await mockSidePanel.getOptions({ tabId });
   return options?.enabled !== false;
 }
 
-describe('Side panel yields on Dashboard tabs', () => {
+describe('Side panel yields on Dashboard tabs that advertise a built-in panel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     panelOptionsByTab.clear();
@@ -213,34 +239,74 @@ describe('Side panel yields on Dashboard tabs', () => {
     mockBrowser.sidePanel = mockSidePanel;
   });
 
-  describe('failure direction 1 — the panel must NOT disappear off the Dashboard', () => {
+  describe('failure direction 1 — the panel must not disappear', () => {
+    it('keeps the panel on a Dashboard origin that does not advertise', async () => {
+      mount();
+      await settle();
+
+      // The deployment-lag case, and the reason origin alone is not the rule:
+      // a self-hosted Dashboard image from before the built-in panel shipped,
+      // or Cloud between this release and its own, has no panel to yield to.
+      await navigate(1, `${CLOUD_DASHBOARD}/cases/abc-123`);
+
+      expect(await panelIsVisibleOn(1)).toBe(true);
+      expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
+    });
+
     it('leaves a non-Dashboard tab entirely alone', async () => {
       mount();
       await settle();
 
-      await navigate(1, `${GRAFANA}/d/abc/incident`);
+      await navigate(2, `${GRAFANA}/d/abc/incident`);
 
-      expect(await panelIsVisibleOn(1)).toBe(true);
-      // Not merely "still enabled": a tab that has never been on the Dashboard
-      // is never written to at all, so it keeps the pristine window-level panel
-      // instead of acquiring tab-specific options it did not ask for.
+      expect(await panelIsVisibleOn(2)).toBe(true);
+      // Not merely "still enabled": a tab this rule never suppressed is never
+      // written to at all, so it keeps the pristine window-level panel instead
+      // of acquiring tab-specific options it did not ask for.
       expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
     });
 
-    it('does not yield on a look-alike origin', async () => {
-      // Configured before the worker starts: these cases are about what a
-      // NAVIGATION does against an already-configured deployment.
+    it('ignores an advertisement from a non-Dashboard origin', async () => {
+      mount();
+      await settle();
+
+      // A compromised or confused content script must not be able to make an
+      // arbitrary site suppress the panel.
+      await advertisePanel(3, GRAFANA);
+      await advertisePanel(4, 'https://evil.example.com');
+
+      expect(await panelIsVisibleOn(3)).toBe(true);
+      expect(await panelIsVisibleOn(4)).toBe(true);
+      expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
+    });
+
+    it('ignores an advertisement from a look-alike origin', async () => {
       storageStore.dashboardUrl = SELF_HOSTED_DASHBOARD;
       mount();
       await settle();
 
-      // Same host, different port, and a different host that merely contains
-      // the configured one as a substring. Neither is the Dashboard.
-      await navigate(2, `${SELF_HOSTED_DASHBOARD}:8443/cases`);
-      await navigate(3, 'https://fm.internal.example.com.evil.test/cases');
+      // Same host, different port; and a host that merely contains the
+      // configured one as a substring.
+      await advertisePanel(5, `${SELF_HOSTED_DASHBOARD}:8443`);
+      await advertisePanel(6, 'https://fm.internal.example.com.evil.test');
 
-      expect(await panelIsVisibleOn(2)).toBe(true);
-      expect(await panelIsVisibleOn(3)).toBe(true);
+      expect(await panelIsVisibleOn(5)).toBe(true);
+      expect(await panelIsVisibleOn(6)).toBe(true);
+      expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
+    });
+
+    it('ignores an advertisement the browser could not attribute to an origin', async () => {
+      mount();
+      await settle();
+
+      listeners.message(
+        { action: 'dashboardPanelAvailable' },
+        { id: 'test-copilot-id', tab: { id: 7 } },
+        vi.fn()
+      );
+      await settle();
+
+      expect(await panelIsVisibleOn(7)).toBe(true);
       expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
     });
 
@@ -248,70 +314,110 @@ describe('Side panel yields on Dashboard tabs', () => {
       mount();
       await settle();
 
-      dispatchTabUpdate(4, { status: 'loading' }, { id: 4 });
+      dispatchTabUpdate(8, { status: 'loading' }, { id: 8 });
       await settle();
-      await navigate(5, 'about:blank');
+      await navigate(9, 'about:blank');
 
-      expect(await panelIsVisibleOn(4)).toBe(true);
-      expect(await panelIsVisibleOn(5)).toBe(true);
+      expect(await panelIsVisibleOn(8)).toBe(true);
+      expect(await panelIsVisibleOn(9)).toBe(true);
       expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
     });
   });
 
-  describe('failure direction 2 — the panel must not double up on the Dashboard', () => {
-    it('yields on the Cloud Dashboard origin', async () => {
+  describe('failure direction 2 — the panel must not double up', () => {
+    it('yields when the Cloud Dashboard advertises its built-in panel', async () => {
       mount();
       await settle();
 
-      await navigate(6, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await navigate(10, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await advertisePanel(10, CLOUD_DASHBOARD);
 
-      expect(mockSidePanel.setOptions).toHaveBeenCalledWith({ tabId: 6, enabled: false });
-      expect(await panelIsVisibleOn(6)).toBe(false);
+      expect(mockSidePanel.setOptions).toHaveBeenCalledWith({ tabId: 10, enabled: false });
+      expect(await panelIsVisibleOn(10)).toBe(false);
     });
 
-    it('yields on a configured self-hosted Dashboard origin', async () => {
-      // Configured before the worker starts: these cases are about what a
-      // NAVIGATION does against an already-configured deployment.
+    it('yields when a configured self-hosted Dashboard advertises', async () => {
       storageStore.dashboardUrl = SELF_HOSTED_DASHBOARD;
       mount();
       await settle();
 
-      await navigate(7, `${SELF_HOSTED_DASHBOARD}/cases`);
+      await navigate(11, `${SELF_HOSTED_DASHBOARD}/cases`);
+      await advertisePanel(11, SELF_HOSTED_DASHBOARD);
 
-      expect(await panelIsVisibleOn(7)).toBe(false);
+      expect(await panelIsVisibleOn(11)).toBe(false);
+    });
+
+    it('yields when the advertisement arrives after the tab already loaded', async () => {
+      mount();
+      await settle();
+
+      await navigate(12, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      // A dashboard that only mounts its panel after hydration posts the
+      // message later; the panel is still shown up to that point.
+      expect(await panelIsVisibleOn(12)).toBe(true);
+
+      await advertisePanel(12, CLOUD_DASHBOARD);
+
+      expect(await panelIsVisibleOn(12)).toBe(false);
     });
   });
 
   describe('the yield follows navigation', () => {
-    it('yields when a tab navigates onto the Dashboard and releases it on the way back', async () => {
+    it('releases the panel when an advertising tab navigates away, and yields again on return', async () => {
       mount();
       await settle();
 
-      await navigate(8, `${GRAFANA}/d/abc/incident`);
-      expect(await panelIsVisibleOn(8)).toBe(true);
+      await navigate(13, `${GRAFANA}/d/abc/incident`);
+      expect(await panelIsVisibleOn(13)).toBe(true);
 
-      await navigate(8, `${CLOUD_DASHBOARD}/cases/abc-123`);
-      expect(await panelIsVisibleOn(8)).toBe(false);
+      await navigate(13, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await advertisePanel(13, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(13)).toBe(false);
 
-      await navigate(8, `${GRAFANA}/d/xyz/latency`);
-      expect(await panelIsVisibleOn(8)).toBe(true);
+      await navigate(13, `${GRAFANA}/d/xyz/latency`);
+      expect(await panelIsVisibleOn(13)).toBe(true);
 
       // The release restores the panel the manifest declares, read back off the
       // running manifest rather than duplicated here — so renaming the side
       // panel entry point cannot leave this pointing at a document that is gone.
       expect(mockSidePanel.setOptions).toHaveBeenCalledWith({
-        tabId: 8,
+        tabId: 13,
         enabled: true,
         path: MANIFEST_PANEL_PATH,
       });
+
+      await navigate(13, `${CLOUD_DASHBOARD}/cases/def-456`);
+      await advertisePanel(13, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(13)).toBe(false);
+    });
+
+    it('keeps a yielded tab yielded across a same-origin reload', async () => {
+      mount();
+      await settle();
+
+      await navigate(14, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await advertisePanel(14, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(14)).toBe(false);
+
+      // Navigation within the Dashboard must not release-then-re-yield: that
+      // would flash the panel open on every page load before the page has had
+      // a chance to advertise again.
+      dispatchTabUpdate(14, { status: 'loading', url: `${CLOUD_DASHBOARD}/cases/def-456` }, {
+        id: 14,
+        url: `${CLOUD_DASHBOARD}/cases/def-456`,
+      });
+      await settle();
+
+      expect(await panelIsVisibleOn(14)).toBe(false);
     });
   });
 
   describe('the yield follows the configured Dashboard URL', () => {
-    it('moves to the new origin and releases the old one when Settings changes', async () => {
+    it('releases the old origin when Settings changes, and does not yield the new one until it advertises', async () => {
       const OLD_DASHBOARD = 'https://fm-old.example.com';
       const NEW_DASHBOARD = 'https://fm-new.example.com';
 
+      storageStore.dashboardUrl = OLD_DASHBOARD;
       mockBrowser.tabs.query.mockResolvedValue([
         { id: 20, url: `${OLD_DASHBOARD}/cases` },
         { id: 21, url: `${NEW_DASHBOARD}/cases` },
@@ -321,7 +427,7 @@ describe('Side panel yields on Dashboard tabs', () => {
       mount();
       await settle();
 
-      await configureDashboardUrl(OLD_DASHBOARD);
+      await advertisePanel(20, OLD_DASHBOARD);
       expect(await panelIsVisibleOn(20)).toBe(false);
       expect(await panelIsVisibleOn(21)).toBe(true);
       expect(await panelIsVisibleOn(22)).toBe(true);
@@ -330,32 +436,43 @@ describe('Side panel yields on Dashboard tabs', () => {
 
       // The old origin's tab gets the panel back...
       expect(await panelIsVisibleOn(20)).toBe(true);
-      // ...the new origin's tab yields it...
-      expect(await panelIsVisibleOn(21)).toBe(false);
-      // ...and the unrelated tab was never touched by either pass.
+      // ...the new origin's tab does NOT yield merely for being the Dashboard:
+      // that page has not advertised, and a Settings change is not a claim
+      // about what a deployment renders.
+      expect(await panelIsVisibleOn(21)).toBe(true);
+      // ...and the unrelated tab was never touched by any pass.
       expect(await panelIsVisibleOn(22)).toBe(true);
       expect(mockSidePanel.setOptions).not.toHaveBeenCalledWith(
         expect.objectContaining({ tabId: 22 })
       );
+
+      // It yields once the new deployment's page says so.
+      await advertisePanel(21, NEW_DASHBOARD);
+      expect(await panelIsVisibleOn(21)).toBe(false);
     });
 
-    it('reconciles the tabs that are already open when the worker starts', async () => {
-      storageStore.dashboardUrl = SELF_HOSTED_DASHBOARD;
-      mockBrowser.tabs.query.mockResolvedValue([
-        { id: 30, url: `${SELF_HOSTED_DASHBOARD}/cases` },
-        { id: 31, url: `${GRAFANA}/d/abc` },
-      ]);
+    it('releases a tab that left the Dashboard while the worker was evicted', async () => {
+      mount();
+      await settle();
+
+      await navigate(30, `${CLOUD_DASHBOARD}/cases`);
+      await advertisePanel(30, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(30)).toBe(false);
+
+      // The worker restarts and that tab is no longer on the Dashboard; the
+      // startup pass is what hands the panel back.
+      for (const key of Object.keys(listeners)) delete listeners[key];
+      mockBrowser.tabs.query.mockResolvedValue([{ id: 30, url: `${GRAFANA}/d/abc` }]);
 
       mount();
       await settle();
 
-      expect(await panelIsVisibleOn(30)).toBe(false);
-      expect(await panelIsVisibleOn(31)).toBe(true);
+      expect(await panelIsVisibleOn(30)).toBe(true);
     });
   });
 
   describe('non-Chromium targets', () => {
-    it('registers nothing when the browser has no side panel API', async () => {
+    it('registers nothing and yields nothing when the browser has no side panel API', async () => {
       // Firefox's MV2 build has no browser.sidePanel at all. Nothing about that
       // target may change, so the rule must not even attach a tab listener.
       delete mockBrowser.sidePanel;
@@ -365,6 +482,9 @@ describe('Side panel yields on Dashboard tabs', () => {
 
       expect(mockBrowser.tabs.onUpdated.addListener).not.toHaveBeenCalled();
       expect(listeners.tabUpdated).toBeUndefined();
+
+      // An advertisement is inert rather than fatal there.
+      await expect(advertisePanel(40, CLOUD_DASHBOARD)).resolves.toBeUndefined();
 
       // And a Settings change still reconciles the auth bridge without throwing.
       mockBrowser.tabs.query.mockResolvedValue([{ id: 40, url: `${CLOUD_DASHBOARD}/cases` }]);

@@ -8,6 +8,7 @@ import { enforceUserDataScope } from '../lib/auth/user-scope';
 import {
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
+  yieldSidePanelForAdvertisedTab,
 } from '../lib/side-panel-yield';
 import { createLogger } from '../lib/utils/logger';
 import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
@@ -516,6 +517,24 @@ export default defineBackground({
       // For now, just log it
     }
 
+    // === Dashboard built-in panel advertisement ===
+    // The Dashboard page has told us (through the auth bridge) that it renders
+    // the copilot panel itself, so ours should stand down on that tab.
+    //
+    // The origin is taken from what the BROWSER attributed to the sender, never
+    // from the message body: `sender.origin` is stamped by the browser and a
+    // page cannot forge it. Falling back to `sender.url` covers older senders
+    // that carry only the latter. A sender with neither is ignored — an
+    // unattributable claim must not be able to hide the panel anywhere.
+    function senderOrigin(sender: any): string | undefined {
+      if (typeof sender?.origin === 'string' && sender.origin) return sender.origin;
+      try {
+        return sender?.url ? new URL(sender.url).origin : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+
     // === Message Handler ===
     browser.runtime.onMessage.addListener((request: any, sender: any, sendResponse: any) => {
       // Defense-in-depth: only accept messages from this extension's own
@@ -536,6 +555,15 @@ export default defineBackground({
       if (request.action === "storeAuth") {
         handleStoreAuth(request.payload, sendResponse);
         return true; // Indicate async response
+      }
+
+      // The Dashboard page advertising its built-in copilot panel. The tab id
+      // comes from the sender, not the payload, so this can only ever act on
+      // the tab the message actually came from.
+      if (request.action === "dashboardPanelAvailable") {
+        yieldSidePanelForAdvertisedTab(sender?.tab?.id, senderOrigin(sender));
+        sendResponse({ status: "received" });
+        return false;
       }
 
       if (request.action === "initiateOIDCLogin") {
@@ -575,9 +603,11 @@ export default defineBackground({
       if (area === 'local' && (changes.dashboardUrl || changes.apiEndpoint)) {
         reconcileAuthBridgeRegistration();
         // The side-panel yield rule keys off the SAME origin set as the bridge,
-        // so it moves with it: changing the Dashboard URL must release the old
-        // origin's tabs in the same pass that yields on the new one's. Driving
-        // both from this one listener is what stops the two from drifting.
+        // so it moves with it: an origin that has just stopped being the
+        // Dashboard must give its tabs their panel back. Driving both from this
+        // one listener is what stops the two from drifting. This pass can only
+        // release — the new origin's tabs stay as they are until their pages
+        // advertise, so a mistyped Settings change cannot hide the panel.
         reconcileSidePanelForAllTabs();
       }
     });
@@ -589,19 +619,23 @@ export default defineBackground({
       browser.permissions.onRemoved.addListener(() => reconcileAuthBridgeRegistration());
     }
 
-    // === Side panel: yield on Dashboard tabs ===
+    // === Side panel: yield on Dashboard tabs that host their own panel ===
     // The panel opens window-wide (see the action handler below), so it stays
-    // up on every tab in the window — the Dashboard included, where the page
-    // already is the product. Suppress it per tab there; Chromium then hides it
-    // only while such a tab is in front and restores the window-level panel on
-    // every other tab, so the open path below is untouched.
+    // up on every tab in the window — including a Dashboard tab that renders
+    // the copilot itself, where it is a second copy of the same thing.
+    //
+    // Only an advertisement from the PAGE hides it (see the handler above and
+    // the contract in lib/auth/presence-marker.ts). Nothing below can: this
+    // listener exists purely to give the panel BACK to a tab that has left the
+    // Dashboard. A Dashboard with no built-in panel — an older self-hosted
+    // image, Cloud before its own ships — never advertises and so is untouched.
     //
     // Chromium only. Guarded on the API's presence rather than the build target
     // so the Firefox build, which has no browser.sidePanel at all, registers
     // nothing and behaves exactly as it does today.
     if (browser.sidePanel) {
-      // The browser can restore Dashboard tabs before we ever see a navigation,
-      // and per-tab options do not necessarily survive an extension reload.
+      // Per-tab options do not necessarily survive an extension reload, and a
+      // tab can have moved off the Dashboard while the worker was evicted.
       reconcileSidePanelForAllTabs();
 
       browser.tabs.onUpdated.addListener((tabId: number, _changeInfo: any, tab: any) => {
