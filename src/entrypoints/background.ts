@@ -5,6 +5,10 @@ import { browser } from 'wxt/browser';
 import { reconcileAuthBridgeRegistration } from '../lib/auth/auth-bridge-registration';
 import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
 import { enforceUserDataScope } from '../lib/auth/user-scope';
+import {
+  reconcileSidePanelForAllTabs,
+  reconcileSidePanelForTab,
+} from '../lib/side-panel-yield';
 import { createLogger } from '../lib/utils/logger';
 import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
 
@@ -570,6 +574,11 @@ export default defineBackground({
       // getDashboardUrl() still falls back to.
       if (area === 'local' && (changes.dashboardUrl || changes.apiEndpoint)) {
         reconcileAuthBridgeRegistration();
+        // The side-panel yield rule keys off the SAME origin set as the bridge,
+        // so it moves with it: changing the Dashboard URL must release the old
+        // origin's tabs in the same pass that yields on the new one's. Driving
+        // both from this one listener is what stops the two from drifting.
+        reconcileSidePanelForAllTabs();
       }
     });
     // Re-reconcile on both grant and revoke of host permissions.
@@ -578,6 +587,31 @@ export default defineBackground({
     }
     if (browser.permissions?.onRemoved) {
       browser.permissions.onRemoved.addListener(() => reconcileAuthBridgeRegistration());
+    }
+
+    // === Side panel: yield on Dashboard tabs ===
+    // The panel opens window-wide (see the action handler below), so it stays
+    // up on every tab in the window — the Dashboard included, where the page
+    // already is the product. Suppress it per tab there; Chromium then hides it
+    // only while such a tab is in front and restores the window-level panel on
+    // every other tab, so the open path below is untouched.
+    //
+    // Chromium only. Guarded on the API's presence rather than the build target
+    // so the Firefox build, which has no browser.sidePanel at all, registers
+    // nothing and behaves exactly as it does today.
+    if (browser.sidePanel) {
+      // The browser can restore Dashboard tabs before we ever see a navigation,
+      // and per-tab options do not necessarily survive an extension reload.
+      reconcileSidePanelForAllTabs();
+
+      browser.tabs.onUpdated.addListener((tabId: number, _changeInfo: any, tab: any) => {
+        // Every update carrying a URL, not just the ones where changeInfo.url
+        // is set. The reconcile reads the tab's current options before writing
+        // and is idempotent, so a redundant run costs a no-op — whereas a
+        // missed one leaves a tab that has LEFT the Dashboard with its panel
+        // still suppressed, which is the failure that actually hurts.
+        void reconcileSidePanelForTab(tabId, tab?.url);
+      });
     }
 
     // === Action Click Handler ===
