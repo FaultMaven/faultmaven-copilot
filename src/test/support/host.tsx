@@ -24,13 +24,29 @@ export interface StubHost {
   remove: ReturnType<typeof vi.fn>;
   subscribe: ReturnType<typeof vi.fn>;
   unsubscribe: ReturnType<typeof vi.fn>;
+  /** navigation.dashboard */
+  dashboard: ReturnType<typeof vi.fn>;
+  /** navigation.settings — a spy, or null for a host with no settings surface. */
+  settings: ReturnType<typeof vi.fn> | null;
   /** What the store currently holds. Mutate to stage a read. */
   data: Record<string, StoredValue>;
   /** Deliver a change to every subscriber that asked for one of these keys. */
   emit(changed: Record<string, StoredValue>): void;
 }
 
-export function createStubHost(seed: Record<string, StoredValue> = {}): StubHost {
+export interface StubHostOptions {
+  /**
+   * Whether this host HAS a settings surface. `false` produces
+   * `navigation.settings === null`, which is the case the shared UI must render
+   * no settings affordance for — the web host's permanent answer.
+   */
+  settings?: boolean;
+}
+
+export function createStubHost(
+  seed: Record<string, StoredValue> = {},
+  options: StubHostOptions = {},
+): StubHost {
   const data: Record<string, StoredValue> = { ...seed };
   const subscribers: Array<{ keys: string[]; onChange: ChangeHandler }> = [];
   const unsubscribe = vi.fn();
@@ -63,14 +79,19 @@ export function createStubHost(seed: Record<string, StoredValue> = {}): StubHost
 
   const store = { get, set, remove, subscribe } as unknown as HostStore;
 
+  const dashboard = vi.fn(async (_path: string) => {});
+  const settings = options.settings === false ? null : vi.fn(async () => {});
+
   return {
-    host: { store },
+    host: { store, navigation: { dashboard, settings } },
     store,
     get,
     set,
     remove,
     subscribe,
     unsubscribe,
+    dashboard,
+    settings,
     data,
     emit(changed) {
       // Same membership rule the extension adapter applies: a key being present

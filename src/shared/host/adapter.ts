@@ -158,10 +158,17 @@ export interface HostAdapter {
  * implement a member that nothing exercises, and no reviewer has to take
  * "it works" on trust for code with no caller.
  *
- * Storage is wired. `endpoints`, `navigation`, `session` and `pageCapture`
+ * Storage and navigation are wired. `endpoints`, `session` and `pageCapture`
  * follow with the call sites that consume them.
  */
-export type WiredHost = Pick<HostAdapter, 'store'>;
+export type WiredHost = Pick<HostAdapter, 'store'> & {
+  /**
+   * Only the navigation members that have a call site. `external` is in the
+   * target `HostNavigation` but nothing in the shared UI asks for it yet, so no
+   * host is made to implement it — same rule as the type above.
+   */
+  navigation: Pick<HostNavigation, 'dashboard' | 'settings'>;
+};
 
 /**
  * No default. A `useHost()` that returns a stub when no provider is mounted is

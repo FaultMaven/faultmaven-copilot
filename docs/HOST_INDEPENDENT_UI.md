@@ -290,6 +290,17 @@ Two rules the current call sites break, and which the shape enforces:
   is a capability this interface failed to model, and the next host makes it
   wrong.
 
+`HostAdapter` above is the target. What the React context is actually typed on
+is `WiredHost` — the subset of members that have a call site today, widening by
+one member per migration step (`store`, then `navigation`, and so on). The
+reason is not caution but evidence: a member nobody has converted cannot be
+read, so no host is obliged to implement one that nothing exercises, and no
+reviewer is asked to take "it works" on trust for code with no caller. It
+extends inside a member too — `navigation` is wired as
+`Pick<HostNavigation, 'dashboard' | 'settings'>`, because `external` has no
+caller yet. When the last call site converts, `WiredHost` and `HostAdapter`
+are the same type and the alias goes away.
+
 ### Every call site, and what each host answers
 
 | Call site | Extension host | Web host |
@@ -483,6 +494,14 @@ screenshot. The Dashboard has no notion of that session. Decision D2.
 `CollapsibleNavigation.tsx:185,323` renders the "Open Settings" affordance
 unconditionally and then does nothing when pressed in a host without `browser` —
 the worst of both.
+
+**10. One key, two writer paths.** `faultmaven_current_case` is written from
+`src/shared/ui` (three sites) and from the lib closure —
+`state/slices/cases-slice.ts:75,77`, `utils/persistence-manager.ts:350`,
+`auth/user-scope.ts:75`. In the extension both land in the same store, so this
+is invisible today; it means the key is not host-independent until the closure
+is converted, and that converting the UI's own call sites is not by itself
+enough to move a key across the boundary. Resolved in PR 6.
 
 ## The proof
 

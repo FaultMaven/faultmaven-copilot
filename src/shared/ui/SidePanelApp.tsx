@@ -1,6 +1,5 @@
 // src/shared/ui/SidePanelApp.tsx
 import React, { useEffect, useRef } from "react";
-import { browser } from "wxt/browser";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
 import { ErrorModal } from "./components/ErrorModal";
@@ -17,8 +16,8 @@ import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch, markSessionEnding } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
-import { getDashboardUrl } from "../../config";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
+import { useHost } from "../host";
 
 const log = createLogger('SidePanelApp');
 
@@ -45,6 +44,7 @@ export default function SidePanelApp() {
 
 // Main app content with error handler integration
 function SidePanelAppContent() {
+  const { navigation } = useHost();
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
 
@@ -255,10 +255,12 @@ function SidePanelAppContent() {
       <ErrorBoundary>
         <ErrorScreen
           message={`Failed to connect to backend: ${capabilitiesError}`}
-          action={{
-            label: "Open Settings",
-            onClick: () => browser.runtime.openOptionsPage()
-          }}
+          // No settings surface in this host means no button, not a button that
+          // does nothing. ErrorScreen already omits the action when it is
+          // undefined, so the affordance disappears with the capability.
+          action={navigation.settings
+            ? { label: "Open Settings", onClick: navigation.settings }
+            : undefined}
         />
       </ErrorBoundary>
     );
@@ -303,30 +305,13 @@ function SidePanelAppContent() {
             refreshTrigger={refreshSessions}
             dashboardUrl={capabilities?.dashboardUrl}
             onTabChange={setActiveTab}
-            onOpenDashboard={async () => {
-              const baseUrl = (await getDashboardUrl()).replace(/\/+$/, '');
-              if (!baseUrl) return;
-              const targetUrl = activeCaseId
-                ? `${baseUrl}/cases/${activeCaseId}`
-                : `${baseUrl}/cases`;
-              try {
-                const tabs = await browser.tabs.query({ url: `${baseUrl}/*` });
-                if (tabs.length > 0 && tabs[0].id != null) {
-                  const currentUrl = tabs[0].url ?? '';
-                  const updateOpts: { active: boolean; url?: string } = {
-                    active: true,
-                  };
-                  if (!currentUrl.startsWith(targetUrl)) {
-                    updateOpts.url = targetUrl;
-                  }
-                  await browser.tabs.update(tabs[0].id, updateOpts);
-                } else {
-                  await browser.tabs.create({ url: targetUrl });
-                }
-              } catch {
-                window.open(targetUrl, '_blank');
-              }
-            }}
+            // A path, not a URL: where the Dashboard lives is the host's
+            // business (a configured endpoint in the extension, the current
+            // origin on the web), and how it is reached — focus an existing tab,
+            // open a new one, push a route — is too.
+            onOpenDashboard={() =>
+              navigation.dashboard(activeCaseId ? `/cases/${activeCaseId}` : '/cases')
+            }
             onCaseSelect={handleCaseSelect}
             onNewChat={handleNewChatFromNav}
             onLogout={handleLogout}

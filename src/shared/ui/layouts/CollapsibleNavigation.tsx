@@ -9,12 +9,12 @@
  */
 
 import React from 'react';
-import { browser } from 'wxt/browser';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import ConversationsList from '../components/ConversationsList';
 import { useConfiguredEndpoint } from '../hooks/useConfiguredEndpoint';
 import { NAVIGATION_WIDTH, TRANSITION } from './constants';
 import { AccountRow } from '../components/AccountRow';
+import { useHost } from '../../host';
 import type { User } from '~/lib/api/types';
 
 export interface CollapsibleNavigationProps {
@@ -78,6 +78,11 @@ export function CollapsibleNavigation({
   onAfterDelete,
   onCasesLoaded,
 }: CollapsibleNavigationProps) {
+  // `settings` is null in a host with no settings surface. The two buttons
+  // below are then not rendered at all — the previous
+  // `typeof browser !== 'undefined'` guard kept drawing them and silently did
+  // nothing when pressed, which is the worst of both.
+  const { navigation } = useHost();
 
   // Backend the copilot is talking to (a side panel has no URL bar to show it).
   const backendUrl = useConfiguredEndpoint('api');
@@ -180,17 +185,15 @@ export function CollapsibleNavigation({
         {/* Bottom: Account + Settings + Logout */}
         <div className="flex-shrink-0 flex flex-col items-center pb-3 gap-2 border-t border-fm-border pt-2">
           <AccountRow user={currentUser} collapsed />
-          <button
-            onClick={() => {
-              if (typeof browser !== 'undefined' && browser.runtime) {
-                browser.runtime.openOptionsPage();
-              }
-            }}
-            className={`${collapsedBtnClass} text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5`}
-            title="Settings"
-          >
-            <SettingsIcon />
-          </button>
+          {navigation.settings && (
+            <button
+              onClick={navigation.settings}
+              className={`${collapsedBtnClass} text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5`}
+              title="Settings"
+            >
+              <SettingsIcon />
+            </button>
+          )}
           <button
             onClick={onLogout}
             className={`${collapsedBtnClass} text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5`}
@@ -318,17 +321,15 @@ export function CollapsibleNavigation({
       <div className="flex-shrink-0 flex flex-col gap-2 px-2 py-2 border-t border-fm-border">
         <AccountRow user={currentUser} collapsed={false} />
       <div className="flex items-center justify-center gap-2">
-        <button
-          onClick={() => {
-            if (typeof browser !== 'undefined' && browser.runtime) {
-              browser.runtime.openOptionsPage();
-            }
-          }}
-          className="w-6 h-6 flex items-center justify-center text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5 rounded transition-colors"
-          title="Settings"
-        >
-          <SettingsIcon />
-        </button>
+        {navigation.settings && (
+          <button
+            onClick={navigation.settings}
+            className="w-6 h-6 flex items-center justify-center text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5 rounded transition-colors"
+            title="Settings"
+          >
+            <SettingsIcon />
+          </button>
+        )}
         <button
           onClick={onLogout}
           className="w-6 h-6 flex items-center justify-center text-fm-text-tertiary hover:text-fm-text-primary hover:bg-white/5 rounded transition-colors"
