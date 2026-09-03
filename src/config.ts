@@ -77,7 +77,9 @@ const CLOUD_API_URL = 'https://api.faultmaven.ai';
 export const API_BASE_URL_KEY = 'apiBaseUrl';
 export const DASHBOARD_URL_KEY = 'dashboardUrl';
 // Legacy key (pre-explicit config): held the Dashboard URL; the API was derived.
-const LEGACY_ENDPOINT_KEY = 'apiEndpoint';
+// Exported because `useConfiguredEndpoint` subscribes to it by name; it used to
+// spell the same string inline, where a rename here would not have reached it.
+export const LEGACY_ENDPOINT_KEY = 'apiEndpoint';
 
 /** Trim and strip any trailing slash. */
 function normalizeUrl(url: string): string {

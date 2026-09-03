@@ -6,7 +6,6 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { browser } from 'wxt/browser';
 import {
   submitTurn,
   TurnRequest,
@@ -37,6 +36,7 @@ import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
+import { useHost } from '../../host';
 
 const log = createLogger('useMessageSubmission');
 
@@ -51,6 +51,7 @@ const log = createLogger('useMessageSubmission');
 // user-initiated "Generate title" action in ConversationsList and nothing else.
 
 export function useMessageSubmission() {
+  const { store } = useHost();
   const [submitting, setSubmitting] = useState(false);
   const { showError } = useError();
 
@@ -179,7 +180,7 @@ export function useMessageSubmission() {
 
       setActiveCase(newCase);
 
-      await browser.storage.local.set({
+      await store.set({
         faultmaven_current_case: realCaseId
       });
 
@@ -461,7 +462,7 @@ export function useMessageSubmission() {
         setActiveCaseId(optimisticCaseId);
         setHasUnsavedNewChat(false);
 
-        await browser.storage.local.set({ faultmaven_current_case: optimisticCaseId });
+        await store.set({ faultmaven_current_case: optimisticCaseId });
 
         const realCaseId = await createOptimisticCaseInBackground(optimisticCaseId, null);
 

@@ -149,19 +149,34 @@ export interface HostAdapter {
 }
 
 /**
+ * The adapter members the shared UI actually consumes TODAY.
+ *
+ * `HostAdapter` above is the target shape. This is how much of it is wired, and
+ * it widens one member per migration step. Typing the context on the wired
+ * subset rather than on the whole target is what keeps each step honest: a
+ * member nobody has converted yet cannot be read, so no host is obliged to
+ * implement a member that nothing exercises, and no reviewer has to take
+ * "it works" on trust for code with no caller.
+ *
+ * Storage is wired. `endpoints`, `navigation`, `session` and `pageCapture`
+ * follow with the call sites that consume them.
+ */
+export type WiredHost = Pick<HostAdapter, 'store'>;
+
+/**
  * No default. A `useHost()` that returns a stub when no provider is mounted is
  * the fail-open shape this boundary exists to remove: the UI would render, do
  * nothing, and stay green.
  */
-const HostAdapterContext = createContext<HostAdapter | null>(null);
+const HostAdapterContext = createContext<WiredHost | null>(null);
 
 export const HostAdapterProvider = HostAdapterContext.Provider;
 
-export function useHost(): HostAdapter {
+export function useHost(): WiredHost {
   const host = useContext(HostAdapterContext);
   if (!host) {
     throw new Error(
-      'No HostAdapter in context. Mount <HostAdapterProvider value={…}> above the Copilot UI.',
+      'No host in context. Mount <HostAdapterProvider value={…}> above the Copilot UI.',
     );
   }
   return host;

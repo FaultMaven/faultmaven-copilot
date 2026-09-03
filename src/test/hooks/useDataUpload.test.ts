@@ -4,6 +4,7 @@ import { useDataUpload } from '../../shared/ui/hooks/useDataUpload';
 import * as api from '../../lib/api';
 import { useAppStore } from '../../lib/state/store';
 import { pendingOpsManager, OptimisticIdGenerator } from '../../lib/optimistic';
+import { createStubHost, hostWrapper } from '../support/host';
 
 const okTurnResponse = {
   agent_response: 'Analyzed.',
@@ -16,10 +17,6 @@ const okTurnResponse = {
 };
 
 const mockShowError = vi.fn();
-
-vi.mock('wxt/browser', () => ({
-  browser: { storage: { local: { set: vi.fn(), remove: vi.fn() } } }
-}));
 
 vi.mock('../../lib/api', () => ({
   submitTurn: vi.fn(),
@@ -53,8 +50,13 @@ vi.mock('../../lib/utils/logger', () => ({
 }));
 
 describe('useDataUpload — error surfacing regression guard', () => {
+  let stub: ReturnType<typeof createStubHost>;
+  const render = () =>
+    renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    stub = createStubHost();
     mockShowError.mockClear();
     // The pending-ops manager is a module singleton that outlives a render, so
     // clear it (and the id counters) between tests to avoid cross-test leakage.
@@ -80,7 +82,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
       })
     );
 
-    const { result } = renderHook(() => useDataUpload());
+    const { result } = render();
 
     let submissionResult: { success: boolean; message: string } | undefined;
     await act(async () => {
@@ -102,7 +104,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
   it('uses opt_ optimistic IDs for the user and AI messages (data-integrity rule)', async () => {
     (api.submitTurn as any).mockResolvedValue(okTurnResponse);
 
-    const { result } = renderHook(() => useDataUpload());
+    const { result } = render();
     await act(async () => {
       await result.current.handleTurnSubmit({ query: 'diagnose this' });
     });
@@ -119,7 +121,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
       Object.assign(new Error('Request timeout'), { status: 504 })
     );
 
-    const { result } = renderHook(() => useDataUpload());
+    const { result } = render();
     await act(async () => {
       await result.current.handleTurnSubmit({ query: 'diagnose this' });
     });
@@ -150,7 +152,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
       .mockResolvedValueOnce(okTurnResponse);
 
     const onError = vi.fn();
-    const { result } = renderHook(() => useDataUpload());
+    const { result } = render();
     await act(async () => {
       await result.current.handleTurnSubmit({ query: 'diagnose this' });
     });
@@ -184,7 +186,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
     });
     (api.submitTurn as any).mockResolvedValue(okTurnResponse);
 
-    const { result } = renderHook(() => useDataUpload());
+    const { result } = render();
     await act(async () => {
       await result.current.handleTurnSubmit({ query: 'diagnose this' });
     });
@@ -196,5 +198,45 @@ describe('useDataUpload — error surfacing regression guard', () => {
     expect(api.submitTurn).not.toHaveBeenCalledWith(
       'opt_case_stale', expect.anything(), expect.anything()
     );
+  });
+});
+
+describe('useDataUpload — reaches storage through the host', () => {
+  let stub: ReturnType<typeof createStubHost>;
+  const render = () =>
+    renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stub = createStubHost();
+    pendingOpsManager.clear();
+    OptimisticIdGenerator.resetCounters();
+    useAppStore.setState({
+      sessionId: 'session-123',
+      activeCaseId: null,
+      conversations: {},
+      titleSources: {},
+      conversationTitles: {},
+      pinnedCases: new Set(),
+      caseEvidence: {}
+    });
+  });
+
+  // The single converted call site in this hook. Nothing here mocks the
+  // extension APIs, so an unconverted `browser.storage.local.set` would be
+  // swallowed by the global mock in setup.ts and this assertion would fail.
+  it('writes the new active-case pointer through host.store.set', async () => {
+    (api.createCase as any).mockResolvedValue({
+      case_id: 'real-case-id', title: 'Case-0625-1', state: 'inquiry'
+    });
+    (api.submitTurn as any).mockResolvedValue(okTurnResponse);
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'diagnose this' });
+    });
+
+    expect(stub.set).toHaveBeenCalledWith({ faultmaven_current_case: 'real-case-id' });
+    expect(stub.data.faultmaven_current_case).toBe('real-case-id');
   });
 });

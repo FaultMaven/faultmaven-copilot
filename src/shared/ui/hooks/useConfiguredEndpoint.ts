@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
-import { browser } from 'wxt/browser';
-import { getApiUrl, getDashboardUrl } from '../../../config';
+import {
+  API_BASE_URL_KEY,
+  DASHBOARD_URL_KEY,
+  LEGACY_ENDPOINT_KEY,
+  getApiUrl,
+  getDashboardUrl,
+} from '../../../config';
+import { useHost } from '../../host';
 
 export type EndpointKind = 'api' | 'dashboard';
 
@@ -14,7 +20,11 @@ export type EndpointKind = 'api' | 'dashboard';
  * Use this rather than the backend-reported capabilities.dashboardUrl, which is
  * the server's own (localhost) view on a self-hosted deployment.
  */
+/** The keys whose change means this hook's answer may have changed. */
+const ENDPOINT_KEYS = [API_BASE_URL_KEY, DASHBOARD_URL_KEY, LEGACY_ENDPOINT_KEY];
+
 export function useConfiguredEndpoint(kind: EndpointKind): string {
+  const { store } = useHost();
   const [url, setUrl] = useState('');
 
   useEffect(() => {
@@ -30,18 +40,16 @@ export function useConfiguredEndpoint(kind: EndpointKind): string {
     };
     refresh();
 
-    const onChange = (changes: any, area: string) => {
-      // Any endpoint-config key change is cheap to re-read.
-      if (area === 'local' && (changes.apiBaseUrl || changes.dashboardUrl || changes.apiEndpoint)) {
-        refresh();
-      }
-    };
-    browser.storage.onChanged.addListener(onChange);
+    // Any endpoint-config key change is cheap to re-read. The host decides what
+    // "a change to one of these keys" means; a host where the endpoint cannot
+    // change returns an unsubscribe and never calls back, so this hook needs no
+    // branch on which host it is running in.
+    const unsubscribe = store.subscribe(ENDPOINT_KEYS, refresh);
     return () => {
       active = false;
-      browser.storage.onChanged.removeListener(onChange);
+      unsubscribe();
     };
-  }, [kind]);
+  }, [kind, store]);
 
   return url;
 }

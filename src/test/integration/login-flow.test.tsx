@@ -65,6 +65,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 import { browser } from 'wxt/browser'; // Import the mocked browser
+import { createStubHost, hostWrapper } from '../support/host';
 
 // Mock import.meta.env
 vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3333' } } });
@@ -82,7 +83,11 @@ describe('SidePanelApp Login Flow', () => {
     // We need to bypass the WelcomeScreen check
     (browser.storage.local.get as any).mockResolvedValue({ hasCompletedFirstRun: true });
 
-    render(<SidePanelApp />);
+    // SidePanelApp mounts useDataRecovery, which now reaches storage through
+    // the host rather than `browser` directly — so rendering it needs a host.
+    // The stub answers empty, which is what this file's browser mock answered
+    // for those keys too, so nothing this test asserts changes.
+    render(<SidePanelApp />, { wrapper: hostWrapper(createStubHost().host) });
 
     // Find the OAuth login button (for OIDC provider)
     const loginButton = await screen.findByText('Sign in with Organization');

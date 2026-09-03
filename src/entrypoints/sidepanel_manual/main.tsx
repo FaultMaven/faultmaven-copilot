@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../lib/api/query-client';
+import { HostAdapterProvider, extensionHost } from '../../shared/host';
 import SidePanelApp from '../../shared/ui/SidePanelApp'; // Path to your main React app
 import '../../assets/styles/globals.css';      // Path to your global Tailwind styles
 import '../../assets/styles/sidepanel.css';    // Sidepanel-only height/overflow chain
@@ -17,7 +18,12 @@ function mountReactApp() {
     root.render(
       <React.StrictMode>
         <QueryClientProvider client={queryClient}>
-          <SidePanelApp /> {/* This is your full SidePanelApp */}
+          {/* The host the shared UI runs in. Mounted here, in the entry point,
+              because which host this is, is the one thing the shared UI must
+              not decide for itself. */}
+          <HostAdapterProvider value={extensionHost}>
+            <SidePanelApp /> {/* This is your full SidePanelApp */}
+          </HostAdapterProvider>
         </QueryClientProvider>
       </React.StrictMode>
     );
