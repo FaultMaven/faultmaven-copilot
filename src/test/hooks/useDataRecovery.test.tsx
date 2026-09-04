@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 
-const { mockPM, storageGet, storageRemove, handleCaseSelect, setState, isAuthenticated } = vi.hoisted(() => ({
+const {
+  mockPM, storageGet, storageRemove, storageSet, storageSubscribe,
+  handleCaseSelect, setState, isAuthenticated
+} = vi.hoisted(() => ({
   mockPM: {
     isRecoveryInProgress: vi.fn().mockResolvedValue(false),
     detectExtensionReload: vi.fn().mockResolvedValue(false),
@@ -10,6 +13,8 @@ const { mockPM, storageGet, storageRemove, handleCaseSelect, setState, isAuthent
   },
   storageGet: vi.fn(),
   storageRemove: vi.fn().mockResolvedValue(undefined),
+  storageSet: vi.fn().mockResolvedValue(undefined),
+  storageSubscribe: vi.fn(() => () => {}),
   handleCaseSelect: vi.fn(),
   setState: vi.fn(),
   isAuthenticated: vi.fn().mockResolvedValue(true)
@@ -18,17 +23,6 @@ const { mockPM, storageGet, storageRemove, handleCaseSelect, setState, isAuthent
 vi.mock('../../lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
 
 vi.mock('../../lib/api', () => ({ authManager: { isAuthenticated } }));
-
-vi.mock('wxt/browser', () => ({
-  browser: {
-    storage: {
-      local: {
-        get: (...a: any[]) => storageGet(...a),
-        remove: (...a: any[]) => storageRemove(...a)
-      }
-    }
-  }
-}));
 
 vi.mock('../../lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
@@ -53,6 +47,24 @@ vi.mock('../../lib/state/store', () => ({
 }));
 
 import { useDataRecovery } from '../../shared/ui/hooks/useDataRecovery';
+import { hostWrapper } from '../support/host';
+import type { HostStore, WiredHost } from '../../shared/host';
+
+// The host these tests mount. The three storage reads/writes in useDataRecovery
+// now go through here; nothing in this file mocks the extension APIs, so a call
+// site that had NOT been converted would fall through to the global mock in
+// setup.ts and every assertion on `storageGet` / `storageRemove` below would
+// find nothing — which is what makes them evidence rather than decoration.
+const host: WiredHost = {
+  store: {
+    get: storageGet,
+    set: storageSet,
+    remove: storageRemove,
+    subscribe: storageSubscribe,
+  } as unknown as HostStore,
+};
+const wrapper = hostWrapper(host);
+const renderRecovery = () => renderHook(() => useDataRecovery(), { wrapper });
 
 describe('useDataRecovery — active-case restore', () => {
   beforeEach(() => {
@@ -72,7 +84,7 @@ describe('useDataRecovery — active-case restore', () => {
   });
 
   it('re-selects the persisted active case after a reload', async () => {
-    renderHook(() => useDataRecovery());
+    renderRecovery();
 
     await waitFor(() => {
       expect(handleCaseSelect).toHaveBeenCalledWith('case-42');
@@ -85,7 +97,7 @@ describe('useDataRecovery — active-case restore', () => {
       return Promise.resolve({ conversations: {} });
     });
 
-    renderHook(() => useDataRecovery());
+    renderRecovery();
 
     // Give the effect a tick to run.
     await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
@@ -95,7 +107,7 @@ describe('useDataRecovery — active-case restore', () => {
   it('does not restore when unauthenticated (avoids a doomed delta-fetch → 401)', async () => {
     isAuthenticated.mockResolvedValue(false);
 
-    renderHook(() => useDataRecovery());
+    renderRecovery();
 
     await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
     expect(handleCaseSelect).not.toHaveBeenCalled();
@@ -120,7 +132,7 @@ describe('useDataRecovery — active-case restore', () => {
       });
     });
 
-    renderHook(() => useDataRecovery());
+    renderRecovery();
 
     await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
     expect(setState).not.toHaveBeenCalled();          // store hydrate fenced
@@ -140,7 +152,7 @@ describe('useDataRecovery — conversation cache schema gate', () => {
         ? Promise.resolve({})
         : Promise.resolve(stored)
     );
-    return renderHook(() => useDataRecovery());
+    return renderRecovery();
   };
 
   it('discards a cache written before system rows were admitted (#209)', async () => {
@@ -193,5 +205,56 @@ describe('useDataRecovery — conversation cache schema gate', () => {
 
     await waitFor(() => expect(setState).toHaveBeenCalled());
     expect(storageRemove).not.toHaveBeenCalled();
+  });
+});
+
+// One named assertion per converted call site, so the host boundary for this
+// hook is covered by intent and not only as a side effect of the tests above.
+describe('useDataRecovery — reaches storage through the host', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isAuthenticated.mockResolvedValue(true);
+    storageGet.mockImplementation((keys: string[]) =>
+      keys.includes('faultmaven_current_case')
+        ? Promise.resolve({ faultmaven_current_case: 'case-42' })
+        : Promise.resolve({ conversations: {}, conversationCacheVersion: 2 })
+    );
+  });
+
+  it('reads the hydration keys through host.store.get', async () => {
+    renderRecovery();
+
+    await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
+    expect(storageGet).toHaveBeenCalledWith([
+      'conversationTitles',
+      'titleSources',
+      'conversations',
+      'pinnedCases',
+      'idMappings',
+      'conversationCacheVersion'
+    ]);
+  });
+
+  it('reads the active-case pointer through host.store.get', async () => {
+    renderRecovery();
+
+    await waitFor(() => expect(handleCaseSelect).toHaveBeenCalledWith('case-42'));
+    expect(storageGet).toHaveBeenCalledWith(['faultmaven_current_case']);
+  });
+
+  it('discards a stale conversation cache through host.store.remove', async () => {
+    storageGet.mockImplementation((keys: string[]) =>
+      keys.includes('faultmaven_current_case')
+        ? Promise.resolve({})
+        : Promise.resolve({ conversations: { 'case-42': [{ id: 'm1' }] } })
+    );
+
+    renderRecovery();
+
+    await waitFor(() => expect(storageRemove).toHaveBeenCalled());
+    expect(storageRemove).toHaveBeenCalledWith([
+      'conversations',
+      'conversationCacheVersion'
+    ]);
   });
 });

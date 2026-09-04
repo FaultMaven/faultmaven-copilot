@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { browser } from 'wxt/browser';
 import {
   createCase,
   submitTurn,
@@ -26,10 +25,12 @@ import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
+import { useHost } from '../../host';
 
 const log = createLogger('useDataUpload');
 
 export function useDataUpload() {
+  const { store } = useHost();
   const [loading, setLoading] = useState(false);
   const { showError } = useError();
 
@@ -330,7 +331,7 @@ export function useDataUpload() {
           // The store is for titles a user chose or explicitly generated; the
           // backend's own title already renders as the second source.
 
-          await browser.storage.local.set({ faultmaven_current_case: targetCaseId });
+          await store.set({ faultmaven_current_case: targetCaseId });
           triggerRefreshSessions();
 
           log.info('Case created:', targetCaseId);

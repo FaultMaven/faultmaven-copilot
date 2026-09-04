@@ -6,10 +6,9 @@
  */
 
 import { useEffect, useCallback, useState, useRef } from 'react';
-import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
 import { authManager } from '../../../lib/api';
-import { IdMappingState, idMappingManager } from '../../../lib/optimistic';
+import { IdMappingState, OptimisticConversationItem, idMappingManager } from '../../../lib/optimistic';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import {
@@ -19,6 +18,7 @@ import {
   CONVERSATION_CACHE_VERSION_KEY
 } from '../../../lib/state/store';
 import { memoryManager } from '../../../lib/utils/memory-manager';
+import { useHost } from '../../host';
 
 const log = createLogger('DataRecovery');
 
@@ -28,6 +28,27 @@ interface RecoveredData {
   conversations: Record<string, any[]>;
   pinnedCases: Set<string>;
   idMappings?: IdMappingState;
+}
+
+/**
+ * What this hook expects to find in host storage.
+ *
+ * `HostStore.get` answers `unknown` — a store does not know what its callers
+ * persist. Stating the expected shape once here is what keeps the reads below
+ * typed without an `any` at each use, and puts the assumption somewhere a
+ * reviewer can see it.
+ */
+interface StoredRecoveryState {
+  conversationTitles?: Record<string, string>;
+  titleSources?: Record<string, 'user' | 'backend' | 'system'>;
+  conversations?: Record<string, OptimisticConversationItem[]>;
+  pinnedCases?: string[];
+  idMappings?: {
+    optimisticToReal?: Record<string, string>;
+    realToOptimistic?: Record<string, string>;
+  };
+  /** Indexed because CONVERSATION_CACHE_VERSION_KEY is not a literal here. */
+  [key: string]: unknown;
 }
 
 interface RecoveryStatus {
@@ -40,6 +61,8 @@ export function useDataRecovery(
   onDataRecovered?: (data: RecoveredData) => void,
   onError?: (message: string) => void
 ) {
+  const { store } = useHost();
+
   const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus>({
     isRecovering: false,
     error: null,
@@ -107,15 +130,15 @@ export function useDataRecovery(
           }
         }
 
-        log.debug('Loading data from browser storage');
+        log.debug('Loading data from host storage');
         // Read the persisted store-state keys (shared constant, kept in sync with
         // the write side in store.ts) plus idMappings, which is persisted from
         // idMappingManager rather than store state and so is not in that list.
-        const stored = await browser.storage.local.get([
+        const stored = (await store.get([
           ...PERSISTED_STATE_KEYS,
           'idMappings',
           CONVERSATION_CACHE_VERSION_KEY
-        ]);
+        ])) as StoredRecoveryState;
 
         // Discard conversations written by a build whose mapper admitted a
         // different set of backend rows. The delta fetch offsets by the local
@@ -133,7 +156,7 @@ export function useDataRecovery(
             caseCount: Object.keys(stored.conversations).length
           });
           delete stored.conversations;
-          await browser.storage.local.remove([
+          await store.remove([
             'conversations',
             CONVERSATION_CACHE_VERSION_KEY
           ]);
@@ -204,7 +227,7 @@ export function useDataRecovery(
           // fire a doomed request → 401 → handleAuthError storage writes + noise.
           if (await authManager.isAuthenticated()) {
             const { faultmaven_current_case: restoredCaseId } =
-              await browser.storage.local.get(['faultmaven_current_case']);
+              await store.get(['faultmaven_current_case']);
             // Re-check the epoch after the auth/storage awaits: a logout that
             // landed mid-recovery must not let us re-select the ended session's
             // case (handleCaseSelect writes activeCase and delta-fetches).
@@ -241,7 +264,10 @@ export function useDataRecovery(
     };
 
     loadPersistedDataWithRecovery();
-  }, []);
+    // `store` is a stable module singleton in each host, so this stays a
+    // mount-once effect; naming it keeps the dependency honest rather than
+    // relying on that stability silently.
+  }, [store]);
 
   const forceRecovery = useCallback(async () => {
     try {

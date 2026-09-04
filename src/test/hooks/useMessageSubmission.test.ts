@@ -5,22 +5,11 @@ import * as api from '../../lib/api';
 import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '../../lib/optimistic';
 import { useAppStore } from '../../lib/state/store';
 import { bumpEpoch } from '../../lib/state/session-epoch';
-import { browser } from 'wxt/browser';
+import { createStubHost, hostWrapper } from '../support/host';
 
 const mockShowError = vi.fn();
 
 // Mock dependencies
-vi.mock('wxt/browser', () => ({
-  browser: {
-    storage: {
-      local: {
-        set: vi.fn(),
-        remove: vi.fn()
-      }
-    }
-  }
-}));
-
 vi.mock('../../lib/api', () => ({
   submitTurn: vi.fn(),
   createCase: vi.fn(),
@@ -80,7 +69,16 @@ vi.mock('../../lib/utils/retry', () => ({
 }));
 
 describe('useMessageSubmission', () => {
+  // The host every render below mounts. Nothing in this file mocks the
+  // extension APIs any more, so an unconverted `browser.storage.local.set`
+  // would be swallowed by the global mock in setup.ts and the assertions on
+  // `stub.set` would find nothing.
+  let stub: ReturnType<typeof createStubHost>;
+  const render = () =>
+    renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
+
   beforeEach(() => {
+    stub = createStubHost();
     vi.clearAllMocks();
     mockShowError.mockClear();
 
@@ -112,12 +110,12 @@ describe('useMessageSubmission', () => {
   });
 
   it('should initialize with default state', () => {
-    const { result } = renderHook(() => useMessageSubmission());
+    const { result } = render();
     expect(result.current.submitting).toBe(false);
   });
 
   it('should handle successful query submission via submitTurn', async () => {
-    const { result } = renderHook(() => useMessageSubmission());
+    const { result } = render();
 
     // Mock successful TurnResponse
     (api.submitTurn as any).mockResolvedValue({
@@ -152,7 +150,7 @@ describe('useMessageSubmission', () => {
   });
 
   it('should sync activeCase.state from TurnResponse.case_state', async () => {
-    const { result } = renderHook(() => useMessageSubmission());
+    const { result } = render();
 
     (api.submitTurn as any).mockResolvedValue({
       agent_response: 'Starting the investigation.',
@@ -173,7 +171,7 @@ describe('useMessageSubmission', () => {
 
   it('should create new case if no active case exists', async () => {
     useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
-    const { result } = renderHook(() => useMessageSubmission());
+    const { result } = render();
 
     // Must be a well-formed optimistic id (opt_ prefix) — IdMappingManager
     // rejects anything else when reconciling to the real case id.
@@ -207,7 +205,7 @@ describe('useMessageSubmission', () => {
   });
 
   it('should handle API errors gracefully', async () => {
-    const { result } = renderHook(() => useMessageSubmission());
+    const { result } = render();
 
     // Mock API failure
     (api.submitTurn as any).mockRejectedValue(new Error('Network Error'));
@@ -230,7 +228,7 @@ describe('useMessageSubmission', () => {
   // flags set by the prior failed attempt, or the answer renders red and gets
   // dropped from committed-only persistence.
   it('clears error/failed flags when a retried submission succeeds', async () => {
-    const { result } = renderHook(() => useMessageSubmission());
+    const { result } = render();
 
     // First attempt fails → the AI item is marked error/failed (kept visible).
     (api.submitTurn as any).mockRejectedValue(new Error('Network Error'));
@@ -287,7 +285,7 @@ describe('useMessageSubmission', () => {
         return { case_id: 'real-case-id', title: 'Case-0625-1', state: 'inquiry' };
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('a query typed just before logout');
       });
@@ -297,7 +295,7 @@ describe('useMessageSubmission', () => {
       // case pointer is never re-pointed at the ended session's real case id.
       expect(addMappingSpy).not.toHaveBeenCalled();
       expect(useAppStore.getState().conversations['real-case-id']).toBeUndefined();
-      expect(browser.storage.local.set).not.toHaveBeenCalledWith(
+      expect(stub.set).not.toHaveBeenCalledWith(
         expect.objectContaining({ faultmaven_current_case: 'real-case-id' })
       );
       // The turn itself is never fired for the ended session.
@@ -321,7 +319,7 @@ describe('useMessageSubmission', () => {
         };
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('test query');
       });
@@ -359,7 +357,7 @@ describe('useMessageSubmission', () => {
         attachments_processed: []
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('the fifth turn');
       });
@@ -387,7 +385,7 @@ describe('useMessageSubmission', () => {
         attachments_processed: []
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('Yes, let us investigate');
       });
@@ -409,7 +407,7 @@ describe('useMessageSubmission', () => {
         attachments_processed: []
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('why is the pod crashing?');
       });
@@ -434,7 +432,7 @@ describe('useMessageSubmission', () => {
         case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: []
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('test query');
       });
@@ -457,7 +455,7 @@ describe('useMessageSubmission', () => {
         case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: []
       });
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('test query');
       });
@@ -473,7 +471,7 @@ describe('useMessageSubmission', () => {
       (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_test');
       (api.createCase as any).mockRejectedValue(new Error('create failed'));
 
-      const { result } = renderHook(() => useMessageSubmission());
+      const { result } = render();
       await act(async () => {
         await result.current.handleQuerySubmit('test query');
       });
@@ -486,6 +484,49 @@ describe('useMessageSubmission', () => {
       expect(api.submitTurn).not.toHaveBeenCalled();
       expect(mockShowError).toHaveBeenCalled();
       expect(result.current.submitting).toBe(false);
+    });
+  });
+
+  // One named assertion per converted call site in this hook. Both writes go to
+  // the same key from different points in the optimistic-case lifecycle, so
+  // asserting the VALUE is what tells them apart.
+  describe('reaches storage through the host', () => {
+    beforeEach(() => {
+      useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+      (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_probe');
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok', turn_number: 1, milestones_completed: [],
+        case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: []
+      });
+    });
+
+    it('writes the OPTIMISTIC case pointer through host.store.set before the backend create', async () => {
+      // Creation never resolves a real id here, so the only write that can have
+      // happened is the optimistic one.
+      (api.createCase as any).mockRejectedValue(new Error('create failed'));
+
+      const { result } = render();
+      await act(async () => {
+        await result.current.handleQuerySubmit('test query');
+      });
+
+      expect(stub.set).toHaveBeenCalledWith({ faultmaven_current_case: 'opt_case_probe' });
+    });
+
+    it('writes the REAL case pointer through host.store.set once creation reconciles', async () => {
+      (api.createCase as any).mockResolvedValue({
+        case_id: 'real-case-id', title: 'Case-0625-1', state: 'inquiry'
+      });
+
+      const { result } = render();
+      await act(async () => {
+        await result.current.handleQuerySubmit('test query');
+      });
+
+      expect(stub.set).toHaveBeenCalledWith({ faultmaven_current_case: 'opt_case_probe' });
+      expect(stub.set).toHaveBeenCalledWith({ faultmaven_current_case: 'real-case-id' });
+      // The reconciled id is what survives.
+      expect(stub.data.faultmaven_current_case).toBe('real-case-id');
     });
   });
 });
