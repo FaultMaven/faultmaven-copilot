@@ -322,7 +322,9 @@ describe('Authentication API', () => {
       }));
 
       await expect(getCurrentUser()).rejects.toThrow(AuthenticationError);
-      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+      // The client no longer clears the credential itself — it reports the
+      // rejection and the host tears down. See client.test.ts for the report.
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
     });
 
     // #99: a 401 on a header-less request (no token attached — transient refresh
@@ -852,7 +854,9 @@ describe('Authentication API', () => {
       await expect(getUserCases()).rejects.toThrow(AuthenticationError);
 
       // Verify auth state is cleared on 401
-      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+      // The client no longer clears the credential itself — it reports the
+      // rejection and the host tears down. See client.test.ts for the report.
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
     });
   });
 

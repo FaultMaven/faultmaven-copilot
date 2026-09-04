@@ -40,6 +40,8 @@ export interface StubHost {
   signOut: ReturnType<typeof vi.fn> | null;
   /** session.accessToken */
   accessToken: ReturnType<typeof vi.fn>;
+  /** session.onUnauthorized — the host's answer to a rejected credential. */
+  onUnauthorized: ReturnType<typeof vi.fn>;
   /** What the store currently holds. Mutate to stage a read. */
   data: Record<string, StoredValue>;
   /** Deliver a change to every subscriber that asked for one of these keys. */
@@ -115,6 +117,7 @@ export function createStubHost(
   // cannot produce it either.
   const accessToken = vi.fn(async () => 'stub-access-token');
   const signOut = options.signOut === false ? null : vi.fn(async () => {});
+  const onUnauthorized = vi.fn();
   const session: HostSession = {
     user: {
       id: 'stub-user',
@@ -125,6 +128,7 @@ export function createStubHost(
     },
     accessToken,
     signOut,
+    onUnauthorized,
   };
 
   const dashboard = vi.fn(async (_path: string) => {});
@@ -152,6 +156,7 @@ export function createStubHost(
     capture,
     signOut,
     accessToken,
+    onUnauthorized,
     data,
     emit(changed) {
       // Same membership rule the extension adapter applies: a key being present

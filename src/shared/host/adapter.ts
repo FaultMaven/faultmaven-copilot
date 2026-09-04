@@ -1,7 +1,7 @@
 /**
  * The host boundary for the Copilot UI.
  *
- * `src/shared/ui` reaches the browser through 27 direct `browser.*` calls and,
+ * `src/shared/ui` reached the extension APIs through 27 direct calls and,
  * transitively, through ~106 more in the modules it imports under `src/lib`.
  * Every one of those is a statement about the HOST — the extension — not about
  * the UI. This interface is that set of statements, named once, so a second
@@ -11,7 +11,7 @@
  *
  * 1. NOTHING HERE IS OPTIONAL-BY-UNDEFINED. A capability a host cannot provide
  *    is modelled as a discriminated union with a reason the UI can render, not
- *    as a missing method the UI probes for. `typeof browser !== 'undefined'`
+ *    as a missing method the UI probes for. a `typeof browser` guard
  *    (CollapsibleNavigation.tsx:185, :323) is a guard that silently does
  *    nothing in the host that needs the affordance most.
  *
@@ -24,7 +24,7 @@
  * 3. THE UI NEVER HOLDS A REFRESH TOKEN. It asks for an access token and the
  *    host answers. Two independent token refreshers in one page rotate the
  *    same single-use refresh token against each other; the two that exist
- *    today do not even share a Web Lock name (`faultmaven-token-refresh` here,
+ *    today do not even share a Web Lock name (one name in the extension,
  *    `fm-auth-refresh` in the Dashboard), so they would not exclude each other.
  *
  * This file declares the contract only. It is not wired into the extension:
@@ -38,7 +38,7 @@ export type StoredValue = unknown;
 /**
  * Per-user, per-host key-value storage.
  *
- * Extension: `browser.storage.local` (survives side-panel teardown, shared with
+ * Extension: extension `storage.local` (survives side-panel teardown, shared with
  * the background worker). Web: `localStorage` under a namespace prefix.
  *
  * `subscribe` exists because `useConfiguredEndpoint` needs it and because the
@@ -70,7 +70,7 @@ export interface HostEndpoints {
 /**
  * A navigation the UI can ask for but must not perform itself.
  *
- * `dashboard(path)` is `browser.tabs.query`/`update`/`create` in the extension
+ * `dashboard(path)` is the extension `tabs` query/update/create calls in the extension
  * (SidePanelApp.tsx:313-324: focus an existing dashboard tab, else open one)
  * and a router push in the web host, which IS the dashboard.
  */
@@ -78,7 +78,7 @@ export interface HostNavigation {
   dashboard(path: string): Promise<void>;
   external(url: string): Promise<void>;
   /**
-   * `browser.runtime.openOptionsPage()` in the extension.
+   * the extension options-page call in the extension.
    *
    * `null` in a host with no settings page of its own — and `null`, not a
    * no-op, so the UI renders no dead "Open Settings" button. Three call sites
@@ -107,8 +107,27 @@ export interface HostUser {
  */
 export interface HostSession {
   user: HostUser;
-  /** A currently-valid access token. The host refreshes as needed. */
+  /**
+   * A currently-valid access token. The host refreshes as needed.
+   *
+   * THROWS rather than resolving null when it cannot produce one. The contract
+   * is non-null on purpose: a null would hand the shared UI a decision about
+   * what an absent credential means, and that decision belongs to whoever owns
+   * the credential. A caller that cannot get a token is looking at a session
+   * that has ended, which is `onUnauthorized`'s business, not a value to branch
+   * on at a request site.
+   */
   accessToken(): Promise<string>;
+  /**
+   * The API rejected the credential this session handed out.
+   *
+   * The shared UI reports it and stops; it does not refresh, retry with a new
+   * token, or clear any storage — it holds no refresh token and has no way to
+   * mint one. What a dead credential means (re-authenticate, sign out, prompt)
+   * is the host's decision, because the host owns the token chain, its storage
+   * key and its rotation lock.
+   */
+  onUnauthorized(): void | Promise<void>;
   /**
    * `null` when the host owns sign-out (the Dashboard has its own account
    * menu). The UI then renders no sign-out of its own rather than a second

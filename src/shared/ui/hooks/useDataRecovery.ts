@@ -7,7 +7,6 @@
 
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
-import { authManager } from '../../../lib/api';
 import { IdMappingState, OptimisticConversationItem, idMappingManager } from '../../../lib/optimistic';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
@@ -221,11 +220,11 @@ export function useDataRecovery(
         // already hydrated above. handleCaseSelect rebuilds the activeCase object
         // from the hydrated conversations/titles and delta-fetches its messages.
         try {
-          // Only restore when authenticated. handleCaseSelect delta-fetches the
-          // conversation, so restoring for an unauthenticated panel (a leftover
-          // pointer after an auto-logout path that didn't run handleLogout) would
-          // fire a doomed request → 401 → handleAuthError storage writes + noise.
-          if (await authManager.isAuthenticated()) {
+          // No authentication check: this hook runs inside CopilotPanel, which
+          // cannot be mounted without a session. The gate that used to sit here
+          // guarded against a doomed delta-fetch from an unauthenticated panel —
+          // a state the host boundary now makes unreachable.
+          {
             const { faultmaven_current_case: restoredCaseId } =
               await store.get(['faultmaven_current_case']);
             // Re-check the epoch after the auth/storage awaits: a logout that

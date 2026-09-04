@@ -10,7 +10,6 @@ import {
   submitTurn,
   TurnRequest,
   QueryIntent,
-  authManager,
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
@@ -427,12 +426,6 @@ export function useMessageSubmission() {
     // Capture the epoch up front: if the user logs out during case creation
     // below, we must stop before adding optimistic messages to a purged store.
     const epoch = getEpoch();
-
-    const isAuth = await authManager.isAuthenticated();
-    if (!isAuth) {
-      log.error('User not authenticated, cannot submit query');
-      return;
-    }
 
     log.debug('OPTIMISTIC MESSAGE SUBMISSION START');
 

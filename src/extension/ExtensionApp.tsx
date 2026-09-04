@@ -13,7 +13,7 @@
  * answer reaches the panel.
  */
 import React, { useEffect, useMemo } from 'react';
-import { extensionHost } from '../shared/host';
+import { extensionHost } from './host';
 import type { HostSession, WiredHost } from '../shared/host';
 import CopilotPanel from '../shared/ui/CopilotPanel';
 import { ErrorBoundary } from '../shared/ui/components/ErrorBoundary';
@@ -22,6 +22,8 @@ import { useAuth } from '../shared/ui/hooks/useAuth';
 import { useAppStore } from '../lib/state/store';
 import { markSessionEnding } from '../lib/state/session-epoch';
 import { tokenManager } from '../lib/auth/token-manager';
+import { authManager } from '../lib/auth/auth-manager';
+import { installExtensionTransport } from './host';
 import { createLogger } from '../lib/utils/logger';
 import { AuthScreen } from './components/AuthScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -73,6 +75,12 @@ export function ExtensionApp() {
       // The extension owns sign-out because it owns the credential. The panel
       // still tears down its own state; this is only the credential half.
       signOut: logout,
+      // A hard 401. Clearing ALL local auth data — the token keys included — is
+      // what stops a stale refresh_token silently re-authenticating, and it is
+      // the extension's call to make because the extension owns that chain.
+      // Awaited by the client, so the next request cannot read a credential on
+      // its way out.
+      onUnauthorized: () => authManager.clearAllAuthData(),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -89,6 +97,14 @@ export function ExtensionApp() {
     () => (session ? { ...extensionHost, session } : null),
     [session],
   );
+
+  // The API layer is free functions, so the host installs its transport rather
+  // than the panel threading it down. Installed before the panel renders, and
+  // re-installed when the session changes, so a request can never go out with
+  // the previous account's bearer.
+  useEffect(() => {
+    if (session) installExtensionTransport(session);
+  }, [session]);
 
   const handleAuthSuccess = async () => {
     log.info('Authentication successful, checking auth state');
