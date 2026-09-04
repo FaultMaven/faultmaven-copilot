@@ -38,14 +38,18 @@ vi.mock('../../lib/api/case-service', () => ({
 }));
 
 import { ChatInterface } from '../../shared/ui/components/ChatInterface';
+import { createStubHost, hostWrapper } from '../support/host';
 import { caseApi } from '../../lib/api/case-service';
 
 const renderWithQueryClient = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const Host = hostWrapper(createStubHost().host);
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <Host>{children}</Host>
+    </QueryClientProvider>
   );
   // Using `wrapper` means subsequent rerender() calls reuse the same provider.
   return render(ui, { wrapper: Wrapper });
@@ -156,8 +160,11 @@ describe('ChatInterface e2e', () => {
         queries: { staleTime: 1000 * 60 * 5, retry: false },
       },
     });
+    const Host = hostWrapper(createStubHost().host);
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <Host>{children}</Host>
+      </QueryClientProvider>
     );
 
     const props = {

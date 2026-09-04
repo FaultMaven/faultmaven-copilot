@@ -126,7 +126,7 @@ export interface HostSession {
  * can render the button and have nothing to say when it is pressed.
  *
  * Extension: `tabs.query` + `permissions.contains`/`request` +
- * `scripting.executeScript` (usePageContent.ts:16, :102, :105, :115).
+ * `scripting.executeScript` (host/extension-page-capture.ts).
  */
 export type HostPageCapture =
   | { supported: true; capture(): Promise<{ content: string; url: string }> }
@@ -158,7 +158,7 @@ export interface HostAdapter {
  * implement a member that nothing exercises, and no reviewer has to take
  * "it works" on trust for code with no caller.
  *
- * Storage and navigation are wired. `endpoints`, `session` and `pageCapture`
+ * Storage, navigation and page capture are wired. `endpoints` and `session`
  * follow with the call sites that consume them.
  */
 export type WiredHost = Pick<HostAdapter, 'store'> & {
@@ -168,7 +168,7 @@ export type WiredHost = Pick<HostAdapter, 'store'> & {
    * host is made to implement it — same rule as the type above.
    */
   navigation: Pick<HostNavigation, 'dashboard' | 'settings'>;
-};
+} & Pick<HostAdapter, 'pageCapture'>;
 
 /**
  * No default. A `useHost()` that returns a stub when no provider is mounted is

@@ -11,7 +11,7 @@
 import React from 'react';
 import { vi } from 'vitest';
 import { HostAdapterProvider } from '../../shared/host';
-import type { HostStore, StoredValue, WiredHost } from '../../shared/host';
+import type { HostPageCapture, HostStore, StoredValue, WiredHost } from '../../shared/host';
 
 type ChangeHandler = (changed: Record<string, StoredValue>) => void;
 
@@ -28,6 +28,8 @@ export interface StubHost {
   dashboard: ReturnType<typeof vi.fn>;
   /** navigation.settings — a spy, or null for a host with no settings surface. */
   settings: ReturnType<typeof vi.fn> | null;
+  /** pageCapture.capture — a spy on the supporting arm, null on the other. */
+  capture: ReturnType<typeof vi.fn> | null;
   /** What the store currently holds. Mutate to stage a read. */
   data: Record<string, StoredValue>;
   /** Deliver a change to every subscriber that asked for one of these keys. */
@@ -41,7 +43,18 @@ export interface StubHostOptions {
    * no settings affordance for — the web host's permanent answer.
    */
   settings?: boolean;
+  /**
+   * Whether this host can read the page the user is looking at. `false`
+   * produces the `supported: false` arm carrying a reason and an install link —
+   * the web host's permanent answer, and the one the shared UI must render an
+   * explanation for rather than a dead button.
+   */
+  pageCapture?: boolean;
 }
+
+export const STUB_CAPTURE_REASON =
+  'Capturing this page needs the FaultMaven Copilot browser extension.';
+export const STUB_INSTALL_URL = 'https://chromewebstore.example.invalid/faultmaven';
 
 export function createStubHost(
   seed: Record<string, StoredValue> = {},
@@ -82,8 +95,17 @@ export function createStubHost(
   const dashboard = vi.fn(async (_path: string) => {});
   const settings = options.settings === false ? null : vi.fn(async () => {});
 
+  const capture =
+    options.pageCapture === false
+      ? null
+      : vi.fn(async () => ({ content: 'captured page text', url: 'https://grafana.example/d/1' }));
+  const pageCapture: HostPageCapture =
+    capture === null
+      ? { supported: false, reason: STUB_CAPTURE_REASON, installUrl: STUB_INSTALL_URL }
+      : { supported: true, capture };
+
   return {
-    host: { store, navigation: { dashboard, settings } },
+    host: { store, navigation: { dashboard, settings }, pageCapture },
     store,
     get,
     set,
@@ -92,6 +114,7 @@ export function createStubHost(
     unsubscribe,
     dashboard,
     settings,
+    capture,
     data,
     emit(changed) {
       // Same membership rule the extension adapter applies: a key being present

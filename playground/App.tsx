@@ -163,10 +163,10 @@ export default function App() {
               }
             />
             <p className="text-fm-sm text-fm-text-tertiary mt-3">
-              The capture button in the panel above is still visible and still enabled. Pressing it
-              today reports the missing extension API, because the branch that reads{' '}
-              <code className="font-fm-mono">host.pageCapture</code> does not exist yet — that is
-              PR&nbsp;4 in the migration sequence.
+              The capture button in the panel above is visible and enabled. Pressing it reads{' '}
+              <code className="font-fm-mono">host.pageCapture</code>, finds the{' '}
+              <code className="font-fm-mono">supported: false</code> arm, and renders the reason
+              above together with the install link — no extension API is reached.
             </p>
           </section>
         </div>
