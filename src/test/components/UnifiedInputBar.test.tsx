@@ -16,6 +16,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { INPUT_LIMITS } from '../../shared/ui/layouts/constants';
+import { createStubHost, hostWrapper } from '../support/host';
 
 // Mock browser API from wxt
 vi.mock('wxt/browser', () => ({
@@ -38,11 +39,13 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
   });
 
   function renderBar() {
+    // Capture now comes from the host, not a prop.
     return render(
       <UnifiedInputBar
         onQuerySubmit={mockQuerySubmit}
         onTurnSubmit={mockTurnSubmit}
-      />
+      />,
+      { wrapper: hostWrapper(createStubHost().host) }
     );
   }
 
@@ -138,7 +141,8 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     (browser.tabs.query as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: 2, url: 'https://other-tab.example.com/#access_token=SECRET123' },
     ]);
-    const mockPageInject = vi.fn().mockResolvedValue({
+    const stub = createStubHost();
+    stub.capture!.mockResolvedValue({
       content: 'captured page text',
       url: 'https://app.example.com/dashboard?range=1h',
     });
@@ -147,8 +151,8 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
       <UnifiedInputBar
         onQuerySubmit={mockQuerySubmit}
         onTurnSubmit={mockTurnSubmit}
-        onPageInject={mockPageInject}
-      />
+      />,
+      { wrapper: hostWrapper(stub.host) }
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Analyze current page/i }));

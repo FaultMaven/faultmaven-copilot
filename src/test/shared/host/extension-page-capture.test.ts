@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
 import { browser } from 'wxt/browser';
-import { usePageContent } from '../../shared/ui/hooks/usePageContent';
+import { capturePage } from '../../../shared/host/extension-page-capture';
 
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('../../../lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
@@ -23,7 +22,7 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-describe('usePageContent — capture provenance', () => {
+describe('capturePage — capture provenance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // clearAllMocks resets calls, NOT implementations: the scheme block below
@@ -38,9 +37,7 @@ describe('usePageContent — capture provenance', () => {
   });
 
   it('embeds the source URL in the captured content preamble', async () => {
-    const { result } = renderHook(() => usePageContent());
-
-    const { content } = await result.current.handlePageInject();
+    const { content } = await capturePage();
 
     // Provenance line must be present and carry the page URL (jsdom location).
     expect(content).toMatch(/\[source_url: https?:\/\/[^\]]+\]/);
@@ -56,8 +53,7 @@ describe('usePageContent — capture provenance', () => {
       configurable: true
     });
 
-    const { result } = renderHook(() => usePageContent());
-    const { content } = await result.current.handlePageInject();
+    const { content } = await capturePage();
 
     expect(content).not.toContain('access_token');
     expect(content).not.toContain('supersecret');
@@ -73,23 +69,19 @@ describe('usePageContent — capture provenance', () => {
     (browser.tabs.query as any).mockResolvedValue([
       { id: 1, url: 'https://grafana.example/dash?panel=1#access_token=supersecret' }
     ]);
-    const { result } = renderHook(() => usePageContent());
-
-    const { url } = await result.current.handlePageInject();
+    const { url } = await capturePage();
 
     expect(url).toBe('https://grafana.example/dash?panel=1');
   });
 
   it('fails with the friendly message when tabs.query returns no tab', async () => {
     (browser.tabs.query as any).mockResolvedValue([]);
-    const { result } = renderHook(() => usePageContent());
-
     // Not a TypeError from dereferencing undefined.
-    await expect(result.current.handlePageInject()).rejects.toThrow('No active tab found');
+    await expect(capturePage()).rejects.toThrow('No active tab found');
   });
 });
 
-describe('usePageContent — schemes the browser will not inject into', () => {
+describe('capturePage — schemes the browser will not inject into', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
@@ -104,9 +96,7 @@ describe('usePageContent — schemes the browser will not inject into', () => {
 
   it('refuses a file:// tab without asking for a permission Chrome cannot grant', async () => {
     activeTabIs('file:///home/user/docs/ops-dashboard.html');
-    const { result } = renderHook(() => usePageContent());
-
-    await expect(result.current.handlePageInject()).rejects.toThrow(/file:\/\//);
+    await expect(capturePage()).rejects.toThrow(/file:\/\//);
 
     // The old failure mode: requesting `file:///*` throws
     // "Only permissions specified in the manifest may be requested".
@@ -120,9 +110,7 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     'https://addons.mozilla.org/en-US/firefox/addon/faultmaven/',
   ])('refuses the extension gallery %s, which the browser blocks by policy', async (url) => {
     activeTabIs(url);
-    const { result } = renderHook(() => usePageContent());
-
-    await expect(result.current.handlePageInject()).rejects.toThrow(/extension gallery/);
+    await expect(capturePage()).rejects.toThrow(/extension gallery/);
     expect(browser.permissions.request).not.toHaveBeenCalled();
     expect(executeScript).not.toHaveBeenCalled();
   });
@@ -131,9 +119,7 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     // `chromewebstore.google.com.example.com` is an ordinary page. A prefix
     // match would refuse it with an explanation that is simply untrue.
     activeTabIs('https://chromewebstore.google.com.example.com/status');
-    const { result } = renderHook(() => usePageContent());
-
-    const { content } = await result.current.handlePageInject();
+    const { content } = await capturePage();
     expect(content).toContain('[captured_at:');
     expect(executeScript).toHaveBeenCalledTimes(1);
   });
@@ -145,11 +131,9 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     ['chrome-search:', 'chrome-search://local-ntp/local-ntp.html'],
   ])('refuses %s, which has no origin the browser can grant', async (_label, url) => {
     activeTabIs(url);
-    const { result } = renderHook(() => usePageContent());
-
     // These used to reach the origin builder and produce a pattern like
     // `blob:///*`, so permissions.contains() threw the raw browser error.
-    await expect(result.current.handlePageInject()).rejects.toThrow(
+    await expect(capturePage()).rejects.toThrow(
       /http:\/\/ and https:\/\/ pages only|browser internal pages/
     );
     expect(browser.permissions.contains).not.toHaveBeenCalled();
@@ -164,9 +148,7 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     'about:blank',
   ])('refuses the browser-internal page %s', async (url) => {
     activeTabIs(url);
-    const { result } = renderHook(() => usePageContent());
-
-    await expect(result.current.handlePageInject()).rejects.toThrow(/browser internal pages/);
+    await expect(capturePage()).rejects.toThrow(/browser internal pages/);
     expect(executeScript).not.toHaveBeenCalled();
   });
 
@@ -174,9 +156,7 @@ describe('usePageContent — schemes the browser will not inject into', () => {
     activeTabIs('https://grafana.example/dashboard');
     document.title = 'Prod Grafana';
     document.body.innerHTML = '<h1>Prod Grafana</h1><p>errors 5%</p>';
-    const { result } = renderHook(() => usePageContent());
-
-    const { content } = await result.current.handlePageInject();
+    const { content } = await capturePage();
 
     expect(executeScript).toHaveBeenCalledTimes(1);
     expect(content).toContain('[captured_at:');

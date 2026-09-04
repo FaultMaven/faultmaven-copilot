@@ -3,7 +3,6 @@ import { ChatWindow } from './ChatWindow';
 import { UnifiedInputBar, TurnPayload } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase } from '../../../lib/api';
-import { usePageContent } from '../hooks/usePageContent';
 import { createLogger } from '~/lib/utils/logger';
 
 const log = createLogger('ChatInterface');
@@ -45,8 +44,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   hasUnsavedNewChat,
   setActiveCase
 }) => {
-  const { handlePageInject } = usePageContent();
-
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
 
   // Check if interaction is allowed — terminal cases allow text Q&A but not evidence
@@ -133,7 +130,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <UnifiedInputBar
         onQuerySubmit={onQuerySubmit}
         onTurnSubmit={onTurnSubmit}
-        onPageInject={handlePageInject}
         loading={loading}
         submitting={submitting}
         disabled={!canInteract}

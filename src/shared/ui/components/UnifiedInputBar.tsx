@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useHost } from '../../host';
 import { createLogger } from '~/lib/utils/logger';
 import { PasteDataScratchpad } from './PasteDataScratchpad';
 
@@ -44,7 +45,6 @@ export interface UnifiedInputBarProps {
   // Callbacks
   onQuerySubmit: (query: string) => void;
   onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
-  onPageInject?: () => Promise<{ content: string; url: string }>;
 
   // Configuration
   maxLength?: number;
@@ -61,7 +61,14 @@ type InputMode = 'question' | 'data';
  */
 interface ValidationError {
   message: string;
-  type: 'warning' | 'error';
+  /**
+   * `info` is not a lesser error. It is the level for something the user asked
+   * for that this host cannot do — an explanation, not a failure — so it must
+   * not be dressed in the red or amber of something that went wrong.
+   */
+  type: 'info' | 'warning' | 'error';
+  /** An outbound link rendered beside the message, e.g. the store listing. */
+  action?: { label: string; href: string };
 }
 
 /**
@@ -107,7 +114,6 @@ export function UnifiedInputBar({
   submitting = false,
   onQuerySubmit,
   onTurnSubmit,
-  onPageInject,
   maxLength = INPUT_LIMITS.MAX_QUERY_LENGTH,
   placeholder = "Ask a question or paste data...",
 }: UnifiedInputBarProps) {
@@ -118,6 +124,7 @@ export function UnifiedInputBar({
   const [capturedPageUrl, setCapturedPageUrl] = useState<string | null>(null);
   const [capturedPageContent, setCapturedPageContent] = useState<string>("");
   const [stagedPastedContent, setStagedPastedContent] = useState<string>("");
+  const { pageCapture } = useHost();
   const [validationError, setValidationError] = useState<ValidationError | null>(null);
   const [isCapturingPage, setIsCapturingPage] = useState(false);
   const [isUploadingData, setIsUploadingData] = useState(false);
@@ -336,7 +343,18 @@ export function UnifiedInputBar({
 
   // Handle page injection button click
   const handlePageInjectClick = async () => {
-    if (!onPageInject) return;
+    // The one capability a web page cannot have: it cannot read another tab.
+    // The button is still drawn and still enabled — hiding or disabling it
+    // would leave the user to guess why the feature they were told about is
+    // missing — so pressing it explains, and offers the way to get it.
+    if (!pageCapture.supported) {
+      setValidationError({
+        type: 'info',
+        message: pageCapture.reason,
+        action: { label: 'Install the Copilot extension', href: pageCapture.installUrl },
+      });
+      return;
+    }
 
     setIsCapturingPage(true);
     setValidationError(null);
@@ -347,7 +365,7 @@ export function UnifiedInputBar({
       // active tab here: the user can switch tabs while the capture's
       // permission prompt is open, and a second query would attribute the
       // captured content to the wrong page.
-      const { content: pageHtmlContent, url: pageUrl } = await onPageInject();
+      const { content: pageHtmlContent, url: pageUrl } = await pageCapture.capture();
 
       if (!pageHtmlContent || pageHtmlContent.trim().length === 0) {
         throw new Error('No page content captured');
@@ -488,12 +506,31 @@ export function UnifiedInputBar({
             <div
               className={`flex items-center justify-between gap-2 text-xs rounded-md px-2.5 py-1.5 ${validationError.type === 'error'
                 ? 'text-fm-critical bg-fm-critical-bg border border-fm-critical-border'
-                : 'text-fm-warning bg-fm-warning-bg border border-fm-warning-border'
+                : validationError.type === 'info'
+                  ? 'text-fm-info bg-fm-info-bg border border-fm-info-border'
+                  : 'text-fm-warning bg-fm-warning-bg border border-fm-warning-border'
                 }`}
-              role="alert"
+              /* `alert` interrupts a screen reader; an explanation of a missing
+                 capability is a status, not an emergency. */
+              role={validationError.type === 'info' ? 'status' : 'alert'}
               aria-live="polite"
             >
-              <span>{validationError.message}</span>
+              <span>
+                {validationError.message}
+                {validationError.action && (
+                  <>
+                    {' '}
+                    <a
+                      href={validationError.action.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium whitespace-nowrap"
+                    >
+                      {validationError.action.label}
+                    </a>
+                  </>
+                )}
+              </span>
               <button
                 onClick={() => setValidationError(null)}
                 className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
@@ -607,7 +644,9 @@ export function UnifiedInputBar({
             <button
               type="button"
               onClick={handlePageInjectClick}
-              disabled={isProcessing || !onPageInject || disableAttachments}
+              // Deliberately NOT gated on whether capture is supported: a
+              // disabled button explains nothing. See handlePageInjectClick.
+              disabled={isProcessing || disableAttachments}
               className={`p-1.5 rounded transition-colors disabled:opacity-50 ${capturedPageUrl
                 ? 'text-fm-accent bg-fm-accent-soft'
                 : 'text-fm-text-tertiary hover:text-fm-text-primary'

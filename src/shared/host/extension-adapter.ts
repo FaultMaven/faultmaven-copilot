@@ -6,10 +6,11 @@
  * doing this while the extension is still the only host: the interface earns
  * its shape in production, and the second host is not also the first test of it.
  *
- * Only `store` and `navigation` are implemented, because only those are wired
- * (see `WiredHost`).
+ * Only `store`, `navigation` and `pageCapture` are implemented, because only
+ * those are wired (see `WiredHost`).
  */
 import { browser } from 'wxt/browser';
+import { capturePage } from './extension-page-capture';
 import { getDashboardUrl } from '../../config';
 import { createLogger } from '../../lib/utils/logger';
 import type { HostStore, StoredValue, WiredHost } from './adapter';
@@ -113,4 +114,11 @@ const navigation: WiredHost['navigation'] = {
  * Stable by construction, so it is safe in a hook's dependency array — a host
  * rebuilt on every render would re-run every effect that subscribes through it.
  */
-export const extensionHost: WiredHost = { store, navigation };
+export const extensionHost: WiredHost = {
+  store,
+  navigation,
+  // The one capability that is genuinely host-specific rather than
+  // host-flavoured: a web page cannot read another tab, at all. Extensions can,
+  // so this arm is `supported: true` and carries the implementation.
+  pageCapture: { supported: true, capture: capturePage },
+};
