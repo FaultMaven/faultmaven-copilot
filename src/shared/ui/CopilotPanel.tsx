@@ -1,23 +1,38 @@
-// src/shared/ui/SidePanelApp.tsx
+// src/shared/ui/CopilotPanel.tsx
+/**
+ * The Copilot panel: everything a signed-in user sees, and nothing about how
+ * they came to be signed in.
+ *
+ * This was `SidePanelApp`, which owned the first-run screen and the sign-in
+ * screen as well. Those are not shared: each host reaches them by its own route
+ * — the extension through its options page and OAuth flow, the Dashboard
+ * through the session it already holds — so they now live in the host's own
+ * entry point, above this boundary.
+ *
+ * What that buys is not tidiness. `host` carries a non-nullable `HostSession`,
+ * so there is no value this component can be called with that lacks a signed-in
+ * user, and therefore no state in which it could render a sign-in screen. The
+ * invariant is carried by the type rather than by a branch someone maintains.
+ */
 import React, { useEffect, useRef } from "react";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
 import { ErrorModal } from "./components/ErrorModal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { WelcomeScreen } from "./components/WelcomeScreen";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { ErrorScreen } from "./components/ErrorScreen";
-import { AuthScreen } from "./components/AuthScreen";
 import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { CaseSnapshot, isCaseTransition } from "../../lib/state/case-reconcile";
 import { applyCaseTitleChange } from "../../lib/state/case-title-change";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
-import { bumpEpoch, markSessionEnding } from "../../lib/state/session-epoch";
+import { bumpEpoch } from "../../lib/state/session-epoch";
+import { ROLES } from "../../lib/utils/roles";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
-import { useHost } from "../host";
+import { HostAdapterProvider, useHost } from "../host";
+import type { WiredHost } from "../host";
 
 const log = createLogger('SidePanelApp');
 
@@ -25,7 +40,6 @@ const log = createLogger('SidePanelApp');
 import { CollapsibleNavigation, ContentArea } from "./layouts";
 
 // Hooks
-import { useAuth } from "./hooks/useAuth";
 import { useSessionManagement } from "./hooks/useSessionManagement";
 import { useCaseManagement } from "./hooks/useCaseManagement";
 import { useDataRecovery } from "./hooks/useDataRecovery";
@@ -33,24 +47,40 @@ import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useMessageSubmission } from "./hooks/useMessageSubmission";
 import { useDataUpload } from "./hooks/useDataUpload";
 
-// Wrapper component that provides error handling context
-export default function SidePanelApp() {
+export interface CopilotPanelProps {
+  /**
+   * The host this panel runs in. Non-nullable, and its `session` is
+   * non-nullable too — see the note at the top of this file.
+   */
+  host: WiredHost;
+}
+
+/**
+ * Publishes the host to the subtree, then renders the panel.
+ *
+ * The provider is mounted HERE rather than in each host's entry point so there
+ * is exactly one way the host reaches the shared UI: through this prop. A host
+ * that mounted the provider itself could render this panel with one host in
+ * context and a different one in the prop.
+ */
+export default function CopilotPanel({ host }: CopilotPanelProps) {
   return (
-    <ErrorHandlerProvider>
-      <SidePanelAppContent />
-    </ErrorHandlerProvider>
+    <HostAdapterProvider value={host}>
+      <ErrorHandlerProvider>
+        <CopilotPanelContent session={host.session} />
+      </ErrorHandlerProvider>
+    </HostAdapterProvider>
   );
 }
 
 // Main app content with error handler integration
-function SidePanelAppContent() {
+function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
   const { navigation } = useHost();
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
 
   // --- Zustand Store Selectors ---
   const activeTab = useAppStore((state) => state.activeTab);
-  const hasCompletedFirstRun = useAppStore((state) => state.hasCompletedFirstRun);
   const capabilities = useAppStore((state) => state.capabilities);
   const initializingCapabilities = useAppStore((state) => state.initializingCapabilities);
   const capabilitiesError = useAppStore((state) => state.capabilitiesError);
@@ -67,7 +97,6 @@ function SidePanelAppContent() {
   const activeCase = useAppStore((state) => state.activeCase);
 
   const setActiveTab = useAppStore((state) => state.setActiveTab);
-  const setHasCompletedFirstRun = useAppStore((state) => state.setHasCompletedFirstRun);
   const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed);
   const setViewingDocument = useAppStore((state) => state.setViewingDocument);
   const setIsDocumentModalOpen = useAppStore((state) => state.setIsDocumentModalOpen);
@@ -80,10 +109,20 @@ function SidePanelAppContent() {
   const handleCaseSelect = useAppStore((state) => state.handleCaseSelect);
   const reconcileActiveCaseState = useAppStore((state) => state.reconcileActiveCaseState);
 
-  // --- Auth & Session ---
-  const { isAuthenticated, isAdmin, logout, currentUser } = useAuth();
-  const shouldInitializeSession = hasCompletedFirstRun === true;
-  const { sessionId, clearSession } = useSessionManagement(shouldInitializeSession);
+  // --- Identity & Session ---
+  //
+  // Who is signed in comes from the host, not from an auth stack this panel
+  // runs: `session` is non-nullable, so there is nobody to ask for and nothing
+  // to gate on. `currentUser` is still read from the store because the account
+  // row also renders a profile fetched separately; in the extension the host's
+  // session is BUILT from that same store value, so the two cannot disagree.
+  // Both collapse into `session.user` when the API client moves behind the
+  // adapter.
+  const currentUser = useAppStore((state) => state.currentUser);
+  const isAdmin = session.user.roles.includes(ROLES.ADMIN);
+  // The panel only ever mounts once its host says the environment is ready, so
+  // the session initialises unconditionally here.
+  const { sessionId, clearSession } = useSessionManagement(true);
 
   // --- Case Management ---
   const {
@@ -142,16 +181,6 @@ function SidePanelAppContent() {
     }
   }, [activeCase?.case_id, activeCase?.state, reconcileActiveCaseState]);
 
-  const handleAuthSuccess = async () => {
-    log.info('Authentication successful, checking auth state');
-    await new Promise(resolve => setTimeout(resolve, 100));
-    // Mark teardown BEFORE reloading so the store's beforeunload handler cancels the
-    // pending debounced persist instead of flushing a prior user's just-purged
-    // residue back to storage (#164). Same discipline as the auth-slice reload path.
-    markSessionEnding();
-    window.location.reload();
-  };
-
   const handleLogout = async () => {
     // 0. Fence the session FIRST, synchronously, before any await. handleLogout
     //    has several sequential awaits below during which a background writer
@@ -174,7 +203,9 @@ function SidePanelAppContent() {
     //    profile (#143). logout() already completes the local logout even on a
     //    failed POST; wrap clearSession too so a throw there can't skip the purge.
     try {
-      await logout();
+      // The credential half belongs to the host: it owns the token chain, the
+      // storage key and the rotation lock. This panel owns only the state below.
+      await session.signOut?.();
       await clearSession();
     } catch (error) {
       log.warn('Logout/session teardown failed; proceeding with local purge', error);
@@ -234,14 +265,6 @@ function SidePanelAppContent() {
     }
   };
 
-  if (hasCompletedFirstRun === false) {
-    return (
-      <ErrorBoundary>
-        <WelcomeScreen onComplete={() => setHasCompletedFirstRun(true)} />
-      </ErrorBoundary>
-    );
-  }
-
   if (initializingCapabilities || isRecovering) {
     return (
       <ErrorBoundary>
@@ -262,14 +285,6 @@ function SidePanelAppContent() {
             ? { label: "Open Settings", onClick: navigation.settings }
             : undefined}
         />
-      </ErrorBoundary>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <ErrorBoundary>
-        <AuthScreen onAuthSuccess={handleAuthSuccess} />
       </ErrorBoundary>
     );
   }
@@ -299,7 +314,7 @@ function SidePanelAppContent() {
             activeCaseId={activeCaseId || undefined}
             sessionId={sessionId || undefined}
             hasUnsavedNewChat={hasUnsavedNewChat}
-            isAdmin={isAdmin()}
+            isAdmin={isAdmin}
             conversationTitles={conversationTitles}
             pinnedCases={pinnedCases}
             refreshTrigger={refreshSessions}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import SidePanelApp from '../../shared/ui/SidePanelApp';
+import { ExtensionApp } from '../../extension/ExtensionApp';
 import { capabilitiesManager } from '../../lib/capabilities';
 import React from 'react';
 
@@ -9,7 +9,8 @@ vi.mock('../../lib/capabilities');
 vi.mock('../../shared/ui/hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: false,
-    isAdmin: () => false
+    currentUser: null,
+    logout: vi.fn()
   })
 }));
 vi.mock('../../lib/errors', () => ({
@@ -65,7 +66,6 @@ vi.mock('wxt/browser', () => ({
 }));
 
 import { browser } from 'wxt/browser'; // Import the mocked browser
-import { createStubHost, hostWrapper } from '../support/host';
 
 // Mock import.meta.env
 vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3333' } } });
@@ -83,11 +83,10 @@ describe('SidePanelApp Login Flow', () => {
     // We need to bypass the WelcomeScreen check
     (browser.storage.local.get as any).mockResolvedValue({ hasCompletedFirstRun: true });
 
-    // SidePanelApp mounts useDataRecovery, which now reaches storage through
-    // the host rather than `browser` directly — so rendering it needs a host.
-    // The stub answers empty, which is what this file's browser mock answered
-    // for those keys too, so nothing this test asserts changes.
-    render(<SidePanelApp />, { wrapper: hostWrapper(createStubHost().host) });
+    // The sign-in screen now belongs to the extension's own entry point, so
+    // this renders that rather than the shared panel — which, with no session,
+    // cannot be mounted at all.
+    render(<ExtensionApp />);
 
     // Find the OAuth login button (for OIDC provider)
     const loginButton = await screen.findByText('Sign in with Organization');

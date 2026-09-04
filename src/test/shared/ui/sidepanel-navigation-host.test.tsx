@@ -10,8 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createStubHost, hostWrapper } from '../../support/host';
-import type { WiredHost } from '../../../shared/host';
+import { createStubHost } from '../../support/host';
 
 const { mockPM, capsFetch, authState } = vi.hoisted(() => ({
   mockPM: {
@@ -29,51 +28,27 @@ vi.mock('../../../lib/utils/persistence-manager', () => ({ PersistenceManager: m
 vi.mock('../../../lib/capabilities', () => ({
   capabilitiesManager: { fetch: capsFetch },
 }));
-vi.mock('../../../shared/ui/hooks/useAuth', () => ({
-  useAuth: () => ({
-    isAuthenticated: authState.isAuthenticated,
-    // The real `User` shape — a partial fixture here would reach
-    // CollapsibleNavigation's currentUser prop untyped.
-    currentUser: {
-      user_id: 'u1',
-      username: 'op',
-      email: 'op@x.invalid',
-      display_name: 'Op',
-      is_dev_user: false,
-      is_active: true,
-    },
-    loggingIn: false,
-    error: null,
-    logout: vi.fn(),
-    hasRole: () => false,
-    isAdmin: () => false,
-  }),
-}));
 vi.mock('../../../shared/ui/components/ConversationsList', () => ({
   default: () => <div data-testid="conversations-list" />,
 }));
 
-import SidePanelApp from '../../../shared/ui/SidePanelApp';
+import CopilotPanel from '../../../shared/ui/CopilotPanel';
 import { useAppStore } from '../../../lib/state/store';
 
 const b = (global as any).browser;
 
-const withHost = (host: WiredHost) => {
-  const Host = hostWrapper(host);
+// CopilotPanel publishes the host itself, so the wrapper supplies only the
+// query client.
+const withQueryClient = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <QueryClientProvider client={client}>
-        <Host>{children}</Host>
-      </QueryClientProvider>
-    );
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
 };
 
 describe('SidePanelApp — settings affordance follows the host', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    authState.isAuthenticated = false;
     // First run is done, and the backend is unreachable — the branch that
     // offers "Open Settings".
     b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
@@ -83,7 +58,7 @@ describe('SidePanelApp — settings affordance follows the host', () => {
 
   it('offers "Open Settings" when the host has a settings surface, and it calls the host', async () => {
     const stub = createStubHost();
-    render(<SidePanelApp />, { wrapper: withHost(stub.host) });
+    render(<CopilotPanel host={stub.host} />, { wrapper: withQueryClient() });
 
     const button = await screen.findByText('Open Settings');
     fireEvent.click(button);
@@ -92,7 +67,7 @@ describe('SidePanelApp — settings affordance follows the host', () => {
 
   it('offers NO settings button when the host has no settings surface', async () => {
     const stub = createStubHost({}, { settings: false });
-    render(<SidePanelApp />, { wrapper: withHost(stub.host) });
+    render(<CopilotPanel host={stub.host} />, { wrapper: withQueryClient() });
 
     // The error screen itself still renders — this is an omitted affordance,
     // not an unrendered branch.
@@ -104,7 +79,6 @@ describe('SidePanelApp — settings affordance follows the host', () => {
 describe('SidePanelApp — Open Dashboard goes through the host', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    authState.isAuthenticated = true;
     b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
     capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
     useAppStore.setState({
@@ -122,7 +96,7 @@ describe('SidePanelApp — Open Dashboard goes through the host', () => {
   });
 
   const clickOpenDashboard = async (stub: ReturnType<typeof createStubHost>) => {
-    render(<SidePanelApp />, { wrapper: withHost(stub.host) });
+    render(<CopilotPanel host={stub.host} />, { wrapper: withQueryClient() });
     const button = await screen.findByTitle('Open Dashboard');
     fireEvent.click(button);
   };

@@ -11,7 +11,13 @@
 import React from 'react';
 import { vi } from 'vitest';
 import { HostAdapterProvider } from '../../shared/host';
-import type { HostPageCapture, HostStore, StoredValue, WiredHost } from '../../shared/host';
+import type {
+  HostPageCapture,
+  HostSession,
+  HostStore,
+  StoredValue,
+  WiredHost,
+} from '../../shared/host';
 
 type ChangeHandler = (changed: Record<string, StoredValue>) => void;
 
@@ -30,6 +36,10 @@ export interface StubHost {
   settings: ReturnType<typeof vi.fn> | null;
   /** pageCapture.capture — a spy on the supporting arm, null on the other. */
   capture: ReturnType<typeof vi.fn> | null;
+  /** session.signOut — a spy, or null for a host that owns sign-out itself. */
+  signOut: ReturnType<typeof vi.fn> | null;
+  /** session.accessToken */
+  accessToken: ReturnType<typeof vi.fn>;
   /** What the store currently holds. Mutate to stage a read. */
   data: Record<string, StoredValue>;
   /** Deliver a change to every subscriber that asked for one of these keys. */
@@ -50,6 +60,14 @@ export interface StubHostOptions {
    * explanation for rather than a dead button.
    */
   pageCapture?: boolean;
+  /**
+   * Whether this host offers its own sign-out. `false` produces
+   * `session.signOut === null` — the web host's answer, where the surrounding
+   * app owns the account menu.
+   */
+  signOut?: boolean;
+  /** Roles on the signed-in user; drives anything gated on `admin`. */
+  roles?: string[];
 }
 
 export const STUB_CAPTURE_REASON =
@@ -92,6 +110,23 @@ export function createStubHost(
 
   const store = { get, set, remove, subscribe } as unknown as HostStore;
 
+  // Always present. A stub host WITHOUT a session is not a lesser stub, it is
+  // an impossible one — the shell's type has no such value — so the helper
+  // cannot produce it either.
+  const accessToken = vi.fn(async () => 'stub-access-token');
+  const signOut = options.signOut === false ? null : vi.fn(async () => {});
+  const session: HostSession = {
+    user: {
+      id: 'stub-user',
+      username: 'stub.operator',
+      displayName: 'Stub Operator',
+      email: 'stub.operator@example.invalid',
+      roles: options.roles ?? ['user'],
+    },
+    accessToken,
+    signOut,
+  };
+
   const dashboard = vi.fn(async (_path: string) => {});
   const settings = options.settings === false ? null : vi.fn(async () => {});
 
@@ -105,7 +140,7 @@ export function createStubHost(
       : { supported: true, capture };
 
   return {
-    host: { store, navigation: { dashboard, settings }, pageCapture },
+    host: { store, navigation: { dashboard, settings }, pageCapture, session },
     store,
     get,
     set,
@@ -115,6 +150,8 @@ export function createStubHost(
     dashboard,
     settings,
     capture,
+    signOut,
+    accessToken,
     data,
     emit(changed) {
       // Same membership rule the extension adapter applies: a key being present
