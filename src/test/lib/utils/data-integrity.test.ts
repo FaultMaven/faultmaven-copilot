@@ -4,8 +4,8 @@ import {
   isRealId,
   sanitizeBackendCases,
   validateStateIntegrity
-} from '~lib/utils/data-integrity';
-import { UserCase } from '~lib/api/types';
+} from '@faultmaven/copilot-ui/lib/utils/data-integrity';
+import { UserCase } from '@faultmaven/copilot-ui/lib/api/types';
 
 describe('Data Integrity', () => {
   describe('ID validation', () => {

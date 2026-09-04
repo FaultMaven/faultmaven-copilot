@@ -11,8 +11,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { getAuthConfig, AuthConfig } from '../../lib/auth/auth-config';
-import { createLogger } from '../../lib/utils/logger';
+import { getAuthConfig, AuthConfig } from '../auth/auth-config';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { LocalLoginForm } from './LocalLoginForm';
 import { EventBus, type AuthStateChangedEvent } from '../messaging';
 

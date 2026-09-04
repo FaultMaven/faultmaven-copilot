@@ -6,11 +6,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as caseService from '../../../lib/api/services/case-service';
-import * as client from '../../../lib/api/client';
+import * as caseService from '@faultmaven/copilot-ui/lib/api/services/case-service';
+import * as client from '@faultmaven/copilot-ui/lib/api/client';
 
 // Mock client
-vi.mock('../../../lib/api/client', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/client', () => ({
   authenticatedFetchWithRetry: vi.fn(),
   authenticatedFetch: vi.fn(),
   prepareBody: (body: unknown) => {
@@ -20,7 +20,7 @@ vi.mock('../../../lib/api/client', () => ({
 }));
 
 // Mock config
-vi.mock('../../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   getApiUrl: vi.fn().mockReturnValue('https://api.test')
 }));
 

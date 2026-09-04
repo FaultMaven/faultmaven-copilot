@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_AUTO_RETRY_WAIT_MS, RateLimitError } from '~lib/errors/types';
+import { MAX_AUTO_RETRY_WAIT_MS, RateLimitError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 /**
  * A 429's `Retry-After` is measured, honest and uncapped — the backend reports

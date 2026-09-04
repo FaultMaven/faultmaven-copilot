@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    // `vite/client` only. `node` was here for `NodeJS.Timeout` and
+    // `Error.captureStackTrace`, which is an unreasonable thing for a browser
+    // UI package to require of the app embedding it; both are stated in the
+    // code's own terms now, and leaving "node" out is what keeps them so.
+    "types": ["vite/client"]
+  },
+  "include": ["index.ts", "config.ts", "lib/**/*.ts", "shared/**/*.ts", "shared/**/*.tsx", "types/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

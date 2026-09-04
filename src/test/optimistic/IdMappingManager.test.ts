@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { IdMappingManager } from '../../lib/optimistic/IdMappingManager';
+import { IdMappingManager } from '@faultmaven/copilot-ui/lib/optimistic/IdMappingManager';
 
 describe('IdMappingManager', () => {
   afterEach(() => {

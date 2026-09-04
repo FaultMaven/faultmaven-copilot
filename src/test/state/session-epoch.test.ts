@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getEpoch, bumpEpoch } from '../../lib/state/session-epoch';
+import { getEpoch, bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 
 describe('session-epoch', () => {
   it('bumpEpoch strictly increases and getEpoch reflects it', () => {

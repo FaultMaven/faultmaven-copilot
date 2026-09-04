@@ -6,9 +6,9 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { LocalAuthClient, type LocalLoginCredentials } from '../../lib/auth/local-auth-client';
-import type { AuthConfig } from '../../lib/auth/auth-config';
-import { createLogger } from '../../lib/utils/logger';
+import { LocalAuthClient, type LocalLoginCredentials } from '../auth/local-auth-client';
+import type { AuthConfig } from '../auth/auth-config';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('LocalLoginForm');
 

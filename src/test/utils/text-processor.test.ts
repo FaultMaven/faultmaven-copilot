@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   cleanResponseText,
-} from '../../lib/utils/text-processor';
+} from '@faultmaven/copilot-ui/lib/utils/text-processor';
 
 describe('Text Processor', () => {
   describe('cleanResponseText', () => {

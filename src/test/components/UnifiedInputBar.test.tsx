@@ -15,7 +15,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { INPUT_LIMITS } from '../../shared/ui/layouts/constants';
+import { INPUT_LIMITS } from '@faultmaven/copilot-ui/shared/ui/layouts/constants';
 import { createStubHost, hostWrapper } from '../support/host';
 
 // Mock browser API from wxt
@@ -25,7 +25,7 @@ vi.mock('wxt/browser', () => ({
   },
 }));
 
-import { UnifiedInputBar } from '../../shared/ui/components/UnifiedInputBar';
+import { UnifiedInputBar } from '@faultmaven/copilot-ui/shared/ui/components/UnifiedInputBar';
 
 describe('UnifiedInputBar — auto-promotion at line threshold', () => {
   const threshold = INPUT_LIMITS.DATA_MODE_LINE_THRESHOLD;

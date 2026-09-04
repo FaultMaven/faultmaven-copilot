@@ -7,16 +7,16 @@ const { storageSet, storageGet, storageRemove, createSessionWithRecovery } = vi.
   createSessionWithRecovery: vi.fn()
 }));
 
-vi.mock('../../lib/session/client-session-manager', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/session/client-session-manager', () => ({
   clientSessionManager: { createSessionWithRecovery }
 }));
 
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession, clearPersistedSession } from '../../lib/api/session-core';
-import { setHostStore } from '../../lib/host-store';
+import { refreshSession, clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 // session-core reaches storage through the host, so the spies above are
 // installed AS the host's store rather than under `wxt/browser`. The

@@ -10,10 +10,10 @@
  * both hosts need — keeps none of it.
  */
 import { browser } from 'wxt/browser';
-import { PersistenceManager } from '../lib/utils/persistence-manager';
-import { authManager } from '../lib/auth/auth-manager';
+import { PersistenceManager } from '@faultmaven/copilot-ui/lib/utils/persistence-manager';
+import { authManager } from './auth/auth-manager';
 import { extensionStore } from './host/extension-store';
-import { createLogger } from '../lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('ExtensionReload');
 

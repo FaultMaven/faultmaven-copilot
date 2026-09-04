@@ -15,9 +15,9 @@
  * screen while it runs.
  */
 import { useEffect, useState } from 'react';
-import { PersistenceManager } from '../lib/utils/persistence-manager';
+import { PersistenceManager } from '@faultmaven/copilot-ui/lib/utils/persistence-manager';
 import { detectExtensionReload, clearReloadFlag, stampRuntimeIdentity } from './extension-reload';
-import { createLogger } from '../lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('ExtensionReloadRecovery');
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getAuthConfig } from '../../../lib/auth/auth-config';
+import { getAuthConfig } from '../../../extension/auth/auth-config';
 
 // auth-config resolves `browser` to the global mock provided by src/test/setup.ts.
 const store = (global as any).browser.storage.local;

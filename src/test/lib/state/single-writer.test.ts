@@ -13,19 +13,19 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { setHostStore } from '../../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { createStubHost, hostWrapper } from '../../support/host';
-import { useAppStore } from '../../../lib/state/store';
-import { useDataUpload } from '../../../shared/ui/hooks/useDataUpload';
-import * as api from '../../../lib/api';
-import { pendingOpsManager, OptimisticIdGenerator } from '../../../lib/optimistic';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpload';
+import * as api from '@faultmaven/copilot-ui/lib/api';
+import { pendingOpsManager, OptimisticIdGenerator } from '@faultmaven/copilot-ui/lib/optimistic';
 
-vi.mock('../../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   submitTurn: vi.fn(),
   createCase: vi.fn(),
   generateCaseTitle: vi.fn(),
 }));
-vi.mock('../../../lib/errors', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/errors', () => ({
   useError: () => ({ showError: vi.fn(), dismissError: vi.fn() }),
   useErrorHandler: () => ({
     errors: [], showError: vi.fn(), dismissError: vi.fn(), dismissAll: vi.fn(),

@@ -1,7 +1,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CaseCacheManager } from '../../../lib/cache/case-cache';
-import { UserCase } from '../../../types/case';
+import { CaseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
+import { UserCase } from '@faultmaven/copilot-ui/types/case';
 
 // Mock wxt/browser
 const { mockStorage } = vi.hoisted(() => {
@@ -16,7 +16,7 @@ const { mockStorage } = vi.hoisted(() => {
 
 import { browser } from 'wxt/browser';
 
-import { setHostStore } from '../../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 vi.mock('wxt/browser', () => ({
     browser: {

@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useMessageSubmission } from '../../shared/ui/hooks/useMessageSubmission';
-import * as api from '../../lib/api';
-import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '../../lib/optimistic';
-import { useAppStore } from '../../lib/state/store';
-import { bumpEpoch } from '../../lib/state/session-epoch';
+import { useMessageSubmission } from '@faultmaven/copilot-ui/shared/ui/hooks/useMessageSubmission';
+import * as api from '@faultmaven/copilot-ui/lib/api';
+import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '@faultmaven/copilot-ui/lib/optimistic';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { createStubHost, hostWrapper } from '../support/host';
-import { setHostStore } from '../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 const mockShowError = vi.fn();
 
 // Mock dependencies
-vi.mock('../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   submitTurn: vi.fn(),
   createCase: vi.fn(),
   authManager: {
@@ -21,7 +21,7 @@ vi.mock('../../lib/api', () => ({
   getCaseConversation: vi.fn()
 }));
 
-vi.mock('../../lib/errors', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/errors', () => ({
   useError: () => ({
     showError: mockShowError,
     dismissError: vi.fn()
@@ -36,8 +36,8 @@ vi.mock('../../lib/errors', () => ({
   })
 }));
 
-vi.mock('../../lib/optimistic', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/optimistic')>();
+vi.mock('@faultmaven/copilot-ui/lib/optimistic', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@faultmaven/copilot-ui/lib/optimistic')>();
   return {
     ...actual,
     pendingOpsManager: {
@@ -55,7 +55,7 @@ vi.mock('../../lib/optimistic', async (importOriginal) => {
 });
 
 // Mock logger
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -65,7 +65,7 @@ vi.mock('../../lib/utils/logger', () => ({
 }));
 
 // Mock retry logic to execute immediately
-vi.mock('../../lib/utils/retry', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/retry', () => ({
   retryWithBackoff: vi.fn((fn) => fn())
 }));
 

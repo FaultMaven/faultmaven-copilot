@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useAppStore } from '../../../lib/state/store';
-import * as api from '../../../lib/api';
-import { refreshSession as coreRefreshSession } from '../../../lib/api/session-core';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import * as api from '@faultmaven/copilot-ui/lib/api';
+import { refreshSession as coreRefreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { browser } from 'wxt/browser';
 
-import { setHostStore } from '../../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -19,7 +19,7 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-vi.mock('../../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   createSession: vi.fn()
 }));
 
@@ -28,12 +28,12 @@ vi.mock('../../../lib/api', () => ({
 // own idea of which keys a session occupies — and a stub would turn the
 // assertion below into a check that the slice called a function, not that the
 // keys were cleared.
-vi.mock('../../../lib/api/session-core', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../lib/api/session-core')>()),
+vi.mock('@faultmaven/copilot-ui/lib/api/session-core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@faultmaven/copilot-ui/lib/api/session-core')>()),
   refreshSession: vi.fn().mockResolvedValue(undefined)
 }));
 
-vi.mock('../../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

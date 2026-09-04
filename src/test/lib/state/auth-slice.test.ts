@@ -8,12 +8,12 @@
  * the reaction, and that is what this covers.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useAppStore } from '../../../lib/state/store';
-import { shouldReloadOnAuthChange } from '../../../lib/state/slices/auth-slice';
-import { getEpoch } from '../../../lib/state/session-epoch';
-import type { HostUser } from '../../../shared/host';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { shouldReloadOnAuthChange } from '@faultmaven/copilot-ui/lib/state/slices/auth-slice';
+import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import type { HostUser } from '@faultmaven/copilot-ui/shared/host';
 
-vi.mock('../../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

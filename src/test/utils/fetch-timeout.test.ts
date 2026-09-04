@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fetchWithTimeout } from '../../lib/utils/fetch-timeout';
+import { fetchWithTimeout } from '@faultmaven/copilot-ui/lib/utils/fetch-timeout';
 
 /** A fetch mock that never resolves until its AbortSignal fires. */
 function hangingFetch() {

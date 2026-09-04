@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prepareBody, authenticatedFetch } from '../../lib/api/client';
-import { AuthenticationError, SessionExpiredError } from '../../lib/errors/types';
-import { getAuthHeaders } from '../../lib/api/fetch-utils';
+import { prepareBody, authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
+import { AuthenticationError, SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { getAuthHeaders } from '@faultmaven/copilot-ui/lib/api/fetch-utils';
 
 // --- Mocks for the authenticatedFetch catch-path test ---
 // The hard-401 teardown is the HOST's now: the client reports a rejected
@@ -9,24 +9,24 @@ import { getAuthHeaders } from '../../lib/api/fetch-utils';
 const onUnauthorized = vi.fn().mockResolvedValue(undefined);
 const clearSession = vi.fn().mockResolvedValue(undefined);
 const storedSessionId = vi.fn().mockResolvedValue(null);
-vi.mock('../../lib/auth/auth-manager', () => ({
+vi.mock('../../extension/auth/auth-manager', () => ({
   authManager: { clearAllAuthData: vi.fn() }
 }));
-vi.mock('../../lib/api/fetch-utils', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/fetch-utils', () => ({
   getAuthHeaders: vi.fn().mockResolvedValue({})
 }));
-vi.mock('../../lib/api/session-core', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/session-core', () => ({
   refreshSession: vi.fn().mockResolvedValue(undefined)
 }));
 const fetchWithTimeout = vi.fn();
-vi.mock('../../lib/utils/fetch-timeout', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
   fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
 }));
 // The synchronous fence handleAuthError raises before tearing down, so an
 // in-flight writer whose continuation is already queued skips its post-await
 // writes instead of repopulating state that is about to be cleared.
 const bumpEpoch = vi.fn().mockReturnValue(1);
-vi.mock('../../lib/state/session-epoch', async (importOriginal) => ({
+vi.mock('@faultmaven/copilot-ui/lib/state/session-epoch', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   bumpEpoch: () => bumpEpoch(),
 }));
@@ -36,7 +36,7 @@ vi.mock('wxt/browser', () => ({
   browser: { storage: { local: { remove: (...a: any[]) => storageRemove(...a), get: (...a: any[]) => storageGet(...a) } } }
 }));
 
-import { setApiTransport } from '../../lib/api/transport';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 
 // File-level, not per-suite: every suite here drives authenticatedFetch, and a
 // suite without a transport would silently fall through to the shared default.

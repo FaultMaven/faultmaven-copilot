@@ -1,10 +1,10 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { ErrorHandlerProvider, useErrorHandler } from '../../../lib/errors/useErrorHandler';
-import { RateLimitError } from '../../../lib/errors/types';
+import { ErrorHandlerProvider, useErrorHandler } from '@faultmaven/copilot-ui/lib/errors/useErrorHandler';
+import { RateLimitError } from '@faultmaven/copilot-ui/lib/errors/types';
 
-vi.mock('~/lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

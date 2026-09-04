@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeTags } from '~lib/utils/safe-tags';
+import { normalizeTags } from '@faultmaven/copilot-ui/lib/utils/safe-tags';
 
 describe('SafeTags (normalizeTags)', () => {
   it('should return valid arrays unchanged (fast path)', () => {

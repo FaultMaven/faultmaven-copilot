@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { SuggestionCard } from '~/shared/ui/components/SuggestionCard';
-import type { SuggestedAction } from '~/lib/api/types';
+import { SuggestionCard } from '@faultmaven/copilot-ui/shared/ui/components/SuggestionCard';
+import type { SuggestedAction } from '@faultmaven/copilot-ui/lib/api/types';
 
 /**
  * Phase 6 visual linkage: EVIDENCE-type suggestions that carry a backend-

@@ -1,12 +1,12 @@
 // src/entrypoints/auth-bridge.content.ts
 import { browser } from 'wxt/browser';
-import { createLogger } from '../lib/utils/logger';
-import { isTrustedDashboardOrigin } from '../lib/auth/trusted-origin';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
+import { isTrustedDashboardOrigin } from '../extension/auth/trusted-origin';
 import {
   announceCopilotPresence,
   dashboardAdvertisesPanel,
   DASHBOARD_PANEL_MESSAGE,
-} from '../lib/auth/presence-marker';
+} from '../extension/auth/presence-marker';
 
 /**
  * Auth Bridge Content Script

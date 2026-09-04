@@ -20,7 +20,7 @@ const { mockPM, detectExtensionReload, clearReloadFlag, stampRuntimeIdentity } =
   stampRuntimeIdentity: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
+vi.mock('@faultmaven/copilot-ui/lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
 vi.mock('../../extension/extension-reload', () => ({
   detectExtensionReload,
   clearReloadFlag,

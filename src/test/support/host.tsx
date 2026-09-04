@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { vi } from 'vitest';
-import { HostAdapterProvider } from '../../shared/host';
+import { HostAdapterProvider } from '@faultmaven/copilot-ui/shared/host';
 import type {
   HostPageCapture,
   HostSession,
@@ -18,7 +18,7 @@ import type {
   HostUser,
   StoredValue,
   WiredHost,
-} from '../../shared/host';
+} from '@faultmaven/copilot-ui/shared/host';
 
 type ChangeHandler = (changed: Record<string, StoredValue>) => void;
 

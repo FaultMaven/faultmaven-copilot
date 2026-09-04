@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { PersistenceManager } from '../../lib/utils/persistence-manager';
-import { getUserCases, getCaseConversation } from '../../lib/api';
-import { setHostStore } from '../../lib/host-store';
+import { PersistenceManager } from '@faultmaven/copilot-ui/lib/utils/persistence-manager';
+import { getUserCases, getCaseConversation } from '@faultmaven/copilot-ui/lib/api';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 // Hoist mock browser to be accessible inside vi.mock
 const { mockBrowser } = vi.hoisted(() => {
@@ -28,7 +28,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 // Mock API functions
-vi.mock('../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   getUserCases: vi.fn(),
   getCaseConversation: vi.fn()
 }));

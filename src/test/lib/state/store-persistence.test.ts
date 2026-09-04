@@ -10,7 +10,7 @@ const { storageSet, storageRemove, storageGet } = vi.hoisted(() => ({
 
 import { browser } from 'wxt/browser';
 
-import { setHostStore } from '../../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -21,13 +21,13 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-vi.mock('../../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
 // Control the teardown flag the store's beforeunload handler reads.
 const { sessionEnding } = vi.hoisted(() => ({ sessionEnding: { value: false } }));
-vi.mock('../../../lib/state/session-epoch', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/state/session-epoch', () => ({
   getEpoch: () => 0,
   bumpEpoch: () => 1,
   markSessionEnding: () => { sessionEnding.value = true; },
@@ -38,7 +38,7 @@ import {
   debouncedPersist,
   CONVERSATION_CACHE_VERSION,
   CONVERSATION_CACHE_VERSION_KEY
-} from '../../../lib/state/store';
+} from '@faultmaven/copilot-ui/lib/state/store';
 
 // Let the debounced async persistence body run to completion.
 const drain = async () => {

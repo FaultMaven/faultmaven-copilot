@@ -25,7 +25,7 @@ const { mockBrowser } = vi.hoisted(() => ({
 vi.mock('wxt/browser', () => ({ browser: mockBrowser }));
 
 import { subscribeExtensionAuthState } from '../../../extension/host/auth-state';
-import type { HostUser } from '../../../shared/host';
+import type { HostUser } from '@faultmaven/copilot-ui/shared/host';
 
 const toHostUser = (user: any): HostUser | null =>
   user?.user_id ? { id: user.user_id, username: user.username, roles: user.roles ?? [] } : null;

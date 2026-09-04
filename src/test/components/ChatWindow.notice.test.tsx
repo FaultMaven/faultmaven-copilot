@@ -7,12 +7,12 @@ vi.mock('wxt/browser', () => ({
   browser: { tabs: { query: vi.fn(), sendMessage: vi.fn() } }
 }));
 
-vi.mock('../../lib/api/case-service', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/case-service', () => ({
   caseApi: { getCaseUI: vi.fn().mockResolvedValue({ state: 'resolved' }) }
 }));
 
-import { ChatWindow } from '../../shared/ui/components/ChatWindow';
-import type { UserCase } from '../../types/case';
+import { ChatWindow } from '@faultmaven/copilot-ui/shared/ui/components/ChatWindow';
+import type { UserCase } from '@faultmaven/copilot-ui/types/case';
 
 const activeCase = {
   case_id: 'case-1',

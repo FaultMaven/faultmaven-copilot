@@ -2,12 +2,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '../../lib/api/query-client';
+import { queryClient } from '@faultmaven/copilot-ui/lib/api/query-client';
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { installExtensionHostContext } from '../../extension/host/install';
-import '../../assets/styles/globals.css';      // Path to your global Tailwind styles
+import '@faultmaven/copilot-ui/styles/globals.css';  // The shared UI's theme + type scale
 import '../../assets/styles/sidepanel.css';    // Sidepanel-only height/overflow chain
-import { createLogger } from '../../lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('SidePanelManual');
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { applyCaseTitleChange, type CaseTitleChangeDeps } from '../../../lib/state/case-title-change';
+import { applyCaseTitleChange, type CaseTitleChangeDeps } from '@faultmaven/copilot-ui/lib/state/case-title-change';
 
 /**
  * fm#1069, second failure: clicking "Generate title" showed a 409 and reverted.

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { useConfiguredEndpoint, EndpointKind } from '../../shared/ui/hooks/useConfiguredEndpoint';
+import { useConfiguredEndpoint, EndpointKind } from '@faultmaven/copilot-ui/shared/ui/hooks/useConfiguredEndpoint';
 import { createStubHost, hostWrapper } from '../support/host';
 
 // Both halves of this hook now come from the host: the VALUE from

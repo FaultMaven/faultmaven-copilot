@@ -35,28 +35,28 @@ vi.mock('wxt/browser', () => ({
   },
 }));
 
-vi.mock('../../../config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../config')>()),
+vi.mock('@faultmaven/copilot-ui/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@faultmaven/copilot-ui/config')>()),
   getApiUrl: async () => 'http://localhost:8090',
 }));
 
-vi.mock('../../../lib/auth/auth-config', () => ({
+vi.mock('../../../extension/auth/auth-config', () => ({
   getAuthConfig: async () => ({ provider: 'oidc', mode: 'oauth', features: {} }),
   isLocalAuthMode: async () => false,
   clearAuthConfigCache: async () => {},
 }));
 
-vi.mock('../../../lib/cache/case-cache', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/cache/case-cache', () => ({
   caseCacheManager: { invalidateCache: vi.fn().mockResolvedValue(undefined) },
 }));
 
-import { tokenManager } from '../../../lib/auth/token-manager';
-import { authManager } from '../../../lib/auth/auth-manager';
+import { tokenManager } from '../../../extension/auth/token-manager';
+import { authManager } from '../../../extension/auth/auth-manager';
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
-import { setApiTransport } from '../../../lib/api/transport';
-import { authenticatedFetch } from '../../../lib/api/client';
-import { AuthenticationError } from '../../../lib/errors/types';
-import type { HostSession } from '../../../shared/host';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
+import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
+import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
 const lockRequests: string[] = [];
 

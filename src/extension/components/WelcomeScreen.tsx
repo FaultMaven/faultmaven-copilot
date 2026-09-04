@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { browser } from 'wxt/browser';
-import { createLogger } from '~/lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { setEndpoints } from '../host/endpoints';
 
 const log = createLogger('WelcomeScreen');

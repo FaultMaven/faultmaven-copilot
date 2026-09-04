@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TokenManager } from '../../../lib/auth/token-manager';
+import { TokenManager } from '../../../extension/auth/token-manager';
 
 /**
  * What happens to this client when the OTHER one signs out.
@@ -15,14 +15,14 @@ import { TokenManager } from '../../../lib/auth/token-manager';
  * rather than a fact.
  */
 
-vi.mock('../../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   __esModule: true,
   default: {},
   getApiUrl: async () => 'https://api.faultmaven.ai',
 }));
 
 const { mockGetAuthConfig } = vi.hoisted(() => ({ mockGetAuthConfig: vi.fn() }));
-vi.mock('../../../lib/auth/auth-config', () => ({ getAuthConfig: mockGetAuthConfig }));
+vi.mock('../../../extension/auth/auth-config', () => ({ getAuthConfig: mockGetAuthConfig }));
 
 const { mockBrowserStorage } = vi.hoisted(() => {
   let store: Record<string, any> = {};
