@@ -1,0 +1,8 @@
+/* Page frame only. Every style the Copilot UI itself uses comes from the
+   extension's own globals.css + Tailwind config, imported above — which is
+   part of what the proof checks. */
+html,
+body,
+#root {
+  height: 100%;
+}

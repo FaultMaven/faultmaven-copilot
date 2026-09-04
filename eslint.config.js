@@ -87,6 +87,10 @@ export default [
       '.output/',
       '.wxt/',
       'dist/',
+      // Build output of the host-independence proof (playground/vite.config.ts).
+      // The bare 'dist/' above is anchored at the repo root and does not cover it,
+      // so `eslint playground` linted 1700 problems in minified vendor bundles.
+      'playground/dist/',
       '*.config.js',
       '*.config.cjs',
       '*.config.mjs',
