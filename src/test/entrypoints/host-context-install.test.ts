@@ -47,7 +47,14 @@ async function assertEntryInstallsTheHostContext(importEntry: () => Promise<unkn
   expect(() => hostEndpoints.getHostEndpoints()).not.toThrow();
 }
 
-describe('each extension entry point installs the host context', () => {
+// `vi.resetModules()` then a fresh import of a whole entry point — the options
+// page and the side panel pull the panel and its dependency graph in from cold,
+// which measures 3s each on a warm developer box and 8-9s for the file when the
+// suite runs them in parallel. The 5s default is not a bound on anything: it is
+// under the observed cost on a loaded runner, and it timed out once here for
+// that reason alone. 30s is an order above the slowest measured case, so it
+// still fails a genuine hang.
+describe('each extension entry point installs the host context', { timeout: 30_000 }, () => {
   it('the background worker does', async () => {
     await assertEntryInstallsTheHostContext(() => import('../../entrypoints/background'));
   });
