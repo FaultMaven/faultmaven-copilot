@@ -76,7 +76,7 @@ export class MemoryManager {
    *   3. Cap the NUMBER of conversations (`cleanupConversations`).
    *
    * This is the single choke point that both prevents unbounded growth in
-   * `browser.storage.local` and guarantees a reload never rehydrates a stuck
+   * host storage and guarantees a reload never rehydrates a stuck
    * spinner or a to-be-duplicated optimistic turn.
    *
    * Capping a single conversation to a most-recent SUFFIX is now safe because the

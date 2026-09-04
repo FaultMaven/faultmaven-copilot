@@ -24,6 +24,7 @@ import { markSessionEnding } from '../lib/state/session-epoch';
 import { tokenManager } from '../lib/auth/token-manager';
 import { authManager } from '../lib/auth/auth-manager';
 import { installExtensionTransport } from './host';
+import { setHostStore } from '../lib/host-store';
 import { createLogger } from '../lib/utils/logger';
 import { AuthScreen } from './components/AuthScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -105,6 +106,13 @@ export function ExtensionApp() {
   useEffect(() => {
     if (session) installExtensionTransport(session);
   }, [session]);
+
+  // The store, persistence and slices are plain modules called from effects and
+  // background continuations, so they take the host's store the same way. One
+  // store, installed once — not a parallel path to the same keys.
+  useEffect(() => {
+    setHostStore(extensionHost.store);
+  }, []);
 
   const handleAuthSuccess = async () => {
     log.info('Authentication successful, checking auth state');

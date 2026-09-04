@@ -4,6 +4,8 @@ import * as api from '../../../lib/api';
 import { refreshSession as coreRefreshSession } from '../../../lib/api/session-core';
 import { browser } from 'wxt/browser';
 
+import { setHostStore } from '../../../lib/host-store';
+
 vi.mock('wxt/browser', () => ({
   browser: {
     storage: {
@@ -28,6 +30,19 @@ vi.mock('../../../lib/api/session-core', () => ({
 vi.mock('../../../lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
+
+// The store, slices and persistence reach storage through the HOST now. This
+// file mocks `wxt/browser` for itself, so the bridge is bound to THAT mock —
+// otherwise the shared default in setup.ts would answer from the global mock and
+// every assertion here would watch a store nothing wrote to.
+beforeEach(() => {
+  setHostStore({
+    get: (keys) => browser.storage.local.get(keys),
+    set: (items) => browser.storage.local.set(items),
+    remove: (keys) => browser.storage.local.remove(keys),
+    subscribe: () => () => {},
+  });
+});
 
 describe('session-slice', () => {
   beforeEach(() => {

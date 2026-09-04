@@ -66,6 +66,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 import { browser } from 'wxt/browser'; // Import the mocked browser
+import { setHostStore } from '../../lib/host-store';
 
 // Mock import.meta.env
 vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3333' } } });
@@ -73,6 +74,14 @@ vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3
 describe('SidePanelApp Login Flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // This file mocks wxt/browser for itself; the bridge must answer from THAT
+    // mock or initializeApp reads an empty store and shows first-run setup.
+    setHostStore({
+      get: (keys) => browser.storage.local.get(keys),
+      set: (items) => browser.storage.local.set(items),
+      remove: (keys) => browser.storage.local.remove(keys),
+      subscribe: () => () => {},
+    });
     (capabilitiesManager.fetch as any).mockResolvedValue({
       dashboardUrl: 'https://test-dashboard.faultmaven.ai'
     });

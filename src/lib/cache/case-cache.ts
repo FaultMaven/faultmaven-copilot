@@ -2,6 +2,7 @@
 import { browser } from 'wxt/browser';
 import { UserCase } from '../../types/case';
 import { createLogger } from '../utils/logger';
+import { getHostStore } from '../host-store';
 
 const log = createLogger('CaseCacheManager');
 
@@ -19,7 +20,7 @@ export class CaseCacheManager {
      */
     async getCachedCases(): Promise<UserCase[] | null> {
         try {
-            const stored = await browser.storage.local.get([CACHE_KEY]);
+            const stored = await getHostStore().get([CACHE_KEY]);
             const cache = stored[CACHE_KEY] as CachedCaseList | undefined;
 
             if (!cache) {
@@ -52,7 +53,7 @@ export class CaseCacheManager {
                 cases,
                 timestamp: Date.now()
             };
-            await browser.storage.local.set({ [CACHE_KEY]: cache });
+            await getHostStore().set({ [CACHE_KEY]: cache });
             log.debug('Cache updated', { count: cases.length });
         } catch (error) {
             log.error('Failed to write cache:', error);
@@ -64,7 +65,7 @@ export class CaseCacheManager {
      */
     async invalidateCache(): Promise<void> {
         try {
-            await browser.storage.local.remove([CACHE_KEY]);
+            await getHostStore().remove([CACHE_KEY]);
             log.debug('Cache invalidated');
         } catch (error) {
             log.error('Failed to invalidate cache:', error);
