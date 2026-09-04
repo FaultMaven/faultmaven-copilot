@@ -1,8 +1,6 @@
 import { StateCreator } from 'zustand';
-import { browser } from 'wxt/browser';
 import { refreshSession as coreRefreshSession } from '../../api/session-core';
 import { heartbeatSession } from '../../api/services/session-service';
-import { tokenManager } from '../../auth/token-manager';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
@@ -77,13 +75,26 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
 
         // Start keep-alive heartbeat. Pings the server so an open-but-idle panel
         // keeps its investigation session warm. Fully non-fatal: heartbeatSession
-        // does not route through the auto-logout fetch wrapper, the isAuthenticated
-        // check skips pointless pings when logged out, and any error is swallowed —
-        // if the session is already gone the next real request recreates it
-        // (SESSION_EXPIRED).
+        // does not route through the auto-logout fetch wrapper, and any error is
+        // swallowed — if the session is already gone the next real request
+        // recreates it (SESSION_EXPIRED).
+        //
+        // The epoch this started under is what STOPS it. It used to ask
+        // TokenManager whether anyone was still signed in, which is a question
+        // about a credential this slice does not own — and it only skipped a
+        // beat, so a sign-out in another context left the timer running
+        // forever. A sign-out anywhere bumps the epoch, so comparing it both
+        // answers the question the shared UI is allowed to ask and lets the
+        // interval clear itself.
+        const startedEpoch = getEpoch();
         heartbeatInterval = setInterval(async () => {
           try {
-            if (!(await tokenManager.isAuthenticated())) return;
+            if (getEpoch() !== startedEpoch) {
+              if (heartbeatInterval) clearInterval(heartbeatInterval);
+              heartbeatInterval = null;
+              log.debug('Session ended; heartbeat stopped');
+              return;
+            }
             const stored = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
             if (stored.sessionId) {
               await heartbeatSession(stored.sessionId);

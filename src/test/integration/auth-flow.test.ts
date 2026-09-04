@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { authManager, AuthState } from '../../lib/api';
+import { AuthState } from '../../lib/api';
+import { authManager } from '../../lib/auth/auth-manager';
 
 // Mock browser environment
 const { mockBrowser } = vi.hoisted(() => {

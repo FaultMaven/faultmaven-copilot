@@ -97,6 +97,7 @@ function extensionSession(): HostSession {
       return token;
     },
     signOut: async () => {},
+    subscribeAuthState: () => () => {},
     onUnauthorized: () => {
       reportedToHost();
       return authManager.clearAllAuthData();

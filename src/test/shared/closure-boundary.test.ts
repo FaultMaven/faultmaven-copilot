@@ -8,16 +8,12 @@
  * review catches that. So the closure is COMPUTED here, never hand-listed: a
  * list would go stale the first time someone added an import.
  *
- * Two kinds of assertion, deliberately different in strength:
- *
- *   HARD ZERO   — for what has actually been eliminated. The shared closure
- *                 holds no token storage key and performs no token refresh.
- *                 These can never come back.
- *
- *   RATCHET     — for `browser.*`, which is mid-migration. The offender set is
- *                 recorded below and must match EXACTLY: a new violation fails,
- *                 and so does a file that gets cleaned without being struck off,
- *                 so the list can only shrink and cannot quietly drift.
+ * The ratchets are GONE, and that is the point of this step. Through the
+ * migration this file carried two exact-match lists — the files still reaching
+ * an extension API, and the files still reaching the credential stack — which
+ * could shrink and never grow. Both are empty now, so both are stated as what
+ * they became: HARD ZEROS over the whole closure. There is no list left to add
+ * an entry to.
  */
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -66,32 +62,20 @@ function importClosure(roots: string[]): string[] {
   return [...seen].map((f) => relative(ROOT, f)).sort();
 }
 
-/**
- * Files in the closure that still reach an extension API.
- *
- * Every entry is a module the Dashboard cannot run today. They come off this
- * list as they move behind the host; the list is the remaining work, in one
- * place, rather than a number in a report nobody re-derives.
- */
-const BROWSER_API_RATCHET = [
-  'src/lib/api/services/auth-service.ts',
-  'src/lib/auth/auth-config.ts',
-  'src/lib/auth/auth-manager.ts',
-  'src/lib/auth/token-manager.ts',
-  'src/lib/utils/messaging.ts', // runtime messaging, not storage — needs its own capability
-  'src/lib/utils/persistence-manager.ts', // storage half done; runtime.id/getManifest remain
-].sort();
-
 describe('the shared closure', () => {
   const closure = importClosure(filesUnder(join(SRC, 'shared')));
   const read = (f: string) => readFileSync(join(ROOT, f), 'utf8');
 
-  // Guards the guard. A resolver that stopped resolving would return a handful
-  // of files and every assertion below would pass having checked almost nothing.
+  // Guards the guard, and it has to come FIRST now that everything below is a
+  // hard zero: a resolver that stopped resolving would return a handful of files
+  // and every assertion after it would pass having checked almost nothing. The
+  // zeros are only worth as much as the size assertion that precedes them.
   it('is computed, and is not trivially small', () => {
     expect(closure.length).toBeGreaterThan(90);
     expect(closure).toContain('src/shared/ui/CopilotPanel.tsx');
     expect(closure).toContain('src/lib/api/client.ts');
+    expect(closure).toContain('src/lib/state/store.ts');
+    expect(closure).toContain('src/lib/utils/persistence-manager.ts');
   });
 
   // The extension's own host implementation must not be inside what the
@@ -123,50 +107,83 @@ describe('the shared closure', () => {
   });
 
   /**
-   * The extension's credential stack, still reachable from the shared tree
-   * through the `lib/api` barrel and through `config.ts`'s dynamic import.
+   * The credential stack is out of reach, everywhere in the closure.
    *
-   * Same exact-match discipline as the extension-API ratchet: a new route in
-   * fails, and severing one of these without striking it off fails too.
+   * Not "the request path" and not "the files we have got to yet": the whole
+   * closure. The shared UI holds no token, names no token storage key and
+   * renews nothing, so the two risks the spike named — a short-shaped write
+   * clobbering the Dashboard's `authState`, and a second refresher racing the
+   * host's outside its Web Lock — are unreachable rather than avoided.
+   *
+   * `auth-slice` was the last entry here and came off with the rest: it used to
+   * NAME `authState` to watch for the key being cleared, and now learns the same
+   * thing from `HostSession.subscribeAuthState` and a host-store subscription
+   * over keys it is handed.
    */
-  it('reaches the credential stack only through the routes still to be cut', () => {
+  it('holds no credential, anywhere in the closure', () => {
     const pattern =
       /['"]authState['"]|\brefresh_token\b|getValidAccessToken|refreshAccessToken|faultmaven-token-refresh/;
-    const actual = closure
+    const hits = closure
       .filter((f) => pattern.test(read(f)) && !f.endsWith('api.generated.ts'))
       .sort();
-    const expected = [
-      'src/lib/api/services/auth-service.ts', // the extension's logout/revocation, via the lib/api barrel
-      'src/lib/auth/auth-config.ts', // via config.ts's dynamic import
-      'src/lib/auth/auth-manager.ts', // via the lib/api barrel
-      'src/lib/auth/token-manager.ts', // via auth-manager
-      // Names the key, never reads the value: it WATCHES for `authState` being
-      // cleared in another context. Observing a credential's disappearance is
-      // not holding one, and this stays after the stack above is cut.
-      'src/lib/state/slices/auth-slice.ts',
-    ].sort();
 
-    const added = actual.filter((f) => !expected.includes(f));
-    const cut = expected.filter((f) => !actual.includes(f));
-    expect(added, `NEW credential dependency in the shared closure:\n${added.join('\n')}`).toEqual([]);
-    expect(cut, `No longer reachable — strike it off:\n${cut.join('\n')}`).toEqual([]);
+    expect(
+      hits,
+      `The shared closure must not reach the credential stack. The host owns the ` +
+        `token chain, its storage key and its rotation lock:\n${hits.join('\n')}`,
+    ).toEqual([]);
   });
 
-  it('reaches extension APIs only from the files still awaiting migration', () => {
-    const actual = closure.filter((f) => /\b(?:browser|chrome)\./.test(read(f))).sort();
-
-    const added = actual.filter((f) => !BROWSER_API_RATCHET.includes(f));
-    const fixed = BROWSER_API_RATCHET.filter((f) => !actual.includes(f));
+  /**
+   * No extension API, anywhere in the closure.
+   *
+   * This was a ratchet of nine files for four steps. It is a hard zero now, and
+   * the difference matters: a ratchet says "no NEW violations", which a reviewer
+   * has to trust a list for, while this says the shared tree runs in a web page
+   * — the property the whole boundary exists to produce.
+   */
+  it('reaches no extension API, anywhere in the closure', () => {
+    const hits = closure.filter((f) => /\b(?:browser|chrome)\./.test(read(f))).sort();
 
     expect(
-      added,
-      `NEW extension-API dependency in the shared closure. Route it through the ` +
-        `host adapter — a web page has no \`browser\`:\n${added.join('\n')}`,
+      hits,
+      `Extension API in the shared closure. Route it through the host adapter — ` +
+        `a web page has no \`browser\`:\n${hits.join('\n')}`,
     ).toEqual([]);
+  });
+
+  /**
+   * And no runtime messaging, which is the same fact one level down: `EventBus`
+   * is the extension's transport, so a shared module importing it would reach
+   * `runtime.onMessage` without the grep above seeing a `browser.` token.
+   */
+  it('does not import the extension messaging bus', () => {
+    const hits = closure.filter((f) => /from\s+['"][^'"]*messaging['"]/.test(read(f))).sort();
+
     expect(
-      fixed,
-      `These no longer reach an extension API. Strike them off ` +
-        `BROWSER_API_RATCHET so the list keeps meaning what it says:\n${fixed.join('\n')}`,
+      hits,
+      `The shared closure must not import runtime messaging. What it needed from ` +
+        `it is a member on HostSession:\n${hits.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  /**
+   * Not even the IMPORT.
+   *
+   * `wxt/browser` resolves to `globalThis.browser?.runtime?.id ? ... :
+   * globalThis.chrome` — `undefined` in a web page, so an unused import throws
+   * nothing and the grep above would not see it either. It is still a
+   * declaration that this file expects an extension, and it is what the
+   * playground's `wxt/browser` shim existed to satisfy. That shim is deleted;
+   * this is what keeps it deleted.
+   */
+  it('does not import wxt/browser at all', () => {
+    const hits = closure.filter((f) => /from\s+['"]wxt\/browser['"]/.test(read(f))).sort();
+
+    expect(
+      hits,
+      `The shared closure must not import wxt/browser. A web page has no ` +
+        `extension namespace to import:\n${hits.join('\n')}`,
     ).toEqual([]);
   });
 });

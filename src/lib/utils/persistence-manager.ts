@@ -1,15 +1,18 @@
 /**
- * Persistence Manager for FaultMaven Copilot Extension
+ * Conversation persistence and recovery.
  *
- * Handles intelligent conversation recovery across extension reloads by:
- * 1. Detecting when extension storage is empty (reload scenario)
- * 2. Fetching conversation data from backend APIs
- * 3. Restoring conversations, titles, and state to match backend data
- * 4. Maintaining optimistic UI state during recovery
+ * Fetches the case list from the backend and restores titles and conversation
+ * slots to host storage, so a client that lost its local copy comes back with
+ * its history rather than an empty panel.
+ *
+ * WHAT LOST IT is not this module's question any more. In the extension the
+ * answer is an extension reload — a new `runtime.id`, or a version bump — and
+ * detecting that needs APIs a web page does not have. That half lives in
+ * `src/extension/extension-reload.ts`, which decides and then calls this.
  */
 
-import { browser } from "wxt/browser";
-import { getUserCases, authManager, UserCase } from "../api";
+import { getUserCases, UserCase } from "../api";
+import { getHostStore } from '../host-store';
 import { OptimisticConversationItem } from "../optimistic";
 import { createLogger } from '~/lib/utils/logger';
 import { isPlaceholderCaseTitle } from '../state/case-title';
@@ -37,134 +40,12 @@ export interface RecoveryResult {
  */
 export class PersistenceManager {
   private static readonly SYNC_TIMESTAMP_KEY = 'faultmaven_last_sync';
-  private static readonly RECOVERY_FLAG_KEY = 'faultmaven_recovery_in_progress';
-  private static readonly VERSION_KEY = 'faultmaven_extension_version';
-  private static readonly RELOAD_FLAG_KEY = 'faultmaven_reload_detected';
-  private static readonly SESSION_ID_KEY = 'faultmaven_session_id';
-  private static readonly LAST_RECOVERY_KEY = 'faultmaven_last_recovery_attempt';
-
-  // Extension version for detecting updates/reloads
-  private static readonly CURRENT_VERSION = browser.runtime.getManifest?.()?.version || '1.0.0';
-
-  // Minimum time between recovery attempts (5 minutes)
-  private static readonly RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
-
-  /**
-   * Deterministic reload detection using reliable signals only:
-   * 1. Explicit reload flag set during extension lifecycle events
-   * 2. Extension version mismatch (update scenario)
-   * 3. Session ID mismatch (runtime context changed)
-   *
-   * NOTE: Heuristic checks (structural inconsistency) removed - cannot distinguish
-   * "currently loading" from "lost data", causing false positives on login flow.
-   */
-  static async detectExtensionReload(): Promise<boolean> {
-    try {
-      const isAuthenticated = await authManager.isAuthenticated();
-
-      if (!isAuthenticated) {
-        return false;
-      }
-
-      const stored = await browser.storage.local.get([
-        'conversationTitles',
-        'conversations',
-        PersistenceManager.VERSION_KEY,
-        PersistenceManager.RELOAD_FLAG_KEY,
-        PersistenceManager.SESSION_ID_KEY,
-        PersistenceManager.LAST_RECOVERY_KEY
-      ]);
-
-      // Check recovery cooldown - prevent excessive recovery attempts
-      const lastRecovery = stored[PersistenceManager.LAST_RECOVERY_KEY];
-      if (lastRecovery) {
-        const timeSinceLastRecovery = Date.now() - lastRecovery;
-        if (timeSinceLastRecovery < PersistenceManager.RECOVERY_COOLDOWN_MS) {
-          log.info('Recovery cooldown active', {
-            timeSinceLastRecovery: `${Math.round(timeSinceLastRecovery / 1000)}s`,
-            cooldownRemaining: `${Math.round((PersistenceManager.RECOVERY_COOLDOWN_MS - timeSinceLastRecovery) / 1000)}s`
-          });
-          return false; // Skip recovery if cooldown is active
-        }
-      }
-
-      // DETERMINISTIC SIGNALS ONLY (Reliable)
-      // Method 1: Explicit reload flag (most reliable)
-      const hasReloadFlag = !!stored[PersistenceManager.RELOAD_FLAG_KEY];
-
-      // Method 2: Version mismatch (extension update)
-      const versionMismatch = stored[PersistenceManager.VERSION_KEY] !== PersistenceManager.CURRENT_VERSION;
-
-      // Method 3: Session ID mismatch (runtime context changed)
-      const currentSessionId = browser.runtime.id;
-      const sessionMismatch = stored[PersistenceManager.SESSION_ID_KEY] &&
-        stored[PersistenceManager.SESSION_ID_KEY] !== currentSessionId;
-
-      // REMOVED: Method 4 "Structural inconsistency" - UNRELIABLE & DANGEROUS
-      // Why removed: Cannot distinguish "currently loading" from "lost data"
-      // This heuristic caused the retry storm by triggering on normal login flow
-
-      // Recovery needed if ANY DETERMINISTIC indicator is true
-      const shouldRecover = hasReloadFlag || versionMismatch || sessionMismatch;
-
-      log.info('Reload detection', {
-        isAuthenticated,
-        shouldRecover,
-        indicators: {
-          reloadFlag: hasReloadFlag,
-          versionMismatch,
-          sessionMismatch
-        },
-        state: {
-          titleCount: stored.conversationTitles ? Object.keys(stored.conversationTitles).length : 0,
-          conversationCount: stored.conversations ? Object.keys(stored.conversations).length : 0,
-          version: stored[PersistenceManager.VERSION_KEY],
-          currentVersion: PersistenceManager.CURRENT_VERSION,
-          sessionId: stored[PersistenceManager.SESSION_ID_KEY],
-          currentSessionId
-        },
-        reason: shouldRecover ? (
-          hasReloadFlag ? 'explicit_reload_flag' :
-            versionMismatch ? 'version_mismatch' :
-              'session_id_mismatch'
-        ) : 'no_recovery_needed'
-      });
-
-      return shouldRecover;
-
-    } catch (error) {
-      log.warn('Detection error - defaulting to safe recovery:', error);
-      return true;
-    }
-  }
-
-  /**
-   * Sets reload flag (called during extension lifecycle events)
-   * Should be called from background script or service worker on install/update
-   */
-  static async markReloadDetected(): Promise<void> {
-    try {
-      await browser.storage.local.set({
-        [PersistenceManager.RELOAD_FLAG_KEY]: true,
-        [PersistenceManager.SESSION_ID_KEY]: browser.runtime.id
-      });
-      log.info('Reload flag set');
-    } catch (error) {
-      log.warn('Failed to set reload flag:', error);
-    }
-  }
-
-  /**
-   * Clears reload flag after successful recovery
-   */
-  static async clearReloadFlag(): Promise<void> {
-    try {
-      await browser.storage.local.remove([PersistenceManager.RELOAD_FLAG_KEY]);
-      log.info('Reload flag cleared');
-    } catch (error) {
-      log.warn('Failed to clear reload flag:', error);
-    }
-  }
+  /** Read and written by the host's reload detection too, so it is not private. */
+  static readonly RECOVERY_FLAG_KEY = 'faultmaven_recovery_in_progress';
+  static readonly VERSION_KEY = 'faultmaven_extension_version';
+  static readonly RELOAD_FLAG_KEY = 'faultmaven_reload_detected';
+  static readonly SESSION_ID_KEY = 'faultmaven_session_id';
+  static readonly LAST_RECOVERY_KEY = 'faultmaven_last_recovery_attempt';
 
   /**
    * Recovers conversations from backend API and restores local state
@@ -181,19 +62,18 @@ export class PersistenceManager {
     try {
       // Set recovery flag and timestamp to prevent concurrent recovery attempts
       const now = Date.now();
-      await browser.storage.local.set({
+      await getHostStore().set({
         [PersistenceManager.RECOVERY_FLAG_KEY]: true,
         [PersistenceManager.LAST_RECOVERY_KEY]: now
       });
 
       log.info(' 🔄 Starting conversation recovery from backend...');
 
-      // Check authentication
-      const isAuthenticated = await authManager.isAuthenticated();
-      if (!isAuthenticated) {
-        result.errors.push('User not authenticated - cannot recover conversations');
-        return result;
-      }
+      // No authentication check. Recovery is reached from a host that already
+      // has a session — the panel cannot mount without one — so the gate that
+      // used to sit here guarded a state the host boundary makes unreachable,
+      // and asking would have meant this module knowing about a credential it
+      // does not own.
 
       // HYBRID STRATEGY: Auto-List / Lazy-Detail
       // Only fetch case metadata (IDs, titles, dates) - NOT conversation details
@@ -260,17 +140,16 @@ export class PersistenceManager {
 
       // Save recovered data to local storage
       log.info(' 💾 Saving recovered metadata to local storage...');
-      await browser.storage.local.set({
+      await getHostStore().set({
         conversationTitles: recoveredTitles,
         titleSources: recoveredTitleSources,
         conversations: recoveredConversations, // Empty arrays - lazy-loaded on demand
-        [PersistenceManager.SYNC_TIMESTAMP_KEY]: Date.now(),
-        [PersistenceManager.VERSION_KEY]: PersistenceManager.CURRENT_VERSION,
-        [PersistenceManager.SESSION_ID_KEY]: browser.runtime.id
+        [PersistenceManager.SYNC_TIMESTAMP_KEY]: Date.now()
       });
 
-      // Clear reload flag after successful recovery
-      await PersistenceManager.clearReloadFlag();
+      // The runtime identity that makes the NEXT load not look like a reload —
+      // the version and the `runtime.id` — is stamped by whoever detected the
+      // reload, because whoever detected it is the only one that knows them.
 
       // Success metrics
       result.success = true;
@@ -290,7 +169,7 @@ export class PersistenceManager {
       return result;
     } finally {
       // Clear recovery flag
-      await browser.storage.local.remove([PersistenceManager.RECOVERY_FLAG_KEY]);
+      await getHostStore().remove([PersistenceManager.RECOVERY_FLAG_KEY]);
     }
   }
 
@@ -299,7 +178,7 @@ export class PersistenceManager {
    */
   static async isRecoveryInProgress(): Promise<boolean> {
     try {
-      const stored = await browser.storage.local.get([PersistenceManager.RECOVERY_FLAG_KEY]);
+      const stored = await getHostStore().get([PersistenceManager.RECOVERY_FLAG_KEY]);
       return !!stored[PersistenceManager.RECOVERY_FLAG_KEY];
     } catch {
       return false;
@@ -307,14 +186,15 @@ export class PersistenceManager {
   }
 
   /**
-   * Updates sync timestamp to mark successful data persistence
+   * Updates sync timestamp to mark successful data persistence.
+   *
+   * The version and runtime id that used to be stamped alongside it are the
+   * host's, not this module's, and are written by the host that knows them.
    */
   static async markSyncComplete(): Promise<void> {
     try {
-      await browser.storage.local.set({
-        [PersistenceManager.SYNC_TIMESTAMP_KEY]: Date.now(),
-        [PersistenceManager.VERSION_KEY]: PersistenceManager.CURRENT_VERSION,
-        [PersistenceManager.SESSION_ID_KEY]: browser.runtime.id
+      await getHostStore().set({
+        [PersistenceManager.SYNC_TIMESTAMP_KEY]: Date.now()
       });
     } catch (error) {
       log.warn('Failed to mark sync complete:', error);
@@ -361,7 +241,7 @@ export class PersistenceManager {
         PersistenceManager.LAST_RECOVERY_KEY
       ];
       if (!options.preservePinnedCases) keys.push('pinnedCases');
-      await browser.storage.local.remove(keys);
+      await getHostStore().remove(keys);
       log.info('Persistence data cleared', { preservePinnedCases: !!options.preservePinnedCases });
     } catch (error) {
       log.warn('Failed to clear persistence data:', error);

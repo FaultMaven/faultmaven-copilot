@@ -5,16 +5,20 @@
  * it, so building or running the playground cannot change the shipped
  * extension artifact (which CI hashes — scripts/extension-digest.mjs).
  *
- * Three things make the existing UI run here:
+ * Two things make the existing UI run here:
  *
  *  1. the `~` / `~lib` aliases, so shared/ui resolves exactly as it does in the
  *     extension build — the SAME files, not a copy;
- *  2. `wxt/browser` aliased to the adapter-backed shim, which is how the proof
- *     wraps rather than relocates;
- *  3. an INLINE PostCSS/Tailwind config. The root postcss.config.cjs is not
+ *  2. an INLINE PostCSS/Tailwind config. The root postcss.config.cjs is not
  *     reused, and the root tailwind.config.cjs is loaded but its `content` is
  *     replaced with absolute globs — so nothing here can alter the CSS the
  *     extension build emits.
+ *
+ * There WAS a third: `wxt/browser` aliased to a shim that answered what a web
+ * host could and threw, naming the adapter member, for what it could not. Those
+ * throw messages were the migration checklist. Nothing in the shared closure
+ * imports `wxt/browser` any more, so the shim is gone — and the closure test
+ * asserts that, which is what stops it being needed again.
  */
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -41,7 +45,6 @@ export default defineConfig({
       // Longest-prefix first: Vite matches aliases in order.
       '~lib': path.resolve(repoRoot, 'src/lib'),
       '~': path.resolve(repoRoot, 'src'),
-      'wxt/browser': path.resolve(here, 'wxt-browser.ts'),
     },
   },
   css: {

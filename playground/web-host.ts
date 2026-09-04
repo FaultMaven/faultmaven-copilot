@@ -8,7 +8,7 @@
  * outside? Everything here is the smallest honest answer a real web host would
  * give to the same call.
  */
-import type { HostAdapter, StoredValue } from '~/shared/host';
+import type { HostAdapter, HostUser, StoredValue } from '~/shared/host';
 
 const NS = 'fm_playground_';
 
@@ -92,6 +92,21 @@ const navigation: HostAdapter['navigation'] = {
  * the auth clause: with a non-nullable session on the adapter there is no state
  * in which the shared UI would render a sign-in screen.
  */
+/**
+ * Subscribers to "the identity changed elsewhere".
+ *
+ * A real web host wires this to its own auth layer: another tab signing out is
+ * an event the page genuinely has, and the panel must stop acting as though it
+ * still had a credential. Here it is driven by `signOutFromAnotherTab()` below,
+ * which is what the proof presses.
+ */
+const authStateSubscribers = new Set<(user: HostUser | null) => void>();
+
+/** Stand in for another tab signing this browser out. */
+export function signOutFromAnotherTab(): void {
+  for (const fn of [...authStateSubscribers]) fn(null);
+}
+
 const session: HostAdapter['session'] = {
   user: {
     id: 'stub-user',
@@ -108,6 +123,10 @@ const session: HostAdapter['session'] = {
   // A web host would hand this to its own auth layer — the same one that owns
   // the cookie or token the page was served with. Nothing to tear down here.
   onUnauthorized: () => {},
+  subscribeAuthState(onChange) {
+    authStateSubscribers.add(onChange);
+    return () => authStateSubscribers.delete(onChange);
+  },
 };
 
 export const CHROME_WEB_STORE_URL =

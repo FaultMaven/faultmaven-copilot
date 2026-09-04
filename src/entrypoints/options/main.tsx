@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
-import { authManager } from '../../lib/api';
+import { authManager } from '../../lib/auth/auth-manager';
 import type { User } from '../../lib/api/types';
 import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../extension/host/endpoints';
 import { installExtensionHostContext } from '../../extension/host/install';

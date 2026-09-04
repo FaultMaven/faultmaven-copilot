@@ -1,11 +1,14 @@
 /**
- * Data Recovery Hook
+ * Hydrate the store from host storage.
  *
- * Manages intelligent persistence loading with automatic backend recovery.
- * Hydrates the centralized Zustand store.
+ * It used to do two jobs: decide whether an extension reload had lost the local
+ * cache and refill it from the backend, then hydrate. The first is not shared —
+ * a web page has no extension to reload and no `runtime.id` to notice one with
+ * — so it moved to the host's own entry, which runs it BEFORE mounting the panel
+ * so recovery's writes still precede this read.
  */
 
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
 import { IdMappingState, OptimisticConversationItem, idMappingManager } from '../../../lib/optimistic';
 import { getEpoch } from '../../../lib/state/session-epoch';
@@ -51,9 +54,7 @@ interface StoredRecoveryState {
 }
 
 interface RecoveryStatus {
-  isRecovering: boolean;
   error: string | null;
-  recoveredCases: number;
 }
 
 export function useDataRecovery(
@@ -63,9 +64,7 @@ export function useDataRecovery(
   const { store } = useHost();
 
   const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus>({
-    isRecovering: false,
-    error: null,
-    recoveredCases: 0
+    error: null
   });
 
   const onDataRecoveredRef = useRef(onDataRecovered);
@@ -83,51 +82,7 @@ export function useDataRecovery(
       // isAuthenticated-gated — a TOCTOU: the flag can flip after the check).
       const epoch = getEpoch();
       try {
-        log.info('Starting intelligent persistence loading');
-
-        const recoveryInProgress = await PersistenceManager.isRecoveryInProgress();
-        if (recoveryInProgress) {
-          log.info('Recovery already in progress, waiting');
-          return;
-        }
-
-        const reloadDetected = await PersistenceManager.detectExtensionReload();
-        log.info('Reload detection result', { reloadDetected });
-
-        if (reloadDetected) {
-          log.info('Extension reload detected - starting conversation recovery');
-          setRecoveryStatus(prev => ({ ...prev, isRecovering: true }));
-
-          const recoveryResult = await PersistenceManager.recoverConversationsFromBackend();
-
-          if (recoveryResult.success) {
-            log.info('Conversation recovery successful', {
-              cases: recoveryResult.recoveredCases,
-              conversations: recoveryResult.recoveredConversations
-            });
-
-            setRecoveryStatus({
-              isRecovering: false,
-              error: null,
-              recoveredCases: recoveryResult.recoveredCases
-            });
-
-            if (recoveryResult.recoveredCases > 0) {
-              log.info(`Recovered ${recoveryResult.recoveredCases} chats with ${recoveryResult.recoveredConversations} messages`);
-            }
-          } else {
-            log.warn('Conversation recovery failed', { errors: recoveryResult.errors });
-            setRecoveryStatus({
-              isRecovering: false,
-              error: recoveryResult.errors[0] || 'Recovery failed',
-              recoveredCases: 0
-            });
-
-            if (recoveryResult.errors.length > 0 && onErrorRef.current) {
-              onErrorRef.current(`Failed to recover conversations: ${recoveryResult.errors[0]}`);
-            }
-          }
-        }
+        log.info('Starting persistence loading');
 
         log.debug('Loading data from host storage');
         // Read the persisted store-state keys (shared constant, kept in sync with
@@ -251,11 +206,7 @@ export function useDataRecovery(
       } catch (error) {
         log.error('Persistence loading failed', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to load persisted data';
-        setRecoveryStatus({
-          isRecovering: false,
-          error: errorMessage,
-          recoveredCases: 0
-        });
+        setRecoveryStatus({ error: errorMessage });
         if (onErrorRef.current) {
           onErrorRef.current(errorMessage);
         }
@@ -268,35 +219,7 @@ export function useDataRecovery(
     // relying on that stability silently.
   }, [store]);
 
-  const forceRecovery = useCallback(async () => {
-    try {
-      log.info('Force recovery triggered');
-      setRecoveryStatus(prev => ({ ...prev, isRecovering: true }));
-
-      const result = await PersistenceManager.forceRecovery();
-
-      setRecoveryStatus({
-        isRecovering: false,
-        error: result.success ? null : result.errors[0] || 'Recovery failed',
-        recoveredCases: result.recoveredCases
-      });
-
-      return result;
-    } catch (error) {
-      log.error('Force recovery failed', error);
-      setRecoveryStatus({
-        isRecovering: false,
-        error: error instanceof Error ? error.message : 'Recovery failed',
-        recoveredCases: 0
-      });
-      throw error;
-    }
-  }, []);
-
   return {
-    isRecovering: recoveryStatus.isRecovering,
-    recoveryError: recoveryStatus.error,
-    recoveredCases: recoveryStatus.recoveredCases,
-    forceRecovery
+    recoveryError: recoveryStatus.error
   };
 }

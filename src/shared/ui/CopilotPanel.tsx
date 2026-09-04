@@ -113,12 +113,8 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
   //
   // Who is signed in comes from the host, not from an auth stack this panel
   // runs: `session` is non-nullable, so there is nobody to ask for and nothing
-  // to gate on. `currentUser` is still read from the store because the account
-  // row also renders a profile fetched separately; in the extension the host's
-  // session is BUILT from that same store value, so the two cannot disagree.
-  // Both collapse into `session.user` when the API client moves behind the
-  // adapter.
-  const currentUser = useAppStore((state) => state.currentUser);
+  // to gate on. The account row reads `session.user` too — the second copy the
+  // store used to hold is gone, so there is no pair that could disagree.
   const isAdmin = session.user.roles.includes(ROLES.ADMIN);
   // The panel only ever mounts once its host says the environment is ready, so
   // the session initialises unconditionally here.
@@ -130,8 +126,23 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
     setActiveCase: setActiveCaseId
   } = useCaseManagement();
 
+  // The identity can change under an open panel: a sign-out in another tab or
+  // context, or a different account signing in on a shared profile. The host is
+  // the only thing that can observe that — it owns the credential — so it
+  // reports it and the store reacts. Signing out FENCES the session before the
+  // panel unmounts, so an in-flight writer's queued continuation is discarded
+  // rather than repopulating state the sign-out just cleared.
+  const applyHostAuthState = useAppStore((state) => state.applyHostAuthState);
+  useEffect(
+    () => session.subscribeAuthState(applyHostAuthState),
+    [session, applyHostAuthState],
+  );
+
   // --- Data Recovery ---
-  const { isRecovering } = useDataRecovery();
+  //
+  // Hydration only. Whether anything was LOST — an extension reload, an update —
+  // is the host's question, answered before this panel mounts.
+  useDataRecovery();
 
   // --- Pending Operations ---
   const {
@@ -265,10 +276,10 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
     }
   };
 
-  if (initializingCapabilities || isRecovering) {
+  if (initializingCapabilities) {
     return (
       <ErrorBoundary>
-        <LoadingScreen message={isRecovering ? "Recovering session..." : "Connecting to FaultMaven..."} />
+        <LoadingScreen message="Connecting to FaultMaven..." />
       </ErrorBoundary>
     );
   }
@@ -307,7 +318,7 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
           onError={(error) => log.error('Navigation boundary caught error', { error })}
         >
           <CollapsibleNavigation
-            currentUser={currentUser}
+            currentUser={session.user}
             isCollapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             activeTab={activeTab}

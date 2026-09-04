@@ -21,13 +21,13 @@
  * scaffold the migration removes, one call site at a time; it is not the
  * design.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChatInterface } from '~/shared/ui/components/ChatInterface';
 import { HostAdapterProvider } from '~/shared/host';
 import type { OptimisticConversationItem, PendingOperation } from '~/lib/optimistic';
 import type { UserCase } from '~/types/case';
-import { webHostAdapter } from './web-host';
+import { webHostAdapter, signOutFromAnotherTab } from './web-host';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -73,7 +73,17 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default function App() {
   const [conversation, setConversation] = useState(INITIAL_CONVERSATION);
+  const [signedOutElsewhere, setSignedOutElsewhere] = useState(false);
   const host = webHostAdapter;
+
+  // The one thing the shared UI needed cross-context messaging for. A web host
+  // has the fact without having the mechanism: another tab signing this browser
+  // out is a real event here, and the panel must stop acting as though it still
+  // had a credential. Subscribed exactly as the shared panel subscribes.
+  useEffect(
+    () => host.session.subscribeAuthState((user) => setSignedOutElsewhere(user === null)),
+    [host],
+  );
 
   const echo = (question: string) => {
     const stamp = Date.now();
@@ -105,6 +115,22 @@ export default function App() {
               sign-in screen exists in this tree.
             </p>
           </header>
+
+          <div className="w-full max-w-fm-content flex items-center gap-3">
+            <button
+              type="button"
+              onClick={signOutFromAnotherTab}
+              className="rounded-fm-control border border-fm-border px-3 py-1.5 text-fm-body text-fm-text-secondary hover:text-fm-text-primary"
+            >
+              Simulate a sign-out in another tab
+            </button>
+            {signedOutElsewhere && (
+              <span role="status" data-testid="signed-out-elsewhere" className="text-fm-body text-fm-text-secondary">
+                The host reported this browser signed out. A real web host would hand the
+                page back to its own auth layer.
+              </span>
+            )}
+          </div>
 
           <div
             className="w-full max-w-fm-content h-[560px] bg-fm-canvas border border-fm-border rounded-fm-card overflow-hidden flex flex-col"
@@ -142,6 +168,10 @@ export default function App() {
               value={<em>null — no options page, so no affordance is rendered</em>}
             />
             <Row label="session" value="handed in, non-nullable; signOut is the host's" />
+            <Row
+              label="session.subscribeAuthState"
+              value="another tab signing out — press the button above"
+            />
             <Row
               label="pageCapture"
               value={

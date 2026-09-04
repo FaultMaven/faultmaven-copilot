@@ -1,6 +1,6 @@
 // src/entrypoints/background.ts
-import { authManager } from '../lib/api';
-import { PersistenceManager } from '../lib/utils/persistence-manager';
+import { authManager } from '../lib/auth/auth-manager';
+import { markReloadDetected } from '../extension/extension-reload';
 import { browser } from 'wxt/browser';
 import { reconcileAuthBridgeRegistration } from '../lib/auth/auth-bridge-registration';
 import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
@@ -13,6 +13,7 @@ import {
 import { createLogger } from '../lib/utils/logger';
 import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
 import { installExtensionHostContext } from '../extension/host/install';
+import { EventBus } from '../extension/messaging';
 
 // Before anything below reads state or resolves a backend URL. The worker
 // refreshes tokens and exchanges authorization codes against the CONFIGURED
@@ -128,14 +129,14 @@ export default defineBackground({
         // token payload. Broadcasting `payload` sent {access_token, …, user},
         // whose `isAuthenticated` is undefined, so the listener set
         // isAuthenticated: undefined and the panel's auth flag was wrong.
-        try {
-          await browser.runtime.sendMessage({
-            type: "auth_state_changed",
-            authState: { isAuthenticated: true, user: payload.user }
-          });
-        } catch (e) {
-          // Ignore if no listener
-        }
+        // Through the typed door: the payload shape is the contract the panel
+        // reads, and spelling it by hand is how a raw token payload once went
+        // out as an auth state whose `isAuthenticated` was undefined.
+        await EventBus.emit({
+          type: 'auth_state_changed',
+          authState: { isAuthenticated: true, user: payload.user }
+        });
+
         
         sendResponse({ status: "success" });
       } catch (error) {
@@ -448,15 +449,10 @@ export default defineBackground({
 
         // Broadcast auth state change. Send the { isAuthenticated, user }
         // contract shape, not the raw token AuthState (see handleStoreAuth).
-        try {
-          await browser.runtime.sendMessage({
-            type: "auth_state_changed",
-            authState: { isAuthenticated: true, user: authState.user }
-          });
-        } catch (e) {
-          // Ignore if no listener (side panel may not be open)
-          log.debug('Could not broadcast auth state change:', e);
-        }
+        await EventBus.emit({
+          type: 'auth_state_changed',
+          authState: { isAuthenticated: true, user: authState.user }
+        });
 
         return { success: true, user };
       } catch (error: any) {
@@ -675,7 +671,7 @@ export default defineBackground({
       // Set reload flag for conversation recovery
       // This triggers recovery on next app load if user had existing conversations
       if (details.reason === 'install' || details.reason === 'update') {
-        await PersistenceManager.markReloadDetected();
+        await markReloadDetected();
         log.info("Reload flag set - will trigger recovery on next load");
       }
     });

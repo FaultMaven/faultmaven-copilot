@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PersistenceManager } from '../../lib/utils/persistence-manager';
-import { authManager, getUserCases, getCaseConversation } from '../../lib/api';
+import { getUserCases, getCaseConversation } from '../../lib/api';
+import { setHostStore } from '../../lib/host-store';
 
 // Hoist mock browser to be accessible inside vi.mock
 const { mockBrowser } = vi.hoisted(() => {
@@ -28,9 +29,6 @@ vi.mock('wxt/browser', () => ({
 
 // Mock API functions
 vi.mock('../../lib/api', () => ({
-  authManager: {
-    isAuthenticated: vi.fn()
-  },
   getUserCases: vi.fn(),
   getCaseConversation: vi.fn()
 }));
@@ -44,6 +42,14 @@ describe('PersistenceManager', () => {
     mockBrowser.storage.local.get.mockResolvedValue({});
     mockBrowser.storage.local.set.mockResolvedValue(undefined);
     mockBrowser.storage.local.remove.mockResolvedValue(undefined);
+    // Storage reaches this module through the host now. Bound to the same mock,
+    // so every assertion below watches the same writes it always did.
+    setHostStore({
+      get: (keys) => mockBrowser.storage.local.get(keys),
+      set: (items) => mockBrowser.storage.local.set(items),
+      remove: (keys) => mockBrowser.storage.local.remove(keys),
+      subscribe: () => () => {},
+    });
   });
 
   afterEach(() => {
@@ -77,67 +83,6 @@ describe('PersistenceManager', () => {
     });
   });
 
-  describe('detectExtensionReload', () => {
-    it('should detect reload when explicit reload flag is set', async () => {
-      // Mock authenticated user with reload flag set (deterministic signal)
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
-      mockBrowser.storage.local.get.mockResolvedValue({
-        conversationTitles: { 'case1': 'Title' },
-        conversations: {},
-        faultmaven_extension_version: '1.0.0',
-        faultmaven_reload_detected: true, // Explicit reload flag
-        faultmaven_session_id: 'test-ext-id'
-      });
-
-      const result = await PersistenceManager.detectExtensionReload();
-
-      expect(result).toBe(true);
-      expect(authManager.isAuthenticated).toHaveBeenCalled();
-      expect(mockBrowser.storage.local.get).toHaveBeenCalled();
-    });
-
-    it('should not detect reload when no deterministic signals present', async () => {
-      // Mock authenticated user with no reload flag, matching version, and matching session
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
-      mockBrowser.storage.local.get.mockResolvedValue({
-        conversationTitles: { 'case1': 'Test Chat' },
-        conversations: { 'case1': [{ id: '1', content: 'msg' }] },
-        faultmaven_extension_version: '1.0.0', // Matches current version
-        faultmaven_session_id: 'test-ext-id', // Matches current session
-        faultmaven_last_sync: Date.now()
-      });
-
-      const result = await PersistenceManager.detectExtensionReload();
-
-      expect(result).toBe(false);
-    });
-
-    it('should detect reload when version mismatch occurs', async () => {
-      // Mock version mismatch scenario
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
-      mockBrowser.storage.local.get.mockResolvedValue({
-        conversationTitles: { 'case1': 'Test Chat' },
-        conversations: { 'case1': [] },
-        faultmaven_extension_version: '0.9.0', // Different version
-        faultmaven_last_sync: Date.now()
-      });
-
-      const result = await PersistenceManager.detectExtensionReload();
-
-      expect(result).toBe(true);
-    });
-
-    it('should not detect reload when user is not authenticated', async () => {
-      // Mock unauthenticated user
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(false);
-      mockBrowser.storage.local.get.mockResolvedValue({});
-
-      const result = await PersistenceManager.detectExtensionReload();
-
-      expect(result).toBe(false);
-    });
-  });
-
   describe('recoverConversationsFromBackend', () => {
     it('does not recover placeholder titles into the store (fm#1069)', async () => {
       // Recovery used to copy EVERY backend title into conversationTitles with
@@ -145,7 +90,6 @@ describe('PersistenceManager', () => {
       // `Case-YYMMDD-N` pins the placeholder ahead of the real title the server
       // writes later — reintroducing, on the recovery path, exactly the seeding
       // this change removed from the two turn hooks.
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
 
       const base = {
         owner_id: 'user1',
@@ -180,7 +124,6 @@ describe('PersistenceManager', () => {
 
     it('should successfully recover conversations from backend', async () => {
       // Setup mocks for successful recovery
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
 
       const mockCases = [
         {
@@ -242,18 +185,7 @@ describe('PersistenceManager', () => {
       expect(getCaseConversation).not.toHaveBeenCalled();
     });
 
-    it('should handle unauthenticated user gracefully', async () => {
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(false);
-
-      const result = await PersistenceManager.recoverConversationsFromBackend();
-
-      expect(result.success).toBe(false);
-      expect(result.errors).toContain('User not authenticated - cannot recover conversations');
-      expect(getUserCases).not.toHaveBeenCalled();
-    });
-
     it('should handle empty cases list', async () => {
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
       vi.mocked(getUserCases).mockResolvedValue([]);
 
       const result = await PersistenceManager.recoverConversationsFromBackend();
@@ -264,7 +196,6 @@ describe('PersistenceManager', () => {
     });
 
     it('should handle API errors gracefully', async () => {
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
       vi.mocked(getUserCases).mockRejectedValue(new Error('API Error'));
 
       const result = await PersistenceManager.recoverConversationsFromBackend();
@@ -276,7 +207,6 @@ describe('PersistenceManager', () => {
     it('should handle successful metadata recovery (no conversation fetching)', async () => {
       // New lazy-loading strategy: even if case list fetch succeeds,
       // conversations are NOT fetched - they're lazy-loaded on demand
-      vi.mocked(authManager.isAuthenticated).mockResolvedValue(true);
 
       const mockCases = [
         {
@@ -354,13 +284,14 @@ describe('PersistenceManager', () => {
   });
 
   describe('markSyncComplete', () => {
-    it('should update sync timestamp and version', async () => {
+    // The version and the runtime id used to be stamped here too. They are the
+    // HOST's — a web page has neither — and are written by the host that knows
+    // them; see the extension-reload suite.
+    it('records the sync timestamp, and nothing about the runtime', async () => {
       await PersistenceManager.markSyncComplete();
 
       expect(mockBrowser.storage.local.set).toHaveBeenCalledWith({
-        faultmaven_last_sync: expect.any(Number),
-        faultmaven_extension_version: '1.0.0',
-        faultmaven_session_id: 'test-ext-id'
+        faultmaven_last_sync: expect.any(Number)
       });
     });
   });

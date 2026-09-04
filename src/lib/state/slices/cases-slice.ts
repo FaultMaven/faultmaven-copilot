@@ -1,5 +1,4 @@
 import { StateCreator } from 'zustand';
-import { browser } from 'wxt/browser';
 import {
   AttachmentResult,
   DEFAULT_CASE_LIST_LIMIT,
