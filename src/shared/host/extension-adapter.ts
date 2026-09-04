@@ -6,10 +6,15 @@
  * doing this while the extension is still the only host: the interface earns
  * its shape in production, and the second host is not also the first test of it.
  *
- * Only `store` is implemented, because only `store` is wired (see `WiredHost`).
+ * Only `store` and `navigation` are implemented, because only those are wired
+ * (see `WiredHost`).
  */
 import { browser } from 'wxt/browser';
+import { getDashboardUrl } from '../../config';
+import { createLogger } from '../../lib/utils/logger';
 import type { HostStore, StoredValue, WiredHost } from './adapter';
+
+const log = createLogger('extensionHost');
 
 /**
  * `browser.storage.local`, with one difference that is deliberate.
@@ -57,9 +62,55 @@ const store: HostStore = {
 };
 
 /**
+ * Navigation, as the extension performs it.
+ *
+ * `dashboard` takes a PATH, not a URL. Where the Dashboard lives is a property
+ * of the host — the extension reads a user-configured endpoint out of storage,
+ * a web host is already serving it — so resolving the base URL belongs here and
+ * not in a component. The shared UI knows only that it wants `/cases/<id>`.
+ *
+ * The focus-or-create behaviour is preserved exactly: an existing Dashboard tab
+ * is focused and only navigated when it is not already on the target, which is
+ * what stops "Open Dashboard" from throwing away a tab's scroll position and
+ * form state on every click.
+ */
+const navigation: WiredHost['navigation'] = {
+  async dashboard(path) {
+    const baseUrl = (await getDashboardUrl()).replace(/\/+$/, '');
+    if (!baseUrl) return;
+    const targetUrl = `${baseUrl}${path}`;
+    try {
+      const tabs = await browser.tabs.query({ url: `${baseUrl}/*` });
+      if (tabs.length > 0 && tabs[0].id != null) {
+        const currentUrl = tabs[0].url ?? '';
+        const updateOpts: { active: boolean; url?: string } = { active: true };
+        if (!currentUrl.startsWith(targetUrl)) {
+          updateOpts.url = targetUrl;
+        }
+        await browser.tabs.update(tabs[0].id, updateOpts);
+      } else {
+        await browser.tabs.create({ url: targetUrl });
+      }
+    } catch (error) {
+      // `tabs` permission revoked, or the query rejected. Opening a plain window
+      // still gets the user where they asked to go.
+      log.warn('tabs navigation failed; falling back to window.open', error);
+      window.open(targetUrl, '_blank');
+    }
+  },
+
+  // The extension HAS a settings surface, so this is a function rather than
+  // null. A host without one supplies null and the UI renders no affordance —
+  // which is the whole reason this member is nullable instead of a no-op.
+  settings: async () => {
+    await browser.runtime.openOptionsPage();
+  },
+};
+
+/**
  * The extension host, as a module singleton.
  *
  * Stable by construction, so it is safe in a hook's dependency array — a host
  * rebuilt on every render would re-run every effect that subscribes through it.
  */
-export const extensionHost: WiredHost = { store };
+export const extensionHost: WiredHost = { store, navigation };

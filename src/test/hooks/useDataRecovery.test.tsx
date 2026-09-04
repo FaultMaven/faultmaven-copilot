@@ -62,6 +62,8 @@ const host: WiredHost = {
     remove: storageRemove,
     subscribe: storageSubscribe,
   } as unknown as HostStore,
+  // Unused by this hook; present because a host is whole or it is not one.
+  navigation: { dashboard: vi.fn(), settings: null },
 };
 const wrapper = hostWrapper(host);
 const renderRecovery = () => renderHook(() => useDataRecovery(), { wrapper });

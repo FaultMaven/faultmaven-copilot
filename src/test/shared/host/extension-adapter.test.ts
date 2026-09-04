@@ -106,3 +106,70 @@ describe('extensionHost.store', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+describe('extensionHost.navigation', () => {
+  const origTabs = b.tabs;
+  const origRuntime = b.runtime;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Where the Dashboard lives is read from the configured endpoint.
+    b.storage.local.get.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    b.tabs = { query: vi.fn().mockResolvedValue([]), update: vi.fn(), create: vi.fn() };
+    b.runtime = { ...(origRuntime ?? {}), openOptionsPage: vi.fn() };
+  });
+
+  afterEach(() => {
+    b.tabs = origTabs;
+    b.runtime = origRuntime;
+  });
+
+  it('opens a new tab at base + path when no Dashboard tab exists', async () => {
+    await extensionHost.navigation.dashboard('/cases/case-1');
+
+    expect(b.tabs.query).toHaveBeenCalledWith({ url: 'https://app.faultmaven.ai/*' });
+    expect(b.tabs.create).toHaveBeenCalledWith({ url: 'https://app.faultmaven.ai/cases/case-1' });
+    expect(b.tabs.update).not.toHaveBeenCalled();
+  });
+
+  // Focus-or-create. Navigating a tab that is already on the target throws away
+  // its scroll position and any form state, so an already-correct tab is only
+  // focused.
+  it('focuses an existing Dashboard tab without navigating it when it is already on the target', async () => {
+    b.tabs.query.mockResolvedValue([{ id: 7, url: 'https://app.faultmaven.ai/cases/case-1?x=1' }]);
+
+    await extensionHost.navigation.dashboard('/cases/case-1');
+
+    expect(b.tabs.update).toHaveBeenCalledWith(7, { active: true });
+    expect(b.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('navigates an existing Dashboard tab that is somewhere else', async () => {
+    b.tabs.query.mockResolvedValue([{ id: 7, url: 'https://app.faultmaven.ai/kb' }]);
+
+    await extensionHost.navigation.dashboard('/cases');
+
+    expect(b.tabs.update).toHaveBeenCalledWith(7, {
+      active: true,
+      url: 'https://app.faultmaven.ai/cases',
+    });
+  });
+
+  it('falls back to a plain window when the tabs API refuses', async () => {
+    b.tabs.query.mockRejectedValue(new Error('permission revoked'));
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    await extensionHost.navigation.dashboard('/cases');
+
+    expect(open).toHaveBeenCalledWith('https://app.faultmaven.ai/cases', '_blank');
+    open.mockRestore();
+  });
+
+  // The extension HAS a settings surface, so this member is a function. A host
+  // without one supplies null and the UI draws nothing.
+  it('settings opens the extension options page', async () => {
+    expect(extensionHost.navigation.settings).not.toBeNull();
+    await extensionHost.navigation.settings!();
+    expect(b.runtime.openOptionsPage).toHaveBeenCalled();
+  });
+});
