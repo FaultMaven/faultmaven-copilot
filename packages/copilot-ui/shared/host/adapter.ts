@@ -88,6 +88,16 @@ export interface HostNavigation {
   settings: (() => Promise<void>) | null;
 }
 
+/**
+ * What the host did about a credential the API rejected.
+ *
+ * Re-exported from the transport so a host implementing `HostSession` and a
+ * host implementing `ApiTransport` are answering the same question with the
+ * same type, rather than two look-alike unions that can drift.
+ */
+export type { AuthOutcome } from '../../lib/api/transport';
+import type { AuthOutcome } from '../../lib/api/transport';
+
 /** The signed-in user, as the host knows them. */
 export interface HostUser {
   id: string;
@@ -123,11 +133,17 @@ export interface HostSession {
    *
    * The shared UI reports it and stops; it does not refresh, retry with a new
    * token, or clear any storage — it holds no refresh token and has no way to
-   * mint one. What a dead credential means (re-authenticate, sign out, prompt)
-   * is the host's decision, because the host owns the token chain, its storage
-   * key and its rotation lock.
+   * mint one. What a dead credential means is the host's decision, because the
+   * host owns the token chain, its storage key and its rotation lock.
+   *
+   * The host SAYS which decision it made. `'refreshed'` means it renewed the
+   * credential and the session continues, and the client retries the request
+   * once with the new bearer; `'ended'` means the session is over. Without the
+   * answer the client threw regardless, so a host that had just refreshed
+   * successfully still got a blocking "session expired" modal whose only action
+   * wiped the panel while the surrounding app stayed signed in.
    */
-  onUnauthorized(): void | Promise<void>;
+  onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
   /**
    * `null` when the host owns sign-out (the Dashboard has its own account
    * menu). The UI then renders no sign-out of its own rather than a second

@@ -122,7 +122,7 @@ const session: HostAdapter['session'] = {
   signOut: null,
   // A web host would hand this to its own auth layer — the same one that owns
   // the cookie or token the page was served with. Nothing to tear down here.
-  onUnauthorized: () => {},
+  onUnauthorized: () => 'ended' as const,
   subscribeAuthState(onChange) {
     authStateSubscribers.add(onChange);
     return () => authStateSubscribers.delete(onChange);

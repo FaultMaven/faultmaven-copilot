@@ -29,7 +29,7 @@ describe('raw-fetch bypass removed — services route through authenticatedFetch
       accessToken: async () => { throw new Error('not exercised'); },
       sessionId: async () => null,
       clearSession: async () => {},
-      onUnauthorized: () => {},
+      onUnauthorized: () => 'ended' as const,
     });
     // Ensure the real global fetch is NOT used by these services.
     vi.spyOn(globalThis, 'fetch' as any).mockImplementation(() => {

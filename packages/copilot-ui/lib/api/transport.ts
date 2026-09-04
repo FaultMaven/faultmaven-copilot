@@ -49,14 +49,28 @@ export interface ApiTransport {
    */
   clearSession(): Promise<void>;
   /**
-   * The API rejected our credential. The host decides what that means.
+   * The API rejected our credential. The host decides what that means, and
+   * SAYS which it decided.
    *
-   * Awaited by the caller: the teardown this replaced completed before the
-   * error was thrown, and a fire-and-forget clear would race the next request
-   * into reading a credential that was on its way out.
+   *   'refreshed'  the host renewed the credential and the session continues.
+   *                The client retries the request once with a fresh bearer and
+   *                the user sees nothing.
+   *   'ended'      the session is over. The client surfaces it.
+   *
+   * The answer is load-bearing. Without it the client threw
+   * `AuthenticationError` after the callback regardless, so a host that
+   * successfully refreshed still got a blocking "session expired" modal whose
+   * only action wiped the panel while the surrounding app stayed signed in.
+   *
+   * Awaited: the teardown this replaced completed before the error was thrown,
+   * and a fire-and-forget clear would race the next request into reading a
+   * credential that was on its way out.
    */
-  onUnauthorized(): void | Promise<void>;
+  onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
 }
+
+/** What the host did about a rejected credential. */
+export type AuthOutcome = 'refreshed' | 'ended';
 
 let transport: ApiTransport | null = null;
 

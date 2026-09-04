@@ -45,7 +45,7 @@ const stubSession: HostSession = {
   user: { id: 'u1', username: 'operator', roles: ['user'] },
   accessToken: async () => 'token',
   signOut: null,
-  onUnauthorized: () => {},
+  onUnauthorized: () => 'ended' as const,
   subscribeAuthState: () => () => {},
 };
 

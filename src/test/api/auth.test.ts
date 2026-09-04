@@ -135,7 +135,7 @@ describe('Authentication API', () => {
       clearSession: async () => {
         await mockBrowserStorage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
       },
-      onUnauthorized: () => {},
+      onUnauthorized: () => 'ended' as const,
     });
     // Default to local mode: logout's best-effort revoke is a no-op unless a test
     // opts into OAuth mode.

@@ -78,7 +78,7 @@ describe('API Functions', () => {
         return (stored as any)?.sessionId ?? null;
       },
       clearSession: async () => {},
-      onUnauthorized: () => {},
+      onUnauthorized: () => 'ended' as const,
     });
   });
 

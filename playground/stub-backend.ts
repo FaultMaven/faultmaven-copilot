@@ -114,6 +114,6 @@ export function stubTransport(
       sessionId = null;
       await clearPersistedSession();
     },
-    onUnauthorized: () => {},
+    onUnauthorized: () => 'ended' as const,
   };
 }

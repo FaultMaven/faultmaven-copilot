@@ -172,7 +172,15 @@ export function ExtensionApp() {
       // the extension's call to make because the extension owns that chain.
       // Awaited by the client, so the next request cannot read a credential on
       // its way out.
-      onUnauthorized: () => authManager.clearAllAuthData(),
+      // 'ended', always. The extension's answer to a rejected credential is to
+      // destroy the whole local chain — a stale refresh_token that could
+      // silently re-authenticate is the thing that teardown exists to prevent —
+      // so there is no session left to continue. Behaviour is unchanged; it is
+      // now SAID rather than assumed by the client.
+      onUnauthorized: async () => {
+        await authManager.clearAllAuthData();
+        return 'ended' as const;
+      },
       // Runtime messaging and the credential key disappearing — both the
       // extension's own transports, both meaning the same thing, and neither
       // named on the other side of the boundary. What crosses is the fact: who

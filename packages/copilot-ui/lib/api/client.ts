@@ -54,7 +54,7 @@ export function prepareBody(body: unknown): string | undefined {
 /**
  * Handles authentication errors and triggers re-authentication
  */
-async function handleAuthError(): Promise<void> {
+async function handleAuthError(): Promise<'refreshed' | 'ended'> {
   // A hard 401 ends the session. Fence it synchronously (before the await below)
   // so any in-flight background writer in THIS context whose continuation is
   // already queued skips its post-await writes rather than repopulating state
@@ -70,7 +70,15 @@ async function handleAuthError(): Promise<void> {
   // credential it does not own was it acting on someone else's behalf with none
   // of the context — no knowledge of an in-flight rotation, no access to the
   // lock serialising one. It reports, and the host decides.
-  await getApiTransport().onUnauthorized();
+  const outcome = await getApiTransport().onUnauthorized();
+
+  // The host renewed the credential and kept the session. Say so, and let the
+  // caller retry: throwing here regardless is what put a blocking "session
+  // expired" modal in front of a user whose session had just been renewed.
+  if (outcome === 'refreshed') {
+    log.info('Host refreshed the credential after a 401; retrying once');
+    return 'refreshed';
+  }
 
   // Trigger re-authentication flow
   // This will be handled by the UI components
@@ -151,6 +159,36 @@ export async function authenticatedFetchWithRetry(url: string, options: RequestI
   }
 }
 
+/**
+ * The one retry after a host said it refreshed the credential.
+ *
+ * A separate entry point rather than a flag, because what must NOT happen is a
+ * second trip through the 401 branch: a request that is still rejected with a
+ * freshly minted bearer is a real rejection, and looping on it would hammer the
+ * host's refresh path.
+ */
+async function authenticatedFetchAfterRefresh(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithTimeout(
+    url,
+    { ...options, headers: { ...headers, ...(options.headers || {}) } },
+    timeoutMs,
+  );
+
+  // Still rejected, with a credential the host minted moments ago. That is a
+  // real rejection rather than an expired token, and it surfaces — going back
+  // round would ask the host to refresh again and again against a server that
+  // is refusing this request on its merits.
+  if (response.status === 401) {
+    throw new AuthenticationError('Authentication required');
+  }
+  return response;
+}
+
 export async function authenticatedFetch(
   url: string,
   options: RequestInit = {},
@@ -216,9 +254,16 @@ export async function authenticatedFetch(
         throw new SessionExpiredError('Session expired'); // Fallback in case handleSessionExpired doesn't throw
       }
 
-      // A 401 on a request that DID carry a credential means the credential is
-      // no longer valid → full teardown (clears tokens; see handleAuthError).
-      await handleAuthError();
+      // A 401 on a request that DID carry a credential. Whether that ends the
+      // session is the HOST's call, not ours — it owns the token chain and may
+      // have renewed it already.
+      const outcome = await handleAuthError();
+      if (outcome === 'refreshed') {
+        // Once. `getAuthHeaders` now reads the renewed bearer. A second 401
+        // after a successful refresh is a real rejection and falls through to
+        // the throw, rather than looping.
+        return await authenticatedFetchAfterRefresh(url, options, timeoutMs);
+      }
       throw new AuthenticationError('Authentication required');
     }
 

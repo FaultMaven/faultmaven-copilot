@@ -28,7 +28,7 @@ describe('Case Service', () => {
       accessToken: async () => { throw new Error('not exercised'); },
       sessionId: async () => null,
       clearSession: async () => {},
-      onUnauthorized: () => {},
+      onUnauthorized: () => 'ended' as const,
     });
   });
 

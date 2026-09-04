@@ -28,6 +28,7 @@ export {
   useHost,
 } from './shared/host';
 export type {
+  AuthOutcome,
   HostAdapter,
   HostCapabilities,
   HostEndpoints,
