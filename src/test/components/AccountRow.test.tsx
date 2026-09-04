@@ -20,37 +20,36 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AccountRow } from '../../shared/ui/components/AccountRow';
-import type { User, UserProfile } from '../../lib/api/types';
+import type { UserProfile } from '../../lib/api/types';
+import type { HostUser } from '../../shared/host';
 
 const getCurrentUser = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/api/services/user-service', () => ({ getCurrentUser }));
 
-const ALICE: User = {
-  user_id: 'user-alice',
+// The identity the HOST publishes, which is the one the row renders now — the
+// store's second copy of the same person is gone.
+const ALICE: HostUser = {
+  id: 'user-alice',
   username: 'alice',
   email: 'alice@example.com',
-  display_name: 'Alice Ng',
-  is_dev_user: false,
-  is_active: true,
+  displayName: 'Alice Ng',
   roles: ['user'],
 };
 
-const BOB: User = {
-  user_id: 'user-bob',
+const BOB: HostUser = {
+  id: 'user-bob',
   username: 'bob',
   email: 'bob@other.example',
-  display_name: 'Bob Reyes',
-  is_dev_user: false,
-  is_active: true,
+  displayName: 'Bob Reyes',
   roles: ['user'],
 };
 
-function profileFor(user: User, overrides: Partial<UserProfile> = {}): UserProfile {
+function profileFor(user: HostUser, overrides: Partial<UserProfile> = {}): UserProfile {
   return {
-    user_id: user.user_id,
+    user_id: user.id,
     username: user.username,
-    email: user.email,
-    display_name: user.display_name,
+    email: user.email ?? '',
+    display_name: user.displayName ?? '',
     created_at: '2026-01-01T00:00:00Z',
     is_dev_user: false,
     roles: user.roles,
@@ -60,7 +59,7 @@ function profileFor(user: User, overrides: Partial<UserProfile> = {}): UserProfi
 
 let queryClient: QueryClient;
 
-function renderRow(user: User | null, collapsed = false) {
+function renderRow(user: HostUser | null, collapsed = false) {
   return render(
     <QueryClientProvider client={queryClient}>
       <AccountRow user={user} collapsed={collapsed} />

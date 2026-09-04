@@ -15,6 +15,7 @@ import type {
   HostPageCapture,
   HostSession,
   HostStore,
+  HostUser,
   StoredValue,
   WiredHost,
 } from '../../shared/host';
@@ -42,6 +43,10 @@ export interface StubHost {
   accessToken: ReturnType<typeof vi.fn>;
   /** session.onUnauthorized — the host's answer to a rejected credential. */
   onUnauthorized: ReturnType<typeof vi.fn>;
+  /** session.subscribeAuthState */
+  subscribeAuthState: ReturnType<typeof vi.fn>;
+  /** Tell every auth-state subscriber the identity changed. `null` = signed out. */
+  authStateChanged: (user: HostUser | null) => void;
   endpoints: WiredHost['endpoints'];
   apiUrl: ReturnType<typeof vi.fn>;
   dashboardUrl: ReturnType<typeof vi.fn>;
@@ -122,6 +127,11 @@ export function createStubHost(
   const accessToken = vi.fn(async () => 'stub-access-token');
   const signOut = options.signOut === false ? null : vi.fn(async () => {});
   const onUnauthorized = vi.fn();
+  const authStateSubscribers = new Set<(user: HostUser | null) => void>();
+  const subscribeAuthState = vi.fn((onChange: (user: HostUser | null) => void) => {
+    authStateSubscribers.add(onChange);
+    return () => authStateSubscribers.delete(onChange);
+  });
   const session: HostSession = {
     user: {
       id: 'stub-user',
@@ -133,6 +143,7 @@ export function createStubHost(
     accessToken,
     signOut,
     onUnauthorized,
+    subscribeAuthState,
   };
 
   const apiUrl = vi.fn(async () => 'http://localhost:8090');
@@ -181,6 +192,11 @@ export function createStubHost(
     signOut,
     accessToken,
     onUnauthorized,
+    subscribeAuthState,
+    /** What the host reports when the identity changes somewhere else. */
+    authStateChanged: (user) => {
+      for (const fn of [...authStateSubscribers]) fn(user);
+    },
     data,
     emit(changed) {
       // Same membership rule the extension adapter applies: a key being present

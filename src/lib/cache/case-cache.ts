@@ -1,5 +1,4 @@
 
-import { browser } from 'wxt/browser';
 import { UserCase } from '../../types/case';
 import { createLogger } from '../utils/logger';
 import { getHostStore } from '../host-store';

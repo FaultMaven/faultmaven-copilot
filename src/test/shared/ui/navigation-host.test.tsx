@@ -37,17 +37,16 @@ vi.mock('../../../lib/utils/logger', () => ({
 }));
 
 import { CollapsibleNavigation } from '../../../shared/ui/layouts/CollapsibleNavigation';
-import type { User } from '../../../lib/api/types';
+import type { HostUser } from '../../../shared/host';
 
-// The real `User`, not a convenient subset — a partial fixture would hide a
+// The real `HostUser`, not a convenient subset — a partial fixture would hide a
 // field the component starts depending on.
-const USER: User = {
-  user_id: 'u1',
+const USER: HostUser = {
+  id: 'u1',
   username: 'op',
   email: 'op@example.invalid',
-  display_name: 'Op',
-  is_dev_user: false,
-  is_active: true,
+  displayName: 'Op',
+  roles: [],
 };
 
 const navProps = (over: Record<string, unknown> = {}) => ({

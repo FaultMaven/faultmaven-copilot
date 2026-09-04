@@ -46,6 +46,7 @@ const stubSession: HostSession = {
   accessToken: async () => 'token',
   signOut: null,
   onUnauthorized: () => {},
+  subscribeAuthState: () => () => {},
 };
 
 describe('the session pointer has a single writer', () => {

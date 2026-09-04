@@ -134,6 +134,28 @@ export interface HostSession {
    * one that clears half the state.
    */
   signOut: (() => Promise<void>) | null;
+  /**
+   * The signed-in identity changed somewhere ELSE. `null` means signed out.
+   * Returns an unsubscribe.
+   *
+   * This is the whole of what the shared UI needed cross-context messaging for.
+   * The extension had a general typed event bus over `runtime.onMessage` with
+   * four event types, three of which had no emitter and no consumer; the one
+   * that did carried exactly this. A bus on the adapter would have obliged
+   * every host to invent a transport for messages nothing sends, so what is
+   * modelled here is the fact, not the mechanism.
+   *
+   * Both hosts have the fact. The extension broadcasts on `runtime.onMessage`
+   * when the background completes a sign-in or a sign-out lands in another
+   * context. A web host has the same event whenever another tab signs out — the
+   * page is still open and its credential is gone — and answers from its own
+   * auth layer.
+   *
+   * A host where the identity genuinely cannot change under the UI returns an
+   * unsubscribe and never calls back, exactly as `HostEndpoints.subscribe`
+   * does, so the caller needs no branch for the difference.
+   */
+  subscribeAuthState(onChange: (user: HostUser | null) => void): () => void;
 }
 
 /**

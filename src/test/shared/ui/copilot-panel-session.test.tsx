@@ -8,13 +8,15 @@
  * it must be a thrown error, not an empty panel that quietly renders a
  * signed-out user's shell.
  */
-import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CopilotPanel from '../../../shared/ui/CopilotPanel';
 import { createStubHost } from '../../support/host';
-import type { HostCapabilities, WiredHost } from '../../../shared/host';
+import { useAppStore } from '../../../lib/state/store';
+import { getEpoch } from '../../../lib/state/session-epoch';
+import type { HostCapabilities, HostUser, WiredHost } from '../../../shared/host';
 
 vi.mock('../../../shared/ui/components/ConversationsList', () => ({
   default: () => <div data-testid="conversations-list" />,
@@ -68,5 +70,64 @@ describe('CopilotPanel requires a session', () => {
     expect(container).not.toBeEmptyDOMElement();
     // And no sign-in anywhere in it.
     expect(container.textContent ?? '').not.toMatch(/sign in|log in|password/i);
+  });
+});
+
+/**
+ * The session can END while the panel is open, and the panel has to be told.
+ *
+ * It used to learn this from `runtime.onMessage` and from an extension storage
+ * key it named itself — two extension mechanisms, in shared code, for one fact.
+ * The fact is now a member on `HostSession`, and the panel subscribes to it.
+ * Every host has the fact: the extension broadcasts it, and a web host has it
+ * whenever another tab signs the browser out.
+ */
+describe('the panel reacts to the host reporting a sign-out', () => {
+  const OPERATOR: HostUser = { id: 'u1', username: 'op', roles: ['user'] };
+
+  beforeEach(() => {
+    useAppStore.setState({ currentUser: OPERATOR });
+  });
+
+  it('subscribes through the session, and clears the identity when it reports null', async () => {
+    const stub = createStubHost();
+
+    render(<CopilotPanel host={stub.host} />, { wrapper: withQueryClient() });
+
+    expect(stub.subscribeAuthState).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      stub.authStateChanged(null);
+    });
+
+    expect(useAppStore.getState().currentUser).toBeNull();
+  });
+
+  // The fence, which is why this is a subscription and not a re-render. A
+  // sign-out that landed in another context has to invalidate the writers
+  // already in flight here, before anything else reacts to it (#143).
+  it('fences the session so in-flight writers cannot repopulate it', async () => {
+    const stub = createStubHost();
+    render(<CopilotPanel host={stub.host} />, { wrapper: withQueryClient() });
+    const before = getEpoch();
+
+    await act(async () => {
+      stub.authStateChanged(null);
+    });
+
+    expect(getEpoch()).not.toBe(before);
+  });
+
+  it('unsubscribes when the panel unmounts', async () => {
+    const stub = createStubHost();
+    const { unmount } = render(<CopilotPanel host={stub.host} />, { wrapper: withQueryClient() });
+
+    unmount();
+    useAppStore.setState({ currentUser: OPERATOR });
+    await act(async () => {
+      stub.authStateChanged(null);
+    });
+
+    expect(useAppStore.getState().currentUser).toEqual(OPERATOR);
   });
 });

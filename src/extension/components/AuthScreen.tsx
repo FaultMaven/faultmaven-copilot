@@ -14,7 +14,7 @@ import { browser } from 'wxt/browser';
 import { getAuthConfig, AuthConfig } from '../../lib/auth/auth-config';
 import { createLogger } from '../../lib/utils/logger';
 import { LocalLoginForm } from './LocalLoginForm';
-import { useAppStore } from '../../lib/state/store';
+import { EventBus, type AuthStateChangedEvent } from '../messaging';
 
 const log = createLogger('AuthScreen');
 
@@ -32,14 +32,25 @@ const SSO_WAIT_TIMEOUT_MS = 3 * 60 * 1000;
 
 interface AuthScreenProps {
   onAuthSuccess: () => void;
+  /**
+   * What the last sign-out could not confirm, if anything.
+   *
+   * A prop rather than shared state: the sign-out that produces it and the
+   * screen that shows it are both the extension's, and the shared store is what
+   * the OTHER host would have to carry it in for no reader.
+   */
+  signOutNotice?: string | null;
+  onDismissSignOutNotice?: () => void;
 }
 
-export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
+export function AuthScreen({
+  onAuthSuccess,
+  signOutNotice = null,
+  onDismissSignOutNotice,
+}: AuthScreenProps) {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const signOutNotice = useAppStore((state) => state.signOutNotice);
-  const clearSignOutNotice = useAppStore((state) => state.clearSignOutNotice);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   // Deliberately NOT `error`: that renders the full-screen "Authentication
   // Error" block whose only affordance is reloading the panel. A stalled
@@ -94,17 +105,12 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
   // Listen for auth state changes
   useEffect(() => {
-    const handleAuthChange = (message: any) => {
-      if (message.type === 'auth_state_changed' && message.authState) {
+    return EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
+      if (event.authState) {
         log.info('Auth state changed, triggering success');
         onAuthSuccess();
       }
-    };
-
-    browser.runtime.onMessage.addListener(handleAuthChange);
-    return () => {
-      browser.runtime.onMessage.removeListener(handleAuthChange);
-    };
+    });
   }, [onAuthSuccess]);
 
   // Handle OIDC/SAML login button click
@@ -193,7 +199,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           >
             <p className="text-sm text-fm-text-secondary flex-1">{signOutNotice}</p>
             <button
-              onClick={clearSignOutNotice}
+              onClick={onDismissSignOutNotice}
               aria-label="Dismiss"
               className="shrink-0 text-fm-text-tertiary hover:text-fm-text-primary transition-colors"
             >

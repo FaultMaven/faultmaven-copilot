@@ -15,12 +15,12 @@ import { useConfiguredEndpoint } from '../hooks/useConfiguredEndpoint';
 import { NAVIGATION_WIDTH, TRANSITION } from './constants';
 import { AccountRow } from '../components/AccountRow';
 import { useHost } from '../../host';
-import type { User } from '~/lib/api/types';
+import type { HostUser } from '~/shared/host';
 
 export interface CollapsibleNavigationProps {
   // Signed-in account, rendered above the footer controls. Nullable because the
   // nav renders during the window where auth state is still resolving.
-  currentUser: User | null;
+  currentUser: HostUser | null;
   // Collapse state
   isCollapsed: boolean;
   onToggleCollapse: () => void;

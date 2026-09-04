@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { accountInitials, elevatedRole, identityColor } from '~/lib/identity';
 import { getCurrentUser } from '~/lib/api/services/user-service';
-import type { User, UserProfile } from '~/lib/api/types';
+import type { UserProfile } from '~/lib/api/types';
+import type { HostUser } from '~/shared/host';
 
 interface AccountRowProps {
-  user: User | null;
+  /** The signed-in identity, as the HOST publishes it. */
+  user: HostUser | null;
   /** Collapsed rail: the monogram alone carries the identity. */
   collapsed: boolean;
 }
@@ -34,9 +36,9 @@ export function AccountRow({ user, collapsed }: AccountRowProps) {
   // out for the same reason — the identity above it is what the row exists to
   // show, so there is nothing to retry for.
   const { data: profile } = useQuery<UserProfile>({
-    queryKey: ['accountProfile', user?.user_id],
+    queryKey: ['accountProfile', user?.id],
     queryFn: () => getCurrentUser(),
-    enabled: Boolean(user?.user_id),
+    enabled: Boolean(user?.id),
     retry: false,
     // Explicit rather than inherited from the shared client's 5-minute default:
     // "one read per signed-in account" is a property of this row, and the
@@ -49,9 +51,9 @@ export function AccountRow({ user, collapsed }: AccountRowProps) {
 
   if (!user) return null;
 
-  const name = user.display_name || user.username;
-  const initials = accountInitials(user.display_name, user.username, user.email);
-  const color = identityColor(user.user_id);
+  const name = user.displayName || user.username;
+  const initials = accountInitials(user.displayName, user.username, user.email);
+  const color = identityColor(user.id);
   const role = elevatedRole(profile?.roles ?? user.roles);
   // Branch on the NAME, not on the object: `organization` is hand-written
   // rather than generated, and one returned without a usable name would
