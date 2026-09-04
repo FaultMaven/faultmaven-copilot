@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { WelcomeScreen } from '~/shared/ui/components/WelcomeScreen';
+import { WelcomeScreen } from '~/extension/components/WelcomeScreen';
 import { ErrorModal } from '~/shared/ui/components/ErrorModal';
 import DocumentDetailsModal from '~/shared/ui/components/DocumentDetailsModal';
 import { StatusChangeRequestModal } from '~/shared/ui/components/case-header/StatusChangeRequestModal';

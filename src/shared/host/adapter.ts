@@ -158,17 +158,30 @@ export interface HostAdapter {
  * implement a member that nothing exercises, and no reviewer has to take
  * "it works" on trust for code with no caller.
  *
- * Storage, navigation and page capture are wired. `endpoints` and `session`
- * follow with the call sites that consume them.
+ * Storage, navigation, page capture and the session are wired. `endpoints`
+ * follows with the call sites that consume it.
  */
-export type WiredHost = Pick<HostAdapter, 'store'> & {
+export type HostCapabilities = Pick<HostAdapter, 'store' | 'pageCapture'> & {
   /**
    * Only the navigation members that have a call site. `external` is in the
    * target `HostNavigation` but nothing in the shared UI asks for it yet, so no
    * host is made to implement it — same rule as the type above.
    */
   navigation: Pick<HostNavigation, 'dashboard' | 'settings'>;
-} & Pick<HostAdapter, 'pageCapture'>;
+};
+
+/**
+ * A host, as the Copilot shell requires one: its capabilities AND a session.
+ *
+ * The split is the point. Capabilities are properties of the environment and
+ * are known before anyone signs in, so a host can publish them as a module
+ * singleton. A session is not: it exists only once someone is authenticated.
+ * Requiring both here is what makes "the shell never renders a sign-in" a
+ * property of the type rather than a branch someone has to remember — there is
+ * no value of this type that lacks a session, so `CopilotPanel` has no state in
+ * which it would need to ask for one.
+ */
+export type WiredHost = HostCapabilities & Pick<HostAdapter, 'session'>;
 
 /**
  * No default. A `useHost()` that returns a stub when no provider is mounted is

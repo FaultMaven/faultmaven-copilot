@@ -13,7 +13,7 @@ import { browser } from 'wxt/browser';
 import { capturePage } from './extension-page-capture';
 import { getDashboardUrl } from '../../config';
 import { createLogger } from '../../lib/utils/logger';
-import type { HostStore, StoredValue, WiredHost } from './adapter';
+import type { HostCapabilities, HostStore, StoredValue } from './adapter';
 
 const log = createLogger('extensionHost');
 
@@ -75,7 +75,7 @@ const store: HostStore = {
  * what stops "Open Dashboard" from throwing away a tab's scroll position and
  * form state on every click.
  */
-const navigation: WiredHost['navigation'] = {
+const navigation: HostCapabilities['navigation'] = {
   async dashboard(path) {
     const baseUrl = (await getDashboardUrl()).replace(/\/+$/, '');
     if (!baseUrl) return;
@@ -114,7 +114,11 @@ const navigation: WiredHost['navigation'] = {
  * Stable by construction, so it is safe in a hook's dependency array — a host
  * rebuilt on every render would re-run every effect that subscribes through it.
  */
-export const extensionHost: WiredHost = {
+/**
+ * The extension's capabilities. No session: nobody is signed in at module load,
+ * and the entry point composes this with one before the shell is mounted.
+ */
+export const extensionHost: HostCapabilities = {
   store,
   navigation,
   // The one capability that is genuinely host-specific rather than
