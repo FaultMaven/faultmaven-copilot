@@ -12,6 +12,13 @@ import {
 } from '../lib/side-panel-yield';
 import { createLogger } from '../lib/utils/logger';
 import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
+import { installExtensionHostContext } from '../extension/host/install';
+
+// Before anything below reads state or resolves a backend URL. The worker
+// refreshes tokens and exchanges authorization codes against the CONFIGURED
+// API URL, and the modules that resolve it take the host's store and endpoints
+// from a module singleton rather than from React context.
+installExtensionHostContext();
 
 /**
  * A callback whose `state` does not match the pending authorization request.
@@ -308,8 +315,8 @@ export default defineBackground({
         log.info('State verified, exchanging authorization code for tokens');
 
         // Exchange authorization code for access token
-        const { getApiUrl } = await import('../config');
-        const apiUrl = await getApiUrl();
+        const { getHostEndpoints } = await import('../lib/host-endpoints');
+        const apiUrl = await getHostEndpoints().apiUrl();
 
         const tokenResponse = await fetchWithTimeout(`${apiUrl}/api/v1/auth/oauth/token`, {
           method: 'POST',

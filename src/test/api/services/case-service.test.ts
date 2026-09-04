@@ -16,14 +16,20 @@ vi.mock('../../../lib/api/client', () => ({
   }
 }));
 
-// Mock config
-vi.mock('../../../config', () => ({
-  getApiUrl: vi.fn().mockReturnValue('https://api.test')
-}));
+import { setApiTransport } from '../../../lib/api/transport';
 
 describe('Case Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The origin these URLs are built from comes from the host. The client
+    // itself is mocked above, so nothing else on the transport is exercised.
+    setApiTransport({
+      baseUrl: async () => 'https://api.test',
+      accessToken: async () => { throw new Error('not exercised'); },
+      sessionId: async () => null,
+      clearSession: async () => {},
+      onUnauthorized: () => {},
+    });
   });
 
   // Helper to create a mock Response

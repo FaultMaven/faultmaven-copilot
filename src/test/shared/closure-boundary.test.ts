@@ -74,13 +74,10 @@ function importClosure(roots: string[]): string[] {
  * place, rather than a number in a report nobody re-derives.
  */
 const BROWSER_API_RATCHET = [
-  'src/config.ts',
   'src/lib/api/services/auth-service.ts',
-  'src/lib/api/session-core.ts',
   'src/lib/auth/auth-config.ts',
   'src/lib/auth/auth-manager.ts',
   'src/lib/auth/token-manager.ts',
-  'src/lib/session/client-session-manager.ts',
   'src/lib/utils/messaging.ts', // runtime messaging, not storage — needs its own capability
   'src/lib/utils/persistence-manager.ts', // storage half done; runtime.id/getManifest remain
 ].sort();

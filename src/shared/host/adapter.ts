@@ -177,10 +177,11 @@ export interface HostAdapter {
  * implement a member that nothing exercises, and no reviewer has to take
  * "it works" on trust for code with no caller.
  *
- * Storage, navigation, page capture and the session are wired. `endpoints`
- * follows with the call sites that consume it.
+ * Every member is wired: storage, endpoints, navigation, page capture and the
+ * session. When the last call site converts, `WiredHost` and `HostAdapter` are
+ * the same type and this alias goes away.
  */
-export type HostCapabilities = Pick<HostAdapter, 'store' | 'pageCapture'> & {
+export type HostCapabilities = Pick<HostAdapter, 'store' | 'pageCapture' | 'endpoints'> & {
   /**
    * Only the navigation members that have a call site. `external` is in the
    * target `HostNavigation` but nothing in the shared UI asks for it yet, so no

@@ -1,13 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { storageSet, storageGet, createSessionWithRecovery } = vi.hoisted(() => ({
+const { storageSet, storageGet, storageRemove, createSessionWithRecovery } = vi.hoisted(() => ({
   storageSet: vi.fn().mockResolvedValue(undefined),
   storageGet: vi.fn().mockResolvedValue({}),
+  storageRemove: vi.fn().mockResolvedValue(undefined),
   createSessionWithRecovery: vi.fn()
-}));
-
-vi.mock('wxt/browser', () => ({
-  browser: { storage: { local: { get: storageGet, set: storageSet } } }
 }));
 
 vi.mock('../../lib/session/client-session-manager', () => ({
@@ -18,7 +15,20 @@ vi.mock('../../lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession } from '../../lib/api/session-core';
+import { refreshSession, clearPersistedSession } from '../../lib/api/session-core';
+import { setHostStore } from '../../lib/host-store';
+
+// session-core reaches storage through the host, so the spies above are
+// installed AS the host's store rather than under `wxt/browser`. The
+// assertions are unchanged — the same writes, observed where they now land.
+beforeEach(() => {
+  setHostStore({
+    get: storageGet,
+    set: storageSet,
+    remove: storageRemove,
+    subscribe: () => () => {},
+  });
+});
 
 const sessionResponse = (over: Record<string, any> = {}) => ({
   session_id: 'sess-new',
@@ -35,6 +45,7 @@ const sessionResponse = (over: Record<string, any> = {}) => ({
 describe('refreshSession', () => {
   beforeEach(() => {
     storageSet.mockClear();
+    storageRemove.mockClear();
     storageGet.mockReset().mockResolvedValue({});
     createSessionWithRecovery.mockReset().mockResolvedValue(sessionResponse());
     // Force the in-context fallback path (no Web Locks in the test env).
@@ -111,5 +122,37 @@ describe('refreshSession', () => {
     );
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(1);
     expect(storageSet).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-new' }));
+  });
+});
+
+/**
+ * The single clear, matching the single write above.
+ *
+ * Three call sites used to remove these keys with three slightly different
+ * lists — the client's 401 path, the session slice's teardown and the extension
+ * transport — so which keys survived a clear depended on who cleared. The one
+ * real distinction is `clientId`, which OUTLIVES a session so a fresh
+ * `/sessions` POST can resume rather than start cold.
+ */
+describe('clearPersistedSession', () => {
+  beforeEach(() => {
+    storageRemove.mockClear();
+  });
+
+  it('clears the session keys and KEEPS clientId by default', async () => {
+    await clearPersistedSession();
+
+    expect(storageRemove).toHaveBeenCalledWith(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
+  });
+
+  it('takes clientId too only when asked', async () => {
+    await clearPersistedSession({ includeClientId: true });
+
+    expect(storageRemove).toHaveBeenCalledWith([
+      'sessionId',
+      'sessionCreatedAt',
+      'sessionResumed',
+      'clientId',
+    ]);
   });
 });

@@ -43,9 +43,24 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
+import { setHostStore } from '../../../lib/host-store';
+import { setHostEndpoints } from '../../../lib/host-endpoints';
+import { extensionEndpoints } from '../../../extension/host/endpoints';
+
 describe('Dashboard OAuth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The EXTENSION's own endpoints, over this file's storage mock. Not a stub
+    // returning a fixed URL: what these tests are about is the resolution rule
+    // — explicit key, legacy key, Cloud default — and a stub would assert the
+    // test's own constant instead of it.
+    setHostStore({
+      get: (keys) => mockBrowserStorage.local.get(keys),
+      set: (items) => mockBrowserStorage.local.set(items),
+      remove: (keys) => mockBrowserStorage.local.remove(keys),
+      subscribe: () => () => {},
+    });
+    setHostEndpoints(extensionEndpoints);
     // Mock storage to return Dashboard URL (not API URL)
     mockBrowserStorage.local.get.mockResolvedValue({ apiEndpoint: 'http://localhost:3333' });
   });
@@ -58,8 +73,8 @@ describe('Dashboard OAuth', () => {
     it('reads Dashboard URL from storage (local deployment)', async () => {
       const dashboardUrl = await getDashboardUrl();
       expect(dashboardUrl).toBe('http://localhost:3333');
-      // Delegates to config.getDashboardUrl, which prefers the explicit
-      // dashboardUrl key and falls back to the legacy apiEndpoint key.
+      // Delegates to the host's endpoints, which prefer the explicit
+      // dashboardUrl key and fall back to the legacy apiEndpoint key.
       expect(mockBrowserStorage.local.get).toHaveBeenCalledWith(['dashboardUrl', 'apiEndpoint']);
     });
 

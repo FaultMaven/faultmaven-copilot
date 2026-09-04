@@ -9,7 +9,8 @@ import {
 } from '../../lib/api';
 import { AuthenticationError } from '../../lib/errors/types';
 
-// Mock config
+// Build-time constants only. Where the API lives is the host's answer, which
+// this file installs below.
 vi.mock('../../config', () => ({
   __esModule: true,
   default: {
@@ -22,8 +23,7 @@ vi.mock('../../config', () => ({
       maxQueryLength: 200000,
       maxFileSize: 10 * 1024 * 1024
     }
-  },
-  getApiUrl: async () => 'https://api.faultmaven.ai'
+  }
 }));
 
 // Mock browser environment using vi.hoisted to handle hoisting
@@ -89,10 +89,49 @@ const mockFetchResponse = (response: any = {}) => {
   };
 };
 
+import { setApiTransport } from '../../lib/api/transport';
+import { setHostStore } from '../../lib/host-store';
+import { setHostEndpoints } from '../../lib/host-endpoints';
+
+const API = 'https://api.faultmaven.ai';
+
 describe('Authentication API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+
+    // This file mocks `wxt/browser` for itself, so the suite defaults from
+    // setup.ts — bound to the global mock and to localhost — would answer from
+    // the wrong storage and the wrong origin. The credential, the session id
+    // and the base URL every assertion below names all come from HERE.
+    setHostStore({
+      get: (keys) => mockBrowserStorage.local.get(keys),
+      set: (items) => mockBrowserStorage.local.set(items),
+      remove: (keys) => mockBrowserStorage.local.remove(keys),
+      subscribe: () => () => {},
+    });
+    setHostEndpoints({
+      apiUrl: async () => API,
+      dashboardUrl: async () => 'https://app.faultmaven.ai',
+      subscribe: () => () => {},
+    });
+    setApiTransport({
+      baseUrl: async () => API,
+      accessToken: async () => {
+        const stored = await mockBrowserStorage.local.get(['authState']);
+        const token = (stored as any)?.authState?.access_token;
+        if (!token) throw new Error('no credential staged');
+        return token;
+      },
+      sessionId: async () => {
+        const stored = await mockBrowserStorage.local.get(['sessionId']);
+        return (stored as any)?.sessionId ?? null;
+      },
+      clearSession: async () => {
+        await mockBrowserStorage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
+      },
+      onUnauthorized: () => {},
+    });
     // Default to local mode: logout's best-effort revoke is a no-op unless a test
     // opts into OAuth mode.
     mockGetAuthConfig.mockResolvedValue({

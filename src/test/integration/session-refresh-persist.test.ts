@@ -1,29 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Stateful in-memory browser.storage.local so a value written by refreshSession
-// is visible to a later getAuthHeaders read (the actual bug: the retry path
+// A stateful in-memory host store, so a value written by refreshSession is
+// visible to a later getAuthHeaders read (the actual bug: the retry path
 // re-created a session but never persisted it, so the retry went session-less).
 const { store, createSessionWithRecovery, getValidAccessToken, getAuthState } = vi.hoisted(() => ({
   store: {} as Record<string, any>,
   createSessionWithRecovery: vi.fn(),
   getValidAccessToken: vi.fn(),
   getAuthState: vi.fn()
-}));
-
-vi.mock('wxt/browser', () => ({
-  browser: {
-    storage: {
-      local: {
-        get: vi.fn(async (keys: string[]) => {
-          const out: Record<string, any> = {};
-          for (const k of keys) if (k in store) out[k] = store[k];
-          return out;
-        }),
-        set: vi.fn(async (obj: Record<string, any>) => { Object.assign(store, obj); }),
-        remove: vi.fn(async (keys: string[]) => { for (const k of keys) delete store[k]; })
-      }
-    }
-  }
 }));
 
 vi.mock('../../lib/session/client-session-manager', () => ({
@@ -34,12 +18,12 @@ vi.mock('../../lib/auth/auth-manager', () => ({ authManager: { getAuthState } })
 vi.mock('../../lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
-vi.mock('../../config', () => ({ default: {}, getApiUrl: vi.fn().mockResolvedValue('https://api.test') }));
 
 import { refreshSession } from '../../lib/api/session-core';
 import { getAuthHeaders } from '../../lib/api/fetch-utils';
 
 import { setApiTransport } from '../../lib/api/transport';
+import { setHostStore } from '../../lib/host-store';
 
 describe('session refresh → X-Session-Id bridge', () => {
   beforeEach(() => {
@@ -50,9 +34,19 @@ describe('session refresh → X-Session-Id bridge', () => {
     getValidAccessToken.mockReset().mockResolvedValue(null);
     getAuthState.mockReset().mockResolvedValue(null);
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;
-    // The session id reaches the request through the host now, so the transport
-    // is backed by this file's in-memory store — the same store refreshSession
-    // writes to. That IS the bridge under test.
+    // BOTH ends of the bridge are bound to the one in-memory store: the write
+    // goes through the host store, the read through the host transport. Binding
+    // them to two different stores would let this pass while the bug was back.
+    setHostStore({
+      get: async (keys: string[]) => {
+        const out: Record<string, any> = {};
+        for (const k of keys) if (k in store) out[k] = store[k];
+        return out;
+      },
+      set: async (obj: Record<string, any>) => { Object.assign(store, obj); },
+      remove: async (keys: string[]) => { for (const k of keys) delete store[k]; },
+      subscribe: () => () => {},
+    });
     setApiTransport({
       baseUrl: async () => 'http://localhost:8090',
       accessToken: async () => {

@@ -24,7 +24,6 @@ import { markSessionEnding } from '../lib/state/session-epoch';
 import { tokenManager } from '../lib/auth/token-manager';
 import { authManager } from '../lib/auth/auth-manager';
 import { installExtensionTransport } from './host';
-import { setHostStore } from '../lib/host-store';
 import { createLogger } from '../lib/utils/logger';
 import { AuthScreen } from './components/AuthScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -103,16 +102,14 @@ export function ExtensionApp() {
   // than the panel threading it down. Installed before the panel renders, and
   // re-installed when the session changes, so a request can never go out with
   // the previous account's bearer.
+  //
+  // The store and endpoints are NOT installed here: they are properties of the
+  // context, not of the session, and the entry point installs them before React
+  // mounts — the app-state bootstrap above reads the store in the very first
+  // effect, which an installing effect would be racing.
   useEffect(() => {
     if (session) installExtensionTransport(session);
   }, [session]);
-
-  // The store, persistence and slices are plain modules called from effects and
-  // background continuations, so they take the host's store the same way. One
-  // store, installed once — not a parallel path to the same keys.
-  useEffect(() => {
-    setHostStore(extensionHost.store);
-  }, []);
 
   const handleAuthSuccess = async () => {
     log.info('Authentication successful, checking auth state');

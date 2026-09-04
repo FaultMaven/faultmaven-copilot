@@ -4,9 +4,15 @@ import { browser } from 'wxt/browser';
 import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
 import { authManager } from '../../lib/api';
 import type { User } from '../../lib/api/types';
-import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../config';
+import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../extension/host/endpoints';
+import { installExtensionHostContext } from '../../extension/host/install';
 import { createLogger } from '~/lib/utils/logger';
 import '../../assets/styles/globals.css';
+
+// This page reads and writes the configured endpoints and probes backend
+// capabilities, all of which go through the host's store. Installed here, at
+// the entry, because this context has no side panel to do it for it.
+installExtensionHostContext();
 
 const APP_VERSION = browser.runtime.getManifest().version;
 const REPO_URL = 'https://github.com/FaultMaven/faultmaven-copilot';

@@ -1,9 +1,9 @@
+import { getApiTransport } from './transport';
 /**
  * Case Service - API calls for case UI data
  */
 
 import type { CaseUIResponse } from '../../types/case';
-import { getApiUrl } from '../../config';
 import { authenticatedFetchWithRetry } from './client';
 
 /**
@@ -22,7 +22,7 @@ async function getCaseUI(
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<CaseUIResponse> {
-  const apiUrl = await getApiUrl();
+  const apiUrl = await getApiTransport().baseUrl();
 
   // authenticatedFetchWithRetry throws a status-enriched error on any non-OK
   // response, so `response` here is always OK.

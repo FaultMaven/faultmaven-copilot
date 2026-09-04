@@ -8,7 +8,7 @@
  */
 
 import { browser } from 'wxt/browser';
-import { getApiUrl } from '../../config';
+import { getHostEndpoints } from '../host-endpoints';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { errorBodyText } from '../errors/error-body';
@@ -62,7 +62,7 @@ export class LocalAuthClient {
     try {
       log.info('Initiating local auth login', { username: credentials.username });
 
-      const apiUrl = await getApiUrl();
+      const apiUrl = await getHostEndpoints().apiUrl();
       const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,7 +138,7 @@ export class LocalAuthClient {
     try {
       log.info('Initiating local auth registration', { username: request.username });
 
-      const apiUrl = await getApiUrl();
+      const apiUrl = await getHostEndpoints().apiUrl();
       const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -208,7 +208,7 @@ export class LocalAuthClient {
     try {
       log.info('Signing out');
 
-      const apiUrl = await getApiUrl();
+      const apiUrl = await getHostEndpoints().apiUrl();
 
       // Call logout endpoint (best effort - don't block on errors)
       try {

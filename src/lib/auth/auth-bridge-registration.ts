@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { getDashboardUrl } from '../../config';
+import { getHostEndpoints } from '../host-endpoints';
 import { createLogger } from '../utils/logger';
 
 /**
@@ -38,7 +38,7 @@ export function reconcileAuthBridgeRegistration(): Promise<void> {
 
 async function doReconcile(): Promise<void> {
   try {
-    const dashboardUrl = await getDashboardUrl();
+    const dashboardUrl = await getHostEndpoints().dashboardUrl();
     let matchPattern: string;
     try {
       matchPattern = `${new URL(dashboardUrl).origin}/*`;

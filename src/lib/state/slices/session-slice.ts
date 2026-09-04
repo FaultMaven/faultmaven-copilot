@@ -7,6 +7,7 @@ import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
 import { getHostStore } from '../../host-store';
+import { clearPersistedSession } from '../../api/session-core';
 
 const log = createLogger('SessionSlice');
 
@@ -153,7 +154,9 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       }
 
       try {
-        await getHostStore().remove(['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId']);
+        // The single clear. A local key list here is how three call sites came
+        // to disagree about which keys a cleared session leaves behind.
+        await clearPersistedSession({ includeClientId: true });
         set({
           sessionId: null,
           isSessionInitialized: false,

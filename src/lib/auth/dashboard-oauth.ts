@@ -21,7 +21,7 @@
  */
 
 import { browser } from 'wxt/browser';
-import { getApiUrl, getDashboardUrl as getConfiguredDashboardUrl } from '../../config';
+import { getHostEndpoints } from '../host-endpoints';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('DashboardOAuth');
@@ -47,9 +47,10 @@ export interface DashboardOAuthInitiateResponse {
  * Cloud deployment: https://app.faultmaven.ai
  */
 export async function getDashboardUrl(): Promise<string> {
-  // Single source of truth lives in config.ts (explicit dashboardUrl key with
-  // legacy fallback). This thin wrapper is kept for existing call sites.
-  return getConfiguredDashboardUrl();
+  // Single source of truth is the host's endpoints (the explicit dashboardUrl
+  // key with a legacy fallback, in the extension). This thin wrapper is kept
+  // for existing call sites.
+  return getHostEndpoints().dashboardUrl();
 }
 
 /**
