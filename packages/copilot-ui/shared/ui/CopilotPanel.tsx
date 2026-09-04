@@ -308,8 +308,12 @@ function CopilotPanelContent({
 
   // Initialize first-run status and capabilities
   useEffect(() => {
-    initializeApp();
-  }, [initializeApp]);
+    // A host that embeds the panel owns onboarding — and already knows where
+    // its backend is — so the extension's first-run flag must not gate its
+    // capabilities. Without this the only way for such a host to get a working
+    // panel was to write `hasCompletedFirstRun` into storage itself.
+    initializeApp({ skipOnboardingGate: chrome === 'embedded' });
+  }, [initializeApp, chrome]);
 
   // Reconcile case state TRANSITIONS only (same case observed changing
   // state). Keying this on raw activeCase state made every case select run

@@ -28,7 +28,11 @@ export interface AppSlice {
   setIsDocumentModalOpen: (open: boolean) => void;
   triggerRefreshSessions: () => void;
   setHasUnsavedNewChat: (hasUnsaved: boolean) => void;
-  initializeApp: () => Promise<void>;
+  /**
+   * @param skipOnboardingGate a host that embeds the panel owns onboarding, so
+   *   the extension's first-run flag must not decide whether capabilities load.
+   */
+  initializeApp: (options?: { skipOnboardingGate?: boolean }) => Promise<void>;
   loadCapabilities: () => Promise<void>;
 }
 
@@ -57,7 +61,7 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   triggerRefreshSessions: () => set((state) => ({ refreshSessions: state.refreshSessions + 1 })),
   setHasUnsavedNewChat: (hasUnsaved) => set({ hasUnsavedNewChat: hasUnsaved }),
 
-  initializeApp: async () => {
+  initializeApp: async ({ skipOnboardingGate = false } = {}) => {
     try {
       // Load first-run status
       const stored = (await getHostStore().get(['hasCompletedFirstRun'])) as {
@@ -74,7 +78,14 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
         set({ sidebarCollapsed: sidebarStored.sidebarCollapsed });
       }
 
-      if (!completedFirstRun) {
+      // First-run onboarding is the EXTENSION's: a fresh install must choose an
+      // endpoint before anything can be fetched. A host that EMBEDS the panel
+      // has already onboarded its user and already knows where its backend is,
+      // so gating on a flag it never sets left capabilities permanently
+      // unloaded — and the only way round it was for that host to reach into
+      // storage and write `hasCompletedFirstRun` itself, which is a host
+      // writing a key that belongs to another host's flow.
+      if (!completedFirstRun && !skipOnboardingGate) {
         set({ initializingCapabilities: false });
         return;
       }
