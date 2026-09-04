@@ -17,6 +17,7 @@
 /** The shell. Takes a host whose session is non-nullable, so it renders no sign-in. */
 export { default as CopilotPanel } from './shared/ui/CopilotPanel';
 export { default } from './shared/ui/CopilotPanel';
+export type { CopilotPanelProps, InitialCase, PanelChrome } from './shared/ui/CopilotPanel';
 
 /** The transcript on its own, for a host embedding the conversation alone. */
 export { ChatInterface } from './shared/ui/components/ChatInterface';
@@ -51,6 +52,19 @@ export { setHostStore, getHostStore, clearHostStore } from './lib/host-store';
 export { setHostEndpoints, getHostEndpoints, clearHostEndpoints } from './lib/host-endpoints';
 export { setApiTransport, getApiTransport, clearApiTransport, hasApiTransport } from './lib/api/transport';
 export type { ApiTransport } from './lib/api/transport';
+
+/**
+ * WHICH keys a FaultMaven session occupies — and therefore what ending one
+ * clears.
+ *
+ * A host's transport has to answer `clearSession()`, and the only way to do
+ * that without this is to restate the key list. Four copies of that list
+ * already existed once and had drifted over whether `clientId` survives; the
+ * answer is here, in the module that WRITES them, and a host delegates rather
+ * than repeating it.
+ */
+export { clearPersistedSession } from './lib/api/session-core';
+export type { ClearPersistedSessionOptions } from './lib/api/session-core';
 
 /** The shapes a host renders or hands in. */
 export type { UserCase, UserCaseState, Message, CaseDetail } from './types/case';

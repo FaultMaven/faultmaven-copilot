@@ -135,11 +135,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         disabled={!canInteract}
         disableAttachments={isTerminal}
         placeholder={
-          !activeCase
-            ? "Select a case to start chatting..."
-            : isTerminal
-              ? "Ask about this case, or request a report..."
-              : "Ask FaultMaven..."
+          // A DRAFT case — the composer is open, nothing is saved yet, and the
+          // user's first message is what creates the case. This arm used to
+          // fall through to "Select a case to start chatting…", which is the
+          // one instruction that cannot help here: there is nothing to select,
+          // the field is enabled, and typing is exactly what is wanted. It is
+          // also the state a host lands on with `initialCase: { kind: 'new' }`,
+          // so it is now the first thing that host's users read.
+          !activeCase && hasUnsavedNewChat
+            ? "Describe what's wrong, or paste data to start..."
+            : !activeCase
+              ? "Select a case to start chatting..."
+              : isTerminal
+                ? "Ask about this case, or request a report..."
+                : "Ask FaultMaven..."
         }
       />
     </div>

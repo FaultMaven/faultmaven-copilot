@@ -15,6 +15,7 @@
  * invariant is carried by the type rather than by a branch someone maintains.
  */
 import React, { useEffect, useRef } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
 import { ErrorModal } from "./components/ErrorModal";
@@ -31,6 +32,7 @@ import { ROLES } from "../../lib/utils/roles";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
+import { queryClient } from "../../lib/api/query-client";
 import { HostAdapterProvider, useHost } from "../host";
 import type { WiredHost } from "../host";
 
@@ -47,12 +49,59 @@ import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useMessageSubmission } from "./hooks/useMessageSubmission";
 import { useDataUpload } from "./hooks/useDataUpload";
 
+/**
+ * What the panel should be showing when it appears.
+ *
+ * A host knows why it mounted the panel — the user pressed "investigate", or
+ * opened a case's detail page — and that intent has to arrive as an ARGUMENT.
+ * Without it a host can only express itself by writing the store's storage keys
+ * behind the panel's back and hoping the hydrate picks them up, which couples
+ * the host to a key name, an encoding and a race.
+ *
+ * `new` lands on the composer with an investigation open, not on the
+ * "Start a new case" screen — one click short of where the host meant to put
+ * the user. `existing` opens a named case. Omitted, the panel restores whatever
+ * was open last, which is what a side panel that survives its host should do.
+ */
+export type InitialCase =
+  | { kind: 'new' }
+  | { kind: 'existing'; caseId: string };
+
+/**
+ * How much of the panel the host wants.
+ *
+ * `full` is the whole shell: the case-list sidebar, the account row, the
+ * navigation. `embedded` is the conversation alone, for a host that already
+ * provides those — a Dashboard page has its own case list and its own account
+ * menu, and rendering a second set inside its layout is not a smaller version
+ * of the panel, it is a duplicate of the page around it.
+ *
+ * It is a CHOICE about layout, not a capability: both hosts CAN render either.
+ * That is why it is a prop rather than something inferred from `host.kind` — an
+ * inference would make the extension unable to embed the panel and the
+ * Dashboard unable to show the full shell, neither of which is true.
+ */
+export type PanelChrome = 'full' | 'embedded';
+
 export interface CopilotPanelProps {
   /**
    * The host this panel runs in. Non-nullable, and its `session` is
    * non-nullable too — see the note at the top of this file.
    */
   host: WiredHost;
+  /**
+   * What to open on mount. Applied once; the user is in charge afterwards.
+   *
+   * It WINS over the persisted active case: an explicit intent expressed by the
+   * host this mount is more current than what the last one happened to leave
+   * behind, and a host that has to fight the restore ends up seeding storage.
+   */
+  initialCase?: InitialCase;
+  /**
+   * How much shell to render. Defaults to `full`, which is what the extension's
+   * side panel has always shown.
+   */
+  chrome?: PanelChrome;
 }
 
 /**
@@ -63,18 +112,49 @@ export interface CopilotPanelProps {
  * that mounted the provider itself could render this panel with one host in
  * context and a different one in the prop.
  */
-export default function CopilotPanel({ host }: CopilotPanelProps) {
+export default function CopilotPanel({
+  host,
+  initialCase,
+  chrome = 'full',
+}: CopilotPanelProps) {
   return (
-    <HostAdapterProvider value={host}>
-      <ErrorHandlerProvider>
-        <CopilotPanelContent session={host.session} />
-      </ErrorHandlerProvider>
-    </HostAdapterProvider>
+    // The panel's OWN query client, always, and not one the host passes in.
+    //
+    // Two pieces of this tree reach the cache by different routes: `ChatWindow`
+    // calls `useQueryClient()` and reads whatever provider is above it, while
+    // `useMessageSubmission` and `useDataUpload` import the module singleton
+    // directly and invalidate on that. A host mounting its own client made
+    // those two different objects, so every invalidation the hooks fired landed
+    // in a cache nothing was reading — the case header simply went stale, with
+    // nothing thrown. Owning the provider is what makes the two the same object
+    // by construction.
+    //
+    // Nesting is harmless where a host has a client of its own: the innermost
+    // provider wins for this subtree, and the host's own queries keep theirs.
+    <QueryClientProvider client={queryClient}>
+      <HostAdapterProvider value={host}>
+        <ErrorHandlerProvider>
+          <CopilotPanelContent
+            session={host.session}
+            initialCase={initialCase}
+            chrome={chrome}
+          />
+        </ErrorHandlerProvider>
+      </HostAdapterProvider>
+    </QueryClientProvider>
   );
 }
 
 // Main app content with error handler integration
-function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
+function CopilotPanelContent({
+  session,
+  initialCase,
+  chrome,
+}: {
+  session: WiredHost['session'];
+  initialCase?: InitialCase;
+  chrome: PanelChrome;
+}) {
   const { navigation } = useHost();
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
@@ -137,6 +217,37 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
     () => session.subscribeAuthState(applyHostAuthState),
     [session, applyHostAuthState],
   );
+
+  // --- What the host asked to open ---
+  //
+  // Declared BEFORE the recovery hook so it runs first: effects fire in
+  // declaration order, and this one is synchronous while recovery's restore
+  // sits behind two storage reads. By the time the restore is reached the store
+  // already carries the host's intent, and the restore stands down.
+  //
+  // Once. `initialCase` is what the host meant AT MOUNT; re-applying it on a
+  // re-render would drag the user back out of whatever they opened next.
+  const appliedInitialCase = useRef(false);
+  useEffect(() => {
+    if (appliedInitialCase.current || !initialCase) return;
+    appliedInitialCase.current = true;
+
+    if (initialCase.kind === 'new') {
+      // The same state "+ New Case" produces, which is the point: a host asking
+      // for a new investigation gets the composer the button gets, not a
+      // near-miss of it.
+      useAppStore.setState({
+        activeTab: 'copilot',
+        activeCaseId: null,
+        activeCase: null,
+        hasUnsavedNewChat: true,
+      });
+      log.info('Host opened the panel on a new investigation');
+    } else {
+      useAppStore.getState().handleCaseSelect(initialCase.caseId);
+      log.info('Host opened the panel on a case', { caseId: initialCase.caseId });
+    }
+  }, [initialCase]);
 
   // --- Data Recovery ---
   //
@@ -303,68 +414,74 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
   return (
     <ErrorBoundary>
       <div className="flex h-full bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
-        <ErrorBoundary
-          fallback={
-            <div className="w-16 bg-fm-surface border-r border-fm-border p-4 flex flex-col items-center">
-              <p className="text-xs text-fm-critical text-center mt-4">Nav error</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="mt-2 text-xs text-fm-accent hover:underline"
-              >
-                Reload
-              </button>
-            </div>
-          }
-          onError={(error) => log.error('Navigation boundary caught error', { error })}
-        >
-          <CollapsibleNavigation
-            currentUser={session.user}
-            isCollapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-            activeTab={activeTab}
-            activeCaseId={activeCaseId || undefined}
-            sessionId={sessionId || undefined}
-            hasUnsavedNewChat={hasUnsavedNewChat}
-            isAdmin={isAdmin}
-            conversationTitles={conversationTitles}
-            pinnedCases={pinnedCases}
-            refreshTrigger={refreshSessions}
-            dashboardUrl={capabilities?.dashboardUrl}
-            onTabChange={setActiveTab}
-            // A path, not a URL: where the Dashboard lives is the host's
-            // business (a configured endpoint in the extension, the current
-            // origin on the web), and how it is reached — focus an existing tab,
-            // open a new one, push a route — is too.
-            onOpenDashboard={() =>
-              navigation.dashboard(activeCaseId ? `/cases/${activeCaseId}` : '/cases')
+        {/* The sidebar carries the case list AND the account row, so `embedded`
+            omits the whole component rather than emptying it: a host that
+            embeds the panel has its own case list and its own account menu,
+            and a second set inside its layout duplicates the page around it. */}
+        {chrome === 'full' && (
+          <ErrorBoundary
+            fallback={
+              <div className="w-16 bg-fm-surface border-r border-fm-border p-4 flex flex-col items-center">
+                <p className="text-xs text-fm-critical text-center mt-4">Nav error</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="mt-2 text-xs text-fm-accent hover:underline"
+                >
+                  Reload
+                </button>
+              </div>
             }
-            onCaseSelect={handleCaseSelect}
-            onNewChat={handleNewChatFromNav}
-            onLogout={handleLogout}
-            onCaseTitleChange={(caseId: string, newTitle: string, source: 'user' | 'backend') =>
-              applyCaseTitleChange(caseId, newTitle, source, {
-                readStore: () => useAppStore.getState(),
-                setConversationTitles,
-                setTitleSources,
-                persistTitle: updateCaseTitle,
-                onPersistError: (error) => showError({
-                  title: 'Failed to update title',
-                  message: error instanceof Error ? error.message : 'Unknown error',
-                  type: 'error'
-                }),
-                log
-              })
-            }
-            onPinToggle={(id) => {
-              const newSet = new Set(pinnedCases);
-              if (newSet.has(id)) newSet.delete(id);
-              else newSet.add(id);
-              setPinnedCases(newSet);
-            }}
-            onAfterDelete={() => { }}
-            onCasesLoaded={() => { }}
-          />
-        </ErrorBoundary>
+            onError={(error) => log.error('Navigation boundary caught error', { error })}
+          >
+            <CollapsibleNavigation
+              currentUser={session.user}
+              isCollapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+              activeTab={activeTab}
+              activeCaseId={activeCaseId || undefined}
+              sessionId={sessionId || undefined}
+              hasUnsavedNewChat={hasUnsavedNewChat}
+              isAdmin={isAdmin}
+              conversationTitles={conversationTitles}
+              pinnedCases={pinnedCases}
+              refreshTrigger={refreshSessions}
+              dashboardUrl={capabilities?.dashboardUrl}
+              onTabChange={setActiveTab}
+              // A path, not a URL: where the Dashboard lives is the host's
+              // business (a configured endpoint in the extension, the current
+              // origin on the web), and how it is reached — focus an existing tab,
+              // open a new one, push a route — is too.
+              onOpenDashboard={() =>
+                navigation.dashboard(activeCaseId ? `/cases/${activeCaseId}` : '/cases')
+              }
+              onCaseSelect={handleCaseSelect}
+              onNewChat={handleNewChatFromNav}
+              onLogout={handleLogout}
+              onCaseTitleChange={(caseId: string, newTitle: string, source: 'user' | 'backend') =>
+                applyCaseTitleChange(caseId, newTitle, source, {
+                  readStore: () => useAppStore.getState(),
+                  setConversationTitles,
+                  setTitleSources,
+                  persistTitle: updateCaseTitle,
+                  onPersistError: (error) => showError({
+                    title: 'Failed to update title',
+                    message: error instanceof Error ? error.message : 'Unknown error',
+                    type: 'error'
+                  }),
+                  log
+                })
+              }
+              onPinToggle={(id) => {
+                const newSet = new Set(pinnedCases);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                setPinnedCases(newSet);
+              }}
+              onAfterDelete={() => { }}
+              onCasesLoaded={() => { }}
+            />
+          </ErrorBoundary>
+        )}
 
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <ErrorBoundary
