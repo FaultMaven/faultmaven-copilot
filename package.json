@@ -31,7 +31,13 @@
     "test:e2e:headed": "playwright test e2e/ --headed",
     "test:e2e:debug": "playwright test e2e/ --debug",
     "sync-ui-assets": "node scripts/sync-ui-assets.mjs",
-    "prezip": "pnpm sync-ui-assets && pnpm generate-icons"
+    "prezip": "pnpm sync-ui-assets && pnpm generate-icons",
+    "predev:firefox": "pnpm sync-ui-assets && pnpm generate-icons",
+    "prebuild:firefox": "pnpm sync-ui-assets && pnpm generate-icons",
+    "prezip:firefox": "pnpm sync-ui-assets && pnpm generate-icons",
+    "pretest": "pnpm sync-ui-assets",
+    "pretest:coverage": "pnpm sync-ui-assets",
+    "pretest:ui": "pnpm sync-ui-assets"
   },
   "dependencies": {
     "@faultmaven/copilot-ui": "workspace:*",

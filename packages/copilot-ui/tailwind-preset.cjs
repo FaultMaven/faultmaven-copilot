@@ -26,9 +26,14 @@
  */
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // The package's own sources, so a host that forgets to glob them still gets
-  // the classes the shared UI uses. A host's `content` ADDS to a preset's
-  // rather than replacing it.
+  // WHERE THE PACKAGE'S FILES ARE, for a host to spread into its own `content`:
+  //
+  //     content: [ ...its own globs, ...preset.content ]
+  //
+  // It has to be spread. `content` is the one key Tailwind does NOT merge
+  // across presets — a config's array REPLACES it — so listing it here does
+  // nothing on its own. A host that omits it emits no class the shared UI uses
+  // and every element renders unstyled, with nothing thrown.
   content: [__dirname + '/shared/**/*.{js,jsx,ts,tsx}', __dirname + '/lib/**/*.{js,jsx,ts,tsx}'],
   darkMode: "class",
   theme: {

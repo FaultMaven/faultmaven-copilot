@@ -59,15 +59,48 @@ describe('the package owns the assets it references', () => {
   });
 
   // And the extension actually puts them where a root-absolute path finds them.
-  // `pnpm sync-ui-assets` runs before every dev, build and zip; this is what
-  // says so out loud rather than trusting a lifecycle hook nobody re-reads.
   it('the extension serves them from its own web root', () => {
     const missing = referenced.filter((ref) => !existsSync(join(ROOT, 'public', ref)));
 
     expect(
       missing,
-      `Not present under public/. Run \`pnpm sync-ui-assets\`; it is wired into ` +
-        `predev, prebuild and prezip:\n${missing.join('\n')}`,
+      `Not present under public/. Run \`pnpm sync-ui-assets\`:\n${missing.join('\n')}`,
     ).toEqual([]);
+  });
+
+  /**
+   * …and the wiring that PUT them there, which the assertion above can no
+   * longer see.
+   *
+   * `pretest` runs the sync, so by the time that check runs the files exist
+   * whatever the rest of the lifecycle does — it would pass on a tree where
+   * every other hook had been deleted, and the extension would ship without its
+   * logo. This is the half that still fails in that case.
+   *
+   * Every script that BUILDS or SERVES the extension is listed, because npm
+   * lifecycle hooks fire for an exact script name only: `prebuild` does nothing
+   * for `build:firefox`, which is how the Firefox artifact came to have no
+   * pre-hook at all.
+   */
+  it('is wired into every script that builds, serves or tests the extension', () => {
+    const scripts = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).scripts;
+    const mustSync = [
+      'predev', 'predev:firefox',
+      'prebuild', 'prebuild:firefox',
+      'prezip', 'prezip:firefox',
+      'pretest', 'pretest:coverage', 'pretest:ui',
+    ];
+
+    const unwired = mustSync.filter((name) => !(scripts[name] ?? '').includes('sync-ui-assets'));
+
+    expect(
+      unwired,
+      `These lifecycle scripts do not sync the package's assets, so the tree ` +
+        `they produce is missing the logo — a broken <img>, thrown by ` +
+        `nothing:\n${unwired.join('\n')}`,
+    ).toEqual([]);
+
+    // The hook is only as good as the script it calls.
+    expect(scripts['sync-ui-assets']).toContain('scripts/sync-ui-assets.mjs');
   });
 });

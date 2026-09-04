@@ -53,8 +53,10 @@ export default defineConfig({
       plugins: [
         tailwindcss({
           presets: [copilotUiPreset],
-          // Only this host's own files. The package globs its own in the preset.
-          content: [path.join(here, '**/*.{ts,tsx,html}')],
+          // This host's own files AND the package's, spread from the preset.
+          // `content` is the one key Tailwind does not merge across presets, so
+          // a host that lists only its own emits no class the shared UI uses.
+          content: [path.join(here, '**/*.{ts,tsx,html}'), ...copilotUiPreset.content],
         }),
         autoprefixer(),
       ],
