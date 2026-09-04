@@ -2,7 +2,11 @@
 import { browser } from 'wxt/browser';
 import { createLogger } from '../lib/utils/logger';
 import { isTrustedDashboardOrigin } from '../lib/auth/trusted-origin';
-import { announceCopilotPresence } from '../lib/auth/presence-marker';
+import {
+  announceCopilotPresence,
+  dashboardAdvertisesPanel,
+  DASHBOARD_PANEL_MESSAGE,
+} from '../lib/auth/presence-marker';
 
 /**
  * Auth Bridge Content Script
@@ -13,6 +17,10 @@ import { announceCopilotPresence } from '../lib/auth/presence-marker';
  * Security: Validates message origins against the CONFIGURED Dashboard origin
  * (Cloud default + the user's `dashboardUrl`), not a hardcoded port allowlist.
  * Token Rotation: Listens for storage events to detect token refreshes.
+ * Panel handshake: also carries the page's claim that it hosts the built-in
+ * copilot panel, so the extension's side panel can stand down on this tab. The
+ * claim rides the SAME origin-validated channel as the auth payload — see the
+ * contract next to announceCopilotPresence in lib/auth/presence-marker.ts.
  */
 
 export default defineContentScript({
@@ -60,6 +68,26 @@ export default defineContentScript({
     }
 
     /**
+     * Tell the background worker this Dashboard hosts its own copilot panel.
+     *
+     * Deliberately carries NO origin in the payload: a page cannot be trusted
+     * to name itself, so the background re-derives the sender's origin from
+     * what the browser attributes to this content script and validates that.
+     * The check here is the near guard, not the only one.
+     */
+    async function reportDashboardPanelAvailable() {
+      try {
+        await browser.runtime.sendMessage({ action: 'dashboardPanelAvailable' });
+        log.info('Reported the dashboard\'s built-in panel to the background');
+      } catch (error) {
+        // Background not ready — the next advertisement (or the next page load)
+        // reports again. Failing here just leaves the extension panel showing,
+        // which is the safe direction.
+        log.debug('Could not report the dashboard panel:', error);
+      }
+    }
+
+    /**
      * Listen for window messages from the web app (postMessage)
      * CRITICAL: Validates origin to prevent malicious injection
      */
@@ -82,6 +110,17 @@ export default defineContentScript({
       if (message && message.type === "FM_AUTH_SUCCESS") {
         log.info("Auth success detected via postMessage", { origin: event.origin });
         await forwardAuthState(message.payload);
+        return;
+      }
+
+      // The page telling us its built-in copilot panel is available. This is
+      // the channel for a dashboard that only mounts the panel after the
+      // document loaded; a dashboard that knows at render time should carry
+      // DASHBOARD_PANEL_ATTR in its initial HTML instead, which the
+      // document_end check below picks up with no window in between.
+      if (message && message.type === DASHBOARD_PANEL_MESSAGE) {
+        log.info("Dashboard advertises its built-in panel", { origin: event.origin });
+        await reportDashboardPanelAvailable();
       }
     });
 
@@ -133,6 +172,13 @@ export default defineContentScript({
 
     // Check on load (for extension installed after login)
     checkLocalStorage();
+
+    // And read the panel claim the page rendered into its initial HTML. Same
+    // shape as checkLocalStorage above: the live listener catches what happens
+    // from here on, this catches what was already true when we were injected.
+    if (dashboardAdvertisesPanel()) {
+      reportDashboardPanelAvailable();
+    }
   }
 });
 
