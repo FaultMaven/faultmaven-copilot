@@ -47,12 +47,38 @@ import { usePendingOperations } from "./hooks/usePendingOperations";
 import { useMessageSubmission } from "./hooks/useMessageSubmission";
 import { useDataUpload } from "./hooks/useDataUpload";
 
+/**
+ * What the panel should be showing when it appears.
+ *
+ * A host knows why it mounted the panel — the user pressed "investigate", or
+ * opened a case's detail page — and that intent has to arrive as an ARGUMENT.
+ * Without it a host can only express itself by writing the store's storage keys
+ * behind the panel's back and hoping the hydrate picks them up, which couples
+ * the host to a key name, an encoding and a race.
+ *
+ * `new` lands on the composer with an investigation open, not on the
+ * "Start a new case" screen — one click short of where the host meant to put
+ * the user. `existing` opens a named case. Omitted, the panel restores whatever
+ * was open last, which is what a side panel that survives its host should do.
+ */
+export type InitialCase =
+  | { kind: 'new' }
+  | { kind: 'existing'; caseId: string };
+
 export interface CopilotPanelProps {
   /**
    * The host this panel runs in. Non-nullable, and its `session` is
    * non-nullable too — see the note at the top of this file.
    */
   host: WiredHost;
+  /**
+   * What to open on mount. Applied once; the user is in charge afterwards.
+   *
+   * It WINS over the persisted active case: an explicit intent expressed by the
+   * host this mount is more current than what the last one happened to leave
+   * behind, and a host that has to fight the restore ends up seeding storage.
+   */
+  initialCase?: InitialCase;
 }
 
 /**
@@ -63,18 +89,24 @@ export interface CopilotPanelProps {
  * that mounted the provider itself could render this panel with one host in
  * context and a different one in the prop.
  */
-export default function CopilotPanel({ host }: CopilotPanelProps) {
+export default function CopilotPanel({ host, initialCase }: CopilotPanelProps) {
   return (
     <HostAdapterProvider value={host}>
       <ErrorHandlerProvider>
-        <CopilotPanelContent session={host.session} />
+        <CopilotPanelContent session={host.session} initialCase={initialCase} />
       </ErrorHandlerProvider>
     </HostAdapterProvider>
   );
 }
 
 // Main app content with error handler integration
-function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
+function CopilotPanelContent({
+  session,
+  initialCase,
+}: {
+  session: WiredHost['session'];
+  initialCase?: InitialCase;
+}) {
   const { navigation } = useHost();
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
@@ -137,6 +169,37 @@ function CopilotPanelContent({ session }: { session: WiredHost['session'] }) {
     () => session.subscribeAuthState(applyHostAuthState),
     [session, applyHostAuthState],
   );
+
+  // --- What the host asked to open ---
+  //
+  // Declared BEFORE the recovery hook so it runs first: effects fire in
+  // declaration order, and this one is synchronous while recovery's restore
+  // sits behind two storage reads. By the time the restore is reached the store
+  // already carries the host's intent, and the restore stands down.
+  //
+  // Once. `initialCase` is what the host meant AT MOUNT; re-applying it on a
+  // re-render would drag the user back out of whatever they opened next.
+  const appliedInitialCase = useRef(false);
+  useEffect(() => {
+    if (appliedInitialCase.current || !initialCase) return;
+    appliedInitialCase.current = true;
+
+    if (initialCase.kind === 'new') {
+      // The same state "+ New Case" produces, which is the point: a host asking
+      // for a new investigation gets the composer the button gets, not a
+      // near-miss of it.
+      useAppStore.setState({
+        activeTab: 'copilot',
+        activeCaseId: null,
+        activeCase: null,
+        hasUnsavedNewChat: true,
+      });
+      log.info('Host opened the panel on a new investigation');
+    } else {
+      useAppStore.getState().handleCaseSelect(initialCase.caseId);
+      log.info('Host opened the panel on a case', { caseId: initialCase.caseId });
+    }
+  }, [initialCase]);
 
   // --- Data Recovery ---
   //

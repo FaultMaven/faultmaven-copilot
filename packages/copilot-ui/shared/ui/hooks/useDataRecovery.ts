@@ -185,8 +185,17 @@ export function useDataRecovery(
             // Re-check the epoch after the auth/storage awaits: a logout that
             // landed mid-recovery must not let us re-select the ended session's
             // case (handleCaseSelect writes activeCase and delta-fetches).
+            // An explicit open by the host wins. `initialCase` is what THIS
+            // mount was for, and it has already been applied by the time this
+            // is reached; restoring on top of it would drag the user off the
+            // case their host just opened them on, asynchronously, so the bug
+            // would look like a flicker.
+            const { activeCaseId: openedByHost, hasUnsavedNewChat: startedByHost } =
+              useAppStore.getState();
             if (epoch !== getEpoch()) {
               log.info('Session ended during recovery — skipping active-case restore');
+            } else if (openedByHost || startedByHost) {
+              log.info('The host opened the panel on something — not restoring the last case');
             } else if (restoredCaseId && typeof restoredCaseId === 'string') {
               useAppStore.getState().handleCaseSelect(restoredCaseId);
               log.info('Restored active case after reload', { caseId: restoredCaseId });

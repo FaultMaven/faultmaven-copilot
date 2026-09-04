@@ -61,8 +61,17 @@ async function persistSession(session: Session): Promise<void> {
  * `includeClientId` is the one real distinction, named rather than implied by
  * whichever list the caller happened to copy.
  */
+export interface ClearPersistedSessionOptions {
+  /**
+   * Take `clientId` too. It OUTLIVES a session by default — a fresh
+   * `/sessions` POST presents it to resume rather than start cold — so only a
+   * caller ending the identity, not the session, asks for this.
+   */
+  includeClientId?: boolean;
+}
+
 export async function clearPersistedSession(
-  { includeClientId = false }: { includeClientId?: boolean } = {}
+  { includeClientId = false }: ClearPersistedSessionOptions = {}
 ): Promise<void> {
   const keys: string[] = [...SESSION_KEYS];
   if (includeClientId) keys.push(CLIENT_KEY);
