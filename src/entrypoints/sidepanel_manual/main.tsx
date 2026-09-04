@@ -1,8 +1,6 @@
 // src/entrypoints/sidepanel_manual/main.tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '@faultmaven/copilot-ui/lib/api/query-client';
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { installExtensionHostContext } from '../../extension/host/install';
 import '@faultmaven/copilot-ui/styles/globals.css';  // The shared UI's theme + type scale
@@ -22,13 +20,12 @@ function mountReactApp() {
     const root = ReactDOM.createRoot(rootElement);
     root.render(
       <React.StrictMode>
-        <QueryClientProvider client={queryClient}>
-          {/* The host's own entry: first run, sign-in, and the session that
-              CopilotPanel cannot be mounted without. The host adapter is no
-              longer provided here — CopilotPanel publishes it, so the panel
-              cannot be handed one host in a prop and another in context. */}
-          <ExtensionApp />
-        </QueryClientProvider>
+        {/* The host's own entry: first run, sign-in, and the session that
+            CopilotPanel cannot be mounted without. Neither the host adapter nor
+            the query client is provided here — the panel publishes both, so it
+            cannot be handed one in a prop and another in context, and nothing
+            this entry renders above the panel uses a query of its own. */}
+        <ExtensionApp />
       </React.StrictMode>
     );
     log.info('React app mounted successfully.');
