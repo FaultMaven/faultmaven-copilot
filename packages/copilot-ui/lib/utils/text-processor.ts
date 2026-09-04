@@ -65,7 +65,9 @@ function formatPIITokens(text: string): string {
   // Match PII tokens in the format <TOKEN_NAME> or [TOKEN_NAME]
   const piiTokenRegex = /<([A-Z_]+)>|\[([A-Z_]+)\]/g;
 
-  return text.replace(piiTokenRegex, (match, token1, token2) => {
+  // `_match`: the whole-match argument is positional and unused — the token
+  // groups after it are what this reads.
+  return text.replace(piiTokenRegex, (_match, token1, token2) => {
     const token = token1 || token2;
     const label = PII_TOKEN_LABELS[token] || token.replace(/_/g, ' ');
 

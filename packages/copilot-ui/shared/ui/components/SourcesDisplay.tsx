@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Source } from "../../../lib/api";
 import { formatSource } from "../../../lib/utils/response-handlers";
 

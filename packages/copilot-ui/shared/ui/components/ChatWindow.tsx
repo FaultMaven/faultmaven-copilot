@@ -1,20 +1,12 @@
-import React, { useState, useRef, useEffect, memo, useCallback } from "react";
+import React, { useRef, useEffect, memo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Source,
-  SuggestedAction,
-  EvidenceRequest,
-  InvestigationMode,
-  CaseState,
   CommandValidation,
   ScopeAssessment,
   UserCaseState,
   getStatusChangeMessage,
-  Hypothesis,
-  TestResult,
   QueryIntent,
   IntentType,
-  AttachmentResult,
   formatFileSize,
   attachmentOrigin,
 } from "../../../lib/api";
@@ -103,7 +95,7 @@ const ChatWindowComponent = function ChatWindow({
   const caseUIQuery = useQuery<CaseUIResponse>({
     queryKey: ['caseUI', activeCase?.case_id, sessionId],
     queryFn: ({ signal }) =>
-      caseApi.getCaseUI(activeCase!.case_id, sessionId!, signal),
+      caseApi.getCaseUI(activeCase!.case_id, signal),
     enabled: Boolean(activeCase?.case_id && sessionId),
   });
   const fullCaseData = caseUIQuery.data ?? null;

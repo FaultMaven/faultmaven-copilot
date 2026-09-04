@@ -18,7 +18,7 @@ import {
   AttachmentResult,
 } from '../api';
 
-import { CaseState, UserCase } from '../../types/case';
+import { UserCase } from '../../types/case';
 export type { UserCase };
 
 /**

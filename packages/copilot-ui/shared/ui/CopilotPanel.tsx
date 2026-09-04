@@ -14,7 +14,7 @@
  * user, and therefore no state in which it could render a sign-in screen. The
  * invariant is carried by the type rather than by a branch someone maintains.
  */
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
@@ -28,7 +28,6 @@ import { CaseSnapshot, isCaseTransition } from "../../lib/state/case-reconcile";
 import { applyCaseTitleChange } from "../../lib/state/case-title-change";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch } from "../../lib/state/session-epoch";
-import { ROLES } from "../../lib/utils/roles";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
@@ -196,11 +195,9 @@ function CopilotPanelContent({
 
   const conversations = useAppStore((state) => state.conversations);
   const conversationTitles = useAppStore((state) => state.conversationTitles);
-  const titleSources = useAppStore((state) => state.titleSources);
   const pinnedCases = useAppStore((state) => state.pinnedCases);
   const activeCase = useAppStore((state) => state.activeCase);
 
-  const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed);
   const setViewingDocument = useAppStore((state) => state.setViewingDocument);
   const setIsDocumentModalOpen = useAppStore((state) => state.setIsDocumentModalOpen);
@@ -219,7 +216,6 @@ function CopilotPanelContent({
   // runs: `session` is non-nullable, so there is nobody to ask for and nothing
   // to gate on. The account row reads `session.user` too — the second copy the
   // store used to hold is gone, so there is no pair that could disagree.
-  const isAdmin = session.user.roles.includes(ROLES.ADMIN);
   // The panel only ever mounts once its host says the environment is ready, so
   // the session initialises unconditionally here.
   const { sessionId, clearSession } = useSessionManagement(true);
@@ -290,7 +286,7 @@ function CopilotPanelContent({
     handleUserRetry,
     handleDismissFailedOperation,
     getErrorMessageForOperation
-  } = usePendingOperations(activeCaseId || undefined, showError);
+  } = usePendingOperations(showError);
 
   // --- Message Submission ---
   const {
@@ -474,16 +470,12 @@ function CopilotPanelContent({
               currentUser={session.user}
               isCollapsed={sidebarCollapsed}
               onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-              activeTab={activeTab}
               activeCaseId={activeCaseId || undefined}
-              sessionId={sessionId || undefined}
               hasUnsavedNewChat={hasUnsavedNewChat}
-              isAdmin={isAdmin}
               conversationTitles={conversationTitles}
               pinnedCases={pinnedCases}
               refreshTrigger={refreshSessions}
               dashboardUrl={capabilities?.dashboardUrl}
-              onTabChange={setActiveTab}
               // A path, not a URL: where the Dashboard lives is the host's
               // business (a configured endpoint in the extension, the current
               // origin on the web), and how it is reached — focus an existing tab,

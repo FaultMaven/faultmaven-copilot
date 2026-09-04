@@ -56,7 +56,6 @@ export interface ContentAreaProps {
  * Custom comparison prevents re-renders from function reference changes.
  */
 const ContentAreaComponent = ({
-  activeTab,
   activeCaseId,
   activeCase,
   conversations,

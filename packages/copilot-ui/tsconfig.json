@@ -8,6 +8,11 @@
     "esModuleInterop": true,
     "jsx": "react-jsx",
     "strict": true,
+    // The package compiles clean under these. A shared package that leaves
+    // dead locals behind hands every consumer a warning it cannot fix, and a
+    // parameter nobody reads is usually a signature that has moved on.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,

@@ -15,7 +15,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "extension:digest": "node scripts/extension-digest.mjs --check",
     "extension:digest:write": "node scripts/extension-digest.mjs --write",
-    "compile": "tsc --noEmit",
+    "compile": "tsc --noEmit && pnpm --filter @faultmaven/copilot-ui typecheck",
     "generate:api-types": "node scripts/generate-api-types.mjs",
     "lint": "eslint src packages --ext .ts,.tsx,.cjs",
     "lint:fix": "eslint src packages --ext .ts,.tsx,.cjs --fix",

@@ -19,7 +19,6 @@ import { authenticatedFetchWithRetry } from './client';
  */
 async function getCaseUI(
   caseId: string,
-  sessionId: string,
   signal?: AbortSignal,
 ): Promise<CaseUIResponse> {
   const apiUrl = await getApiTransport().baseUrl();

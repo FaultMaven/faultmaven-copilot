@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { KnowledgeDocument } from "../../../lib/api";
 import { normalizeTags } from "../../../lib/utils/safe-tags";
 

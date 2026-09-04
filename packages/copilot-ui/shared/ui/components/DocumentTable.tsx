@@ -1,4 +1,3 @@
-import React from "react";
 import { KnowledgeDocument } from "../../../lib/api";
 import DocumentRow from "./DocumentRow";
 

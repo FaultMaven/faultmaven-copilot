@@ -8,7 +8,6 @@
  * - Toggle button always visible in both states
  */
 
-import React from 'react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import ConversationsList from '../components/ConversationsList';
 import { useConfiguredEndpoint } from '../hooks/useConfiguredEndpoint';
@@ -26,13 +25,8 @@ export interface CollapsibleNavigationProps {
   onToggleCollapse: () => void;
 
   // Active states
-  activeTab: 'copilot';
   activeCaseId?: string;
-  sessionId?: string;
   hasUnsavedNewChat: boolean;
-
-  // User info
-  isAdmin: boolean;
 
   // Conversations
   conversationTitles: Record<string, string>;
@@ -43,7 +37,6 @@ export interface CollapsibleNavigationProps {
   dashboardUrl?: string;
 
   // Callbacks
-  onTabChange: (tab: 'copilot') => void;
   onOpenDashboard?: () => void;
   onCaseSelect: (caseId: string) => void;
   onNewChat: () => void;
@@ -59,16 +52,12 @@ export function CollapsibleNavigation({
   currentUser,
   isCollapsed,
   onToggleCollapse,
-  activeTab,
   activeCaseId,
-  sessionId,
   hasUnsavedNewChat,
-  isAdmin,
   conversationTitles,
   pinnedCases,
   refreshTrigger,
   dashboardUrl,
-  onTabChange,
   onOpenDashboard,
   onCaseSelect,
   onNewChat,
@@ -122,12 +111,6 @@ export function CollapsibleNavigation({
   const ExpandIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  );
-
-  const CollapseIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
     </svg>
   );
 
@@ -294,7 +277,6 @@ export function CollapsibleNavigation({
           }
         >
           <ConversationsList
-            activeSessionId={sessionId}
             activeCaseId={activeCaseId}
             onCaseSelect={onCaseSelect}
             onNewSession={(id) => {
@@ -306,7 +288,6 @@ export function CollapsibleNavigation({
             hasUnsavedNewChat={hasUnsavedNewChat}
             refreshTrigger={refreshTrigger}
             className="flex-1"
-            collapsed={false}
             onFirstCaseDetected={() => { }}
             onAfterDelete={onAfterDelete}
             onCasesLoaded={onCasesLoaded}

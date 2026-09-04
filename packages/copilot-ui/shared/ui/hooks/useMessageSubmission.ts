@@ -15,7 +15,6 @@ import {
 } from '../../../lib/api';
 import type { UserCase } from '../../../types/case';
 import {
-  AuthenticationError,
   CaseVersionConflictError
 } from '../../../lib/errors/types';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
@@ -35,7 +34,6 @@ import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
-import { useHost } from '../../host';
 
 const log = createLogger('useMessageSubmission');
 
@@ -50,7 +48,6 @@ const log = createLogger('useMessageSubmission');
 // user-initiated "Generate title" action in ConversationsList and nothing else.
 
 export function useMessageSubmission() {
-  const { store } = useHost();
   const [submitting, setSubmitting] = useState(false);
   const { showError } = useError();
 
@@ -76,7 +73,6 @@ export function useMessageSubmission() {
   };
 
   // Selected store state
-  const sessionId = useAppStore((state) => state.sessionId);
   const activeCaseId = useAppStore((state) => state.activeCaseId);
   const conversations = useAppStore((state) => state.conversations);
 
@@ -87,7 +83,6 @@ export function useMessageSubmission() {
   const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversationTitles = useAppStore((state) => state.setConversationTitles);
   const setTitleSources = useAppStore((state) => state.setTitleSources);
-  const refreshSession = useAppStore((state) => state.refreshSession);
   const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   // Reconcile optimistic case ID with backend ID

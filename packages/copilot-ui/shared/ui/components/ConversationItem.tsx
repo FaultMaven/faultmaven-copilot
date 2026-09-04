@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Session } from '../../../lib/api';
-import { createLogger } from '../../../lib/utils/logger';
 
-const log = createLogger('ConversationItem');
 
 interface ConversationItemProps {
   session: Session;
@@ -10,7 +8,6 @@ interface ConversationItemProps {
   isActive: boolean;
   isUnsavedNew?: boolean;
   isPinned?: boolean;
-  messageCount?: number; // Number of messages in case
   onSelect: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
   onRename?: (sessionId: string, newTitle: string) => void;
@@ -24,28 +21,17 @@ export function ConversationItem({
   isActive,
   isUnsavedNew = false,
   isPinned = false,
-  messageCount = 0,
   onSelect,
   onDelete,
   onRename,
   onGenerateTitle,
   onPin
 }: ConversationItemProps) {
-  const [currentTime, setCurrentTime] = useState(Date.now());
   const [isRenaming, setIsRenaming] = useState(false);
   const [editTitle, setEditTitle] = useState(title || '');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const itemRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  // Update current time every minute to refresh relative timestamps
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 60000); // Update every minute
-
-    return () => clearInterval(interval);
-  }, []); // No dependencies - interval should run continuously
 
   // Sync editTitle with title prop
   useEffect(() => {
@@ -126,36 +112,8 @@ export function ConversationItem({
     setIsMenuOpen(false);
   };
 
-  const formatTime = (dateString: string) => {
-    try {
-      // TEMPORARY FIX: Backend is not following OpenAPI spec for timestamp format
-      // OpenAPI spec requires: "2025-01-15T10:00:00Z" (with Z suffix)
-      // Backend returns: "2025-08-16T23:09:37.106812" (without Z suffix)
-      // TODO: Fix backend to return proper ISO 8601 UTC format with Z suffix
-      const isoString = dateString.includes('Z') ? dateString : dateString + 'Z';
-      const date = new Date(isoString);
-      const now = new Date(currentTime);
-      const diffMs = now.getTime() - date.getTime();
-
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-      if (diffMs <= 0) return 'Just now';
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    } catch (error) {
-      log.error('Error formatting time', { error, dateString });
-      return 'Unknown';
-    }
-  };
 
   const displayTitle = title || `Chat ${session.session_id.slice(-8)}`;
-  const lastActivity = session.last_activity || session.created_at;
 
   return (
     <div

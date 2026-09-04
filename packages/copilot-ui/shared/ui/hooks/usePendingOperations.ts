@@ -8,7 +8,6 @@ import { useCallback } from 'react';
 import { useAppStore } from '../../../lib/state/store';
 
 export function usePendingOperations(
-  activeCaseId: string | undefined,
   onError: (error: any, context?: any) => void
 ) {
   const getFailedOperationsForUser = useAppStore((state) => state.getFailedOperationsForUser);

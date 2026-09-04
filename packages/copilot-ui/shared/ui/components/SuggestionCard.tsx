@@ -1,8 +1,5 @@
 import React, { useCallback, useState } from 'react';
 import type { SuggestedAction, ClickableSuggestionType, QueryIntent } from '../../../lib/api/types';
-import { createLogger } from '../../../lib/utils/logger';
-
-const log = createLogger('SuggestionCard');
 
 // =============================================================================
 // Public Interface

@@ -3,7 +3,7 @@ import { Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { caseCacheManager } from "../../cache/case-cache";
-import { HttpError, createHttpErrorFromResponse } from "../../errors/http-error";
+import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
 import {
