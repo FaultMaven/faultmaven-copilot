@@ -10,7 +10,7 @@
  */
 
 import { browser } from 'wxt/browser';
-import { getApiUrl } from '../../config';
+import { getHostEndpoints } from '../host-endpoints';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { retryWithBackoff, isRetryableError } from '../utils/retry';
@@ -176,7 +176,7 @@ export class TokenManager {
       throw err;
     }
 
-    const apiUrl = await getApiUrl();
+    const apiUrl = await getHostEndpoints().apiUrl();
 
     // Mode-aware refresh endpoint. Bridge/standalone sessions run in LOCAL mode,
     // where the OAuth token endpoint (/oauth/token) is NOT mounted — refreshing

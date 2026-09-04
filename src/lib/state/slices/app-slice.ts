@@ -1,6 +1,6 @@
+import { getHostEndpoints } from '../../host-endpoints';
 import { StateCreator } from 'zustand';
 import { browser } from 'wxt/browser';
-import { getApiUrl } from '../../../config';
 import { capabilitiesManager, BackendCapabilities } from '../../capabilities';
 import { createLogger } from '../../utils/logger';
 import type { KnowledgeDocument } from '../../../lib/api';
@@ -91,7 +91,7 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   loadCapabilities: async () => {
     set({ initializingCapabilities: true });
     try {
-      const apiEndpoint = await getApiUrl();
+      const apiEndpoint = await getHostEndpoints().apiUrl();
       const caps = await capabilitiesManager.fetch(apiEndpoint);
       set({ capabilities: caps, capabilitiesError: null });
     } catch (error) {

@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
-import config, { getApiUrl } from "../../../config";
+import config from "../../../config";
+import { getHostEndpoints } from "../../host-endpoints";
 import { authManager } from "../../auth/auth-manager";
 import { getAuthConfig } from "../../auth/auth-config";
 import { tokenManager } from "../../auth/token-manager";
@@ -58,7 +59,7 @@ async function revokeRefreshTokenBestEffort(): Promise<void> {
     }
 
     const response = await fetchWithTimeout(
-      `${await getApiUrl()}/api/v1/auth/oauth/revoke`,
+      `${await getHostEndpoints().apiUrl()}/api/v1/auth/oauth/revoke`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,7 +94,7 @@ async function revokeRefreshTokenBestEffort(): Promise<void> {
  * replacement, which is the only thing that makes a swallowed failure harmless.
  */
 export async function getCurrentUser(): Promise<UserProfile> {
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/auth/me`, {
+  const response = await authenticatedFetchWithRetry(`${await getHostEndpoints().apiUrl()}/api/v1/auth/me`, {
     method: 'GET',
     credentials: 'include'
   });
@@ -118,7 +119,7 @@ export async function logoutAuth(): Promise<LogoutOutcome> {
     // access token; this is best-effort and never throws.
     await revokeRefreshTokenBestEffort();
 
-    const response = await authenticatedFetch(`${await getApiUrl()}/api/v1/auth/logout`, {
+    const response = await authenticatedFetch(`${await getHostEndpoints().apiUrl()}/api/v1/auth/logout`, {
       method: 'POST',
       credentials: 'include'
     });

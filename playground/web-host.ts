@@ -64,6 +64,9 @@ const endpoints: HostAdapter['endpoints'] = {
   async dashboardUrl() {
     return window.location.origin;
   },
+  // Never fires: the deployment that served this page decided, and it cannot
+  // change under the UI. The caller still gets an unsubscribe and needs no
+  // branch for the difference.
   subscribe() {
     return () => {};
   },

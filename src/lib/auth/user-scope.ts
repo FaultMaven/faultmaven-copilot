@@ -16,6 +16,7 @@
 import { browser } from 'wxt/browser';
 import { PersistenceManager } from '../utils/persistence-manager';
 import { clientSessionManager } from '../session/client-session-manager';
+import { clearPersistedSession } from '../api/session-core';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('UserScope');
@@ -26,16 +27,6 @@ const log = createLogger('UserScope');
  * different user on the same browser profile.
  */
 const DATA_OWNER_KEY = 'faultmaven_data_owner_id';
-
-/**
- * Backend-session pointer keys written by the session layer (session-core
- * `persistSession`). On an identity change we
- * cannot ask the backend to delete the PRIOR user's session — their credential
- * is already gone — so we drop the LOCAL pointer, forcing the new user to mint a
- * fresh session instead of resuming the previous user's (`getAuthHeaders` reads
- * `sessionId` for `X-Session-Id`).
- */
-const BACKEND_SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId'];
 
 /**
  * Enforce that all at-rest per-user data belongs to `userId`.
@@ -95,10 +86,20 @@ export async function enforceUserDataScope(userId: string | undefined | null): P
       // Purge conversations / titles / case pointer / optimistic state. Do NOT
       // preserve pins — they are the prior user's case ids.
       await PersistenceManager.clearAllPersistenceData();
-      // Drop the backend-session pointer and reset the in-memory client id so the
-      // new user gets a fresh session rather than resuming the prior user's.
+      // Drop the backend-session pointer and reset the in-memory client id so
+      // the new user gets a fresh session rather than resuming the prior user's.
+      // We cannot ask the backend to delete the PRIOR user's session — their
+      // credential is already gone — so dropping the local pointer is what
+      // forces a fresh mint (`getAuthHeaders` reads `sessionId` for
+      // `X-Session-Id`).
+      //
+      // WHICH keys that is belongs to session-core, which writes them. This
+      // was a fourth copy of that list. `includeClientId` covers the `clientId`
+      // session-core MIRRORS from the create response; the line above clears
+      // `faultmaven_client_id`, the one ClientSessionManager owns and presents
+      // to resume — two different keys, and the reason both calls are here.
       await clientSessionManager.clearClientId();
-      await browser.storage.local.remove(BACKEND_SESSION_KEYS);
+      await clearPersistedSession({ includeClientId: true });
       await browser.storage.local.set({ [DATA_OWNER_KEY]: userId });
       return true;
     }

@@ -1,4 +1,4 @@
-import { getApiUrl } from "../../../config";
+import { getApiTransport } from '../transport';
 import { Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
@@ -296,7 +296,7 @@ function toUserCase(c: any): UserCase {
  */
 export async function getCase(caseId: string): Promise<UserCase> {
   const response = await authenticatedFetchWithRetry(
-    `${await getApiUrl()}/api/v1/cases/${encodeURIComponent(caseId)}`,
+    `${await getApiTransport().baseUrl()}/api/v1/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET', credentials: 'include' }
   );
   if (!response.ok) {
@@ -316,7 +316,7 @@ export async function getUserCases(filters?: {
   limit?: number;
   offset?: number;
 }): Promise<UserCase[]> {
-  const url = new URL(`${await getApiUrl()}/api/v1/cases`);
+  const url = new URL(`${await getApiTransport().baseUrl()}/api/v1/cases`);
   if (filters) {
     Object.entries(filters).forEach(([k, v]) => {
       if (v !== undefined) url.searchParams.append(k, String(v));
@@ -376,7 +376,7 @@ export async function createCase(
   // (see submitTurn and the resilientOperation `idempotent` flag). The key must
   // match the backend format `^[a-zA-Z0-9_-]+$` (8–255 chars); optimistic ids and
   // UUIDs both satisfy it.
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases`, {
     method: 'POST',
     body: prepareBody(data),
     credentials: 'include',
@@ -428,7 +428,7 @@ export async function createCase(
  * @throws {HttpError} For other HTTP errors
  */
 export async function deleteCase(caseId: string): Promise<void> {
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
     method: 'DELETE',
     credentials: 'include'
   });
@@ -443,7 +443,7 @@ export async function deleteCase(caseId: string): Promise<void> {
 }
 
 export async function updateCaseTitle(caseId: string, title: string): Promise<void> {
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
     method: 'PUT',
     body: prepareBody({ title } as CaseUpdateRequest),
     credentials: 'include'
@@ -478,7 +478,7 @@ export async function getCaseConversation(
   options: { offset?: number; includeDebug?: boolean } = {}
 ): Promise<MessagesPage> {
   const { offset = 0, includeDebug = false } = options;
-  const apiBase = await getApiUrl();
+  const apiBase = await getApiTransport().baseUrl();
   const pageSize = 100; // backend per-request cap (le=100)
 
   // The backend `/messages` endpoint caps each request at limit<=100, so a
@@ -591,7 +591,7 @@ export async function submitTurn(
     form.append('files', file);
   }
 
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/turns`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}/turns`, {
     method: 'POST',
     body: form,
     credentials: 'include',
@@ -651,7 +651,7 @@ export async function submitTurn(
   if (response.status === 202) {
     const location = response.headers.get('Location');
     if (!location) throw new Error('Missing Location header for async turn');
-    const jobUrl = new URL(location, await getApiUrl()).toString();
+    const jobUrl = new URL(location, await getApiTransport().baseUrl()).toString();
     let delay = POLL_INITIAL_MS;
     // Budget is measured as WALL-CLOCK from the first poll, counting both the
     // time spent inside each poll request and the backoff sleeps. Previously
@@ -746,7 +746,7 @@ export async function generateCaseTitle(
   const body: Record<string, any> = {};
   if (options?.max_words) body.max_words = options.max_words;
   if (options?.hint) body.hint = options.hint;
-  const response = await authenticatedFetchWithRetry(`${await getApiUrl()}/api/v1/cases/${caseId}/title`, {
+  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}/title`, {
     method: 'POST',
     body: Object.keys(body).length ? prepareBody(body) : undefined,
     credentials: 'include'

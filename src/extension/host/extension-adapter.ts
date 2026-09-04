@@ -6,61 +6,19 @@
  * doing this while the extension is still the only host: the interface earns
  * its shape in production, and the second host is not also the first test of it.
  *
- * Only `store`, `navigation` and `pageCapture` are implemented, because only
- * those are wired (see `WiredHost`).
+ * What it composes rather than defines: the store (`extension-store.ts`, which
+ * every extension context installs) and the endpoints (`endpoints.ts`, which is
+ * a user's persisted choice). What it defines is what only a side panel needs —
+ * navigation and page capture.
  */
 import { browser } from 'wxt/browser';
 import { capturePage } from './extension-page-capture';
-import { getDashboardUrl } from '../../config';
+import { extensionEndpoints, getDashboardUrl } from './endpoints';
+import { extensionStore } from './extension-store';
 import { createLogger } from '../../lib/utils/logger';
-import type { HostCapabilities, HostStore, StoredValue } from '../../shared/host';
+import type { HostCapabilities } from '../../shared/host';
 
 const log = createLogger('extensionHost');
-
-/**
- * `browser.storage.local`, with one difference that is deliberate.
- *
- * `subscribe` takes the keys the caller cares about and filters for them, where
- * the raw `storage.onChanged` hands every listener every change in every area.
- * The filtering has to live somewhere; here it is written once and every caller
- * gets the same rule, rather than each call site re-deriving "is this mine?"
- * — which is how `useConfiguredEndpoint` came to test `changes.apiBaseUrl ||
- * changes.dashboardUrl || changes.apiEndpoint` inline.
- *
- * Membership, not truthiness: a key being PRESENT in the change set is the
- * signal, including a removal (whose `newValue` is `undefined`). Filtering on
- * the value would make a cleared endpoint invisible to its own subscriber.
- */
-const store: HostStore = {
-  get: (keys) => browser.storage.local.get(keys),
-
-  set: (items) => browser.storage.local.set(items),
-
-  remove: (keys) => browser.storage.local.remove(keys),
-
-  subscribe(keys, onChange) {
-    const listener = (
-      changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
-      areaName: string,
-    ) => {
-      // `local` only. `sync`, `session` and `managed` share this event, and a
-      // caller asking about a local key must not be woken by a same-named key
-      // in another area.
-      if (areaName !== 'local') return;
-
-      const changed: Record<string, StoredValue> = {};
-      for (const key of keys) {
-        if (Object.prototype.hasOwnProperty.call(changes, key)) {
-          changed[key] = changes[key].newValue;
-        }
-      }
-      if (Object.keys(changed).length > 0) onChange(changed);
-    };
-
-    browser.storage.onChanged.addListener(listener);
-    return () => browser.storage.onChanged.removeListener(listener);
-  },
-};
 
 /**
  * Navigation, as the extension performs it.
@@ -112,17 +70,16 @@ const navigation: HostCapabilities['navigation'] = {
 };
 
 /**
- * The extension host, as a module singleton.
+ * The extension's capabilities, as a module singleton.
  *
- * Stable by construction, so it is safe in a hook's dependency array — a host
- * rebuilt on every render would re-run every effect that subscribes through it.
- */
-/**
- * The extension's capabilities. No session: nobody is signed in at module load,
- * and the entry point composes this with one before the shell is mounted.
+ * No session: nobody is signed in at module load, and the entry point composes
+ * this with one before the shell is mounted. Stable by construction, so it is
+ * safe in a hook's dependency array — a host rebuilt on every render would
+ * re-run every effect that subscribes through it.
  */
 export const extensionHost: HostCapabilities = {
-  store,
+  store: extensionStore,
+  endpoints: extensionEndpoints,
   navigation,
   // The one capability that is genuinely host-specific rather than
   // host-flavoured: a web page cannot read another tab, at all. Extensions can,

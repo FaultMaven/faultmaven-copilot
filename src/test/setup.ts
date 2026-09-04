@@ -64,6 +64,7 @@ Object.defineProperty(window, 'navigator', {
 // ones a test stages there. Individual tests override with setApiTransport().
 import { setApiTransport } from '../lib/api/transport';
 import { setHostStore } from '../lib/host-store';
+import { setHostEndpoints } from '../lib/host-endpoints';
 import { beforeEach as _beforeEach } from 'vitest';
 
 _beforeEach(() => {
@@ -73,6 +74,13 @@ _beforeEach(() => {
     set: (items: Record<string, unknown>) => (global as any).browser.storage.local.set(items),
     remove: (keys: string[]) => (global as any).browser.storage.local.remove(keys),
     subscribe: (_keys: string[], _onChange: (c: Record<string, unknown>) => void) => () => {},
+  });
+  // …and its endpoints, which every extension context installs at its entry
+  // point, before any credential or capability call resolves a backend URL.
+  setHostEndpoints({
+    apiUrl: async () => 'http://localhost:8090',
+    dashboardUrl: async () => 'http://localhost:3333',
+    subscribe: (_onChange: () => void) => () => {},
   });
   setApiTransport({
     baseUrl: async () => 'http://localhost:8090',

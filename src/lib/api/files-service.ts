@@ -1,9 +1,9 @@
+import { getApiTransport } from './transport';
 /**
  * Files Service - API calls for uploaded files data
  */
 
 import type { UploadedFileMetadata, UploadedFileDetailsResponse } from '../../types/case';
-import { getApiUrl } from '../../config';
 import { authenticatedFetchWithRetry } from './client';
 import { createLogger } from '~/lib/utils/logger';
 
@@ -19,7 +19,7 @@ const log = createLogger('FilesService');
  * GET /api/v1/cases/{case_id}/uploaded-files
  */
 async function getUploadedFiles(caseId: string): Promise<UploadedFileMetadata[]> {
-  const apiUrl = await getApiUrl();
+  const apiUrl = await getApiTransport().baseUrl();
 
   const response = await authenticatedFetchWithRetry(`${apiUrl}/api/v1/cases/${caseId}/uploaded-files`, {
     method: 'GET',
@@ -39,7 +39,7 @@ async function getUploadedFileDetails(
   caseId: string,
   fileId: string
 ): Promise<UploadedFileDetailsResponse> {
-  const apiUrl = await getApiUrl();
+  const apiUrl = await getApiTransport().baseUrl();
 
   const response = await authenticatedFetchWithRetry(
     `${apiUrl}/api/v1/cases/${caseId}/uploaded-files/${fileId}`,

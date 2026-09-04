@@ -1,6 +1,6 @@
-import { getApiUrl } from "../../config";
+import { getHostStore } from '../host-store';
+import { getApiTransport } from '../api/transport';
 import config from "../../config";
-import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
 import { getAuthHeaders } from '../api/fetch-utils';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
@@ -66,28 +66,23 @@ export class ClientSessionManager {
 
   /**
    * Get or generate a unique client ID for this browser instance
-   * Client ID persists across browser sessions via browser.storage.local
+   * Client ID persists across browser sessions via host storage
    */
   async getOrCreateClientId(): Promise<string> {
     if (!this.clientId) {
       // Try to get from storage first
-      if (typeof browser !== 'undefined' && browser.storage) {
-        const stored = await browser.storage.local.get([ClientSessionManager.CLIENT_ID_KEY]);
-        this.clientId = stored[ClientSessionManager.CLIENT_ID_KEY];
-      } else {
-        // Fallback for non-extension environments (e.g., unit tests)
-        this.clientId = localStorage.getItem(ClientSessionManager.CLIENT_ID_KEY);
-      }
+      // No non-extension fallback any more: answering storage in whatever
+      // environment this runs in is exactly what the host store is for, and a
+      // localStorage branch here was a second storage path by another name.
+      const stored = (await getHostStore().get([ClientSessionManager.CLIENT_ID_KEY])) as
+        Record<string, string | undefined>;
+      this.clientId = stored[ClientSessionManager.CLIENT_ID_KEY] ?? null;
 
       if (!this.clientId) {
         // Generate UUID v4 using crypto.randomUUID() for performance
         this.clientId = crypto.randomUUID();
         
-        if (typeof browser !== 'undefined' && browser.storage) {
-          await browser.storage.local.set({ [ClientSessionManager.CLIENT_ID_KEY]: this.clientId });
-        } else {
-          localStorage.setItem(ClientSessionManager.CLIENT_ID_KEY, this.clientId);
-        }
+        await getHostStore().set({ [ClientSessionManager.CLIENT_ID_KEY]: this.clientId });
         
         log.info('Generated new client ID:', this.clientId.slice(0, 8) + '...');
       } else {
@@ -104,7 +99,7 @@ export class ClientSessionManager {
    */
   async createSession(userContext?: any, timeoutMinutes?: number): Promise<SessionCreateResponse> {
     const clientId = await this.getOrCreateClientId();
-    const apiUrl = await getApiUrl();
+    const apiUrl = await getApiTransport().baseUrl();
 
     // Use provided timeout or default, enforcing min/max limits
     const sessionTimeout = this.validateSessionTimeout(timeoutMinutes || ClientSessionManager.DEFAULT_SESSION_TIMEOUT);
@@ -180,12 +175,8 @@ export class ClientSessionManager {
    */
   async clearClientId(): Promise<void> {
     this.clientId = null;
-    
-    if (typeof browser !== 'undefined' && browser.storage) {
-      await browser.storage.local.remove([ClientSessionManager.CLIENT_ID_KEY]);
-    } else {
-      localStorage.removeItem(ClientSessionManager.CLIENT_ID_KEY);
-    }
+
+    await getHostStore().remove([ClientSessionManager.CLIENT_ID_KEY]);
     
     log.info('Client ID cleared - next session will be new');
   }

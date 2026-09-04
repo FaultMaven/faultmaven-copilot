@@ -1,4 +1,4 @@
-import { getApiUrl } from "../../../config";
+import { getApiTransport } from '../transport';
 import { getAuthHeaders } from "../fetch-utils";
 import { createSession } from "../session-core";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
@@ -14,7 +14,7 @@ export async function heartbeatSession(sessionId: string): Promise<void> {
   // login screen. Here we attach auth headers directly and surface any failure to
   // the caller (which swallows it) WITHOUT mutating stored auth state.
   const headers = await getAuthHeaders();
-  const response = await fetchWithTimeout(`${await getApiUrl()}/api/v1/sessions/${sessionId}/heartbeat`, {
+  const response = await fetchWithTimeout(`${await getApiTransport().baseUrl()}/api/v1/sessions/${sessionId}/heartbeat`, {
     method: 'POST',
     headers,
     credentials: 'include'
