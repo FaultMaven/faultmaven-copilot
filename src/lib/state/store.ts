@@ -5,7 +5,6 @@ import { createSessionSlice, SessionSlice } from './slices/session-slice';
 import { createCasesSlice, CasesSlice } from './slices/cases-slice';
 import { createPendingOpsSlice, PendingOpsSlice } from './slices/pending-ops-slice';
 import { debounce } from '../utils/debounce';
-import { browser } from 'wxt/browser';
 import { createLogger } from '../utils/logger';
 import { idMappingManager, OptimisticConversationItem } from '../optimistic';
 import { memoryManager } from '../utils/memory-manager';

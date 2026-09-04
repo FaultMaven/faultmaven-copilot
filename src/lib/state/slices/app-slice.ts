@@ -1,6 +1,5 @@
 import { getHostEndpoints } from '../../host-endpoints';
 import { StateCreator } from 'zustand';
-import { browser } from 'wxt/browser';
 import { capabilitiesManager, BackendCapabilities } from '../../capabilities';
 import { createLogger } from '../../utils/logger';
 import type { KnowledgeDocument } from '../../../lib/api';

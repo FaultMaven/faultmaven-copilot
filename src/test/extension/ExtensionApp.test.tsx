@@ -8,22 +8,59 @@
  * split — and both survived a mutation that removed them.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const { mockPM, capsFetch, authState } = vi.hoisted(() => ({
-  mockPM: {
-    isRecoveryInProgress: vi.fn().mockResolvedValue(false),
+const {
+  mockPM,
+  capsFetch,
+  authState,
+  detectExtensionReload,
+  logoutAuth,
+  messageListeners,
+  capturedSignOut,
+} =
+  vi.hoisted(() => ({
+    mockPM: {
+      isRecoveryInProgress: vi.fn().mockResolvedValue(false),
+      recoverConversationsFromBackend: vi.fn(),
+      markSyncComplete: vi.fn().mockResolvedValue(undefined),
+      clearAllPersistenceData: vi.fn().mockResolvedValue(undefined),
+    },
+    capsFetch: vi.fn(),
+    authState: { isAuthenticated: false },
     detectExtensionReload: vi.fn().mockResolvedValue(false),
-    recoverConversationsFromBackend: vi.fn(),
-    markSyncComplete: vi.fn().mockResolvedValue(undefined),
-  },
-  capsFetch: vi.fn(),
-  authState: { isAuthenticated: false },
-}));
+    logoutAuth: vi.fn(),
+    messageListeners: [] as ((msg: any) => void)[],
+    capturedSignOut: { current: (_fn: (() => Promise<void>) | null) => {} },
+  }));
 
 vi.mock('../../lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
+vi.mock('../../extension/extension-reload', () => ({
+  detectExtensionReload,
+  clearReloadFlag: vi.fn().mockResolvedValue(undefined),
+  stampRuntimeIdentity: vi.fn().mockResolvedValue(undefined),
+  markReloadDetected: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../../lib/api/services/auth-service', () => ({ logoutAuth }));
+
+// WHO is signed in is the extension's own question now — it asks its credential
+// stack directly rather than reading an answer the shared store produced.
+const HOST_USER = {
+  user_id: 'u1',
+  username: 'op',
+  email: 'op@example.invalid',
+  display_name: 'Op',
+  roles: ['user'],
+};
+vi.mock('../../lib/auth/auth-manager', () => ({
+  authManager: {
+    isAuthenticated: vi.fn(async () => authState.isAuthenticated),
+    getCurrentUser: vi.fn(async () => (authState.isAuthenticated ? HOST_USER : null)),
+    clearAllAuthData: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 vi.mock('../../lib/capabilities', () => ({ capabilitiesManager: { fetch: capsFetch } }));
 vi.mock('../../lib/auth/auth-config', () => ({
   getAuthConfig: vi.fn().mockResolvedValue({
@@ -31,31 +68,36 @@ vi.mock('../../lib/auth/auth-config', () => ({
     features: { supports_registration: false, supports_password_reset: false, supports_mfa: false },
   }),
 }));
-vi.mock('../../shared/ui/components/ConversationsList', () => ({
-  default: () => <div data-testid="conversations-list" />,
+// A probe, not the panel. What this file tests is what the ENTRY builds and
+// hands over; rendering the real panel would pull every hook it owns into a
+// test about the gate above it.
+vi.mock('../../shared/ui/CopilotPanel', () => ({
+  default: ({ host }: any) => {
+    capturedSignOut.current(host.session.signOut);
+    return <div data-testid="panel-probe" />;
+  },
 }));
-vi.mock('../../shared/ui/hooks/useAuth', () => ({
-  useAuth: () => ({
-    isAuthenticated: authState.isAuthenticated,
-    currentUser: authState.isAuthenticated
-      ? {
-          user_id: 'u1',
-          username: 'op',
-          email: 'op@example.invalid',
-          display_name: 'Op',
-          is_dev_user: false,
-          is_active: true,
-          roles: ['user'],
-        }
-      : null,
-    logout: vi.fn(),
-  }),
-}));
-
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { useAppStore } from '../../lib/state/store';
 
 const b = (global as any).browser;
+
+/**
+ * Render the entry with a session, and hand back the `signOut` it put on the
+ * host. The panel is stubbed to a probe that publishes it: what the entry
+ * BUILDS is the subject, and mounting the real panel would pull in every hook
+ * it owns for a test about one function.
+ */
+async function captureHostSignOut(): Promise<() => Promise<void>> {
+  let signOut: (() => Promise<void>) | null = null;
+  capturedSignOut.current = (fn) => {
+    signOut = fn;
+  };
+  renderApp();
+  await screen.findByTestId('panel-probe');
+  if (!signOut) throw new Error('the entry mounted the panel without a session signOut');
+  return signOut;
+}
 
 const renderApp = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -72,7 +114,16 @@ describe('ExtensionApp — the gate above the shared panel', () => {
     authState.isAuthenticated = false;
     // AuthScreen subscribes to runtime messages and unsubscribes on unmount;
     // the shared global mock has no removeListener.
-    b.runtime = { ...(b.runtime ?? {}), onMessage: { addListener: vi.fn(), removeListener: vi.fn() } };
+    messageListeners.length = 0;
+    b.runtime = {
+      ...(b.runtime ?? {}),
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+      onMessage: {
+        addListener: vi.fn((l: (msg: any) => void) => messageListeners.push(l)),
+        removeListener: vi.fn(),
+      },
+    };
+    useAppStore.setState({ currentUser: null });
     useAppStore.setState({
       hasCompletedFirstRun: null,
       initializingCapabilities: true,
@@ -115,4 +166,147 @@ describe('ExtensionApp — the gate above the shared panel', () => {
     expect(screen.queryByText(/Sign in with/i)).toBeNull();
   });
 
+
+  /**
+   * The panel does not mount until recovery has settled.
+   *
+   * This is the ORDER the one shared effect used to keep by construction:
+   * recovery writes host storage and the panel's hydration reads it, so a panel
+   * mounted alongside recovery hydrates the pre-recovery state and shows an
+   * empty transcript with the user's cases sitting in storage. The gate is what
+   * replaces that, and it shows the same screen the panel used to show.
+   */
+  it('shows "Recovering session…" instead of the panel while recovery runs', async () => {
+    authState.isAuthenticated = true;
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    detectExtensionReload.mockResolvedValue(true);
+    mockPM.recoverConversationsFromBackend.mockImplementation(() => new Promise(() => {}));
+
+    renderApp();
+
+    expect(await screen.findByText(/Recovering session/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('panel-probe')).toBeNull();
+  });
+
+  it('mounts the panel once recovery has settled', async () => {
+    authState.isAuthenticated = true;
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    detectExtensionReload.mockResolvedValue(true);
+    mockPM.recoverConversationsFromBackend.mockResolvedValue({
+      success: true, recoveredCases: 2, recoveredConversations: 0, errors: [], strategy: 'metadata_only_recovery',
+    });
+
+    renderApp();
+
+    expect(await screen.findByTestId('panel-probe')).toBeInTheDocument();
+  });
+
+  /**
+   * A sign-in that completed in ANOTHER context, while this panel shows nothing
+   * but the loading screen.
+   *
+   * The shared store used to hold this listener, which is how a tree that owns
+   * no credential came to subscribe to runtime messaging. The window it covers
+   * is real: the sign-in screen has a listener too, but it is not mounted during
+   * startup, so without this the panel would sit signed-out until the user
+   * clicked something.
+   */
+  it('reloads when a sign-in completes elsewhere while nobody is signed in here', async () => {
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
+
+    renderApp();
+    await screen.findByText(/Sign in with/i);
+
+    await act(async () => {
+      messageListeners.forEach((l) =>
+        l({ type: 'auth_state_changed', authState: { isAuthenticated: true, user: HOST_USER } }),
+      );
+    });
+
+    expect(reload).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Sign-out, which is the host's because the credential is.
+ *
+ * `auth-slice` used to own this: it called `logoutAuth` from the shared barrel
+ * and broadcast the result itself. Both are here now, and the behaviour the
+ * shared slice was carrying — #143, that a failed POST must still complete the
+ * LOCAL sign-out rather than leave the app half-signed-out — has to survive the
+ * move, so it is asserted on the host's `signOut` instead.
+ */
+describe('the extension session signs out', () => {
+  let hostSignOut: () => Promise<void>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    authState.isAuthenticated = true;
+    messageListeners.length = 0;
+    b.runtime = {
+      ...(b.runtime ?? {}),
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+      onMessage: {
+        addListener: vi.fn((l: (msg: any) => void) => messageListeners.push(l)),
+        removeListener: vi.fn(),
+      },
+    };
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    useAppStore.setState({ currentUser: null });
+    Object.defineProperty(window, 'location', { configurable: true, value: { reload: vi.fn() } });
+
+    // Reach the session the entry hands the panel, without rendering the panel:
+    // CopilotPanel is not what is under test here, and mounting it drags every
+    // hook it owns into a test about one function.
+    hostSignOut = await captureHostSignOut();
+  });
+
+  it('completes the local sign-out and does NOT reject when the backend POST fails', async () => {
+    logoutAuth.mockRejectedValue(new Error('Server error 500'));
+
+    await expect(hostSignOut()).resolves.toBeUndefined();
+
+    expect(useAppStore.getState().currentUser).toBeNull();
+  });
+
+  it('clears the identity on a successful sign-out', async () => {
+    logoutAuth.mockResolvedValue({ allSessionsEnded: true });
+
+    await hostSignOut();
+
+    expect(logoutAuth).toHaveBeenCalled();
+    expect(useAppStore.getState().currentUser).toBeNull();
+  });
+
+  // The notice exists because signing out here cannot end the Dashboard's own
+  // token chain. Saying nothing would report a reach this client never verified.
+  it('warns about other sessions when the server did not confirm they ended', async () => {
+    logoutAuth.mockResolvedValue({ allSessionsEnded: false });
+    authState.isAuthenticated = false;
+
+    await act(async () => {
+      await hostSignOut();
+    });
+
+    expect(await screen.findByText(/could not confirm your other FaultMaven sessions/i))
+      .toBeInTheDocument();
+  });
+
+  it('says nothing when the server confirmed every session ended', async () => {
+    logoutAuth.mockResolvedValue({ allSessionsEnded: true });
+    authState.isAuthenticated = false;
+
+    await act(async () => {
+      await hostSignOut();
+    });
+
+    await screen.findByText(/Sign in with/i);
+    expect(screen.queryByText(/could not confirm your other FaultMaven sessions/i)).toBeNull();
+  });
 });

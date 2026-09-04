@@ -75,6 +75,7 @@ const host: WiredHost = {
     accessToken: async () => 'stub',
     signOut: null,
     onUnauthorized: () => {},
+    subscribeAuthState: () => () => {},
   },
 };
 const wrapper = hostWrapper(host);

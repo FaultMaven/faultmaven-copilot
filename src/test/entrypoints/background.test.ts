@@ -108,7 +108,9 @@ vi.mock('wxt/browser', () => ({
 // Setup global browser mock (for legacy/fallback code)
 (global as any).browser = mockBrowser;
 
-vi.mock('../../lib/api', () => ({
+// The credential stack is no longer reachable through the shared barrel, so
+// the module the worker actually imports is the one mocked here.
+vi.mock('../../lib/auth/auth-manager', () => ({
   authManager: {
     saveAuthState: mockAuthSaveState,
     clearAuthState: mockAuthClearState

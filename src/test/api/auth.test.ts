@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  getCurrentUser,
-  logoutAuth,
-  authManager,
-  AuthState,
-  getUserCases,
-  createCase
-} from '../../lib/api';
+import { AuthState, getUserCases, createCase } from '../../lib/api';
+// The credential stack is no longer re-exported by the shared barrel — that is
+// the route this step cut — so the extension's own modules are imported here
+// directly, which is what the extension itself does.
+import { getCurrentUser, logoutAuth } from '../../lib/api/services/auth-service';
+import { authManager } from '../../lib/auth/auth-manager';
 import { AuthenticationError } from '../../lib/errors/types';
 
 // Build-time constants only. Where the API lives is the host's answer, which

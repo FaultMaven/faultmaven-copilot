@@ -6,13 +6,11 @@ import React from 'react';
 
 // Mock dependencies
 vi.mock('../../lib/capabilities');
-vi.mock('../../shared/ui/hooks/useAuth', () => ({
-  useAuth: () => ({
-    isAuthenticated: false,
-    currentUser: null,
-    logout: vi.fn()
-  })
-}));
+// No auth stub. WHO is signed in is the extension's own question now — it asks
+// its credential stack directly — and this file's storage mock holds no
+// `authState`, so the real gate answers "nobody" and renders the sign-in screen.
+// That is stronger than the stub it replaces: the path under test is the real
+// one.
 vi.mock('../../lib/errors', () => ({
   useErrorHandler: () => ({ getErrorsByType: () => [], dismissError: vi.fn() }),
   useError: () => ({ showError: vi.fn() }),
