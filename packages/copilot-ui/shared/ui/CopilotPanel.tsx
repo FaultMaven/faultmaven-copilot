@@ -65,7 +65,22 @@ import { useDataUpload } from "./hooks/useDataUpload";
  */
 export type InitialCase =
   | { kind: 'new' }
-  | { kind: 'existing'; caseId: string };
+  | {
+      kind: 'existing';
+      caseId: string;
+      /**
+       * Show the case, do not let this user add to it.
+       *
+       * A teammate opening someone else's case gets the transcript and no
+       * composer or upload. Without it the panel offered both, and a turn sent
+       * into a case the user does not own is a write they cannot make — the
+       * failure arrives from the server, after they have typed it.
+       *
+       * WHO may write is the host's question: it knows the case's owner and the
+       * viewer. The panel only renders the answer.
+       */
+      readOnly?: boolean;
+    };
 
 /**
  * How much of the panel the host wants.
@@ -248,6 +263,11 @@ function CopilotPanelContent({
       log.info('Host opened the panel on a case', { caseId: initialCase.caseId });
     }
   }, [initialCase]);
+
+  // A host may open a case this user can read and not write. The flag holds
+  // for the life of the mount: the panel does not re-decide it, because the
+  // question — is this viewer the owner — is the host's.
+  const readOnly = initialCase?.kind === 'existing' && initialCase.readOnly === true;
 
   // --- Data Recovery ---
   //
@@ -512,6 +532,7 @@ function CopilotPanelContent({
             onError={(error) => log.error('Content area boundary caught error', { error })}
           >
             <ContentArea
+              readOnly={readOnly}
               activeTab={activeTab}
               activeCaseId={activeCaseId || undefined}
               activeCase={activeCase}
