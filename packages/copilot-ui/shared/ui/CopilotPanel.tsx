@@ -98,6 +98,15 @@ export type InitialCase =
  */
 export type PanelChrome = 'full' | 'embedded';
 
+/**
+ * The class the package's stylesheet is scoped to.
+ *
+ * Exported because it is a contract, not an implementation detail: a host
+ * rendering package markup outside `CopilotPanel` needs the same scope, and a
+ * host testing for style leakage needs to name it.
+ */
+export const PANEL_ROOT_CLASS = 'fm-copilot-panel';
+
 export interface CopilotPanelProps {
   /**
    * The host this panel runs in. Non-nullable, and its `session` is
@@ -433,7 +442,11 @@ function CopilotPanelContent({
 
   return (
     <ErrorBoundary>
-      <div className="flex h-full bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
+      {/* `fm-copilot-panel` is the scope every rule in the package's stylesheet
+          sits inside. Without it the reset, the button transition, the link
+          hover, the scrollbar width and the markdown rules apply to the whole
+          host application. */}
+      <div className={`${PANEL_ROOT_CLASS} flex h-full bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden`}>
         {/* The sidebar carries the case list AND the account row, so `embedded`
             omits the whole component rather than emptying it: a host that
             embeds the panel has its own case list and its own account menu,

@@ -18,6 +18,12 @@
 export { default as CopilotPanel } from './shared/ui/CopilotPanel';
 export { default } from './shared/ui/CopilotPanel';
 export type { CopilotPanelProps, InitialCase, PanelChrome } from './shared/ui/CopilotPanel';
+/**
+ * The class the package's stylesheet is scoped to. Every rule in
+ * `@faultmaven/copilot-ui/styles/globals.css` sits inside it, so importing that
+ * stylesheet cannot restyle the rest of a host's application.
+ */
+export { PANEL_ROOT_CLASS } from './shared/ui/CopilotPanel';
 
 /** The transcript on its own, for a host embedding the conversation alone. */
 export { ChatInterface } from './shared/ui/components/ChatInterface';

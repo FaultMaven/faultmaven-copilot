@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { installExtensionHostContext } from '../../extension/host/install';
+import '../../assets/styles/extension-base.css';  // preflight: this host owns the page
 import '@faultmaven/copilot-ui/styles/globals.css';  // The shared UI's theme + type scale
 import '../../assets/styles/sidepanel.css';    // Sidepanel-only height/overflow chain
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
