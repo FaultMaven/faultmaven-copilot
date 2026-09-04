@@ -63,9 +63,17 @@ Object.defineProperty(window, 'navigator', {
 // the same global `browser` mock above, so the values a request carries are the
 // ones a test stages there. Individual tests override with setApiTransport().
 import { setApiTransport } from '../lib/api/transport';
+import { setHostStore } from '../lib/host-store';
 import { beforeEach as _beforeEach } from 'vitest';
 
 _beforeEach(() => {
+  // A host always installs its store before the shared UI reads state.
+  setHostStore({
+    get: (keys: string[]) => (global as any).browser.storage.local.get(keys),
+    set: (items: Record<string, unknown>) => (global as any).browser.storage.local.set(items),
+    remove: (keys: string[]) => (global as any).browser.storage.local.remove(keys),
+    subscribe: (_keys: string[], _onChange: (c: Record<string, unknown>) => void) => () => {},
+  });
   setApiTransport({
     baseUrl: async () => 'http://localhost:8090',
     accessToken: async () => {

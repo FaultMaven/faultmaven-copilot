@@ -10,12 +10,13 @@ import { createLogger } from '../utils/logger';
 import { idMappingManager, OptimisticConversationItem } from '../optimistic';
 import { memoryManager } from '../utils/memory-manager';
 import { isSessionEnding } from './session-epoch';
+import { getHostStore } from '../host-store';
 
 const log = createLogger('Store');
 
 export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & PendingOpsSlice;
 
-// The store-state keys that are persisted to browser.storage.local and hydrated
+// The store-state keys that are persisted to host storage and hydrated
 // back on load. Shared so the persist trigger (the subscribe change-detection
 // below) and the hydrate read (useDataRecovery) draw from one list and can't
 // drift apart. NOTE: debouncedPersist's body still writes each key explicitly —
@@ -156,7 +157,7 @@ export const debouncedPersist = debounce(
       }
 
       if (Object.keys(storageData).length > 0) {
-        await browser.storage.local.set(storageData);
+        await getHostStore().set(storageData);
         log.debug('Store batched save completed', {
           keys: Object.keys(storageData),
           removedKeys: keysToRemove
@@ -164,7 +165,7 @@ export const debouncedPersist = debounce(
       }
 
       if (keysToRemove.length > 0) {
-        await browser.storage.local.remove(keysToRemove);
+        await getHostStore().remove(keysToRemove);
         log.debug('Store cleared empty keys', keysToRemove);
       }
     } catch (error) {

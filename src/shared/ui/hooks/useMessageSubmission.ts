@@ -179,10 +179,6 @@ export function useMessageSubmission() {
 
       setActiveCase(newCase);
 
-      await store.set({
-        faultmaven_current_case: realCaseId
-      });
-
       log.info('Case ID reconciliation completed', { optimisticId, realCaseId });
 
       triggerRefreshSessions();
@@ -454,8 +450,6 @@ export function useMessageSubmission() {
 
         setActiveCaseId(optimisticCaseId);
         setHasUnsavedNewChat(false);
-
-        await store.set({ faultmaven_current_case: optimisticCaseId });
 
         const realCaseId = await createOptimisticCaseInBackground(optimisticCaseId, null);
 

@@ -68,7 +68,7 @@ let sessionEnding = false;
  *
  * The persistence layer's `beforeunload` handler (`store.ts`) checks this to CANCEL
  * rather than flush the pending debounced persist. A flush here would write the
- * ending session's in-memory state back to `browser.storage.local` — and that state
+ * ending session's in-memory state back to extension storage — and that state
  * can be a prior user's at-rest residue (hydrated by `useDataRecovery`) that the
  * background just purged, re-homing it under the new owner after the purge (#164).
  * `handleLogout` already cancels the debounce before its purge; the reload paths

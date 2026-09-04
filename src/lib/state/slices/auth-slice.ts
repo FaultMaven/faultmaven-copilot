@@ -6,10 +6,14 @@ import { hasRole, isAdmin } from '../../../lib/utils/roles';
 import { EventBus, AuthStateChangedEvent } from '../../../lib/utils/messaging';
 import { bumpEpoch, markSessionEnding } from '../session-epoch';
 import type { StoreState } from '../store';
+import { getHostStore } from '../../host-store';
 
-// Shape of the browser.storage.onChanged payload we consume (a subset of the
+// Shape of the storage-change payload we consume (a subset of the
 // full listener signature — we only read newValue/oldValue for the authState key).
 type StorageChanges = Record<string, { newValue?: unknown; oldValue?: unknown }>;
+
+/** The keys whose change means this client's auth state may no longer hold. */
+const WATCHED_AUTH_KEYS = ['authState'];
 
 const log = createLogger('AuthSlice');
 
@@ -74,6 +78,7 @@ export interface AuthSlice {
 
 export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set, get) => {
   let unsubscribeEventBus: (() => void) | null = null;
+  let unsubscribeStorage: (() => void) | null = null;
   let handleStorageChange: ((changes: StorageChanges) => void) | null = null;
 
   return {
@@ -154,7 +159,12 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       // 3. Set up Storage listener (if not already set up)
       if (!handleStorageChange) {
         handleStorageChange = (changes: StorageChanges) => {
-          if (changes.authState && !changes.authState.newValue && changes.authState.oldValue) {
+          // Presence-and-falsy, where this used to also require `oldValue`. A
+          // change notification only fires for a key that ACTUALLY changed, so a
+          // watched key arriving with no value was cleared — there is no other
+          // way to reach this callback with it present. The host store reports
+          // the new value only, and this is the same condition stated without it.
+          if ('authState' in changes && !changes.authState.newValue) {
             // The authState key was cleared underneath us (logout / hard 401 in
             // another context). Fence the session before reacting so in-flight
             // writers' post-await writes are discarded.
@@ -169,9 +179,13 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
           }
         };
 
-        if (typeof browser !== 'undefined' && browser.storage) {
-          browser.storage.onChanged.addListener(handleStorageChange);
-        }
+        // The host decides what "these keys changed" means; in a web host with
+        // one writer it simply never fires, and this needs no branch for that.
+        unsubscribeStorage = getHostStore().subscribe(WATCHED_AUTH_KEYS, (changed) =>
+          handleStorageChange!(
+            Object.fromEntries(Object.entries(changed).map(([k, v]) => [k, { newValue: v }])),
+          ),
+        );
       }
     },
 

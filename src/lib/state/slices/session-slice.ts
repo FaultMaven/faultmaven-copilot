@@ -6,6 +6,7 @@ import { tokenManager } from '../../auth/token-manager';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
+import { getHostStore } from '../../host-store';
 
 const log = createLogger('SessionSlice');
 
@@ -52,11 +53,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       }
 
       try {
-        if (typeof browser === 'undefined' || !browser.storage) {
-          throw new Error('Browser storage not available');
-        }
-
-        const result = await browser.storage.local.get(['sessionId']);
+        const result = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
 
         if (result.sessionId) {
           log.debug('Using existing session', { sessionId: result.sessionId });
@@ -86,7 +83,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         heartbeatInterval = setInterval(async () => {
           try {
             if (!(await tokenManager.isAuthenticated())) return;
-            const stored = await browser.storage.local.get(['sessionId']);
+            const stored = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
             if (stored.sessionId) {
               await heartbeatSession(stored.sessionId);
               log.debug('Session heartbeat sent', { sessionId: stored.sessionId });
@@ -125,7 +122,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         // duplicated the persistence logic that could drift from session-core.
         await coreRefreshSession();
 
-        const stored = await browser.storage.local.get(['sessionId']);
+        const stored = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
         const sessionId = stored.sessionId as string | undefined;
         if (!sessionId) {
           throw new Error('Session refresh did not persist a session_id');
@@ -156,7 +153,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       }
 
       try {
-        await browser.storage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId']);
+        await getHostStore().remove(['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId']);
         set({
           sessionId: null,
           isSessionInitialized: false,

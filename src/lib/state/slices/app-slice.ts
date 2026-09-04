@@ -5,6 +5,7 @@ import { capabilitiesManager, BackendCapabilities } from '../../capabilities';
 import { createLogger } from '../../utils/logger';
 import type { KnowledgeDocument } from '../../../lib/api';
 import type { StoreState } from '../store';
+import { getHostStore } from '../../host-store';
 
 const log = createLogger('AppSlice');
 
@@ -48,7 +49,7 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   setHasCompletedFirstRun: (completed) => set({ hasCompletedFirstRun: completed }),
   setSidebarCollapsed: (collapsed) => {
     set({ sidebarCollapsed: collapsed });
-    browser.storage.local.set({ sidebarCollapsed: collapsed }).catch((err) => {
+    getHostStore().set({ sidebarCollapsed: collapsed }).catch((err) => {
       log.error('Failed to persist sidebar state', err);
     });
   },
@@ -60,12 +61,16 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   initializeApp: async () => {
     try {
       // Load first-run status
-      const stored = await browser.storage.local.get(['hasCompletedFirstRun']);
+      const stored = (await getHostStore().get(['hasCompletedFirstRun'])) as {
+        hasCompletedFirstRun?: boolean;
+      };
       const completedFirstRun = stored.hasCompletedFirstRun || false;
       set({ hasCompletedFirstRun: completedFirstRun });
 
       // Load sidebar state
-      const sidebarStored = await browser.storage.local.get(['sidebarCollapsed']);
+      const sidebarStored = (await getHostStore().get(['sidebarCollapsed'])) as {
+        sidebarCollapsed?: boolean;
+      };
       if (sidebarStored.sidebarCollapsed !== undefined) {
         set({ sidebarCollapsed: sidebarStored.sidebarCollapsed });
       }
