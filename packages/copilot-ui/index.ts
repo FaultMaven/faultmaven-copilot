@@ -48,6 +48,19 @@ export type {
 } from './shared/host';
 
 /**
+ * The Dashboard-panel advertisement: a page that renders the panel itself says
+ * so, and the extension's side panel stands down on that tab. One definition,
+ * because a copy in either repository can drift while both stay green — and the
+ * subtle half is the predicate, where the empty string and `"false"` do not
+ * advertise.
+ */
+export {
+  DASHBOARD_PANEL_ATTR,
+  DASHBOARD_PANEL_MESSAGE,
+  dashboardAdvertisesPanel,
+} from './shared/host/panel-advertisement';
+
+/**
  * How a host hands its answers to the modules that cannot ask React for them —
  * the Zustand store, its slices, the session machinery, the credential-free
  * request path. Installed once per context, at the host's entry point, before
