@@ -107,6 +107,29 @@ describe('extensionHost.store', () => {
   });
 });
 
+describe('extensionHost.pageCapture', () => {
+  // Nothing asserted this arm, so declaring the EXTENSION incapable of capture
+  // reddened no test — the host could have shipped explaining to its own users
+  // that they needed the extension they were already running. Found by
+  // mutating the adapter; this is the assertion that now catches it.
+  it('declares capture supported, and wires it to the extension implementation', async () => {
+    expect(extensionHost.pageCapture.supported).toBe(true);
+
+    const origTabs = b.tabs;
+    b.tabs = { query: vi.fn().mockResolvedValue([]) };
+    try {
+      // A stub would resolve; the real implementation reaches tabs.query first
+      // and refuses when there is no active tab.
+      await expect(
+        (extensionHost.pageCapture as { capture: () => Promise<unknown> }).capture(),
+      ).rejects.toThrow('No active tab found');
+      expect(b.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true });
+    } finally {
+      b.tabs = origTabs;
+    }
+  });
+});
+
 describe('extensionHost.navigation', () => {
   const origTabs = b.tabs;
   const origRuntime = b.runtime;

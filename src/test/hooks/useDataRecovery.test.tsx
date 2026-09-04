@@ -64,6 +64,7 @@ const host: WiredHost = {
   } as unknown as HostStore,
   // Unused by this hook; present because a host is whole or it is not one.
   navigation: { dashboard: vi.fn(), settings: null },
+  pageCapture: { supported: false, reason: 'n/a', installUrl: 'https://example.invalid' },
 };
 const wrapper = hostWrapper(host);
 const renderRecovery = () => renderHook(() => useDataRecovery(), { wrapper });
