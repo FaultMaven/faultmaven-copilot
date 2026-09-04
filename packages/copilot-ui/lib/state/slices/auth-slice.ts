@@ -1,6 +1,10 @@
 import { StateCreator } from 'zustand';
 import { createLogger } from '../../../lib/utils/logger';
-import { bumpEpoch, markSessionEnding } from '../session-epoch';
+import { bumpEpoch, clearSessionEnding, markSessionEnding } from '../session-epoch';
+import { PersistenceManager } from '../../utils/persistence-manager';
+import { clearPersistedSession } from '../../api/session-core';
+import { clientSessionManager } from '../../session/client-session-manager';
+import { idMappingManager, pendingOpsManager } from '../../optimistic';
 import type { StoreState } from '../store';
 import type { HostUser } from '../../../shared/host';
 
@@ -59,13 +63,84 @@ export interface AuthSlice {
 }
 
 export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set, get) => {
+  /**
+   * The session is over. Leave nothing of it behind.
+   *
+   * This used to bump the epoch and null the identity, and that was enough only
+   * because the extension reaches sign-out through a screen that ALSO purges. A
+   * host whose sign-out arrives as a notification — the web host's account
+   * menu, another tab, a hard 401 — left the previous user's conversations,
+   * titles, pins, active case and session id in storage and in memory. The next
+   * user hydrated them and sent the previous user's `X-Session-Id`.
+   *
+   * So the reaction to "nobody is signed in" is now the same teardown the
+   * extension's identity-change purge performs, wherever it arrives from.
+   */
   const signOutLocally = () => {
-    // Bump the epoch FIRST, before the set() below, so an in-flight writer whose
-    // continuation is already queued sees the moved epoch and skips its
-    // post-await writes. Covers a hard 401 whose teardown ran in the background
-    // context (a different module epoch) and reached us as a notification.
+    // 1. Fence FIRST, synchronously, before anything awaits: an in-flight writer
+    //    whose continuation is already queued sees the moved epoch and skips its
+    //    post-await writes rather than repopulating what we are clearing.
     bumpEpoch();
-    set({ currentUser: null });
+
+    // 2. A queued debounced persist holds a SNAPSHOT of the pre-purge state and
+    //    would write it back AFTER the clear below. The store's own guard skips
+    //    it while a session is ending, which is exactly what this is.
+    markSessionEnding();
+
+    // 3. In-memory. These are module singletons that outlive a session, so the
+    //    previous user's id-mappings and pending operations would otherwise leak
+    //    into the next one.
+    idMappingManager.clear();
+    pendingOpsManager.clear();
+    set({
+      currentUser: null,
+      conversations: {},
+      conversationTitles: {},
+      titleSources: {},
+      pendingOperations: {},
+      caseEvidence: {},
+      pinnedCases: new Set<string>(),
+      activeCaseId: null,
+      activeCase: null,
+      hasUnsavedNewChat: true,
+    });
+
+    // 4. Persisted, and the heartbeat with it. Each step in its own catch: a
+    //    throw in one must not skip the others, which is how a failed backend
+    //    call used to leave a full set of local residue behind.
+    void (async () => {
+      try {
+        // Stops the keep-alive interval as well as clearing the session keys.
+        await get().clearSession();
+      } catch (error) {
+        log.warn('Session teardown failed during sign-out; continuing the purge', error);
+      }
+      try {
+        // No `preservePinnedCases`: pins are case ids belonging to the user who
+        // just left, so they go with the rest. This is what the extension's
+        // identity-change purge does.
+        await PersistenceManager.clearAllPersistenceData();
+      } catch (error) {
+        log.warn('Persistence purge failed during sign-out', error);
+      }
+      try {
+        // Belt and braces on the session keys: `clearSession` above clears them
+        // too, and a throw before it got there is the case this covers.
+        await clearPersistedSession({ includeClientId: true });
+      } catch (error) {
+        log.warn('Session-key clear failed during sign-out', error);
+      }
+      try {
+        // A DIFFERENT key from the `clientId` above: this is the one
+        // ClientSessionManager owns and PRESENTS to resume a session. Left
+        // behind, the next user's first `/sessions` POST offers the previous
+        // user's client id and resumes their session.
+        await clientSessionManager.clearClientId();
+      } catch (error) {
+        log.warn('Client-id clear failed during sign-out', error);
+      }
+      log.info('Signed out: persisted state and in-memory state cleared');
+    })();
   };
 
   return {
@@ -76,6 +151,10 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
         signOutLocally();
         return;
       }
+      // A session exists again, so persistence is live again. Without this the
+      // flag set by the previous sign-out would latch for the life of a page
+      // that never reloads, and nothing would be written for the new user.
+      clearSessionEnding();
       set({ currentUser: user });
     },
 
@@ -87,6 +166,7 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       }
 
       const priorUser = get().currentUser;
+      clearSessionEnding();
       set({ currentUser: user });
 
       if (shouldReloadOnAuthChange(priorUser, user) && typeof window !== 'undefined') {
