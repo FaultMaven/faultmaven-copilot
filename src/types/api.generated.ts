@@ -390,10 +390,13 @@ export interface paths {
         };
         /**
          * List Users
-         * @description List all users in organization (admin only).
+         * @description List the users of the operator's own organization.
          *
-         *     Returns paginated list of users with filtering options.
-         *     Admin can only see users in their own organization.
+         *     Returns a paginated list with filtering options. Confined to the
+         *     organization the operator's request is bound to (#1318): the page, the
+         *     filters and ``total`` all range over that tenant, so ``total`` is a count of
+         *     it rather than of the deployment. Under single-tenancy the deployment is the
+         *     organization and the listing is unchanged.
          *
          *     Query Parameters:
          *         is_active: Filter by active/inactive status
@@ -407,7 +410,8 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: User lacks admin role
+         *         403 Forbidden: Caller is not a platform admin, or carries no
+         *             organization to be confined to
          *         422 Unprocessable Entity: Invalid query parameters
          */
         get: operations["list_users_api_v1_admin_users_get"];
@@ -428,10 +432,12 @@ export interface paths {
         };
         /**
          * Get User Details
-         * @description Get detailed user information (admin only).
+         * @description Get detailed user information (operator only).
          *
-         *     Returns complete user information including derived permissions.
-         *     Admin can only view users in their own organization.
+         *     Returns complete user information including derived permissions. The
+         *     operator can view users in their own organization; a user of another
+         *     organization answers exactly what an absent id answers (#1318), so the
+         *     refusal cannot be used to confirm that the account exists.
          *
          *     Path Parameters:
          *         user_id: User ID to retrieve
@@ -441,8 +447,10 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: User lacks admin role OR user belongs to different organization
-         *         404 Not Found: User does not exist
+         *         403 Forbidden: Caller is not a platform admin, or carries no
+         *             organization to be confined to
+         *         404 Not Found: User does not exist, or is not in the operator's
+         *             organization — one answer for both, deliberately
          */
         get: operations["get_user_details_api_v1_admin_users__user_id__get"];
         put?: never;
@@ -464,9 +472,12 @@ export interface paths {
         put?: never;
         /**
          * Activate User
-         * @description Activate user account (admin only).
+         * @description Activate a user account in the operator's own organization.
          *
-         *     Sets user is_active=True. User can log in after activation.
+         *     Sets user is_active=True. User can log in after activation. Another
+         *     organization's user answers what an absent id answers (#1318) — including
+         *     in place of the 409 below, which would otherwise report that the account
+         *     exists and is already active.
          *
          *     Path Parameters:
          *         user_id: User ID to activate
@@ -476,8 +487,10 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: User lacks admin role
-         *         404 Not Found: User does not exist
+         *         403 Forbidden: Caller is not a platform admin, or carries no
+         *             organization to be confined to
+         *         404 Not Found: User does not exist, or is not in the operator's
+         *             organization — one answer for both, deliberately
          *         409 Conflict: User already active
          */
         post: operations["activate_user_api_v1_admin_users__user_id__activate_post"];
@@ -498,10 +511,11 @@ export interface paths {
         put?: never;
         /**
          * Deactivate User
-         * @description Deactivate user account (admin only).
+         * @description Deactivate a user account in the operator's own organization.
          *
-         *     Sets user is_active=False and revokes all JWT tokens.
-         *     Admin cannot deactivate themselves.
+         *     Sets user is_active=False and revokes all JWT tokens. The operator cannot
+         *     deactivate themselves, and cannot reach another organization's user (#1318):
+         *     that answers what an absent id answers, and nothing is written.
          *
          *     Path Parameters:
          *         user_id: User ID to deactivate
@@ -511,8 +525,10 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: User lacks admin role OR trying to deactivate self
-         *         404 Not Found: User does not exist
+         *         403 Forbidden: Caller is not a platform admin, is deactivating self, or
+         *             carries no organization to be confined to
+         *         404 Not Found: User does not exist, or is not in the operator's
+         *             organization — one answer for both, deliberately
          *         409 Conflict: User already deactivated
          */
         post: operations["deactivate_user_api_v1_admin_users__user_id__deactivate_post"];
@@ -539,7 +555,9 @@ export interface paths {
          *     and leaves roles on other axes untouched — notably `platform_admin`, which
          *     is granted and revoked only by `fm-promote-platform-admin` /
          *     `fm-demote-platform-admin`, and the base `user` marker. Revokes all JWT
-         *     tokens. Callers cannot modify their own roles.
+         *     tokens. Callers cannot modify their own roles, and cannot re-role a user of
+         *     another organization (#1318): that answers what an absent id answers, and no
+         *     role is written.
          *
          *     Path Parameters:
          *         user_id: User ID to assign role to
@@ -552,8 +570,10 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: Caller is not a platform admin OR trying to modify own roles
-         *         404 Not Found: User does not exist
+         *         403 Forbidden: Caller is not a platform admin, is modifying own roles,
+         *             or carries no organization to be confined to
+         *         404 Not Found: User does not exist, or is not in the operator's
+         *             organization — one answer for both, deliberately
          *         409 Conflict: User already has this organization-scoped role
          *         422 Unprocessable Entity: Invalid role
          */
@@ -582,7 +602,9 @@ export interface paths {
          *     organization-scoped role, the user lands on `viewer` (minimum privilege).
          *     Roles on other axes are preserved — removing an org role never revokes
          *     `platform_admin` (use `fm-demote-platform-admin` for that). Revokes all
-         *     JWT tokens. Callers cannot remove their own roles.
+         *     JWT tokens. Callers cannot remove their own roles, and cannot re-role a user
+         *     of another organization (#1318): that answers what an absent id answers, and
+         *     no role is removed.
          *
          *     Path Parameters:
          *         user_id: User ID to remove role from
@@ -593,8 +615,10 @@ export interface paths {
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
-         *         403 Forbidden: Caller is not a platform admin OR trying to modify own roles
-         *         404 Not Found: User does not exist OR user doesn't have this role
+         *         403 Forbidden: Caller is not a platform admin, is modifying own roles,
+         *             or carries no organization to be confined to
+         *         404 Not Found: User does not exist, does not hold this role, or is not
+         *             in the operator's organization — one answer for all three
          *         422 Unprocessable Entity: Invalid role or attempting to remove viewer role
          */
         delete: operations["remove_role_api_v1_admin_users__user_id__roles__role__delete"];
@@ -1167,7 +1191,13 @@ export interface paths {
         };
         /**
          * List Users
-         * @description List all users. Admin only.
+         * @description List the users of the operator's own organization. Operator only.
+         *
+         *     Confined to the organization the request is bound to (#1318). ``total``
+         *     counts that organization, not the deployment — a deployment-wide count is
+         *     itself a disclosure about tenants the caller may not see. Under
+         *     single-tenancy the deployment is the organization and the listing is
+         *     unchanged.
          */
         get: operations["list_users_api_v1_auth_users_get"];
         put?: never;
@@ -1189,7 +1219,7 @@ export interface paths {
         put?: never;
         /**
          * Revoke User Tokens
-         * @description Revoke all tokens for a user. Platform admin only.
+         * @description Revoke all tokens for a user in the operator's own organization.
          *
          *     Writes a per-user revocation watermark to the shared revocation store; the
          *     request path and both token generators then reject every token for this
@@ -1204,13 +1234,31 @@ export interface paths {
          *     the same false-confirmation failure this endpoint was fixed for.
          *
          *     The revocation happens BEFORE that lookup and is never conditional on it.
-         *     ``DatabaseUserStore.get_user`` swallows its exceptions and returns None, so
-         *     an auth-DB outage is indistinguishable from a genuinely absent user (see
-         *     #703, where exactly that DB froze). Gating on it would let a DB blip answer
-         *     "user not found" to an admin containing a live compromise, having revoked
-         *     nothing. Revocation only needs Redis, so it runs on Redis alone; the lookup
-         *     only shapes the response. A watermark written for an id that turns out not
-         *     to exist is inert and expires on its own.
+         *     Gating on it would let an auth-DB blip answer "user not found" to an admin
+         *     containing a live compromise, having revoked nothing (see #703, where
+         *     exactly that DB froze). Revocation only needs Redis, so it runs on Redis
+         *     alone; the lookup only shapes the response. A watermark written for an id
+         *     that turns out not to exist is inert and expires on its own.
+         *
+         *     Since #1043 the lookup distinguishes its two outcomes, so this endpoint
+         *     reports them differently: a completed lookup that matched nothing is the
+         *     404 above, while a lookup that could not run returns **200** naming the
+         *     revocation as landed and the identity as unverified. It has to be a 200 —
+         *     the tokens really are dead, and a 5xx here would tell the admin the
+         *     containment failed and send them to do it again.
+         *
+         *     **Under multi-tenancy the tenant predicate runs FIRST, and that reorders the
+         *     above** (#1318). Writing a revocation watermark for another tenant's user is
+         *     itself the cross-tenant mutation, so it cannot follow the check — the
+         *     containment-before-identity ordering only holds where every account is the
+         *     operator's to contain. The consequence is stated rather than hidden: under
+         *     ``multi`` a membership store that cannot answer refuses the revocation
+         *     instead of performing it, which is the fail-closed direction for an
+         *     authorization predicate and the opposite of the #703 trade-off this route
+         *     otherwise makes. Under ``single`` — the standalone deployment #703 was found
+         *     on, and what cloud runs today — nothing is consulted and the ordering below
+         *     is exactly as it was. Both refusals answer what an unknown id answers, so
+         *     neither confirms that the account exists.
          */
         post: operations["revoke_user_tokens_api_v1_auth_users__user_id__revoke_tokens_post"];
         delete?: never;
@@ -1231,7 +1279,11 @@ export interface paths {
         post?: never;
         /**
          * Delete User
-         * @description Delete a user by username. Admin only.
+         * @description Delete a user of the operator's own organization. Operator only.
+         *
+         *     A user of another organization answers exactly what an unknown username
+         *     answers (#1318), and nothing is revoked or deleted — the refusal must not
+         *     confirm that the account exists.
          */
         delete: operations["delete_user_api_v1_auth_users__username__delete"];
         options?: never;
@@ -2170,6 +2222,11 @@ export interface paths {
          *     Attachments are preprocessed through Tier 0+1 before the LLM sees them.
          *     If no query is provided with attachments, an implicit query is generated.
          *
+         *     **One file per turn.** `files` accepts at most one item (`maxItems: 1`);
+         *     more than one is rejected with 422. Submit each additional file as its own
+         *     turn. `pasted_content` is a separate field and does not count against this
+         *     limit, so a turn may legitimately carry one file *and* a paste.
+         *
          *     **Auto-titling:** a case still carrying its auto-generated `Case-YYMMDD-N`
          *     placeholder is named from its own content as part of processing the turn, if
          *     it now has enough substance to name — so the name is already in place when
@@ -2540,8 +2597,27 @@ export interface paths {
          *     - `/knowledge/search` - Semantic vector search using embeddings (similarity-based)
          *     - `/documents/search` - Full-text keyword search (exact/partial word matching)
          *
+         *     **How matching works.** Both the title and the body are matched, on **word
+         *     boundaries** — `"timeout"` matches the word `timeout`, and matches neither
+         *     `"timeouts"` nor the `out` inside `"about"`. Per field the query scores 1.0 if
+         *     its words appear consecutively, otherwise the fraction of its distinct words
+         *     present; the two are combined as `0.7 * title + 0.3 * content`, so a title hit
+         *     outranks a body hit and a document matching both outranks either. The result is
+         *     on a 0.0-1.0 scale, which is the scale `similarity_threshold` filters on.
+         *     **Documents matching neither field are not returned** — this is a search, not a
+         *     ranked listing of the whole knowledge base.
+         *
+         *     Matching is literal: `"timeout"` finds documents containing that token, and does
+         *     not find `"unresponsive"`. Use `/knowledge/search` for meaning.
+         *
+         *     **Visibility.** Results cover global runbooks, your own, and those shared with
+         *     your teams. `content` is document body text, so it is returned only to an
+         *     authenticated caller — an anonymous one gets titles and metadata with `content`
+         *     empty, matching `GET /documents/{document_id}`, which requires authentication.
+         *
          *     **Use Cases:**
-         *     - Searching for specific error codes or identifiers
+         *     - Searching for specific error codes or identifiers (these usually appear in the
+         *       body rather than the title, which is why content is matched)
          *     - Finding documents with exact phrases
          *     - Faster search when semantic understanding not needed
          *     - Filtering by document_type, category, tags
@@ -2559,6 +2635,10 @@ export interface paths {
          *     ```
          *
          *     **Returns:**
+         *     `content` is an excerpt of the body around the match — the whole phrase where
+         *     it occurs, else the first matching word, else the head of the document (which
+         *     is what a title-only match looks like). It is empty for anonymous callers.
+         *
          *     ```json
          *     {
          *         "query": "...",
@@ -2664,15 +2744,26 @@ export interface paths {
          *
          *     Supports two modes:
          *     1. **Line-based extraction**: Extract lines from line_start to line_end (or max_lines)
-         *     2. **Semantic extraction**: If query_string is provided, returns the most relevant
-         *        snippet based on vector similarity (more robust than line numbers after edits)
+         *     2. **Relevance-based extraction**: If query_string is provided, returns the
+         *        line window that best matches the query
+         *
+         *     Relevance is **keyword matching, not vector similarity**: the document is
+         *     split into consecutive `max_lines` windows and each is scored by word
+         *     overlap with the query, with a bonus for a verbatim match. No embedding and
+         *     no vector search happen on this path, so a window repeating the query's
+         *     words outranks a paraphrase sharing none of them.
+         *
+         *     That is deliberate. The response is a line range over the document text as
+         *     stored, while the knowledge base's vectors are overlapping 512-token chunks
+         *     carrying no line numbers; and this backs a hover card, where an embedding
+         *     round trip per pointer movement would be the wrong trade.
          *
          *     Args:
          *         document_id: Document identifier
          *         line_start: Starting line number (1-indexed, default: 1)
          *         line_end: Ending line number (optional, computed from max_lines if not provided)
          *         max_lines: Maximum lines to return (default: 5, max: 50)
-         *         query_string: Query for semantic snippet extraction (optional)
+         *         query_string: Query for relevance-based snippet extraction (optional)
          *
          *     Returns:
          *         Document snippet with verification status for badge display
@@ -2920,9 +3011,21 @@ export interface paths {
          * Approve Suggestion
          * @description Approve a suggestion and create a knowledge item.
          *
-         *     Validates that PII scan is complete and clean/remediated before approval.
-         *     Creates a new KnowledgeItem with verification_level=2 (admin verified).
-         *     Establishes bidirectional link between suggestion and knowledge item.
+         *     Validates that PII scan is complete and clean/remediated before approval,
+         *     and refuses a suggestion that is already approved (409).
+         *
+         *     The suggested content must meet the same runbook quality standard as an
+         *     uploaded runbook — YAML frontmatter plus the required sections — and
+         *     approval answers **422** when it does not, publishing nothing. Extracted
+         *     drafts are rarely publishable as-is: edit the suggestion into a valid
+         *     runbook (PUT), then approve.
+         *
+         *     Creates a new KnowledgeItem at global scope with verification level
+         *     EXPERIMENTAL, and establishes the bidirectional link between suggestion and
+         *     knowledge item. If the link cannot be recorded, everything the publish wrote
+         *     is rolled back — the knowledge item and its vectors, the draft/job/upload
+         *     bookkeeping rows, and the runbook file on disk — and any part that could not
+         *     be removed is logged by id for manual cleanup.
          *
          *     Args:
          *         suggestion_id: Suggestion to approve
@@ -4213,6 +4316,7 @@ export interface components {
         Body_submit_turn_api_v1_cases__case_id__turns_post: {
             /**
              * Files
+             * @description At most ONE file per turn. Submit each additional file as its own turn. `pasted_content` is a separate field and does not count toward this limit, so a turn may carry one file *and* a paste.
              * @default []
              */
             files: string[];
@@ -4529,9 +4633,9 @@ export interface components {
              * Format
              * @description Report format
              * @default markdown
-             * @constant
+             * @enum {string}
              */
-            format: "markdown";
+            format: "markdown" | "html";
             /**
              * Generated At
              * @description ISO 8601 timestamp when report was first generated
@@ -5024,7 +5128,8 @@ export interface components {
          * DocumentSnippetResponse
          * @description Response model for document snippet (hover card preview).
          *
-         *     Supports both line-based and semantic snippet extraction.
+         *     Supports both line-based and relevance-based snippet extraction. Relevance
+         *     is keyword matching over the document text, not vector similarity (#1288).
          */
         DocumentSnippetResponse: {
             /** Document Id */
@@ -5096,6 +5201,8 @@ export interface components {
              * @description Primary LLM provider name
              */
             llm_provider: string;
+            /** @description Effective values of the settings that bound self-service sign-up: whether an org-less SSO identity may provision a personal tenant, how many such tenants may be provisioned per hour deployment-wide, and how many investigation turns each one gets per UTC day. */
+            personal_tenant_limits: components["schemas"]["PersonalTenantLimitsStatus"];
             /** Pii Redaction Enabled */
             pii_redaction_enabled: boolean;
             /**
@@ -5269,6 +5376,11 @@ export interface components {
              * @description Reason the hypothesis was refuted. Populated only when status=REFUTED; None otherwise. Mirrors the domain model's pair-integrity invariant.
              */
             refutation_reason?: string | null;
+            /**
+             * Retirement Reason
+             * @description Why the hypothesis was set aside WITHOUT a verdict. Populated only when status=RETIRED; None otherwise. Carried beside ``refutation_reason`` because without it the Hypotheses tab cannot tell a hypothesis that was TESTED and abandoned from one the engine discarded having never grounded it — and retirement is by far the commoner end (40 retired against 8 refuted in the corpus), so the missing half was the larger one (#1142). The domain model truncates this to 200 characters rather than rejecting it, because the user-retire path writes the user's own message into the field.
+             */
+            retirement_reason?: string | null;
             /** @description Status: CAPTURED | ACTIVE | VALIDATED | REFUTED | INCONCLUSIVE | RETIRED */
             state: components["schemas"]["HypothesisState"];
             /**
@@ -5459,10 +5571,7 @@ export interface components {
             } | null;
             /** Owner Id */
             owner_id?: string | null;
-            /**
-             * Scope
-             * @default global
-             */
+            /** Scope */
             scope: string;
             /** Source Suggestion Id */
             source_suggestion_id?: string | null;
@@ -5938,6 +6047,44 @@ export interface components {
             organization_id: string;
         };
         /**
+         * PersonalTenantLimitsStatus
+         * @description The three settings that bound self-service sign-up, at their effective
+         *     values.
+         *
+         *     Reported as VALUES rather than as ``features`` entries. Two of the three are
+         *     numbers, which ``FeatureStatus`` has nowhere to put, and the ``features``
+         *     contract is stricter than this: ``enabled`` there must report a runtime
+         *     EFFECT (#1234), which "did you set this knob" is not. They sit here with
+         *     ``auth_mode`` and ``pii_redaction_enabled``, whose claim is the same one —
+         *     this is the configuration the process is running with.
+         *
+         *     Reporting them at all is the ``first_party_consent_skip`` argument (#1234)
+         *     applied to configuration: all three are silent by construction. A
+         *     deployment with self-service sign-up off refuses org-less identities with
+         *     the same message it would give a misconfigured IdP; a deployment at its
+         *     hourly provisioning ceiling refuses the same way; and a personal tenant at
+         *     its daily turn cap gets a usage-allowance message that names no setting.
+         *     None of the three appears in ``/health``, and a startup log line has rolled
+         *     out of ``kubectl logs`` long before anyone asks.
+         */
+        PersonalTenantLimitsStatus: {
+            /**
+             * Sso Jit Personal Tenant Enabled
+             * @description SSO_JIT_PERSONAL_TENANT_ENABLED — whether an SSO identity with no IdP organization may provision a personal tenant on its first sign-in, i.e. whether self-service sign-up is open. Multi-tenant (Cloud) deployments only: a single-tenant deployment has one organization and never reaches the branch this gates.
+             */
+            sso_jit_personal_tenant_enabled: boolean;
+            /**
+             * Sso Jit Personal Tenant Max Per Hour
+             * @description SSO_JIT_PERSONAL_TENANT_MAX_PER_HOUR — the ceiling on NEW personal tenants provisioned per rolling hour, deployment-wide. It bounds provisioning only; tenants that already exist sign in regardless.
+             */
+            sso_jit_personal_tenant_max_per_hour: number;
+            /**
+             * Tenant Daily Turn Cap
+             * @description TENANT_DAILY_TURN_CAP — investigation turns a PERSONAL tenant may take per UTC day before further turns are refused with 429. The deployment DEFAULT only: a company organization is uncapped, a single-tenant deployment is never capped, and a per-organization override set with fm-set-turn-cap beats this value.
+             */
+            tenant_daily_turn_cap: number;
+        };
+        /**
          * ProblemVerificationData
          * @description Problem verification details for INVESTIGATING phase.
          */
@@ -6001,7 +6148,7 @@ export interface components {
             repair_type?: string | null;
             /**
              * Verification Status
-             * @description Engine-derived verification status this turn — the grounding × progress join (healthy | treatment_blocked | open | not_yet_productive | insufficient_evidence). Lets the frontend show the honest partial outcome (e.g. insufficient_evidence) alongside the stalled-milestone surfacing.
+             * @description Engine-derived verification status this turn — the grounding × progress join (healthy | treatment_blocked | open | not_yet_productive | insufficient_evidence | restatement_held). Lets the frontend show the honest partial outcome (e.g. insufficient_evidence) alongside the stalled-milestone surfacing.
              */
             verification_status?: string | null;
         };
@@ -8092,7 +8239,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description RFC 6749 §5.2 error: `invalid_request`, `invalid_grant`, `unsupported_grant_type`, or `unsupported_token_type`. */
@@ -10393,7 +10542,7 @@ export interface operations {
                 line_end?: number | null;
                 /** @description Maximum lines to return */
                 max_lines?: number;
-                /** @description Query for semantic snippet extraction */
+                /** @description Query for relevance-based snippet extraction (keyword matching, not vector similarity) */
                 query_string?: string | null;
             };
             header?: never;

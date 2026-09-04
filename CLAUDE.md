@@ -769,9 +769,14 @@ earns a more useful message.
 pnpm generate:api-types
 ```
 
-By default it reads the spec from `main` on GitHub, which is the same source the
-`api-types-drift` CI job compares against. Point it elsewhere to generate from a
-local checkout or a branch — `--spec` works identically on every platform:
+By default it reads the spec from the core commit pinned in
+`api-contract.pin.json`, which is the same file the `api-types-drift` CI job
+reads — so the local command and the gate cannot disagree about which contract is
+in force. It does **not** follow `main`: a backend merge reaches this client only
+when a pull request here moves `ref` (and `contractVersion` to match), and that
+commit is where this repository accepts the change. Point the generator elsewhere
+to build against a contract you have not adopted — `--spec` works identically on
+every platform:
 
 ```bash
 pnpm generate:api-types --spec ../faultmaven/docs/reference/api/openapi.json
@@ -794,35 +799,38 @@ Prefer `--spec` — it avoids the question entirely.
 Generating against whatever build happens to be running is how this repo and the
 other frontend ended up with different names for the same schema (fm#880).
 
-When faultmaven's spec changes, `api-types-drift` goes red here until the types
-are regenerated and committed. That is the gate working — regenerate in a PR of
-its own rather than folding it into unrelated work.
+A spec change in faultmaven does **not** turn this repository red: the job
+regenerates from the pinned commit, so merging there reaches nothing here.
+`api-types-drift` goes red when the generated file stops matching the contract
+this repo pins — `ref` moved without a regeneration, or the generated file was
+edited by hand. Adopt a new contract in a PR of its own, pin and regenerated
+types together, rather than folding it into unrelated work.
 
-### Paired PRs: regenerating before the spec reaches `main`
+### Paired PRs: preparing before the spec reaches `main`
 
 The warning above is about *provenance*, not about the branch name. Generating
 from the **committed `openapi.json` on the core faultmaven PR** is correct and is
-the normal flow for a spec change that has not merged yet:
+the normal way to get ready for a spec change that has not merged yet:
 
 1. The core PR commits its regenerated `openapi.json`.
-2. Here, generate with `--spec` pointed at that PR's committed spec and open a
-   PR of its own whose description opens with **"Merge AFTER <core PR>"**.
-3. Merge the core PR first, then re-run `api-types-drift` here — the failed run
-   does not retrigger itself.
+2. Here, generate with `--spec` pointed at that PR's committed spec, so the
+   branch compiles and its tests run against the proposed contract.
+3. Merge the core PR. Then adopt: move `ref` in `api-contract.pin.json` to the
+   commit now on `main`, regenerate against it, and commit the two together.
 
-`api-types-drift` is **expected to be red** on that PR until the core change is
-on `main`, because the job regenerates from `main`. That red is the merge order
-showing through, not a defect: the fix is to merge in order and re-run, never to
-edit `src/types/api.generated.ts` to satisfy the gate. Editing it green would
-make it wrong the moment the core PR lands.
+Preparing and adopting are separate acts, and only the second is a contract
+change. A branch that merely prepares leaves the pin alone, so `api-types-drift`
+stays **green** on it — the job regenerates from the pinned commit, and that has
+not moved. Never edit `src/types/api.generated.ts` by hand to make the gate look
+right in either state.
 
-To tell a paired PR apart from a genuine drift failure, regenerate with `--spec`
-pointed at the core PR's committed spec and diff against the branch's committed
-file. An empty diff means the types are correct and merely early; a non-empty one
-means they came from somewhere else — a live server or an unrelated build — which
-is the fm#880 failure mode above.
+To tell a prepared branch apart from a genuine drift failure, regenerate with
+`--spec` pointed at the core PR's committed spec and diff against the branch's
+committed file. An empty diff means the types match the proposed contract; a
+non-empty one means they came from somewhere else — a live server or an unrelated
+build — which is the fm#880 failure mode above.
 
 Worked example: copilot #207 was paired with faultmaven#1119 (which lifted the
-`pydantic` ceiling, moving the schema shape). Merged core-first —
-faultmaven#1119, then copilot #207 — drift went green on re-run with no change
-to the generated file.
+`pydantic` ceiling, moving the schema shape) and was merged core-first. It
+predates `api-contract.pin.json` (#217), when the job did follow `main` and a
+paired PR was expected to sit red until the core change landed.
