@@ -13,7 +13,7 @@ import { browser } from 'wxt/browser';
 import { capturePage } from './extension-page-capture';
 import { getDashboardUrl } from '../../config';
 import { createLogger } from '../../lib/utils/logger';
-import type { HostCapabilities, HostStore, StoredValue } from './adapter';
+import type { HostCapabilities, HostStore, StoredValue } from '../../shared/host';
 
 const log = createLogger('extensionHost');
 
@@ -77,8 +77,11 @@ const store: HostStore = {
  */
 const navigation: HostCapabilities['navigation'] = {
   async dashboard(path) {
+    // No empty-baseUrl guard: `getDashboardUrl()` falls back to the Cloud
+    // default and cannot return an empty string, so the guard that used to sit
+    // here was unreachable — a test written against it could only pass
+    // vacuously.
     const baseUrl = (await getDashboardUrl()).replace(/\/+$/, '');
-    if (!baseUrl) return;
     const targetUrl = `${baseUrl}${path}`;
     try {
       const tabs = await browser.tabs.query({ url: `${baseUrl}/*` });

@@ -57,3 +57,32 @@ Object.defineProperty(window, 'navigator', {
   },
   writable: true,
 });
+
+// A host always installs a transport before the shared UI issues a request, so
+// the suite reflects that rather than every test file re-stating it. Backed by
+// the same global `browser` mock above, so the values a request carries are the
+// ones a test stages there. Individual tests override with setApiTransport().
+import { setApiTransport } from '../lib/api/transport';
+import { beforeEach as _beforeEach } from 'vitest';
+
+_beforeEach(() => {
+  setApiTransport({
+    baseUrl: async () => 'http://localhost:8090',
+    accessToken: async () => {
+      const stored = await (global as any).browser.storage.local.get(['authState']);
+      const token = stored?.authState?.access_token;
+      if (!token) throw new Error('test transport: no access token staged');
+      return token;
+    },
+    sessionId: async () => {
+      const stored = await (global as any).browser.storage.local.get(['sessionId']);
+      return stored?.sessionId ?? null;
+    },
+    clearSession: async () => {
+      await (global as any).browser.storage.local.remove([
+        'sessionId', 'sessionCreatedAt', 'sessionResumed',
+      ]);
+    },
+    onUnauthorized: () => {},
+  });
+});

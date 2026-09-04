@@ -4,9 +4,13 @@ import { AuthenticationError, SessionExpiredError } from '../../lib/errors/types
 import { getAuthHeaders } from '../../lib/api/fetch-utils';
 
 // --- Mocks for the authenticatedFetch catch-path test ---
-const clearAllAuthData = vi.fn().mockResolvedValue(undefined);
+// The hard-401 teardown is the HOST's now: the client reports a rejected
+// credential and clears nothing itself. `onUnauthorized` is what it reports to.
+const onUnauthorized = vi.fn().mockResolvedValue(undefined);
+const clearSession = vi.fn().mockResolvedValue(undefined);
+const storedSessionId = vi.fn().mockResolvedValue(null);
 vi.mock('../../lib/auth/auth-manager', () => ({
-  authManager: { clearAllAuthData: () => clearAllAuthData() }
+  authManager: { clearAllAuthData: vi.fn() }
 }));
 vi.mock('../../lib/api/fetch-utils', () => ({
   getAuthHeaders: vi.fn().mockResolvedValue({})
@@ -31,6 +35,21 @@ const storageGet = vi.fn().mockResolvedValue({});
 vi.mock('wxt/browser', () => ({
   browser: { storage: { local: { remove: (...a: any[]) => storageRemove(...a), get: (...a: any[]) => storageGet(...a) } } }
 }));
+
+import { setApiTransport } from '../../lib/api/transport';
+
+// File-level, not per-suite: every suite here drives authenticatedFetch, and a
+// suite without a transport would silently fall through to the shared default.
+beforeEach(() => {
+  storedSessionId.mockResolvedValue(null);
+  setApiTransport({
+    baseUrl: async () => 'http://localhost:8090',
+    accessToken: async () => 'test-token',
+    sessionId: () => storedSessionId(),
+    clearSession: () => clearSession(),
+    onUnauthorized: () => onUnauthorized(),
+  });
+});
 
 describe('authenticatedFetch — error branding', () => {
   beforeEach(() => {
@@ -60,7 +79,7 @@ describe('authenticatedFetch — error branding', () => {
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
       AuthenticationError
     );
-    expect(clearAllAuthData).toHaveBeenCalled();
+    expect(onUnauthorized).toHaveBeenCalled();
   });
 
   // The revoked-token case, which account-scoped logout (faultmaven#1065) turned
@@ -85,9 +104,9 @@ describe('authenticatedFetch — error branding', () => {
     // fencing without clearing leaves a dead credential attached to every
     // later request.
     expect(bumpEpoch).toHaveBeenCalled();
-    expect(clearAllAuthData).toHaveBeenCalled();
+    expect(onUnauthorized).toHaveBeenCalled();
     expect(bumpEpoch.mock.invocationCallOrder[0]).toBeLessThan(
-      clearAllAuthData.mock.invocationCallOrder[0]
+      onUnauthorized.mock.invocationCallOrder[0]
     );
   });
 
@@ -107,7 +126,7 @@ describe('authenticatedFetch — error branding', () => {
     await expect(authenticatedFetch('/api/v1/admin/cases')).rejects.toMatchObject({
       status: 403
     });
-    expect(clearAllAuthData).not.toHaveBeenCalled();
+    expect(onUnauthorized).not.toHaveBeenCalled();
     expect(bumpEpoch).not.toHaveBeenCalled();
   });
 
@@ -129,7 +148,7 @@ describe('authenticatedFetch — error branding', () => {
       SessionExpiredError
     );
     // The refresh_token-destroying teardown must NOT have run.
-    expect(clearAllAuthData).not.toHaveBeenCalled();
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
 
@@ -160,11 +179,13 @@ describe('authenticatedFetch — session-expired compare-and-remove (#104)', () 
 
   it('clears storage when the 401 carries the still-current session id', async () => {
     (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' });
-    storageGet.mockResolvedValue({ sessionId: 'S1' });
+    storedSessionId.mockResolvedValue('S1');
     fetchWithTimeout.mockResolvedValue(sessionExpired);
 
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
-    expect(storageRemove).toHaveBeenCalledWith(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
+    // Which keys a stale session occupies is the host's business now; the client
+    // asks for it to be cleared and nothing more.
+    expect(clearSession).toHaveBeenCalled();
   });
 });
 
