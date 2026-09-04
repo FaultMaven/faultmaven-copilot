@@ -21,6 +21,7 @@ import { selectCaseTitle } from '../case-title';
 import { messageKind } from '../message-kind';
 import { reconcileOptimisticIds } from '../reconcile-message-ids';
 import type { StoreState } from '../store';
+import { getHostStore } from '../../host-store';
 
 const log = createLogger('CasesSlice');
 
@@ -71,10 +72,15 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       log.debug('Setting active case ID:', targetId);
       set({ activeCaseId: targetId });
 
+      // THE single writer of this key. It was not: three call sites in
+      // src/shared/ui set it as well, immediately after calling this, so the
+      // same pointer was written twice by two code paths — and only this one
+      // handles the clear, which those sites relied on without doing. One owner
+      // of the value, one place to look when it is wrong.
       if (targetId) {
-        await browser.storage.local.set({ faultmaven_current_case: targetId });
+        await getHostStore().set({ faultmaven_current_case: targetId });
       } else {
-        await browser.storage.local.remove(['faultmaven_current_case']);
+        await getHostStore().remove(['faultmaven_current_case']);
       }
     },
 

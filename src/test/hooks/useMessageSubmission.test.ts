@@ -6,6 +6,7 @@ import { pendingOpsManager, OptimisticIdGenerator, idMappingManager } from '../.
 import { useAppStore } from '../../lib/state/store';
 import { bumpEpoch } from '../../lib/state/session-epoch';
 import { createStubHost, hostWrapper } from '../support/host';
+import { setHostStore } from '../../lib/host-store';
 
 const mockShowError = vi.fn();
 
@@ -79,6 +80,10 @@ describe('useMessageSubmission', () => {
 
   beforeEach(() => {
     stub = createStubHost();
+    // The slice is the single writer of the active-case pointer and reaches
+    // storage through the host, so the bridge points at the same stub: what
+    // these assert is that ONE writer wrote, not which layer called it.
+    setHostStore(stub.store);
     vi.clearAllMocks();
     mockShowError.mockClear();
 

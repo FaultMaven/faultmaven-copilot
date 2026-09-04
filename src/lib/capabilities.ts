@@ -2,6 +2,7 @@
 
 import { createLogger } from '~/lib/utils/logger';
 import { fetchWithTimeout } from '~/lib/utils/fetch-timeout';
+import { getHostStore } from './host-store';
 
 const log = createLogger('CapabilitiesManager');
 
@@ -75,10 +76,10 @@ export class CapabilitiesManager {
         this.capabilities = caps;
         this.source = 'network';
 
-        // Cache in storage for offline access
-        if (typeof browser !== 'undefined' && browser.storage) {
-          await browser.storage.local.set({ backendCapabilities: caps });
-        }
+        // Cache for offline access. No availability guard: the host store
+        // throws when it is not installed, and that is a wiring bug to surface
+        // rather than a condition to tiptoe around.
+        await getHostStore().set({ backendCapabilities: caps });
 
         log.info('Connected to backend', { deploymentMode: caps.deploymentMode });
         return caps;
@@ -87,13 +88,13 @@ export class CapabilitiesManager {
         log.warn('Capabilities fetch failed; serving degraded capabilities', error);
 
         // Try cache
-        if (typeof browser !== 'undefined' && browser.storage) {
-          const cached = await browser.storage.local.get(['backendCapabilities']);
-          if (cached.backendCapabilities) {
-            this.capabilities = cached.backendCapabilities;
-            this.source = 'cache';
-            return this.capabilities;
-          }
+        const cached = (await getHostStore().get(['backendCapabilities'])) as {
+          backendCapabilities?: BackendCapabilities;
+        };
+        if (cached.backendCapabilities) {
+          this.capabilities = cached.backendCapabilities;
+          this.source = 'cache';
+          return this.capabilities;
         }
 
         // Final fallback: assume self-hosted

@@ -80,18 +80,9 @@ const BROWSER_API_RATCHET = [
   'src/lib/auth/auth-config.ts',
   'src/lib/auth/auth-manager.ts',
   'src/lib/auth/token-manager.ts',
-  'src/lib/cache/case-cache.ts',
-  'src/lib/capabilities.ts',
   'src/lib/session/client-session-manager.ts',
-  'src/lib/state/session-epoch.ts',
-  'src/lib/state/slices/app-slice.ts',
-  'src/lib/state/slices/auth-slice.ts',
-  'src/lib/state/slices/cases-slice.ts',
-  'src/lib/state/slices/session-slice.ts',
-  'src/lib/state/store.ts',
-  'src/lib/utils/memory-manager.ts',
-  'src/lib/utils/messaging.ts',
-  'src/lib/utils/persistence-manager.ts',
+  'src/lib/utils/messaging.ts', // runtime messaging, not storage — needs its own capability
+  'src/lib/utils/persistence-manager.ts', // storage half done; runtime.id/getManifest remain
 ].sort();
 
 describe('the shared closure', () => {
@@ -152,6 +143,10 @@ describe('the shared closure', () => {
       'src/lib/auth/auth-config.ts', // via config.ts's dynamic import
       'src/lib/auth/auth-manager.ts', // via the lib/api barrel
       'src/lib/auth/token-manager.ts', // via auth-manager
+      // Names the key, never reads the value: it WATCHES for `authState` being
+      // cleared in another context. Observing a credential's disappearance is
+      // not holding one, and this stays after the stack above is cut.
+      'src/lib/state/slices/auth-slice.ts',
     ].sort();
 
     const added = actual.filter((f) => !expected.includes(f));

@@ -331,7 +331,8 @@ export function useDataUpload() {
           // The store is for titles a user chose or explicitly generated; the
           // backend's own title already renders as the second source.
 
-          await store.set({ faultmaven_current_case: targetCaseId });
+          // The active-case pointer is persisted by setActiveCaseId above —
+          // the single writer of that key.
           triggerRefreshSessions();
 
           log.info('Case created:', targetCaseId);

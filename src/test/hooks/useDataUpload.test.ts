@@ -5,6 +5,7 @@ import * as api from '../../lib/api';
 import { useAppStore } from '../../lib/state/store';
 import { pendingOpsManager, OptimisticIdGenerator } from '../../lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
+import { setHostStore } from '../../lib/host-store';
 
 const okTurnResponse = {
   agent_response: 'Analyzed.',
@@ -57,6 +58,10 @@ describe('useDataUpload — error surfacing regression guard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stub = createStubHost();
+    // The slice is the single writer of the active-case pointer and reaches
+    // storage through the host, so the bridge points at the same stub: what
+    // these assert is that ONE writer wrote, not which layer called it.
+    setHostStore(stub.store);
     mockShowError.mockClear();
     // The pending-ops manager is a module singleton that outlives a render, so
     // clear it (and the id counters) between tests to avoid cross-test leakage.
@@ -209,6 +214,10 @@ describe('useDataUpload — reaches storage through the host', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stub = createStubHost();
+    // The slice is the single writer of the active-case pointer and reaches
+    // storage through the host, so the bridge points at the same stub: what
+    // these assert is that ONE writer wrote, not which layer called it.
+    setHostStore(stub.store);
     pendingOpsManager.clear();
     OptimisticIdGenerator.resetCounters();
     useAppStore.setState({
