@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { accountInitials, elevatedRole, identityColor } from '~/lib/identity';
-import { getCurrentUser } from '~/lib/api/services/auth-service';
+import { getCurrentUser } from '~/lib/api/services/user-service';
 import type { User, UserProfile } from '~/lib/api/types';
 
 interface AccountRowProps {

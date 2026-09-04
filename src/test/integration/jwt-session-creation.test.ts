@@ -42,8 +42,40 @@ vi.mock('../../config', () => ({
   getApiUrl: vi.fn().mockResolvedValue('http://localhost:8000')
 }));
 
+import { setApiTransport } from '../../lib/api/transport';
+import { tokenManager } from '../../lib/auth/token-manager';
+
+/**
+ * The chain these tests stage — TokenManager first, AuthManager as fallback —
+ * used to live inside `getAuthHeaders`. It is the extension host's now, so it is
+ * reproduced here in the host's place. What the tests assert is unchanged and is
+ * the point of the file: whatever bearer the host supplies is what the session
+ * request actually carries.
+ */
+function installHostChainTransport() {
+  setApiTransport({
+    baseUrl: async () => 'http://localhost:8090',
+    accessToken: async () => {
+      const fromTokenManager = await tokenManager.getValidAccessToken();
+      if (fromTokenManager) return fromTokenManager;
+      const authState = await authManager.getAuthState();
+      if (authState?.access_token) return authState.access_token;
+      throw new Error('no credential');
+    },
+    sessionId: async () => {
+      const stored = await mockBrowser.storage.local.get(['sessionId']);
+      return (stored?.sessionId as string | undefined) ?? null;
+    },
+    clearSession: async () => {
+      await mockBrowser.storage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
+    },
+    onUnauthorized: () => {},
+  });
+}
+
 describe('JWT Token in Session Creation', () => {
   beforeEach(() => {
+    installHostChainTransport();
     vi.clearAllMocks();
     global.fetch = vi.fn();
   });

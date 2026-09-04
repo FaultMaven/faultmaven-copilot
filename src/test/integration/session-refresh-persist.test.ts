@@ -39,6 +39,8 @@ vi.mock('../../config', () => ({ default: {}, getApiUrl: vi.fn().mockResolvedVal
 import { refreshSession } from '../../lib/api/session-core';
 import { getAuthHeaders } from '../../lib/api/fetch-utils';
 
+import { setApiTransport } from '../../lib/api/transport';
+
 describe('session refresh → X-Session-Id bridge', () => {
   beforeEach(() => {
     for (const k of Object.keys(store)) delete store[k];
@@ -48,6 +50,24 @@ describe('session refresh → X-Session-Id bridge', () => {
     getValidAccessToken.mockReset().mockResolvedValue(null);
     getAuthState.mockReset().mockResolvedValue(null);
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;
+    // The session id reaches the request through the host now, so the transport
+    // is backed by this file's in-memory store — the same store refreshSession
+    // writes to. That IS the bridge under test.
+    setApiTransport({
+      baseUrl: async () => 'http://localhost:8090',
+      accessToken: async () => {
+        const token = await getValidAccessToken();
+        if (!token) throw new Error('no credential');
+        return token;
+      },
+      sessionId: async () => (store.sessionId as string | undefined) ?? null,
+      clearSession: async () => {
+        delete store.sessionId;
+        delete store.sessionCreatedAt;
+        delete store.sessionResumed;
+      },
+      onUnauthorized: () => {},
+    });
   });
 
   it('persists the refreshed session so the next request carries X-Session-Id', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extensionHost } from '../../../shared/host';
+import { extensionHost } from '../../../extension/host';
 
 /**
  * The extension adapter is a wrapper, so most of it is only worth asserting is

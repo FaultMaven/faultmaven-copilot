@@ -11,4 +11,3 @@ export type {
   WiredHost,
 } from './adapter';
 export { HostAdapterProvider, useHost } from './adapter';
-export { extensionHost } from './extension-adapter';

@@ -69,6 +69,7 @@ const host: WiredHost = {
     user: { id: 'u1', username: 'op', roles: [] },
     accessToken: async () => 'stub',
     signOut: null,
+    onUnauthorized: () => {},
   },
 };
 const wrapper = hostWrapper(host);
@@ -112,14 +113,11 @@ describe('useDataRecovery — active-case restore', () => {
     expect(handleCaseSelect).not.toHaveBeenCalled();
   });
 
-  it('does not restore when unauthenticated (avoids a doomed delta-fetch → 401)', async () => {
-    isAuthenticated.mockResolvedValue(false);
-
-    renderRecovery();
-
-    await waitFor(() => expect(mockPM.markSyncComplete).toHaveBeenCalled());
-    expect(handleCaseSelect).not.toHaveBeenCalled();
-  });
+  // The 'does not restore when unauthenticated' case is gone with the gate it
+  // covered. useDataRecovery runs inside CopilotPanel, which cannot be mounted
+  // without a session, so there is no unauthenticated panel for a restore to be
+  // doomed from — the host boundary makes the state unreachable rather than
+  // guarded.
 
   // #143/H3: a logout landing mid-recovery must not let the hydrate re-write the
   // ended session's conversations into the store (which the subscriber would then

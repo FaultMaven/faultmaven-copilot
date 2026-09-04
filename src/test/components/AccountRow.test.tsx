@@ -23,7 +23,7 @@ import { AccountRow } from '../../shared/ui/components/AccountRow';
 import type { User, UserProfile } from '../../lib/api/types';
 
 const getCurrentUser = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/api/services/auth-service', () => ({ getCurrentUser }));
+vi.mock('../../lib/api/services/user-service', () => ({ getCurrentUser }));
 
 const ALICE: User = {
   user_id: 'user-alice',

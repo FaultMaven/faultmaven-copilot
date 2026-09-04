@@ -1,7 +1,6 @@
-import { browser } from 'wxt/browser';
-import { authManager } from '../auth/auth-manager';
 import { AuthenticationError, SessionExpiredError, UserFacingError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
+import { getApiTransport } from './transport';
 import { refreshSession } from './session-core';
 import { bumpEpoch } from '../state/session-epoch';
 import { createLogger } from '../utils/logger';
@@ -12,7 +11,7 @@ const log = createLogger('APIClient');
 
 // Default request timeout. Bounds hung connections (network stalls with no RST)
 // that would otherwise leave a promise pending forever — which is especially
-// damaging on the token-refresh / poll paths. Generous enough for the 10 MB
+// damaging on the credential-renewal / poll paths. Generous enough for the 10 MB
 // max file upload on a slow link; callers may override per request.
 //
 // Sized as the MIDDLE rung of the turn timeout ladder: server per-turn ceiling
@@ -65,10 +64,13 @@ async function handleAuthError(): Promise<void> {
   // change (see auth-slice).
   bumpEpoch();
 
-  // A hard 401 auth failure (not a recoverable SESSION_EXPIRED) means the
-  // credential itself is no longer valid — clear ALL local auth data, including
-  // the token keys, so a stale refresh_token can't silently re-authenticate.
-  await authManager.clearAllAuthData();
+  // A hard 401 means the credential itself is no longer valid. This module used
+  // to clear the token keys here. It does not any more, and the change is the
+  // point: it holds no refresh token and cannot mint one, so tearing down a
+  // credential it does not own was it acting on someone else's behalf with none
+  // of the context — no knowledge of an in-flight rotation, no access to the
+  // lock serialising one. It reports, and the host decides.
+  await getApiTransport().onUnauthorized();
 
   // Trigger re-authentication flow
   // This will be handled by the UI components
@@ -86,23 +88,25 @@ async function handleAuthError(): Promise<void> {
  * out header-less and trigger a redundant second `/sessions` POST.
  */
 async function handleSessionExpired(sentSessionId?: string): Promise<void> {
-  if (typeof browser !== 'undefined' && browser.storage) {
-    if (sentSessionId) {
-      const { sessionId: storedSessionId } = await browser.storage.local.get(['sessionId']);
-      if (storedSessionId && storedSessionId !== sentSessionId) {
-        log.info('Late 401 for a superseded session — leaving the fresh session intact', {
-          sentSessionId,
-          storedSessionId
-        });
-        throw new SessionExpiredError('Session expired - please refresh');
-      }
-    }
-    // Clear stale session from storage (storage still holds the failed id, or we
-    // couldn't identify it — clear to force a fresh refresh either way).
-    await browser.storage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
-  }
+  const transport = getApiTransport();
 
-  log.warn('Session expired - cleared from storage');
+  if (sentSessionId) {
+    const storedSessionId = await transport.sessionId();
+    if (storedSessionId && storedSessionId !== sentSessionId) {
+      log.info('Late 401 for a superseded session — leaving the fresh session intact', {
+        sentSessionId,
+        storedSessionId
+      });
+      throw new SessionExpiredError('Session expired - please refresh');
+    }
+  }
+  // Clear the stale session (storage still holds the failed id, or we couldn't
+  // identify it — clear to force a fresh refresh either way). This is the
+  // FaultMaven session, not the credential: refreshing it is a thing the shared
+  // UI legitimately does, and `refreshSession` below single-flights it.
+  await transport.clearSession();
+
+  log.warn('Session expired - cleared');
   throw new SessionExpiredError('Session expired - please refresh');
 }
 
@@ -172,8 +176,8 @@ export async function authenticatedFetch(
     };
 
     // Did we actually attach a credential? getAuthHeaders returns no
-    // Authorization header when getValidAccessToken yields null — which happens
-    // during a transient refresh-endpoint outage where TokenManager DELIBERATELY
+    // Authorization header when the host cannot produce a token — which happens
+    // during a transient renewal-endpoint outage where the host DELIBERATELY
     // preserves the tokens (mid-session resilience). A 401 on such a header-less
     // request means "we had no token", not "the token is invalid" (see #99).
     const sentAuthHeader = Object.keys(mergedHeaders).some(
@@ -199,8 +203,8 @@ export async function authenticatedFetch(
       // Treat as a recoverable session condition when EITHER the backend flags
       // session expiry OR we sent no credential at all. Routing the header-less
       // case here (instead of through handleAuthError) preserves the still-valid
-      // refresh_token: a transient refresh blip must not force a full logout by
-      // destroying the credential the next request could have refreshed (#99).
+      // the stored credential: a transient renewal blip must not force a full logout by
+      // destroying the credential the next request could have renewed (#99).
       if (!sentAuthHeader ||
           errorData.code === 'SESSION_EXPIRED' ||
           errorData.detail?.toLowerCase().includes('session expired') ||

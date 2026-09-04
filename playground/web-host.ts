@@ -102,6 +102,9 @@ const session: HostAdapter['session'] = {
   },
   // The Dashboard's own account menu owns sign-out; the panel renders none.
   signOut: null,
+  // A web host would hand this to its own auth layer — the same one that owns
+  // the cookie or token the page was served with. Nothing to tear down here.
+  onUnauthorized: () => {},
 };
 
 export const CHROME_WEB_STORE_URL =
