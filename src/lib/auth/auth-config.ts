@@ -5,7 +5,7 @@
  * Enables deployment-neutral authentication (local vs OIDC/SAML).
  */
 
-import { getApiUrl } from '../../config';
+import { getHostEndpoints } from '../host-endpoints';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 
@@ -94,7 +94,7 @@ export async function getAuthConfig(): Promise<AuthConfig> {
   }
 
   try {
-    const apiUrl = await getApiUrl();
+    const apiUrl = await getHostEndpoints().apiUrl();
     const response = await fetchWithTimeout(`${apiUrl}/api/v1/auth/config`, {
       method: 'GET',
       headers: {

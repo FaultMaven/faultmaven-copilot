@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { browser } from 'wxt/browser';
 import { createLogger } from '~/lib/utils/logger';
-import { setEndpoints } from '~/config';
+import { setEndpoints } from '../host/endpoints';
 
 const log = createLogger('WelcomeScreen');
 

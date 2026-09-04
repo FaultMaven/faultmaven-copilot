@@ -7,7 +7,7 @@ import {
   TurnResponse,
 } from '../../lib/api';
 
-// Mock the config module
+// Build-time constants only; the endpoint is the host's answer, below.
 vi.mock('../../config', () => ({
   __esModule: true,
   default: {
@@ -20,11 +20,11 @@ vi.mock('../../config', () => ({
       maxQueryLength: 200000,
       maxFileSize: 10 * 1024 * 1024
     }
-  },
-  getApiUrl: vi.fn().mockResolvedValue('https://api.faultmaven.ai')
+  }
 }));
 
-// Mock browser for tests that use uploadData (which now requires auth)
+// Storage for the paths that need it (the client id, and the auth state these
+// tests deliberately leave empty).
 const { mockBrowserStorage } = vi.hoisted(() => {
   const storage = {
     local: {
@@ -46,11 +46,40 @@ vi.mock('wxt/browser', () => ({
   storage: mockBrowserStorage
 };
 
+import { setApiTransport } from '../../lib/api/transport';
+import { setHostStore } from '../../lib/host-store';
+
 describe('API Functions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset browser storage mock
     mockBrowserStorage.local.get.mockResolvedValue({});
+
+    // The base URL every request below is asserted against is the HOST's
+    // answer, not a module the API layer reads. Bound to this file's own
+    // storage mock so the session id and the (absent) credential come from the
+    // same place the assertions stage them.
+    setHostStore({
+      get: (keys) => mockBrowserStorage.local.get(keys),
+      set: (items) => mockBrowserStorage.local.set(items),
+      remove: (keys) => mockBrowserStorage.local.remove(keys),
+      subscribe: () => () => {},
+    });
+    setApiTransport({
+      baseUrl: async () => 'https://api.faultmaven.ai',
+      accessToken: async () => {
+        const stored = await mockBrowserStorage.local.get(['authState']);
+        const token = (stored as any)?.authState?.access_token;
+        if (!token) throw new Error('no credential staged');
+        return token;
+      },
+      sessionId: async () => {
+        const stored = await mockBrowserStorage.local.get(['sessionId']);
+        return (stored as any)?.sessionId ?? null;
+      },
+      clearSession: async () => {},
+      onUnauthorized: () => {},
+    });
   });
 
   describe('createSession', () => {

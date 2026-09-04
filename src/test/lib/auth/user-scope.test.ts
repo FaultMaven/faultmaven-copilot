@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import { enforceUserDataScope } from '../../../lib/auth/user-scope';
 import { PersistenceManager } from '../../../lib/utils/persistence-manager';
 import { clientSessionManager } from '../../../lib/session/client-session-manager';
+import { setHostStore } from '../../../lib/host-store';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -39,6 +40,16 @@ describe('enforceUserDataScope (#144 user-isolation)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     get.mockResolvedValue({});
+    // The backend-session pointer is cleared through the host store now, by
+    // session-core's single clear rather than by a key list of this module's
+    // own. Bound to THIS file's mock so the removal still lands where the
+    // assertions look — the same effect, observed where it now happens.
+    setHostStore({
+      get: (keys) => get(keys),
+      set: (items) => set(items),
+      remove: (keys) => remove(keys),
+      subscribe: () => () => {},
+    });
   });
 
   it('records ownership without purging on a fresh profile (no owner, no residue)', async () => {
@@ -123,7 +134,8 @@ describe('enforceUserDataScope (#144 user-isolation)', () => {
     expect(purged).toBe(true);
     // Conversations / titles / case pointer / optimistic state / pins.
     expect(clearAll).toHaveBeenCalledTimes(1);
-    // Backend-session pointer: in-memory client id + the storage keys.
+    // Backend-session pointer: in-memory client id + the storage keys, the
+    // latter through session-core's single clear.
     expect(clearClientId).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledWith(
       expect.arrayContaining(['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId'])

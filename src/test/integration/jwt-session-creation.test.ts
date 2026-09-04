@@ -32,18 +32,20 @@ vi.mock('wxt/browser', () => ({
   browser: mockBrowser
 }));
 
-// Mock config
+// Build-time constants only; where the API lives is the host's answer below.
 vi.mock('../../config', () => ({
   default: {
     session: {
       timeoutMinutes: 180
     }
-  },
-  getApiUrl: vi.fn().mockResolvedValue('http://localhost:8000')
+  }
 }));
 
 import { setApiTransport } from '../../lib/api/transport';
+import { setHostStore } from '../../lib/host-store';
 import { tokenManager } from '../../lib/auth/token-manager';
+
+const API = 'http://localhost:8000';
 
 /**
  * The chain these tests stage — TokenManager first, AuthManager as fallback —
@@ -53,8 +55,18 @@ import { tokenManager } from '../../lib/auth/token-manager';
  * request actually carries.
  */
 function installHostChainTransport() {
+  // The client id and the staged credential both live in THIS file's storage
+  // mock, so the host store points at it too — otherwise the session manager
+  // would read a client id from the suite-wide store while the assertions
+  // staged one here.
+  setHostStore({
+    get: (keys) => mockBrowser.storage.local.get(keys),
+    set: (items) => mockBrowser.storage.local.set(items),
+    remove: (keys) => mockBrowser.storage.local.remove(keys),
+    subscribe: () => () => {},
+  });
   setApiTransport({
-    baseUrl: async () => 'http://localhost:8090',
+    baseUrl: async () => API,
     accessToken: async () => {
       const fromTokenManager = await tokenManager.getValidAccessToken();
       if (fromTokenManager) return fromTokenManager;

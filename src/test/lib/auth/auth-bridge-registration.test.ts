@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { reconcileAuthBridgeRegistration } from '../../../lib/auth/auth-bridge-registration';
+import { setHostEndpoints } from '../../../lib/host-endpoints';
+import { extensionEndpoints } from '../../../extension/host/endpoints';
 
 // Resolves `browser` to the global mock from src/test/setup.ts (the per-file
 // vi.mock('wxt/browser') does not apply through the transitive config import).
@@ -16,7 +18,12 @@ describe('reconcileAuthBridgeRegistration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // dashboardUrl drives getDashboardUrl()
+    // The EXTENSION's own endpoints, so the origin the bridge registers for is
+    // still resolved from the configured key below rather than from a stub
+    // returning this test's own constant back to it. They read through the
+    // suite's host store, which is backed by the same global mock.
+    setHostEndpoints(extensionEndpoints);
+    // dashboardUrl drives the host's dashboardUrl()
     b.storage.local.get.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
     b.permissions = {
       contains: vi.fn().mockResolvedValue(true),

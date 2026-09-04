@@ -1,38 +1,32 @@
 import { useEffect, useState } from 'react';
-import {
-  API_BASE_URL_KEY,
-  DASHBOARD_URL_KEY,
-  LEGACY_ENDPOINT_KEY,
-  getApiUrl,
-  getDashboardUrl,
-} from '../../../config';
 import { useHost } from '../../host';
 
 export type EndpointKind = 'api' | 'dashboard';
 
 /**
- * The configured API or Dashboard URL, live-updated when the endpoint config
- * changes (Options save / first-run).
+ * The configured API or Dashboard URL, live-updated when it changes.
  *
- * - 'api'       → getApiUrl()       — what the copilot talks to (header host indicator).
- * - 'dashboard' → getDashboardUrl() — the web app to open (Open Dashboard / report links).
+ * - 'api'       → what the copilot talks to (header host indicator).
+ * - 'dashboard' → the web app to open (Open Dashboard / report links).
+ *
+ * Both come from the host, which is the only thing that knows. In the extension
+ * they are a user's choice on the Options page, persisted and migrated from a
+ * legacy key; in a web host the deployment that served the page decided, and
+ * `subscribe` never fires. Neither of those facts belongs here.
  *
  * Use this rather than the backend-reported capabilities.dashboardUrl, which is
  * the server's own (localhost) view on a self-hosted deployment.
  */
-/** The keys whose change means this hook's answer may have changed. */
-const ENDPOINT_KEYS = [API_BASE_URL_KEY, DASHBOARD_URL_KEY, LEGACY_ENDPOINT_KEY];
-
 export function useConfiguredEndpoint(kind: EndpointKind): string {
-  const { store } = useHost();
+  const { endpoints } = useHost();
   const [url, setUrl] = useState('');
 
   useEffect(() => {
     let active = true;
-    const read = kind === 'api' ? getApiUrl : getDashboardUrl;
+    const read = kind === 'api' ? endpoints.apiUrl : endpoints.dashboardUrl;
     const refresh = async () => {
       try {
-        const next = await read();
+        const next = await read.call(endpoints);
         if (active) setUrl(next);
       } catch {
         if (active) setUrl('');
@@ -40,16 +34,12 @@ export function useConfiguredEndpoint(kind: EndpointKind): string {
     };
     refresh();
 
-    // Any endpoint-config key change is cheap to re-read. The host decides what
-    // "a change to one of these keys" means; a host where the endpoint cannot
-    // change returns an unsubscribe and never calls back, so this hook needs no
-    // branch on which host it is running in.
-    const unsubscribe = store.subscribe(ENDPOINT_KEYS, refresh);
+    const unsubscribe = endpoints.subscribe(refresh);
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [kind, store]);
+  }, [kind, endpoints]);
 
   return url;
 }

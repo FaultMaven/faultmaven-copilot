@@ -3,11 +3,15 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { useConfiguredEndpoint, EndpointKind } from '../../shared/ui/hooks/useConfiguredEndpoint';
 import { createStubHost, hostWrapper } from '../support/host';
 
-// The VALUE still comes from config.getApiUrl/getDashboardUrl, which read
-// browser.storage.local directly — those live in the transitive closure and are
-// converted later. What moved to the host is the SUBSCRIPTION.
-const b = (global as any).browser;
-
+// Both halves of this hook now come from the host: the VALUE from
+// `endpoints.apiUrl` / `endpoints.dashboardUrl`, and the SUBSCRIPTION from
+// `endpoints.subscribe`. Nothing here stages `browser.storage.local` — if the
+// hook still read it, the global mock in setup.ts would answer and every
+// assertion below would be looking at the wrong place and find nothing.
+//
+// Which storage keys mean "the endpoint changed" is no longer this hook's
+// business, and is asserted where it now lives: `extensionEndpoints` in
+// src/test/extension/host/endpoints.test.ts.
 describe('useConfiguredEndpoint', () => {
   let stub: ReturnType<typeof createStubHost>;
 
@@ -19,68 +23,63 @@ describe('useConfiguredEndpoint', () => {
   const render = (kind: EndpointKind) =>
     renderHook(() => useConfiguredEndpoint(kind), { wrapper: hostWrapper(stub.host) });
 
-  it("'api' returns the configured API base URL", async () => {
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'https://api.faultmaven.ai' });
+  // Deliberately NOT the Cloud defaults. A call site that fell back to
+  // `getApiUrl()`'s own default would answer `https://api.faultmaven.ai` and
+  // pass a test that asserted it, having reached no host at all.
+  it("'api' asks the host for the API base URL", async () => {
+    stub.apiUrl.mockResolvedValue('https://api.host-answered.invalid');
     const { result } = render('api');
-    await waitFor(() => expect(result.current).toBe('https://api.faultmaven.ai'));
+    await waitFor(() => expect(result.current).toBe('https://api.host-answered.invalid'));
+    expect(stub.dashboardUrl).not.toHaveBeenCalled();
   });
 
-  it("'dashboard' returns the configured Dashboard URL", async () => {
-    b.storage.local.get.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+  it("'dashboard' asks the host for the Dashboard URL", async () => {
+    stub.dashboardUrl.mockResolvedValue('https://app.host-answered.invalid');
     const { result } = render('dashboard');
-    await waitFor(() => expect(result.current).toBe('https://app.faultmaven.ai'));
+    await waitFor(() => expect(result.current).toBe('https://app.host-answered.invalid'));
+    expect(stub.apiUrl).not.toHaveBeenCalled();
   });
 
-  // The three below are the host-boundary evidence for this hook. Each asserts
-  // on the HOST's store; if the hook still called browser.storage.onChanged the
-  // global mock in setup.ts would answer it and none of these would see a thing.
-
-  it('subscribes through the host store, naming every endpoint key', async () => {
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'https://api.faultmaven.ai' });
+  it('subscribes through the host endpoints', async () => {
+    stub.apiUrl.mockResolvedValue('https://api.host-answered.invalid');
     render('api');
 
-    await waitFor(() => expect(stub.subscribe).toHaveBeenCalled());
-    expect(stub.subscribe).toHaveBeenCalledWith(
-      // The legacy key too: an install that predates explicit endpoints still
-      // answers from it, so a change there still changes this hook's answer.
-      ['apiBaseUrl', 'dashboardUrl', 'apiEndpoint'],
-      expect.any(Function),
-    );
+    await waitFor(() => expect(stub.endpoints.subscribe).toHaveBeenCalledWith(expect.any(Function)));
   });
 
   it('unsubscribes through the host on unmount', async () => {
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'https://api.faultmaven.ai' });
-    const { unmount } = render('api');
+    stub.apiUrl.mockResolvedValue('https://api.host-answered.invalid');
+    const { result, unmount } = render('api');
+    await waitFor(() => expect(result.current).toBe('https://api.host-answered.invalid'));
 
-    await waitFor(() => expect(stub.subscribe).toHaveBeenCalled());
-    expect(stub.unsubscribe).not.toHaveBeenCalled();
     unmount();
-    expect(stub.unsubscribe).toHaveBeenCalled();
+    stub.apiUrl.mockResolvedValue('http://should-not-be-read');
+    await act(async () => {
+      stub.endpointsChanged();
+    });
+
+    expect(stub.apiUrl).toHaveBeenCalledTimes(1);
   });
 
-  it('re-reads the endpoint when the host reports one of those keys changed', async () => {
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'https://api.faultmaven.ai' });
+  it('re-reads the endpoint when the host reports it changed', async () => {
+    stub.apiUrl.mockResolvedValue('https://api.host-answered.invalid');
     const { result } = render('api');
-    await waitFor(() => expect(result.current).toBe('https://api.faultmaven.ai'));
+    await waitFor(() => expect(result.current).toBe('https://api.host-answered.invalid'));
 
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'http://localhost:8090' });
+    stub.apiUrl.mockResolvedValue('http://localhost:8090');
     await act(async () => {
-      stub.emit({ apiBaseUrl: 'http://localhost:8090' });
+      stub.endpointsChanged();
     });
 
     await waitFor(() => expect(result.current).toBe('http://localhost:8090'));
   });
 
-  it('ignores a change to a key it did not subscribe to', async () => {
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'https://api.faultmaven.ai' });
+  // A host that cannot answer is not a host that hangs: the hook renders an
+  // empty string rather than leaving a stale URL on screen.
+  it('renders an empty endpoint when the host cannot answer', async () => {
+    stub.apiUrl.mockRejectedValue(new Error('no endpoint configured'));
     const { result } = render('api');
-    await waitFor(() => expect(result.current).toBe('https://api.faultmaven.ai'));
-
-    b.storage.local.get.mockResolvedValue({ apiBaseUrl: 'http://should-not-be-read' });
-    await act(async () => {
-      stub.emit({ someUnrelatedKey: 'x' });
-    });
-
-    expect(result.current).toBe('https://api.faultmaven.ai');
+    await waitFor(() => expect(stub.apiUrl).toHaveBeenCalled());
+    expect(result.current).toBe('');
   });
 });

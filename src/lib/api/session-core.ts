@@ -1,4 +1,4 @@
-import { browser } from 'wxt/browser';
+import { getHostStore } from '../host-store';
 import { clientSessionManager } from "../session/client-session-manager";
 import { createLogger } from "../utils/logger";
 import { Session } from "./types";
@@ -32,15 +32,41 @@ export async function createSession(metadata?: Record<string, any>): Promise<Ses
  * Persist a freshly created session so `getAuthHeaders` attaches `X-Session-Id`
  * on subsequent requests. Mirrors the keys the session slice writes.
  */
+/**
+ * The keys a FaultMaven session occupies.
+ *
+ * `clientId` is separated because it deliberately OUTLIVES a session: a fresh
+ * `/sessions` POST presents it to resume rather than start cold, so clearing a
+ * stale session must not take it.
+ */
+const SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed'] as const;
+const CLIENT_KEY = 'clientId';
+
 async function persistSession(session: Session): Promise<void> {
-  if (typeof browser !== 'undefined' && browser.storage) {
-    await browser.storage.local.set({
-      sessionId: session.session_id,
-      sessionCreatedAt: Date.now(),
-      sessionResumed: session.session_resumed || false,
-      clientId: session.client_id
-    });
-  }
+  await getHostStore().set({
+    sessionId: session.session_id,
+    sessionCreatedAt: Date.now(),
+    sessionResumed: session.session_resumed || false,
+    [CLIENT_KEY]: session.client_id
+  });
+}
+
+/**
+ * Discard the stored session. THE single clear, as `persistSession` is the
+ * single write.
+ *
+ * Three places used to remove these keys with three slightly different key
+ * lists — the client's 401 path, the session slice's teardown, and the
+ * extension transport — so which keys survived a clear depended on who cleared.
+ * `includeClientId` is the one real distinction, named rather than implied by
+ * whichever list the caller happened to copy.
+ */
+export async function clearPersistedSession(
+  { includeClientId = false }: { includeClientId?: boolean } = {}
+): Promise<void> {
+  const keys: string[] = [...SESSION_KEYS];
+  if (includeClientId) keys.push(CLIENT_KEY);
+  await getHostStore().remove(keys);
 }
 
 // In-context single-flight guard (used only when the Web Locks API is
@@ -51,12 +77,10 @@ async function refreshSessionOnce(metadata?: Record<string, any>): Promise<void>
   // Re-check: a concurrent request (or another extension context) may have
   // already refreshed the session while we waited for the lock/promise. If a
   // fresh sessionId is already in storage, don't POST a redundant one.
-  if (typeof browser !== 'undefined' && browser.storage) {
-    const existing = await browser.storage.local.get(['sessionId']);
-    if (existing.sessionId) {
-      log.debug('Session already refreshed by a concurrent caller; skipping create');
-      return;
-    }
+  const existing = await getHostStore().get(['sessionId']);
+  if (existing.sessionId) {
+    log.debug('Session already refreshed by a concurrent caller; skipping create');
+    return;
   }
 
   const session = await createSession(metadata);

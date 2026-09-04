@@ -42,6 +42,10 @@ export interface StubHost {
   accessToken: ReturnType<typeof vi.fn>;
   /** session.onUnauthorized — the host's answer to a rejected credential. */
   onUnauthorized: ReturnType<typeof vi.fn>;
+  endpoints: WiredHost['endpoints'];
+  apiUrl: ReturnType<typeof vi.fn>;
+  dashboardUrl: ReturnType<typeof vi.fn>;
+  endpointsChanged: () => void;
   /** What the store currently holds. Mutate to stage a read. */
   data: Record<string, StoredValue>;
   /** Deliver a change to every subscriber that asked for one of these keys. */
@@ -131,6 +135,21 @@ export function createStubHost(
     onUnauthorized,
   };
 
+  const apiUrl = vi.fn(async () => 'http://localhost:8090');
+  const dashboardUrl = vi.fn(async () => 'http://localhost:3333');
+  const endpointSubscribers: Array<() => void> = [];
+  const endpoints = {
+    apiUrl,
+    dashboardUrl,
+    subscribe: vi.fn((onChange: () => void) => {
+      endpointSubscribers.push(onChange);
+      return () => {
+        const i = endpointSubscribers.indexOf(onChange);
+        if (i >= 0) endpointSubscribers.splice(i, 1);
+      };
+    }),
+  };
+
   const dashboard = vi.fn(async (_path: string) => {});
   const settings = options.settings === false ? null : vi.fn(async () => {});
 
@@ -144,13 +163,18 @@ export function createStubHost(
       : { supported: true, capture };
 
   return {
-    host: { store, navigation: { dashboard, settings }, pageCapture, session },
+    host: { store, endpoints, navigation: { dashboard, settings }, pageCapture, session },
     store,
     get,
     set,
     remove,
     subscribe,
     unsubscribe,
+    endpoints,
+    apiUrl,
+    dashboardUrl,
+    /** Tell every endpoint subscriber the configured URL changed. */
+    endpointsChanged: () => { for (const fn of [...endpointSubscribers]) fn(); },
     dashboard,
     settings,
     capture,

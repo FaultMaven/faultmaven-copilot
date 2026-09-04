@@ -63,6 +63,11 @@ const host: WiredHost = {
     subscribe: storageSubscribe,
   } as unknown as HostStore,
   // Unused by this hook; present because a host is whole or it is not one.
+  endpoints: {
+    apiUrl: async () => 'http://localhost:8090',
+    dashboardUrl: async () => 'http://localhost:3333',
+    subscribe: () => () => {},
+  },
   navigation: { dashboard: vi.fn(), settings: null },
   pageCapture: { supported: false, reason: 'n/a', installUrl: 'https://example.invalid' },
   session: {

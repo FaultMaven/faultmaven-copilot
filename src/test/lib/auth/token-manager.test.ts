@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TokenManager } from '../../../lib/auth/token-manager';
 
-// Mock config
+// Build-time constants only; the refresh endpoint's origin is the host's.
 vi.mock('../../../config', () => ({
   __esModule: true,
-  default: {},
-  getApiUrl: async () => 'https://api.faultmaven.ai'
+  default: {}
 }));
 
 // Mock auth-config so the mode-aware refresh doesn't fetch /auth/config. Default
@@ -45,6 +44,10 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
+import { setHostEndpoints } from '../../../lib/host-endpoints';
+
+const API = 'https://api.faultmaven.ai';
+
 describe('TokenManager', () => {
   let tokenManager: TokenManager;
   let mockLocksRequest: any;
@@ -52,6 +55,14 @@ describe('TokenManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    // TokenManager refreshes against the CONFIGURED deployment, which is the
+    // host's answer — and one it can give before any session exists, which is
+    // the whole reason a refresh can run at all.
+    setHostEndpoints({
+      apiUrl: async () => API,
+      dashboardUrl: async () => 'https://app.faultmaven.ai',
+      subscribe: () => () => {},
+    });
     mockGetAuthConfig.mockResolvedValue({ provider: 'oidc' }); // OAuth mode by default
     tokenManager = new TokenManager();
 

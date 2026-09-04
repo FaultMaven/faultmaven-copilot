@@ -115,16 +115,15 @@ vi.mock('../../lib/api', () => ({
   }
 }));
 
-// Mock config
+// Build-time constants only; the worker resolves its endpoints through the
+// host context it installs for itself (see beforeEach).
 vi.mock('../../config', () => ({
   __esModule: true,
   default: {
     session: {
       timeoutMs: 30 * 60 * 1000
     }
-  },
-  getApiUrl: async () => 'https://api.faultmaven.ai',
-  getDashboardUrl: async () => 'https://app.faultmaven.ai'
+  }
 }));
 
 // Mock reconcileAuthBridgeRegistration
@@ -134,11 +133,20 @@ vi.mock('../lib/auth/auth-bridge-registration', () => ({
 
 // Import background entrypoint
 import backgroundEntry from '../../entrypoints/background';
+import { installExtensionHostContext } from '../../extension/host/install';
 
 describe('Background Service Worker', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+
+    // What the worker itself does at module load. Re-applied here because the
+    // suite-wide defaults in setup.ts are installed per test and would
+    // otherwise answer for it — with a different origin and a different store
+    // than the one this file stages. The endpoint the assertions below name is
+    // therefore the REAL resolution over this file's storage, not a constant
+    // handed back to the test by a stub.
+    installExtensionHostContext();
     
     // Clear storage store
     await mockStorage.local.remove([

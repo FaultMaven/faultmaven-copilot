@@ -8,19 +8,29 @@ const { authenticatedFetchWithRetry } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../lib/api/client', () => ({ authenticatedFetchWithRetry }));
-vi.mock('../../../config', () => ({ getApiUrl: vi.fn().mockResolvedValue('https://api.test') }));
 vi.mock('~/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
 import { caseApi } from '../../../lib/api/case-service';
 import { filesApi } from '../../../lib/api/files-service';
+import { setApiTransport } from '../../../lib/api/transport';
 
 const okJson = (body: any) => ({ ok: true, status: 200, json: vi.fn().mockResolvedValue(body) });
 
 describe('raw-fetch bypass removed — services route through authenticatedFetchWithRetry', () => {
   beforeEach(() => {
     authenticatedFetchWithRetry.mockReset();
+    // The origin these URLs are built from is the host's answer now, not a
+    // module the service reads. Nothing else about the transport is exercised
+    // here: `authenticatedFetchWithRetry` itself is mocked out.
+    setApiTransport({
+      baseUrl: async () => 'https://api.test',
+      accessToken: async () => { throw new Error('not exercised'); },
+      sessionId: async () => null,
+      clearSession: async () => {},
+      onUnauthorized: () => {},
+    });
     // Ensure the real global fetch is NOT used by these services.
     vi.spyOn(globalThis, 'fetch' as any).mockImplementation(() => {
       throw new Error('raw fetch must not be called');

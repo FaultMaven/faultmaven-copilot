@@ -23,7 +23,13 @@ vi.mock('../../../lib/api', () => ({
   createSession: vi.fn()
 }));
 
-vi.mock('../../../lib/api/session-core', () => ({
+// Only `refreshSession` is stubbed. `clearPersistedSession` is the REAL one,
+// because the slice now delegates its teardown to it rather than removing its
+// own idea of which keys a session occupies — and a stub would turn the
+// assertion below into a check that the slice called a function, not that the
+// keys were cleared.
+vi.mock('../../../lib/api/session-core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/api/session-core')>()),
   refreshSession: vi.fn().mockResolvedValue(undefined)
 }));
 
@@ -128,6 +134,9 @@ describe('session-slice', () => {
 
     await useAppStore.getState().clearSession();
 
+    // Through the host store, and through session-core's single clear —
+    // `clientId` included, which is the one key a clear only takes when the
+    // caller says so.
     expect(browser.storage.local.remove).toHaveBeenCalledWith(
       expect.arrayContaining(['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId'])
     );
