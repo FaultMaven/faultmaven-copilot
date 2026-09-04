@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { MemoryManager, isCommittedMessage } from '~lib/utils/memory-manager';
-import { OptimisticConversationItem } from '~lib/optimistic/types';
+import { MemoryManager, isCommittedMessage } from '@faultmaven/copilot-ui/lib/utils/memory-manager';
+import { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic/types';
 
 const committedMsg = (over: Partial<OptimisticConversationItem>): OptimisticConversationItem => ({
   id: 'm', timestamp: new Date(1000).toISOString(), optimistic: false, ...over

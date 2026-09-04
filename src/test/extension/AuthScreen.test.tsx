@@ -34,7 +34,7 @@ vi.mock('wxt/browser', () => ({
   },
 }));
 
-vi.mock('../../lib/auth/auth-config', () => ({
+vi.mock('../../extension/auth/auth-config', () => ({
   getAuthConfig: vi.fn().mockResolvedValue({
     provider: 'oidc',
     features: {

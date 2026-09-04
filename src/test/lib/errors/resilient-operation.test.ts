@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { resilientOperation } from '~lib/utils/resilient-operation';
-import { ErrorClassifier } from '~lib/errors/classifier';
-import { RateLimitError } from '~lib/errors/types';
+import { resilientOperation } from '@faultmaven/copilot-ui/lib/utils/resilient-operation';
+import { ErrorClassifier } from '@faultmaven/copilot-ui/lib/errors/classifier';
+import { RateLimitError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 describe('resilientOperation', () => {
   beforeEach(() => {

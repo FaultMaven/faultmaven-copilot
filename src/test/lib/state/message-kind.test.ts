@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { messageKind } from '../../../lib/state/message-kind';
+import { messageKind } from '@faultmaven/copilot-ui/lib/state/message-kind';
 
 /**
  * The classification, on its own — no store, no render.

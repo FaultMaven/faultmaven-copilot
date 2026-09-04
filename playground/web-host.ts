@@ -8,7 +8,7 @@
  * outside? Everything here is the smallest honest answer a real web host would
  * give to the same call.
  */
-import type { HostAdapter, HostUser, StoredValue } from '~/shared/host';
+import type { HostAdapter, HostUser, StoredValue } from '@faultmaven/copilot-ui';
 
 const NS = 'fm_playground_';
 

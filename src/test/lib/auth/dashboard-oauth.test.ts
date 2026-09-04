@@ -3,7 +3,7 @@ import {
   initiateDashboardOAuth,
   cleanupOAuthState,
   getDashboardUrl
-} from '../../../lib/auth/dashboard-oauth';
+} from '../../../extension/auth/dashboard-oauth';
 
 // Mock browser environment
 const { mockBrowserStorage, mockBrowserRuntime, mockBrowserIdentity } = vi.hoisted(() => {
@@ -43,8 +43,8 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-import { setHostStore } from '../../../lib/host-store';
-import { setHostEndpoints } from '../../../lib/host-endpoints';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 import { extensionEndpoints } from '../../../extension/host/endpoints';
 
 describe('Dashboard OAuth', () => {

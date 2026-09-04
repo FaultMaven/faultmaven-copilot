@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useDataUpload } from '../../shared/ui/hooks/useDataUpload';
-import * as api from '../../lib/api';
-import { useAppStore } from '../../lib/state/store';
-import { pendingOpsManager, OptimisticIdGenerator } from '../../lib/optimistic';
+import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpload';
+import * as api from '@faultmaven/copilot-ui/lib/api';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { pendingOpsManager, OptimisticIdGenerator } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
-import { setHostStore } from '../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 const okTurnResponse = {
   agent_response: 'Analyzed.',
@@ -19,13 +19,13 @@ const okTurnResponse = {
 
 const mockShowError = vi.fn();
 
-vi.mock('../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   submitTurn: vi.fn(),
   createCase: vi.fn(),
   generateCaseTitle: vi.fn()
 }));
 
-vi.mock('../../lib/errors', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/errors', () => ({
   useError: () => ({
     showError: mockShowError,
     dismissError: vi.fn()
@@ -40,11 +40,11 @@ vi.mock('../../lib/errors', () => ({
   })
 }));
 
-vi.mock('../../lib/utils/retry', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/retry', () => ({
   retryWithBackoff: vi.fn((fn: () => Promise<unknown>) => fn())
 }));
 
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn()
   })

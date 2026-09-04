@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import InlineSourcesRenderer from '../../shared/ui/components/InlineSourcesRenderer';
+import InlineSourcesRenderer from '@faultmaven/copilot-ui/shared/ui/components/InlineSourcesRenderer';
 
 // jsdom cannot lay out real diagrams, so pin the routing contract instead:
 // ```mermaid fences reach mermaid.render, other fences stay code blocks,

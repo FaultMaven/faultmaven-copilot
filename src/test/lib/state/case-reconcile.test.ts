@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCaseTransition, CaseSnapshot } from '../../../lib/state/case-reconcile';
+import { isCaseTransition, CaseSnapshot } from '@faultmaven/copilot-ui/lib/state/case-reconcile';
 
 const snap = (id: string | null, state: string | null): CaseSnapshot =>
   ({ id, state } as CaseSnapshot);

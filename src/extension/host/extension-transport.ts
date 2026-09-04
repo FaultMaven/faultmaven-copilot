@@ -8,9 +8,9 @@
  */
 import { getApiUrl } from './endpoints';
 import { extensionStore } from './extension-store';
-import { setApiTransport, type ApiTransport } from '../../lib/api/transport';
-import { clearPersistedSession } from '../../lib/api/session-core';
-import type { HostSession } from '../../shared/host';
+import { setApiTransport, type ApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
 export function createExtensionTransport(session: HostSession): ApiTransport {
   return {

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatSource,
-} from '../../lib/utils/response-handlers';
+} from '@faultmaven/copilot-ui/lib/utils/response-handlers';
 import {
   Source,
-} from '../../lib/api';
+} from '@faultmaven/copilot-ui/lib/api';
 
 describe('Response Handlers', () => {
   describe('formatSource', () => {

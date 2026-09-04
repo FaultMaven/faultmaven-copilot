@@ -7,14 +7,14 @@ const { authenticatedFetchWithRetry } = vi.hoisted(() => ({
   authenticatedFetchWithRetry: vi.fn()
 }));
 
-vi.mock('../../../lib/api/client', () => ({ authenticatedFetchWithRetry }));
-vi.mock('~/lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/client', () => ({ authenticatedFetchWithRetry }));
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { caseApi } from '../../../lib/api/case-service';
-import { filesApi } from '../../../lib/api/files-service';
-import { setApiTransport } from '../../../lib/api/transport';
+import { caseApi } from '@faultmaven/copilot-ui/lib/api/case-service';
+import { filesApi } from '@faultmaven/copilot-ui/lib/api/files-service';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 
 const okJson = (body: any) => ({ ok: true, status: 200, json: vi.fn().mockResolvedValue(body) });
 

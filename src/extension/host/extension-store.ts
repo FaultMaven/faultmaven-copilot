@@ -11,7 +11,7 @@
  * cannot change what the extension does.
  */
 import { browser } from 'wxt/browser';
-import type { HostStore, StoredValue } from '../../shared/host';
+import type { HostStore, StoredValue } from '@faultmaven/copilot-ui/shared/host';
 
 /**
  * One difference from the raw API, and it is deliberate.

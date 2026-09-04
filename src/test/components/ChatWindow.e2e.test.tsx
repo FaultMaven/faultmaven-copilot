@@ -15,9 +15,9 @@ vi.mock('wxt/browser', () => ({
 }));
 
 // Mock the API layer used by ChatWindow
-import * as api from '../../lib/api';
-vi.mock('../../lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/api')>();
+import * as api from '@faultmaven/copilot-ui/lib/api';
+vi.mock('@faultmaven/copilot-ui/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@faultmaven/copilot-ui/lib/api')>();
   return {
     ...actual,
     createSession: vi.fn(),
@@ -26,20 +26,20 @@ vi.mock('../../lib/api', async (importOriginal) => {
     getCaseConversation: vi.fn(),
     updateCaseTitle: vi.fn(),
     getUserCases: vi.fn().mockResolvedValue([])
-  } as unknown as typeof import('../../lib/api');
+  } as unknown as typeof import('@faultmaven/copilot-ui/lib/api');
 });
 
 // ChatWindow imports caseApi from a separate module — mock it so the
 // component's useQuery doesn't issue a real fetch in the test environment.
-vi.mock('../../lib/api/case-service', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/case-service', () => ({
   caseApi: {
     getCaseUI: vi.fn().mockResolvedValue({ state: 'inquiry' }),
   },
 }));
 
-import { ChatInterface } from '../../shared/ui/components/ChatInterface';
+import { ChatInterface } from '@faultmaven/copilot-ui/shared/ui/components/ChatInterface';
 import { createStubHost, hostWrapper } from '../support/host';
-import { caseApi } from '../../lib/api/case-service';
+import { caseApi } from '@faultmaven/copilot-ui/lib/api/case-service';
 
 const renderWithQueryClient = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({

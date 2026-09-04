@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CapabilitiesManager } from '../../lib/capabilities';
+import { CapabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
 
 // Mock the timeout-wrapped fetch used by CapabilitiesManager.
 const fetchWithTimeout = vi.fn();
-vi.mock('../../lib/utils/fetch-timeout', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
   fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
 }));
 
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

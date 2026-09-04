@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthState } from '../../lib/api';
-import { authManager } from '../../lib/auth/auth-manager';
+import { AuthState } from '@faultmaven/copilot-ui/lib/api';
+import { authManager } from '../../extension/auth/auth-manager';
 
 // Mock browser environment
 const { mockBrowser } = vi.hoisted(() => {

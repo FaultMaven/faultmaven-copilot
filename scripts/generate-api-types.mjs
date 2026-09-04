@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Regenerate src/types/api.generated.ts from the API's OpenAPI spec.
+ * Regenerate packages/copilot-ui/types/api.generated.ts from the API's OpenAPI
+ * spec.
  *
  * Defaults to the contract pinned in api-contract.pin.json — the same source
  * CI compares against — rather than a sibling working tree or `main`. A
@@ -99,7 +100,11 @@ const spec =
   parseSpec(process.argv.slice(2)) ||
   process.env.FM_OPENAPI_SPEC ||
   pinnedSpecUrl(repoRoot);
-const out = path.join(repoRoot, "src", "types", "api.generated.ts");
+// The generated client lives with the UI that is typed against it. Both hosts
+// compile the package from source, so this is the one copy either of them sees;
+// a path left pointing at the old location would write a stray file nothing
+// imports and leave the real one stale.
+const out = path.join(repoRoot, "packages", "copilot-ui", "types", "api.generated.ts");
 
 // Resolve the generator's own declared entrypoint. `openapi-typescript/bin/cli.js`
 // is not resolvable directly — the package's `exports` map does not expose it —

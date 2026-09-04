@@ -110,7 +110,7 @@ vi.mock('wxt/browser', () => ({
 
 // The credential stack is no longer reachable through the shared barrel, so
 // the module the worker actually imports is the one mocked here.
-vi.mock('../../lib/auth/auth-manager', () => ({
+vi.mock('../../extension/auth/auth-manager', () => ({
   authManager: {
     saveAuthState: mockAuthSaveState,
     clearAuthState: mockAuthClearState
@@ -119,7 +119,7 @@ vi.mock('../../lib/auth/auth-manager', () => ({
 
 // Build-time constants only; the worker resolves its endpoints through the
 // host context it installs for itself (see beforeEach).
-vi.mock('../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   __esModule: true,
   default: {
     session: {
@@ -129,7 +129,7 @@ vi.mock('../../config', () => ({
 }));
 
 // Mock reconcileAuthBridgeRegistration
-vi.mock('../lib/auth/auth-bridge-registration', () => ({
+vi.mock('../../extension/auth/auth-bridge-registration', () => ({
   reconcileAuthBridgeRegistration: vi.fn()
 }));
 

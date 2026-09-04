@@ -20,23 +20,23 @@ const {
   isAuthenticated: vi.fn().mockResolvedValue(true)
 }));
 
-vi.mock('../../lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
+vi.mock('@faultmaven/copilot-ui/lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
 
-vi.mock('../../lib/api', () => ({ authManager: { isAuthenticated } }));
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({ authManager: { isAuthenticated } }));
 
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-vi.mock('../../lib/utils/memory-manager', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/memory-manager', () => ({
   memoryManager: { sanitizeAndCapForPersistence: (c: any) => c }
 }));
 
-vi.mock('../../lib/optimistic', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/optimistic', () => ({
   idMappingManager: { setState: vi.fn() }
 }));
 
-vi.mock('../../lib/state/store', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/state/store', () => ({
   useAppStore: {
     setState: (...a: any[]) => setState(...a),
     getState: () => ({ handleCaseSelect })
@@ -46,9 +46,9 @@ vi.mock('../../lib/state/store', () => ({
   CONVERSATION_CACHE_VERSION_KEY: 'conversationCacheVersion'
 }));
 
-import { useDataRecovery } from '../../shared/ui/hooks/useDataRecovery';
+import { useDataRecovery } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataRecovery';
 import { hostWrapper } from '../support/host';
-import type { HostStore, WiredHost } from '../../shared/host';
+import type { HostStore, WiredHost } from '@faultmaven/copilot-ui/shared/host';
 
 // The host these tests mount. The three storage reads/writes in useDataRecovery
 // now go through here; nothing in this file mocks the extension APIs, so a call
@@ -129,7 +129,7 @@ describe('useDataRecovery — active-case restore', () => {
   // ended session's conversations into the store (which the subscriber would then
   // persist straight back into storage the purge just cleared).
   it('skips the store hydrate + active-case restore when a logout lands during recovery', async () => {
-    const { bumpEpoch } = await import('../../lib/state/session-epoch');
+    const { bumpEpoch } = await import('@faultmaven/copilot-ui/lib/state/session-epoch');
 
     storageGet.mockImplementation((keys: string[]) => {
       if (keys.includes('faultmaven_current_case')) {

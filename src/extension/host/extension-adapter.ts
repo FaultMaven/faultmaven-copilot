@@ -15,8 +15,8 @@ import { browser } from 'wxt/browser';
 import { capturePage } from './extension-page-capture';
 import { extensionEndpoints, getDashboardUrl } from './endpoints';
 import { extensionStore } from './extension-store';
-import { createLogger } from '../../lib/utils/logger';
-import type { HostCapabilities } from '../../shared/host';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
+import type { HostCapabilities } from '@faultmaven/copilot-ui/shared/host';
 
 const log = createLogger('extensionHost');
 

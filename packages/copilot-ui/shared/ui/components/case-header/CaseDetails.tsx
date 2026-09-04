@@ -1,0 +1,598 @@
+/**
+ * CaseDetails Component — unified expanded view across all case phases.
+ *
+ * Renders the same row set conditionally per the hardened slice-4 matrix:
+ *
+ *   Row              | inquiry | investigating | resolved        | closed
+ *   ─────────────────┼─────────┼───────────────┼─────────────────┼────────────────────────────
+ *   Problem          |    —    |       ✓       |       ✓         |       ✓
+ *   Progress         |    —    |       ✓       |       —         |       —
+ *   Leading Hyp.     |    —    |       ✓       |       —         |       —
+ *   Root Cause       |    —    |       —       |       ✓         |       ✓ (if known)
+ *   Solution         |    —    |       —       | only if no rpt  |       —
+ *   Closure          |    —    |       —       |       —         | only if rpt skipped
+ *   Artifacts        |    —    |       ✓       |       ✓         |       ✓
+ *   Files            |    ✓    |       ✓       |       ✓         |       ✓
+ *
+ * Inquiry collapses to a single visible row (Files) — inquiry is conversational,
+ * the chat is the surface.
+ *
+ * Progress row uses Option C: dots + inline labels in one wrapping row. The
+ * pending milestone gets a tooltip with the
+ * progress_transparency.milestone_description so the user can read what's
+ * blocking without a separate "Needs" row.
+ */
+
+import React, { useState, useEffect } from 'react';
+import type {
+  CaseUIResponse,
+  UploadedFileMetadata,
+  UploadedFileDetailsResponse,
+  UserCase,
+} from '../../../../types/case';
+import {
+  isCaseInquiry,
+  isCaseInvestigating,
+  isCaseResolved,
+  isCaseClosed,
+} from '../../../../types/case';
+import { closureDisplayFor } from '../../../../lib/api/services/case-service';
+import { filesApi } from '../../../../lib/api/files-service';
+import { EvidenceDetailsModal } from './EvidenceDetailsModal';
+import {
+  DetailRow,
+  FilledCircleIcon,
+  EmptyCircleIcon,
+  CheckCircleIcon,
+  AssuranceChip,
+  formatDuration,
+  formatFileSize,
+} from './shared';
+import { createLogger } from '../../../../lib/utils/logger';
+import { useConfiguredEndpoint } from '../../hooks/useConfiguredEndpoint';
+
+const log = createLogger('CaseDetails');
+
+// ==================== Constants ====================
+
+interface MilestoneSpec {
+  key: string;
+  label: string;
+}
+
+/** The 6 universal progress indicators (no fixed order — completed opportunistically). */
+const BASE_MILESTONES: MilestoneSpec[] = [
+  { key: 'symptom_verified', label: 'Symptoms' },
+  { key: 'scope_assessed', label: 'Scope' },
+  { key: 'timeline_established', label: 'Timeline' },
+  { key: 'changes_identified', label: 'Changes' },
+  { key: 'root_cause_identified', label: 'Root Cause' },
+  { key: 'solution_proposed', label: 'Solution' },
+];
+
+/**
+ * Strings the backend sometimes leaks into description fields when the LLM
+ * defaults to the milestone label instead of writing actual prose. Treated as
+ * "no real value" and the row is hidden.
+ */
+const PLACEHOLDER_VALUES = new Set([
+  'root cause identified',
+  'root cause',
+  'solution proposed',
+  'solution',
+  'symptoms verified',
+  'symptom verified',
+  'scope assessed',
+  'scope',
+  'timeline established',
+  'timeline',
+  'changes identified',
+  'changes',
+]);
+
+function isPlaceholderValue(text: string | null | undefined): boolean {
+  if (!text) return true;
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return true;
+  return PLACEHOLDER_VALUES.has(normalized);
+}
+
+interface UploadedFileWithEvidence extends UploadedFileMetadata {
+  evidence_count?: number;
+}
+
+// ==================== Sub-components ====================
+
+interface MilestoneMapProps {
+  milestones: MilestoneSpec[];
+  completedKeys: Set<string>;
+  pendingMilestone: string | null;
+  pendingDescription: string | null;
+}
+
+/**
+ * Milestone visualization — circles + inline labels in one wrapping row.
+ *
+ * The pending milestone (from progress_transparency, when active) pulses in
+ * warning color and carries the milestone_description in its tooltip — the user
+ * can hover to read what's blocking, replacing the standalone "Needs" row.
+ */
+const MilestoneMap: React.FC<MilestoneMapProps> = ({
+  milestones,
+  completedKeys,
+  pendingMilestone,
+  pendingDescription,
+}) => (
+  <div className="flex items-start gap-2 py-1 text-fm-sm">
+    <span className="text-fm-text-tertiary w-[76px] flex-shrink-0 text-fm-sm font-medium">
+      Progress
+    </span>
+    <span className="flex-1 min-w-0 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      {milestones.map((m) => {
+        const done = completedKeys.has(m.key);
+        const isPending = pendingMilestone === m.key;
+        const colorClass = done
+          ? 'text-fm-success'
+          : isPending
+            ? 'text-fm-warning'
+            : 'text-fm-text-tertiary';
+
+        // Tooltip: pending milestone shows the description from progress
+        // transparency when available, falling back to label-only.
+        let title = m.label;
+        if (done) title = `${m.label} ✓`;
+        else if (isPending) {
+          title = pendingDescription
+            ? `${m.label} — ${pendingDescription}`
+            : `${m.label} — needs attention`;
+        }
+
+        const Icon = done ? FilledCircleIcon : EmptyCircleIcon;
+
+        return (
+          <span
+            key={m.key}
+            className={`inline-flex items-center gap-1 text-fm-xs ${colorClass}`}
+            title={title}
+          >
+            <Icon className={`w-2 h-2 ${isPending ? 'animate-pulse' : ''}`} />
+            <span>{m.label}</span>
+          </span>
+        );
+      })}
+    </span>
+  </div>
+);
+
+// ==================== Main Component ====================
+
+interface CaseDetailsProps {
+  caseData: CaseUIResponse;
+  activeCase: UserCase | null;
+  expandedSection: string | null;
+  onToggleSection: (section: string) => void;
+  onScrollToTurn?: (turnNumber: number) => void;
+}
+
+export const CaseDetails: React.FC<CaseDetailsProps> = ({
+  caseData,
+  activeCase,
+  expandedSection,
+  onToggleSection,
+  onScrollToTurn,
+}) => {
+  // Configured Dashboard URL for deep-links (NOT the backend-reported one,
+  // which is localhost on a self-hosted server).
+  const dashboardUrl = useConfiguredEndpoint('dashboard');
+
+  // ----- Files drill-down state (lazy-fetched) -----
+  const [files, setFiles] = useState<UploadedFileWithEvidence[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesFetched, setFilesFetched] = useState(false);
+  const [selectedFileForEvidence, setSelectedFileForEvidence] = useState<string | null>(null);
+  const [evidenceDetails, setEvidenceDetails] = useState<UploadedFileDetailsResponse | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+
+  const filesExpanded = expandedSection === 'files';
+
+  const caseId = caseData.case_id;
+
+  useEffect(() => {
+    if (!filesExpanded || filesFetched) return;
+    const fetchFiles = async () => {
+      setFilesLoading(true);
+      try {
+        const fetched = await filesApi.getUploadedFiles(caseId);
+        setFiles(fetched);
+      } catch (error) {
+        log.error('Failed to fetch files', error);
+      } finally {
+        setFilesLoading(false);
+        setFilesFetched(true);
+      }
+    };
+    fetchFiles();
+  }, [filesExpanded, caseId, filesFetched]);
+
+  const handleShowEvidence = async (fileId: string) => {
+    setSelectedFileForEvidence(fileId);
+    setEvidenceLoading(true);
+    try {
+      const details = await filesApi.getUploadedFileDetails(caseId, fileId);
+      setEvidenceDetails(details);
+    } catch (error) {
+      log.error('Failed to fetch evidence details', error);
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
+
+  const handleCloseEvidence = () => {
+    setSelectedFileForEvidence(null);
+    setEvidenceDetails(null);
+  };
+
+  // ----- Row builders (each returns a React node or null) -----
+
+  // 1. Problem — hidden on inquiry (proposed statement is in chat, not committed).
+  // Post-inquiry: sourced from caseData.problem_statement first, falling back
+  // to activeCase.description for backwards compatibility while the field
+  // rolls out across deployments.
+  let problemRow: React.ReactNode = null;
+  if (!isCaseInquiry(caseData)) {
+    const fromCaseData =
+      (isCaseInvestigating(caseData) || isCaseResolved(caseData) || isCaseClosed(caseData))
+        ? caseData.problem_statement?.trim()
+        : undefined;
+    const confirmed = fromCaseData || activeCase?.description?.trim();
+    if (confirmed) {
+      problemRow = <DetailRow label="Problem">{confirmed}</DetailRow>;
+    }
+  }
+
+  // 2. Progress (milestone map) — INVESTIGATING only.
+  let progressRow: React.ReactNode = null;
+  if (isCaseInvestigating(caseData)) {
+    const completedIndicators = new Set(caseData.progress.completed_indicators ?? []);
+    const pendingMilestone = caseData.progress_transparency?.active
+      ? caseData.progress_transparency.pending_milestone ?? null
+      : null;
+    const pendingDescription = caseData.progress_transparency?.active
+      ? caseData.progress_transparency.milestone_description ?? null
+      : null;
+    progressRow = (
+      <MilestoneMap
+        milestones={BASE_MILESTONES}
+        completedKeys={completedIndicators}
+        pendingMilestone={pendingMilestone}
+        pendingDescription={pendingDescription}
+      />
+    );
+  }
+
+  // 3. Leading Hypothesis (INVESTIGATING) / Root Cause (terminal).
+  let understandingRow: React.ReactNode = null;
+  if (isCaseInvestigating(caseData)) {
+    const wc = caseData.working_conclusion;
+    if (wc?.summary && !isPlaceholderValue(wc.summary)) {
+      const confidence = Math.round((wc.confidence ?? 0) * 100);
+      understandingRow = (
+        <DetailRow label="Leading Hypothesis">
+          <span>
+            {wc.summary} · {confidence}%
+          </span>
+        </DetailRow>
+      );
+    }
+  } else if (isCaseResolved(caseData) || isCaseClosed(caseData)) {
+    const rcText = caseData.root_cause?.description?.trim();
+    if (rcText && !isPlaceholderValue(rcText)) {
+      understandingRow = (
+        <DetailRow label="Root Cause">
+          <span className="inline-flex items-center gap-1">
+            <span className="truncate">{rcText}</span>
+            {isCaseResolved(caseData) && (
+              <CheckCircleIcon className="w-3.5 h-3.5 text-fm-success flex-shrink-0" />
+            )}
+            {/* Read-time assurance label (#572/INV-28): the RCC text is
+                LLM-authored; the grade is the graph-derived truth beside it. */}
+            <AssuranceChip
+              grade={caseData.root_cause?.cause_assurance}
+              overclaim={caseData.root_cause?.cause_overclaim}
+            />
+          </span>
+        </DetailRow>
+      );
+    } else if (rcText && isPlaceholderValue(rcText)) {
+      log.warn('Suppressed placeholder Root Cause value', { caseId, value: rcText });
+    }
+  }
+
+  // 4. Solution — RESOLVED only, hidden when an auto-generated resolution
+  // summary report exists (the report's narrative covers it; the inline row
+  // is redundant. The chat's inline closure summary is the primary surface.)
+  let solutionRow: React.ReactNode = null;
+  if (isCaseResolved(caseData)) {
+    const hasResolutionSummary = (caseData.reports_available ?? []).some(
+      (r) => r.report_type === 'resolution_summary' && r.status === 'auto_generated',
+    );
+    if (!hasResolutionSummary) {
+      const solText = caseData.solution_applied?.description?.trim();
+      if (solText && !isPlaceholderValue(solText)) {
+        solutionRow = <DetailRow label="Solution">{solText}</DetailRow>;
+      }
+    }
+  }
+
+  // 5. Closure — CLOSED only, kept ONLY when the closure summary was skipped
+  // (substance gate failed — no report to point at, so the closure-reason
+  // label is the user's only signal of why the case closed).
+  let closureRow: React.ReactNode = null;
+  if (isCaseClosed(caseData)) {
+    const closureSummary = (caseData.reports_available ?? []).find(
+      (r) => r.report_type === 'closure_summary',
+    );
+    const closureSkipped = closureSummary?.status === 'skipped';
+    if (closureSkipped) {
+      const reason = activeCase?.closure_reason;
+      // Fall back to the `other` entry for a reason this build does not know,
+      // matching ResolutionActionsCard and HeaderSummary. Requiring a map hit
+      // dropped the row entirely — and per the comment above, when the closure
+      // summary was skipped this row is the user's ONLY signal of why the case
+      // closed, so an unknown reason is exactly when suppressing it costs most.
+      // A backend that adds a reason before this build ships, or a case still
+      // carrying a retired one, both land here.
+      if (reason) {
+        const info = closureDisplayFor(reason);
+        closureRow = (
+          <DetailRow label="Closure">
+            {info.label} — {info.description}
+          </DetailRow>
+        );
+      }
+    }
+  }
+
+  // File count is on every CaseUIResponse variant.
+  const headerFileCount = caseData.uploaded_files_count ?? 0;
+
+  // 6. Artifacts strip — DELIVERABLES first, depth signals at the end.
+  //
+  // Deliverables (the real "artifacts" of the investigation): the summary
+  // report, generated runbook, applied solution, and collected evidence.
+  // Depth signals (hypothesis count, total duration) describe the SHAPE
+  // of the investigation, not its outputs — they go at the tail so the
+  // useful stuff reads first.
+  //
+  // Summary + runbook badges are clickable links into the Dashboard when
+  // a dashboard URL is configured. The runbook badge's target depends on
+  // whether the draft has been verified:
+  //   - draft   → /kb?tab=drafts&case=<id>  (the case-filtered Drafts list)
+  //   - verified → /kb?tab=documents        (the published runbooks list)
+  //   - discarded → no badge (server already filters out discarded drafts)
+  //
+  // Files stay on their own row below — they're inputs to the
+  // investigation, not deliverables.
+  let artifactsRow: React.ReactNode = null;
+  {
+    let evidence = 0;
+    let hypotheses = 0;
+    let durationMin = 0;
+    let hasSolution = false;
+    let hasSummary = false;
+    let hasRunbook = false;
+    let anyRunbookVerified = false;
+
+    if (isCaseInvestigating(caseData)) {
+      evidence = caseData.progress.total_evidence ?? 0;
+      hypotheses = caseData.active_hypotheses?.length ?? 0;
+    } else if (isCaseResolved(caseData) || isCaseClosed(caseData)) {
+      const rs = caseData.resolution_summary;
+      evidence = rs?.evidence_collected ?? 0;
+      hypotheses = rs?.hypotheses_tested ?? 0;
+      durationMin = rs?.total_duration_minutes ?? 0;
+
+      // solution_applied exists only on RESOLVED responses.
+      if (isCaseResolved(caseData)) {
+        const solText = caseData.solution_applied?.description?.trim();
+        if (solText && !isPlaceholderValue(solText)) hasSolution = true;
+      }
+
+      // reports_available enumerates auto-generated summaries and any
+      // case-linked runbook drafts (enriched server-side from
+      // conversion_drafts). Status on a runbook entry is "available"
+      // once the draft is verified (knowledge_item_id populated),
+      // otherwise "draft".
+      const reports = caseData.reports_available ?? [];
+      hasSummary = reports.some(
+        (r) =>
+          (r.report_type === 'resolution_summary' ||
+            r.report_type === 'closure_summary') &&
+          r.status === 'auto_generated',
+      );
+      const runbookEntries = reports.filter((r) => r.report_type === 'runbook');
+      hasRunbook = runbookEntries.length > 0;
+      anyRunbookVerified = runbookEntries.some((r) => r.status === 'available');
+    }
+
+    const summaryHref = dashboardUrl
+      ? `${dashboardUrl}/cases/${caseId}?tab=report`
+      : null;
+    // Verified runbooks live in the Documents tab (filtered list view).
+    // The Documents tab doesn't currently accept a ?case= filter, so we
+    // land the user on the unfiltered list and they browse from there.
+    // Draft runbooks live in the Drafts tab, which DOES accept ?case=.
+    const runbookHref = dashboardUrl
+      ? anyRunbookVerified
+        ? `${dashboardUrl}/kb?tab=documents`
+        : `${dashboardUrl}/kb?tab=drafts&case=${encodeURIComponent(caseId)}`
+      : null;
+
+    // Order: deliverables (artifacts) first, depth signals last.
+    const items: React.ReactNode[] = [];
+    if (hasSummary) {
+      items.push(
+        summaryHref ? (
+          <a
+            key="summary"
+            href={summaryHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fm-accent hover:underline"
+          >
+            📄 summary
+          </a>
+        ) : (
+          <span key="summary">📄 summary</span>
+        ),
+      );
+    }
+    if (hasRunbook) {
+      items.push(
+        runbookHref ? (
+          <a
+            key="runbook"
+            href={runbookHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fm-accent hover:underline"
+          >
+            📘 runbook
+          </a>
+        ) : (
+          <span key="runbook">📘 runbook</span>
+        ),
+      );
+    }
+    if (hasSolution) items.push('1 solution');
+    if (evidence > 0) items.push(`${evidence} evidence`);
+    // Depth signals — investigation shape, not outputs.
+    if (hypotheses > 0)
+      items.push(`${hypotheses} hypothes${hypotheses === 1 ? 'is' : 'es'}`);
+    if (durationMin > 0) items.push(formatDuration(durationMin));
+
+    if (items.length > 0) {
+      artifactsRow = (
+        <DetailRow label="Artifacts">
+          <span className="text-fm-text-secondary">
+            {items.map((item, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <span aria-hidden="true"> · </span>}
+                {item}
+              </React.Fragment>
+            ))}
+          </span>
+        </DetailRow>
+      );
+    }
+  }
+
+  // 7. Files — drill-down (visible if any files reported by header or already fetched).
+  const showFilesRow = headerFileCount > 0 || files.length > 0;
+
+  // Reports row is intentionally dropped — the closure summary is rendered
+  // inline in chat at the moment of generation (per the no-Dashboard-link
+  // policy in CLAUDE.md). A header drill-down listing reports without a
+  // working link to view them was noise.
+
+  // Track which sub-rows we have so the wrapper renders an empty-state when none
+  const anyRow =
+    problemRow ||
+    progressRow ||
+    understandingRow ||
+    solutionRow ||
+    closureRow ||
+    artifactsRow ||
+    showFilesRow;
+
+  if (!anyRow) {
+    return (
+      <div className="px-4 pb-2 pt-1.5 text-fm-sm text-fm-text-tertiary italic">
+        {isCaseInquiry(caseData) ? 'Inquiry in progress…' : 'No details available yet.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-2 pt-1.5 space-y-0">
+      {problemRow}
+      {progressRow}
+      {understandingRow}
+      {solutionRow}
+      {closureRow}
+      {artifactsRow}
+
+      {/* Files drill-down */}
+      {showFilesRow && (
+        <>
+          <DetailRow
+            label="Files"
+            expandable
+            expanded={filesExpanded}
+            onToggle={() => onToggleSection('files')}
+          >
+            {headerFileCount > 0 ? `${headerFileCount} uploaded` : 'View uploads'}
+          </DetailRow>
+
+          {filesExpanded && (
+            <div className="pl-[84px] pb-0.5">
+              {filesLoading && (
+                <p className="text-fm-xs text-fm-text-tertiary italic py-0.5">Loading…</p>
+              )}
+              {!filesLoading && files.length > 0 && (
+                <div className="space-y-0.5">
+                  {files.map((file, idx) => (
+                    <div
+                      key={file.file_id}
+                      className="flex items-center gap-1.5 text-fm-xs text-fm-text-primary"
+                    >
+                      <span className="text-fm-text-tertiary">{idx < files.length - 1 ? '├' : '└'}</span>
+                      <span className="truncate">{file.filename}</span>
+                      <span className="text-fm-text-tertiary flex-shrink-0">
+                        ({formatFileSize(file.size_bytes)})
+                      </span>
+                      {file.evidence_count !== undefined && file.evidence_count > 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleShowEvidence(file.file_id);
+                          }}
+                          className="text-fm-success hover:text-fm-success/80 flex-shrink-0"
+                        >
+                          {file.evidence_count} evidence
+                        </button>
+                      )}
+                      {onScrollToTurn && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onScrollToTurn(file.uploaded_at_turn);
+                          }}
+                          className="text-fm-accent hover:text-fm-accent/80 flex-shrink-0"
+                          title="Jump to turn"
+                        >
+                          → T{file.uploaded_at_turn}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!filesLoading && filesFetched && files.length === 0 && (
+                <p className="text-fm-xs text-fm-text-tertiary italic py-0.5">No files uploaded</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      <EvidenceDetailsModal
+        isOpen={selectedFileForEvidence !== null}
+        evidenceDetails={evidenceDetails}
+        evidenceLoading={evidenceLoading}
+        onClose={handleCloseEvidence}
+        onScrollToTurn={onScrollToTurn}
+      />
+    </div>
+  );
+};

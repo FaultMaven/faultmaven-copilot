@@ -10,20 +10,20 @@ const { store, createSessionWithRecovery, getValidAccessToken, getAuthState } = 
   getAuthState: vi.fn()
 }));
 
-vi.mock('../../lib/session/client-session-manager', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/session/client-session-manager', () => ({
   clientSessionManager: { createSessionWithRecovery }
 }));
-vi.mock('../../lib/auth/token-manager', () => ({ tokenManager: { getValidAccessToken } }));
-vi.mock('../../lib/auth/auth-manager', () => ({ authManager: { getAuthState } }));
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('../../extension/auth/token-manager', () => ({ tokenManager: { getValidAccessToken } }));
+vi.mock('../../extension/auth/auth-manager', () => ({ authManager: { getAuthState } }));
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession } from '../../lib/api/session-core';
-import { getAuthHeaders } from '../../lib/api/fetch-utils';
+import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { getAuthHeaders } from '@faultmaven/copilot-ui/lib/api/fetch-utils';
 
-import { setApiTransport } from '../../lib/api/transport';
-import { setHostStore } from '../../lib/host-store';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 describe('session refresh → X-Session-Id bridge', () => {
   beforeEach(() => {

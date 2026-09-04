@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectCaseTitle, isPlaceholderCaseTitle } from '~lib/state/case-title';
+import { selectCaseTitle, isPlaceholderCaseTitle } from '@faultmaven/copilot-ui/lib/state/case-title';
 
 describe('selectCaseTitle', () => {
   it('prefers the store title over the backend title', () => {

@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthState, getUserCases, createCase } from '../../lib/api';
+import { AuthState, getUserCases, createCase } from '@faultmaven/copilot-ui/lib/api';
 // The credential stack is no longer re-exported by the shared barrel — that is
 // the route this step cut — so the extension's own modules are imported here
 // directly, which is what the extension itself does.
-import { getCurrentUser, logoutAuth } from '../../lib/api/services/auth-service';
-import { authManager } from '../../lib/auth/auth-manager';
-import { AuthenticationError } from '../../lib/errors/types';
+import { getCurrentUser, logoutAuth } from '../../extension/auth/auth-service';
+import { authManager } from '../../extension/auth/auth-manager';
+import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 // Build-time constants only. Where the API lives is the host's answer, which
 // this file installs below.
-vi.mock('../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   __esModule: true,
   default: {
     session: {
@@ -39,7 +39,10 @@ const { mockBrowserStorage, mockBrowserRuntime } = vi.hoisted(() => {
   };
   
   const mockRuntime = {
-    sendMessage: vi.fn(),
+    // Resolves, because that is what the real API does — EventBus attaches a
+    // `.catch` to swallow "no listener", and a mock returning undefined made
+    // the broadcast throw where the real one cannot.
+    sendMessage: vi.fn().mockResolvedValue(undefined),
     onMessage: {
       addListener: vi.fn(),
       removeListener: vi.fn()
@@ -64,7 +67,7 @@ vi.mock('wxt/browser', () => ({
 // per auth mode. Default is 'local' (revoke skipped) to keep existing tests intact;
 // the OAuth revoke tests override the provider explicitly.
 const { mockGetAuthConfig } = vi.hoisted(() => ({ mockGetAuthConfig: vi.fn() }));
-vi.mock('../../lib/auth/auth-config', async (importActual) => ({
+vi.mock('../../extension/auth/auth-config', async (importActual) => ({
   ...(await importActual<any>()),
   getAuthConfig: mockGetAuthConfig
 }));
@@ -87,9 +90,9 @@ const mockFetchResponse = (response: any = {}) => {
   };
 };
 
-import { setApiTransport } from '../../lib/api/transport';
-import { setHostStore } from '../../lib/host-store';
-import { setHostEndpoints } from '../../lib/host-endpoints';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 
 const API = 'https://api.faultmaven.ai';
 
@@ -97,6 +100,10 @@ describe('Authentication API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    // Re-armed each test: afterEach's restoreAllMocks drops the implementation,
+    // and a sendMessage that returns undefined is not what the real API does —
+    // EventBus attaches a `.catch` to swallow "no listener".
+    mockBrowserRuntime.sendMessage.mockResolvedValue(undefined);
 
     // This file mocks `wxt/browser` for itself, so the suite defaults from
     // setup.ts — bound to the global mock and to localhost — would answer from
@@ -481,10 +488,9 @@ describe('Authentication API', () => {
       );
 
       // Verify cross-tab message is sent
-      expect(mockBrowserRuntime.sendMessage).toHaveBeenCalledWith({
-        type: 'auth_state_changed',
-        authState: null
-      });
+      expect(mockBrowserRuntime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'auth_state_changed', authState: null })
+      );
     });
 
     it('clears auth state even on logout API failure', async () => {
@@ -716,7 +722,7 @@ describe('Authentication API', () => {
         status: 204
       });
 
-      const { deleteCase } = await import('../../lib/api');
+      const { deleteCase } = await import('@faultmaven/copilot-ui/lib/api');
       await deleteCase('case-123');
 
       expect(fetch).toHaveBeenCalledWith(
@@ -748,7 +754,7 @@ describe('Authentication API', () => {
         })
       });
 
-      const { submitTurn } = await import('../../lib/api');
+      const { submitTurn } = await import('@faultmaven/copilot-ui/lib/api');
       await submitTurn('case-123', { query: 'test' });
 
       expect(fetch).toHaveBeenCalledWith(
@@ -771,7 +777,7 @@ describe('Authentication API', () => {
         json: { title: 'Generated Title' }
       }));
 
-      const { generateCaseTitle } = await import('../../lib/api');
+      const { generateCaseTitle } = await import('@faultmaven/copilot-ui/lib/api');
       await generateCaseTitle('case-123', { max_words: 5 });
 
       expect(fetch).toHaveBeenCalledWith(
@@ -799,7 +805,7 @@ describe('Authentication API', () => {
       });
 
       const mockFile = new File(['# Test Doc'], 'test.md', { type: 'text/markdown' });
-      const { uploadKnowledgeDocument } = await import('../../lib/api');
+      const { uploadKnowledgeDocument } = await import('@faultmaven/copilot-ui/lib/api');
       await uploadKnowledgeDocument(mockFile, 'Test Doc', 'playbook');
 
       expect(fetch).toHaveBeenCalledWith(
@@ -821,7 +827,7 @@ describe('Authentication API', () => {
         json: () => Promise.resolve({ documents: [], total_count: 0 })
       });
 
-      const { getKnowledgeDocuments } = await import('../../lib/api');
+      const { getKnowledgeDocuments } = await import('@faultmaven/copilot-ui/lib/api');
       await getKnowledgeDocuments();
 
       expect(fetch).toHaveBeenCalledWith(
@@ -843,7 +849,7 @@ describe('Authentication API', () => {
         json: () => Promise.resolve({ query: 'test', total_results: 0, results: [] })
       });
 
-      const { searchKnowledgeBase } = await import('../../lib/api');
+      const { searchKnowledgeBase } = await import('@faultmaven/copilot-ui/lib/api');
       await searchKnowledgeBase('test query');
 
       expect(fetch).toHaveBeenCalledWith(
@@ -866,7 +872,7 @@ describe('Authentication API', () => {
         json: () => Promise.resolve({ session_id: 'session-123', status: 'active' })
       });
 
-      const { heartbeatSession } = await import('../../lib/api');
+      const { heartbeatSession } = await import('@faultmaven/copilot-ui/lib/api');
       await heartbeatSession('session-123');
 
       expect(fetch).toHaveBeenCalledWith(

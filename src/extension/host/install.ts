@@ -17,8 +17,8 @@
  *
  * Idempotent: installing the same singletons twice is a no-op.
  */
-import { setHostStore } from '../../lib/host-store';
-import { setHostEndpoints } from '../../lib/host-endpoints';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 import { extensionStore } from './extension-store';
 import { extensionEndpoints } from './endpoints';
 

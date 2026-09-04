@@ -21,8 +21,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { errorBodyText } from '../../../lib/errors/error-body';
-import { createHttpErrorFromResponse } from '../../../lib/errors/http-error';
+import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
+import { createHttpErrorFromResponse } from '@faultmaven/copilot-ui/lib/errors/http-error';
 
 /** A Response stand-in: only what `createHttpErrorFromResponse` reads. */
 function fakeResponse(
@@ -202,10 +202,15 @@ describe('no call site reads `detail` as the message on its own', () => {
 
   // `HttpError.getUserMessage()` reads its *own* already-extracted `detail`
   // field, which is a string by construction — not a raw body.
-  const ALLOWED = new Set(['src/lib/errors/http-error.ts']);
+  const ALLOWED = new Set(['packages/copilot-ui/lib/errors/http-error.ts']);
+
+  // BOTH trees. The shared UI is a package now and the extension is what is
+  // left of src/; scanning one would leave the other free to reintroduce this.
+  const ROOTS = ['src', 'packages/copilot-ui'];
+  const allSources = () => ROOTS.flatMap((r) => sourceFiles(r));
 
   it('finds no `.detail ||` fallback chain outside the allowed files', () => {
-    const files = sourceFiles('src');
+    const files = allSources();
     expect(files.length).toBeGreaterThan(50); // the scan actually resolved src/
 
     const offenders: string[] = [];
@@ -240,6 +245,6 @@ describe('no call site reads `detail` as the message on its own', () => {
     expect(DETAIL_FALLBACK.test("if (errorData.detail?.toLowerCase().includes('x') ||")).toBe(
       false
     );
-    expect(sourceFiles('src').some(f => f.endsWith('error-body.ts'))).toBe(true);
+    expect(allSources().some(f => f.endsWith('error-body.ts'))).toBe(true);
   });
 });

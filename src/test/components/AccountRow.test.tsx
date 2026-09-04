@@ -19,12 +19,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AccountRow } from '../../shared/ui/components/AccountRow';
-import type { UserProfile } from '../../lib/api/types';
-import type { HostUser } from '../../shared/host';
+import { AccountRow } from '@faultmaven/copilot-ui/shared/ui/components/AccountRow';
+import type { UserProfile } from '@faultmaven/copilot-ui/lib/api/types';
+import type { HostUser } from '@faultmaven/copilot-ui/shared/host';
 
 const getCurrentUser = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/api/services/user-service', () => ({ getCurrentUser }));
+vi.mock('@faultmaven/copilot-ui/lib/api/services/user-service', () => ({ getCurrentUser }));
 
 // The identity the HOST publishes, which is the one the row renders now — the
 // store's second copy of the same person is gone.

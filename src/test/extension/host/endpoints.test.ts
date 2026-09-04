@@ -22,7 +22,7 @@ import {
   getDashboardUrl,
   extensionEndpoints,
 } from '../../../extension/host/endpoints';
-import { setHostStore, clearHostStore } from '../../../lib/host-store';
+import { setHostStore, clearHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 // This file mocks `wxt/browser` for itself, so the suite-wide store from
 // setup.ts — which is bound to the GLOBAL mock — would answer these reads from

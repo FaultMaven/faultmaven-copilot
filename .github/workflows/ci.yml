@@ -69,7 +69,7 @@ jobs:
 
   # ============================================================================
   # API type drift
-  # `src/types/api.generated.ts` is generated from faultmaven's committed
+  # `packages/copilot-ui/types/api.generated.ts` is generated from faultmaven's committed
   # OpenAPI spec. Nothing previously compared the two, so the file could sit
   # arbitrarily far behind the API it claims to describe — and did: it declared
   # an endpoint the server had removed. Regenerating and diffing is the whole
@@ -142,17 +142,17 @@ jobs:
           # reports nothing for an UNTRACKED path, so a pull request that
           # deleted the generated client would regenerate it here and pass
           # having compared the contract against nothing.
-          if [ -n "$(git status --porcelain src/types/api.generated.ts)" ]; then
-            echo "::error::src/types/api.generated.ts no longer matches the pinned API contract."
+          if [ -n "$(git status --porcelain packages/copilot-ui/types/api.generated.ts)" ]; then
+            echo "::error::packages/copilot-ui/types/api.generated.ts no longer matches the pinned API contract."
             echo ""
             echo "Regenerate and commit it:"
             echo "    pnpm generate:api-types"
-            echo "    git add src/types/api.generated.ts"
+            echo "    git add packages/copilot-ui/types/api.generated.ts"
             echo ""
             echo "If you are adopting a new contract, move \`ref\` in"
             echo "api-contract.pin.json in the same pull request — that is the"
             echo "commit where this client accepts the change."
-            git --no-pager diff --stat src/types/api.generated.ts
+            git --no-pager diff --stat packages/copilot-ui/types/api.generated.ts
             exit 1
           fi
 

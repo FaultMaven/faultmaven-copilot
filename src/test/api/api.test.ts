@@ -5,10 +5,10 @@ import {
   submitTurn,
   ResponseType,
   TurnResponse,
-} from '../../lib/api';
+} from '@faultmaven/copilot-ui/lib/api';
 
 // Build-time constants only; the endpoint is the host's answer, below.
-vi.mock('../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   __esModule: true,
   default: {
     session: {
@@ -46,8 +46,8 @@ vi.mock('wxt/browser', () => ({
   storage: mockBrowserStorage
 };
 
-import { setApiTransport } from '../../lib/api/transport';
-import { setHostStore } from '../../lib/host-store';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 describe('API Functions', () => {
   beforeEach(() => {
@@ -227,8 +227,8 @@ describe('API Functions', () => {
       // with `status` so the ErrorClassifier can route them. We verify
       // the end-to-end: 409 fetch → caught error → classifier output =
       // CaseVersionConflictError with manual_retry recovery.
-      const { CaseVersionConflictError } = await import('../../lib/errors/types');
-      const { ErrorClassifier } = await import('../../lib/errors/classifier');
+      const { CaseVersionConflictError } = await import('@faultmaven/copilot-ui/lib/errors/types');
+      const { ErrorClassifier } = await import('@faultmaven/copilot-ui/lib/errors/classifier');
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: false,

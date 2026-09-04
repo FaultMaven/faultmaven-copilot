@@ -13,7 +13,7 @@
  */
 import { EventBus, type AuthStateChangedEvent } from '../messaging';
 import { extensionStore } from './extension-store';
-import type { HostUser } from '../../shared/host';
+import type { HostUser } from '@faultmaven/copilot-ui/shared/host';
 
 /** The composite auth row. Its disappearance IS the sign-out. */
 const AUTH_STATE_KEY = 'authState';

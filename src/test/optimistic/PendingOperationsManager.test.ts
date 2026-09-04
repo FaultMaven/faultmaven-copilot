@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PendingOperationsManager } from '../../lib/optimistic/PendingOperationsManager';
-import type { PendingOperation } from '../../lib/optimistic';
+import { PendingOperationsManager } from '@faultmaven/copilot-ui/lib/optimistic/PendingOperationsManager';
+import type { PendingOperation } from '@faultmaven/copilot-ui/lib/optimistic';
 
 const makeOp = (over: Partial<PendingOperation> = {}): PendingOperation => ({
   id: 'op1',

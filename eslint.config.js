@@ -82,11 +82,21 @@ export default [
     }
   },
   {
+    // The package's Tailwind preset is CommonJS, and the block above only
+    // reaches .ts/.tsx — so `__dirname` read as an undefined global.
+    files: ['**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node }
+    }
+  },
+  {
     ignores: [
       'node_modules/',
       '.output/',
       '.wxt/',
       'dist/',
+      'packages/*/dist/',
       // Build output of the host-independence proof (playground/vite.config.ts).
       // The bare 'dist/' above is anchored at the repo root and does not cover it,
       // so `eslint playground` linted 1700 problems in minified vendor bundles.

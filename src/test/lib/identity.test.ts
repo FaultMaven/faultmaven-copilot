@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { accountInitials, elevatedRole, identityColor, IDENTITY_COLORS } from '~/lib/identity';
+import { accountInitials, elevatedRole, identityColor, IDENTITY_COLORS } from '@faultmaven/copilot-ui/lib/identity';
 
 /**
  * These assertions are the cross-client contract, not local detail.

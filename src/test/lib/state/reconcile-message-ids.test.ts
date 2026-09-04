@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   reconcileOptimisticIds,
   slotOf
-} from '../../../lib/state/reconcile-message-ids';
-import type { OptimisticConversationItem } from '../../../lib/optimistic';
+} from '@faultmaven/copilot-ui/lib/state/reconcile-message-ids';
+import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 
 const row = (r: Partial<OptimisticConversationItem> & { id: string }) =>
   ({ optimistic: false, timestamp: '2026-08-20T10:00:00Z', ...r }) as OptimisticConversationItem;

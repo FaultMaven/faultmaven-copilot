@@ -2,10 +2,10 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { WelcomeScreen } from '~/extension/components/WelcomeScreen';
-import { ErrorModal } from '~/shared/ui/components/ErrorModal';
-import DocumentDetailsModal from '~/shared/ui/components/DocumentDetailsModal';
-import { StatusChangeRequestModal } from '~/shared/ui/components/case-header/StatusChangeRequestModal';
+import { WelcomeScreen } from '../../extension/components/WelcomeScreen';
+import { ErrorModal } from '@faultmaven/copilot-ui/shared/ui/components/ErrorModal';
+import DocumentDetailsModal from '@faultmaven/copilot-ui/shared/ui/components/DocumentDetailsModal';
+import { StatusChangeRequestModal } from '@faultmaven/copilot-ui/shared/ui/components/case-header/StatusChangeRequestModal';
 
 // Mock browser extension API
 vi.mock('wxt/browser', () => ({
