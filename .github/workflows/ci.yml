@@ -395,13 +395,29 @@ jobs:
           exit 1
 
   # ============================================================================
-  # Stage 5: Security Scan (Non-blocking)
+  # Stage 5: Security Scan (dependency audit, fail closed)
+  # ============================================================================
+  # This job was three layers of fail-open at once: `continue-on-error: true`
+  # on the job, `|| echo` swallowing the audit's exit code, and the pipeline
+  # summary deliberately excluding it from the gate. It could not go red for
+  # any finding, at any severity — and on 2026-09-04 it was reporting five
+  # high advisories while concluding success.
+  #
+  # It now fails closed on high/critical, matching faultmaven-dashboard's
+  # `Dependency Audit` job. The job name is unchanged so anything that names
+  # this check keeps naming it.
+  #
+  # Escape hatch for a true positive with no upstream patch: add the GHSA id
+  # to `pnpm.auditConfig.ignoreGhsas` in package.json, alongside a comment
+  # saying why. Measured on pnpm 9.15.9 against the lockfile this commit
+  # replaces: ignoring the five high ids takes the exit code to 0 and prints
+  # `5 high (5 ignored)`, so the finding stays visible in the log. An ignore
+  # names one advisory; it never widens the threshold.
   # ============================================================================
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     # Checkout plus `pnpm audit`, which queries the npm registry.
     permissions:
       contents: read
@@ -414,27 +430,38 @@ jobs:
         uses: pnpm/action-setup@v5
         with:
           version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run pnpm audit
-        run: |
-          echo "Running pnpm audit..."
-          pnpm audit --audit-level=moderate || echo "⚠️  Security vulnerabilities found (non-blocking)"
+      # No install step: `pnpm audit` resolves pnpm-lock.yaml directly, so the
+      # audited set is the lockfile rather than whatever a fresh resolution
+      # happened to produce. `pnpm install --frozen-lockfile` is still
+      # exercised by lint, test and build.
+      #
+      # Verified to bite when introduced: against the lockfile this commit
+      # replaces, this exact command exits 1 (5 high); against the lockfile
+      # here it exits 0.
+      - name: Audit lockfile (high/critical, fail closed)
+        run: pnpm audit --audit-level high
 
       - name: Security summary
-        if: always()
+        if: success()
         run: |
-          echo "### 🔒 Security Scan Complete" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔒 Dependency Audit Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Security scan completed. Review findings above." >> $GITHUB_STEP_SUMMARY
+          echo "No high or critical advisories against \`pnpm-lock.yaml\`." >> $GITHUB_STEP_SUMMARY
+
+      - name: Security failure
+        if: failure()
+        run: |
+          echo "### ❌ Dependency Audit Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`pnpm audit --audit-level high\` reported high or critical advisories." >> $GITHUB_STEP_SUMMARY
+          echo "Resolve each one with a targeted \`pnpm.overrides\` entry or a direct bump." >> $GITHUB_STEP_SUMMARY
 
   # ============================================================================
   # Pipeline Summary
@@ -463,7 +490,7 @@ jobs:
           echo "| Tests | ${{ needs.test.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | ${{ needs.build.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | ${{ needs.validate.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security Scan | ${{ needs.security.result == 'success' && '✅ Passed' || needs.security.result == 'failure' && '⚠️  Warnings' || '⏭️  Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ needs.validate.result }}" = "success" ]; then
             echo "✅ Extension packages are ready for release." >> $GITHUB_STEP_SUMMARY
@@ -481,17 +508,20 @@ jobs:
         # Summary", would still *conclude* success for a failed pipeline. That
         # is the fail-open shape this table exists to avoid: an aggregate check
         # announcing success for stages it merely reported on.
-        # Security scanning is advisory here (the table reports it as a
-        # warning), so it is deliberately not gated on.
+        # SECURITY is in this list. Leaving it out would hand back the
+        # fail-open the audit job just gave up: the audit would go red and
+        # this aggregate, the job that reads as "did the pipeline pass",
+        # would still conclude success.
         env:
           LINT: ${{ needs.lint.result }}
           API_TYPES_DRIFT: ${{ needs['api-types-drift'].result }}
           TEST: ${{ needs.test.result }}
           BUILD: ${{ needs.build.result }}
           VALIDATE: ${{ needs.validate.result }}
+          SECURITY: ${{ needs.security.result }}
         run: |
           rc=0
-          for stage in LINT API_TYPES_DRIFT TEST BUILD VALIDATE; do
+          for stage in LINT API_TYPES_DRIFT TEST BUILD VALIDATE SECURITY; do
             result="${!stage}"
             # `skipped` is a pass: a stage skipped on purpose (the `skip_tests`
             # dispatch input) must not fail the pipeline, and a stage skipped
