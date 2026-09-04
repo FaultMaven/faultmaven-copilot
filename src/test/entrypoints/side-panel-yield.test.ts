@@ -145,13 +145,13 @@ const {
 vi.mock('wxt/browser', () => ({ browser: mockBrowser }));
 (global as any).browser = mockBrowser;
 
-vi.mock('../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   authManager: { saveAuthState: vi.fn(), clearAuthState: vi.fn() },
 }));
 
 // The auth bridge's own registration is not under test here; only the fact
 // that the yield rule shares its origin set is.
-vi.mock('../../lib/auth/auth-bridge-registration', () => ({
+vi.mock('../../extension/auth/auth-bridge-registration', () => ({
   reconcileAuthBridgeRegistration: vi.fn(),
   unregisterAuthBridge: vi.fn(),
 }));

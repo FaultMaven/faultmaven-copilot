@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
-import LoadingSpinner, { LoadingOverlay, LoadingButton } from '../../shared/ui/components/LoadingSpinner';
+import LoadingSpinner, { LoadingOverlay, LoadingButton } from '@faultmaven/copilot-ui/shared/ui/components/LoadingSpinner';
 
 describe('LoadingSpinner', () => {
   it('renders with default props', () => {

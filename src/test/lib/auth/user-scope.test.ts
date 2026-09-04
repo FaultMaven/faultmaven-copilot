@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { browser } from 'wxt/browser';
-import { enforceUserDataScope } from '../../../lib/auth/user-scope';
-import { PersistenceManager } from '../../../lib/utils/persistence-manager';
-import { clientSessionManager } from '../../../lib/session/client-session-manager';
-import { setHostStore } from '../../../lib/host-store';
+import { enforceUserDataScope } from '../../../extension/auth/user-scope';
+import { PersistenceManager } from '@faultmaven/copilot-ui/lib/utils/persistence-manager';
+import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -17,15 +17,15 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-vi.mock('../../../lib/utils/persistence-manager', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/persistence-manager', () => ({
   PersistenceManager: { clearAllPersistenceData: vi.fn().mockResolvedValue(undefined) }
 }));
 
-vi.mock('../../../lib/session/client-session-manager', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/session/client-session-manager', () => ({
   clientSessionManager: { clearClientId: vi.fn().mockResolvedValue(undefined) }
 }));
 
-vi.mock('../../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

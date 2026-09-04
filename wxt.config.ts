@@ -7,12 +7,11 @@ export default defineConfig({
     '@wxt-dev/module-react'
   ],
   vite: () => ({
-    resolve: {
-      alias: {
-        '~': path.resolve(__dirname, 'src'),
-        '~lib': path.resolve(__dirname, 'src/lib'),
-      },
-    },
+    // No aliases. The shared UI resolves as a workspace dependency
+    // (@faultmaven/copilot-ui), the same way the Dashboard will resolve it, so
+    // there is no path the extension can import it by that a second host
+    // cannot.
+    resolve: {},
   }),
   manifest: ({ browser }) => ({
     name: "__MSG_appName__",

@@ -36,14 +36,14 @@ const {
     capturedSignOut: { current: (_fn: (() => Promise<void>) | null) => {} },
   }));
 
-vi.mock('../../lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
+vi.mock('@faultmaven/copilot-ui/lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
 vi.mock('../../extension/extension-reload', () => ({
   detectExtensionReload,
   clearReloadFlag: vi.fn().mockResolvedValue(undefined),
   stampRuntimeIdentity: vi.fn().mockResolvedValue(undefined),
   markReloadDetected: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../../lib/api/services/auth-service', () => ({ logoutAuth }));
+vi.mock('../../extension/auth/auth-service', () => ({ logoutAuth }));
 
 // WHO is signed in is the extension's own question now — it asks its credential
 // stack directly rather than reading an answer the shared store produced.
@@ -54,15 +54,15 @@ const HOST_USER = {
   display_name: 'Op',
   roles: ['user'],
 };
-vi.mock('../../lib/auth/auth-manager', () => ({
+vi.mock('../../extension/auth/auth-manager', () => ({
   authManager: {
     isAuthenticated: vi.fn(async () => authState.isAuthenticated),
     getCurrentUser: vi.fn(async () => (authState.isAuthenticated ? HOST_USER : null)),
     clearAllAuthData: vi.fn().mockResolvedValue(undefined),
   },
 }));
-vi.mock('../../lib/capabilities', () => ({ capabilitiesManager: { fetch: capsFetch } }));
-vi.mock('../../lib/auth/auth-config', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/capabilities', () => ({ capabilitiesManager: { fetch: capsFetch } }));
+vi.mock('../../extension/auth/auth-config', () => ({
   getAuthConfig: vi.fn().mockResolvedValue({
     provider: 'oidc',
     features: { supports_registration: false, supports_password_reset: false, supports_mfa: false },
@@ -71,14 +71,14 @@ vi.mock('../../lib/auth/auth-config', () => ({
 // A probe, not the panel. What this file tests is what the ENTRY builds and
 // hands over; rendering the real panel would pull every hook it owns into a
 // test about the gate above it.
-vi.mock('../../shared/ui/CopilotPanel', () => ({
+vi.mock('@faultmaven/copilot-ui/shared/ui/CopilotPanel', () => ({
   default: ({ host }: any) => {
     capturedSignOut.current(host.session.signOut);
     return <div data-testid="panel-probe" />;
   },
 }));
 import { ExtensionApp } from '../../extension/ExtensionApp';
-import { useAppStore } from '../../lib/state/store';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 
 const b = (global as any).browser;
 

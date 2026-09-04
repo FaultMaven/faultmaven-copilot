@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { browser } from 'wxt/browser';
-import { capabilitiesManager, type BackendCapabilities } from '../../lib/capabilities';
-import { authManager } from '../../lib/auth/auth-manager';
-import type { User } from '../../lib/api/types';
+import { capabilitiesManager, type BackendCapabilities } from '@faultmaven/copilot-ui/lib/capabilities';
+import { authManager } from '../../extension/auth/auth-manager';
+import type { User } from '@faultmaven/copilot-ui/lib/api/types';
 import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../extension/host/endpoints';
 import { installExtensionHostContext } from '../../extension/host/install';
-import { createLogger } from '~/lib/utils/logger';
-import '../../assets/styles/globals.css';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
+import '@faultmaven/copilot-ui/styles/globals.css';
 
 // This page reads and writes the configured endpoints and probes backend
 // capabilities, all of which go through the host's store. Installed here, at

@@ -23,9 +23,8 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'e2e/**', '**/.worktrees/**'],
   },
   resolve: {
-    alias: {
-      '~': path.resolve(__dirname, 'src'),
-      '~lib': path.resolve(__dirname, 'src/lib'),
-    },
+    // None. The suite resolves the shared UI as the hosts do — through the
+    // package — so a test cannot pass against files a host would not load.
+    alias: {},
   },
 });

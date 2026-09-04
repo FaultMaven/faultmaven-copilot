@@ -35,6 +35,9 @@ importers:
 
   .:
     dependencies:
+      '@faultmaven/copilot-ui':
+        specifier: workspace:*
+        version: link:packages/copilot-ui
       '@fontsource/dm-sans':
         specifier: ^5.2.8
         version: 5.2.8
@@ -174,6 +177,61 @@ importers:
       wxt:
         specifier: ~0.20.6
         version: 0.20.6(@types/node@25.0.9)(jiti@1.21.7)(rollup@4.62.2)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/copilot-ui:
+    dependencies:
+      '@fontsource/dm-sans':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/inter':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/jetbrains-mono':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@tanstack/react-query':
+        specifier: ^5.90.17
+        version: 5.90.17(react@19.2.3)
+      mermaid:
+        specifier: ^11.16.1
+        version: 11.16.1
+      react:
+        specifier: ^19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: ^19.2.3
+        version: 19.2.3(react@19.2.3)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.8)(react@19.2.3)
+      rehype-highlight:
+        specifier: ^7.0.2
+        version: 7.0.2
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+      tailwindcss:
+        specifier: ^3.4.19
+        version: 3.4.19(tsx@4.21.0)(yaml@2.8.2)
+      zustand:
+        specifier: ^5.0.14
+        version: 5.0.14(@types/react@19.2.8)(react@19.2.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^25.0.9
+        version: 25.0.9
+      '@types/react':
+        specifier: ^19.2.8
+        version: 19.2.8
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.8)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^6.4.3
+        version: 6.4.3(@types/node@25.0.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
 
 packages:
 
@@ -9756,6 +9814,21 @@ snapshots:
       '@types/node': 25.0.9
       fsevents: 2.3.3
       jiti: 1.21.7
+      tsx: 4.21.0
+      yaml: 2.8.2
+
+  vite@6.4.3(@types/node@25.0.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2):
+    dependencies:
+      esbuild: 0.25.12
+      fdir: 6.5.0(picomatch@4.0.4)
+      picomatch: 4.0.4
+      postcss: 8.5.26
+      rollup: 4.62.2
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 25.0.9
+      fsevents: 2.3.3
+      jiti: 2.6.1
       tsx: 4.21.0
       yaml: 2.8.2
 

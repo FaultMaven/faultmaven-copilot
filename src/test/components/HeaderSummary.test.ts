@@ -26,8 +26,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getCaseActionOptions } from '../../shared/ui/components/case-header/HeaderSummary';
-import type { CaseUIResponse } from '../../types/case';
+import { getCaseActionOptions } from '@faultmaven/copilot-ui/shared/ui/components/case-header/HeaderSummary';
+import type { CaseUIResponse } from '@faultmaven/copilot-ui/types/case';
 
 // Small helpers to build minimal CaseUIResponse stubs. Only the fields
 // getCaseActionOptions reads are populated; everything else is irrelevant

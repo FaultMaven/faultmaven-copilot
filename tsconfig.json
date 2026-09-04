@@ -12,17 +12,23 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true, // WXT/Vite handles emitting JavaScript
 
-    // Path Aliases for TypeScript
-    "baseUrl": ".", // Sets the base for path resolution
-    "paths": {
-      "~/*": ["src/*"],         // Maps '~/' to 'src/'
-      "~lib/*": ["src/lib/*"]   // Maps '~lib/' to 'src/lib/'
-    }
+    // No path aliases. The shared UI is a package now, so what used to be
+    // `~/lib/...` is `@faultmaven/copilot-ui/lib/...` and resolves the way any
+    // dependency does. An alias would let the extension reach into the package's
+    // files by a path the Dashboard cannot use, which is how a "shared" tree
+    // acquires host-specific imports nobody notices.
+    "baseUrl": "."
   },
   "include": [
     ".wxt/types/**/*.ts", // Important: Includes WXT's auto-generated global types
     "src/**/*.ts",
     "src/**/*.tsx",
+    // The package is compiled from source by every host, so a break in it is a
+    // break here. Included explicitly rather than left to dependency
+    // resolution, so `pnpm compile` covers files no entry point happens to
+    // import yet.
+    "packages/copilot-ui/**/*.ts",
+    "packages/copilot-ui/**/*.tsx",
     // The host-independence proof (playground/). Typechecked here on purpose:
     // it compiles the shared UI against a non-extension host, so `pnpm compile`
     // is what would catch the proof silently rotting away from src/shared/ui.

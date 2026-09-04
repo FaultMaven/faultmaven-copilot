@@ -33,8 +33,8 @@ beforeEach(() => {
 async function assertEntryInstallsTheHostContext(importEntry: () => Promise<unknown>) {
   vi.resetModules();
 
-  const hostStore = await import('../../lib/host-store');
-  const hostEndpoints = await import('../../lib/host-endpoints');
+  const hostStore = await import('@faultmaven/copilot-ui/lib/host-store');
+  const hostEndpoints = await import('@faultmaven/copilot-ui/lib/host-endpoints');
 
   // Guards the guard: in this fresh graph nothing is installed yet, so a pass
   // below cannot be setup.ts's defaults answering for the entry point.

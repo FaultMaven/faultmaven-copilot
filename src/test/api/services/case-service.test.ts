@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as caseService from '../../../lib/api/services/case-service';
-import * as client from '../../../lib/api/client';
-import { caseCacheManager } from '../../../lib/cache/case-cache';
+import * as caseService from '@faultmaven/copilot-ui/lib/api/services/case-service';
+import * as client from '@faultmaven/copilot-ui/lib/api/client';
+import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 
 // Mock client
-vi.mock('../../../lib/api/client', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api/client', () => ({
   authenticatedFetchWithRetry: vi.fn(),
   authenticatedFetch: vi.fn(),
   // Use actual prepareBody implementation - it's a pure function
@@ -16,7 +16,7 @@ vi.mock('../../../lib/api/client', () => ({
   }
 }));
 
-import { setApiTransport } from '../../../lib/api/transport';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 
 describe('Case Service', () => {
   beforeEach(() => {
@@ -555,9 +555,9 @@ describe('Case Service', () => {
     // map hit and dropped its Closure row.
     it('is the only closure-display resolution path in the UI', () => {
       const consumers = [
-        'src/shared/ui/components/case-header/CaseDetails.tsx',
-        'src/shared/ui/components/case-header/HeaderSummary.tsx',
-        'src/shared/ui/components/ResolutionActionsCard.tsx',
+        'packages/copilot-ui/shared/ui/components/case-header/CaseDetails.tsx',
+        'packages/copilot-ui/shared/ui/components/case-header/HeaderSummary.tsx',
+        'packages/copilot-ui/shared/ui/components/ResolutionActionsCard.tsx',
       ];
       for (const rel of consumers) {
         const src = readFileSync(resolve(process.cwd(), rel), 'utf8');

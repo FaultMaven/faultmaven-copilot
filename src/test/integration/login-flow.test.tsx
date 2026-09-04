@@ -1,22 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ExtensionApp } from '../../extension/ExtensionApp';
-import { capabilitiesManager } from '../../lib/capabilities';
+import { capabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
 import React from 'react';
 
 // Mock dependencies
-vi.mock('../../lib/capabilities');
+vi.mock('@faultmaven/copilot-ui/lib/capabilities');
 // No auth stub. WHO is signed in is the extension's own question now — it asks
 // its credential stack directly — and this file's storage mock holds no
 // `authState`, so the real gate answers "nobody" and renders the sign-in screen.
 // That is stronger than the stub it replaces: the path under test is the real
 // one.
-vi.mock('../../lib/errors', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/errors', () => ({
   useErrorHandler: () => ({ getErrorsByType: () => [], dismissError: vi.fn() }),
   useError: () => ({ showError: vi.fn() }),
   ErrorHandlerProvider: ({ children }: any) => children
 }));
-vi.mock('../../lib/auth/auth-config', () => ({
+vi.mock('../../extension/auth/auth-config', () => ({
   getAuthConfig: vi.fn().mockResolvedValue({
     provider: 'oidc',
     features: {
@@ -64,7 +64,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 import { browser } from 'wxt/browser'; // Import the mocked browser
-import { setHostStore } from '../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 // Mock import.meta.env
 vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3333' } } });

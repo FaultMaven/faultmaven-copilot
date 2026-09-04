@@ -8,7 +8,7 @@ const { mockStorage } = vi.hoisted(() => ({
 
 vi.mock('wxt/browser', () => ({ browser: { storage: mockStorage } }));
 
-import { isTrustedDashboardOrigin, CLOUD_DASHBOARD_ORIGIN } from '../../../lib/auth/trusted-origin';
+import { isTrustedDashboardOrigin, CLOUD_DASHBOARD_ORIGIN } from '../../../extension/auth/trusted-origin';
 
 describe('isTrustedDashboardOrigin', () => {
   beforeEach(() => {

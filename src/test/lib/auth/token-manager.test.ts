@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TokenManager } from '../../../lib/auth/token-manager';
+import { TokenManager } from '../../../extension/auth/token-manager';
 
 // Build-time constants only; the refresh endpoint's origin is the host's.
-vi.mock('../../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   __esModule: true,
   default: {}
 }));
@@ -10,7 +10,7 @@ vi.mock('../../../config', () => ({
 // Mock auth-config so the mode-aware refresh doesn't fetch /auth/config. Default
 // to OAuth ('oidc' provider) so the existing refresh tests keep using /oauth/token.
 const { mockGetAuthConfig } = vi.hoisted(() => ({ mockGetAuthConfig: vi.fn() }));
-vi.mock('../../../lib/auth/auth-config', () => ({ getAuthConfig: mockGetAuthConfig }));
+vi.mock('../../../extension/auth/auth-config', () => ({ getAuthConfig: mockGetAuthConfig }));
 
 // Mock browser storage using vi.hoisted to prevent hoisting problems
 const { mockBrowserStorage } = vi.hoisted(() => {
@@ -44,7 +44,7 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-import { setHostEndpoints } from '../../../lib/host-endpoints';
+import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 
 const API = 'https://api.faultmaven.ai';
 

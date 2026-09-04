@@ -8,9 +8,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { clientSessionManager } from '../../lib/session/client-session-manager';
-import { authManager } from '../../lib/auth/auth-manager';
-import type { AuthState } from '../../lib/api/types';
+import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
+import { authManager } from '../../extension/auth/auth-manager';
+import type { AuthState } from '@faultmaven/copilot-ui/lib/api/types';
 
 // Mock browser environment
 const { mockBrowser } = vi.hoisted(() => {
@@ -33,7 +33,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 // Build-time constants only; where the API lives is the host's answer below.
-vi.mock('../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   default: {
     session: {
       timeoutMinutes: 180
@@ -41,9 +41,9 @@ vi.mock('../../config', () => ({
   }
 }));
 
-import { setApiTransport } from '../../lib/api/transport';
-import { setHostStore } from '../../lib/host-store';
-import { tokenManager } from '../../lib/auth/token-manager';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { tokenManager } from '../../extension/auth/token-manager';
 
 const API = 'http://localhost:8000';
 

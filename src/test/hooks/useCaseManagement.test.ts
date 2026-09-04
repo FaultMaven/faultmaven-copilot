@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useCaseManagement } from '../../shared/ui/hooks/useCaseManagement';
-import { useAppStore } from '../../lib/state/store';
+import { useCaseManagement } from '@faultmaven/copilot-ui/shared/ui/hooks/useCaseManagement';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { browser } from 'wxt/browser';
 
 // Mock dependencies
-import { setHostStore } from '../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -20,7 +20,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 // Mock logger
-vi.mock('../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useAppStore } from '../../../lib/state/store';
-import { pendingOpsManager } from '../../../lib/optimistic';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -15,7 +15,7 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-vi.mock('../../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

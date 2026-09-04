@@ -23,10 +23,16 @@
  */
 import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ChatInterface } from '~/shared/ui/components/ChatInterface';
-import { HostAdapterProvider } from '~/shared/host';
-import type { OptimisticConversationItem, PendingOperation } from '~/lib/optimistic';
-import type { UserCase } from '~/types/case';
+// Through the package ENTRY, by name — every import below is one the
+// Dashboard could write verbatim. A deep subpath would work in this repository
+// and would be reaching past the contract.
+import {
+  ChatInterface,
+  HostAdapterProvider,
+  type OptimisticConversationItem,
+  type PendingOperation,
+  type UserCase,
+} from '@faultmaven/copilot-ui';
 import { webHostAdapter, signOutFromAnotherTab } from './web-host';
 
 const queryClient = new QueryClient({

@@ -60,3 +60,10 @@ test-results/
 
 # Host-independence proof build output (playground/vite.config.ts)
 playground/dist/
+
+# Served from the package, not committed twice (scripts/sync-ui-assets.mjs).
+public/icon/square-transparent.svg
+public/icon/design-transparent.svg
+
+# Standalone build output of the shared package (proves it compiles on its own).
+packages/*/dist/

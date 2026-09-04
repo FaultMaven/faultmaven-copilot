@@ -14,20 +14,20 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { extensionHost } from './host';
-import type { HostSession, HostUser, WiredHost } from '../shared/host';
-import CopilotPanel from '../shared/ui/CopilotPanel';
-import { ErrorBoundary } from '../shared/ui/components/ErrorBoundary';
-import { LoadingScreen } from '../shared/ui/components/LoadingScreen';
-import { useAppStore } from '../lib/state/store';
-import { markSessionEnding } from '../lib/state/session-epoch';
-import { tokenManager } from '../lib/auth/token-manager';
-import { authManager } from '../lib/auth/auth-manager';
-import { logoutAuth } from '../lib/api/services/auth-service';
+import type { HostSession, HostUser, WiredHost } from '@faultmaven/copilot-ui/shared/host';
+import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
+import { ErrorBoundary } from '@faultmaven/copilot-ui/shared/ui/components/ErrorBoundary';
+import { LoadingScreen } from '@faultmaven/copilot-ui/shared/ui/components/LoadingScreen';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { markSessionEnding } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import { tokenManager } from './auth/token-manager';
+import { authManager } from './auth/auth-manager';
+import { logoutAuth } from './auth/auth-service';
 import { installExtensionTransport } from './host';
 import { EventBus, type AuthStateChangedEvent } from './messaging';
 import { subscribeExtensionAuthState } from './host/auth-state';
 import { useExtensionReloadRecovery } from './useExtensionReloadRecovery';
-import { createLogger } from '../lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { AuthScreen } from './components/AuthScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
 

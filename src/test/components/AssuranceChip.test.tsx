@@ -12,7 +12,7 @@ import { render, screen } from '@testing-library/react';
 import {
   AssuranceChip,
   hasAssuranceLabel,
-} from '../../shared/ui/components/case-header/shared';
+} from '@faultmaven/copilot-ui/shared/ui/components/case-header/shared';
 
 describe('AssuranceChip', () => {
   it('renders no qualifier for a counterfactually confirmed cause', () => {

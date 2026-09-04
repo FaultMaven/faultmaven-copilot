@@ -10,10 +10,10 @@
  * Storage goes through the host store rather than the extension API directly, so
  * this module carries no `browser` dependency of its own.
  */
-import { getHostStore } from '../../lib/host-store';
-import { createLogger } from '../../lib/utils/logger';
+import { getHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { extensionStore } from './extension-store';
-import type { HostEndpoints } from '../../shared/host';
+import type { HostEndpoints } from '@faultmaven/copilot-ui/shared/host';
 
 const log = createLogger('Endpoints');
 
@@ -101,7 +101,7 @@ export async function setEndpoints(opts: { apiBaseUrl?: string; dashboardUrl?: s
     // import avoids a static config↔auth-config cycle (auth-config imports
     // getApiUrl from here); it's runtime-only, so the cycle never materializes.
     try {
-      const { clearAuthConfigCache } = await import('../../lib/auth/auth-config');
+      const { clearAuthConfigCache } = await import('../auth/auth-config');
       await clearAuthConfigCache();
     } catch (err) {
       log.warn('Failed to invalidate auth config cache after endpoint change', err);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ErrorClassifier } from '~lib/errors/classifier';
-import { UserFacingError } from '~lib/errors/types';
+import { ErrorClassifier } from '@faultmaven/copilot-ui/lib/errors/classifier';
+import { UserFacingError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 describe('ErrorClassifier', () => {
   it('should map 401 to Authentication error', () => {

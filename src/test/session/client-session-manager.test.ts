@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { ClientSessionManager } from '../../lib/session/client-session-manager';
+import { ClientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
 
 // Hoist mock browser
 const { mockBrowser } = vi.hoisted(() => {
@@ -25,7 +25,7 @@ vi.mock('wxt/browser', () => ({
 }));
 
 // Mock config
-vi.mock('../../config', () => ({
+vi.mock('@faultmaven/copilot-ui/config', () => ({
   default: {
     apiUrl: 'http://localhost:8090',
     session: {

@@ -29,7 +29,7 @@ const { mockBrowser } = vi.hoisted(() => ({
 
 vi.mock('wxt/browser', () => ({ browser: mockBrowser }));
 
-vi.mock('../../lib/auth/auth-manager', () => ({
+vi.mock('../../extension/auth/auth-manager', () => ({
   authManager: { isAuthenticated: vi.fn() },
 }));
 
@@ -39,7 +39,7 @@ import {
   clearReloadFlag,
   stampRuntimeIdentity,
 } from '../../extension/extension-reload';
-import { authManager } from '../../lib/auth/auth-manager';
+import { authManager } from '../../extension/auth/auth-manager';
 
 describe('extension reload detection', () => {
   beforeEach(() => {

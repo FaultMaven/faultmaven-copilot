@@ -16,14 +16,14 @@
  * both writers agree by construction.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setHostStore } from '../../lib/host-store';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { createStubHost } from '../support/host';
-import { useAppStore } from '../../lib/state/store';
-import { refreshSession } from '../../lib/api/session-core';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { createExtensionTransport } from '../../extension/host/extension-transport';
-import { clientSessionManager } from '../../lib/session/client-session-manager';
-import { enforceUserDataScope } from '../../lib/auth/user-scope';
-import type { HostSession } from '../../shared/host';
+import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
+import { enforceUserDataScope } from '../../extension/auth/user-scope';
+import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
 const SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed'];
 

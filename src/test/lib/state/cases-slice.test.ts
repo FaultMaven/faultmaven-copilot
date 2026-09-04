@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useAppStore } from '../../../lib/state/store';
-import * as api from '../../../lib/api';
+import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import * as api from '@faultmaven/copilot-ui/lib/api';
 
 vi.mock('wxt/browser', () => ({
   browser: {
@@ -15,14 +15,14 @@ vi.mock('wxt/browser', () => ({
   }
 }));
 
-vi.mock('../../../lib/api', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   getCaseConversation: vi.fn().mockResolvedValue({ messages: [] }),
   getUserCases: vi.fn().mockResolvedValue([]),
   getCase: vi.fn().mockRejectedValue(new Error('no backend row in this test')),
   DEFAULT_CASE_LIST_LIMIT: 100
 }));
 
-vi.mock('../../../lib/utils/logger', () => ({
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 

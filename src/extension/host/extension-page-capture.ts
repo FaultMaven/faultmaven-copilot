@@ -13,7 +13,7 @@
  * the unread state is gone rather than carried across the boundary.
  */
 import { browser } from 'wxt/browser';
-import { createLogger } from '../../lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('extensionPageCapture');
 

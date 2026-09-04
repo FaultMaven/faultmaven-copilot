@@ -62,9 +62,9 @@ Object.defineProperty(window, 'navigator', {
 // the suite reflects that rather than every test file re-stating it. Backed by
 // the same global `browser` mock above, so the values a request carries are the
 // ones a test stages there. Individual tests override with setApiTransport().
-import { setApiTransport } from '../lib/api/transport';
-import { setHostStore } from '../lib/host-store';
-import { setHostEndpoints } from '../lib/host-endpoints';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 import { beforeEach as _beforeEach } from 'vitest';
 
 _beforeEach(() => {

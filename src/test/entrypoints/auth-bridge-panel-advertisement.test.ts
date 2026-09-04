@@ -46,7 +46,7 @@ import bridge from '../../entrypoints/auth-bridge.content';
 import {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
-} from '../../lib/auth/presence-marker';
+} from '../../extension/auth/presence-marker';
 
 const CLOUD_DASHBOARD = 'https://app.faultmaven.ai';
 const SELF_HOSTED_DASHBOARD = 'https://fm.internal.example.com';

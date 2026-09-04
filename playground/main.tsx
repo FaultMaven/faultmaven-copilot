@@ -2,9 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { webHostAdapter } from './web-host';
-import { setHostStore } from '~/lib/host-store';
-import { setHostEndpoints } from '~/lib/host-endpoints';
-import '~/assets/styles/globals.css';
+import { setHostStore, setHostEndpoints } from '@faultmaven/copilot-ui';
+import '@faultmaven/copilot-ui/styles/globals.css';
 import './playground.css';
 
 // What the extension's entry points do, from the web host's side: the store and

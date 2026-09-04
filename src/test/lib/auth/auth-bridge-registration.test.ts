@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { reconcileAuthBridgeRegistration } from '../../../lib/auth/auth-bridge-registration';
-import { setHostEndpoints } from '../../../lib/host-endpoints';
+import { reconcileAuthBridgeRegistration } from '../../../extension/auth/auth-bridge-registration';
+import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 import { extensionEndpoints } from '../../../extension/host/endpoints';
 
 // Resolves `browser` to the global mock from src/test/setup.ts (the per-file

@@ -1,17 +1,17 @@
 // src/entrypoints/background.ts
-import { authManager } from '../lib/auth/auth-manager';
+import { authManager } from '../extension/auth/auth-manager';
 import { markReloadDetected } from '../extension/extension-reload';
 import { browser } from 'wxt/browser';
-import { reconcileAuthBridgeRegistration } from '../lib/auth/auth-bridge-registration';
-import { initiateDashboardOAuth, cleanupOAuthState } from '../lib/auth/dashboard-oauth';
-import { enforceUserDataScope } from '../lib/auth/user-scope';
+import { reconcileAuthBridgeRegistration } from '../extension/auth/auth-bridge-registration';
+import { initiateDashboardOAuth, cleanupOAuthState } from '../extension/auth/dashboard-oauth';
+import { enforceUserDataScope } from '../extension/auth/user-scope';
 import {
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
   yieldSidePanelForAdvertisedTab,
-} from '../lib/side-panel-yield';
-import { createLogger } from '../lib/utils/logger';
-import { fetchWithTimeout } from '../lib/utils/fetch-timeout';
+} from '../extension/side-panel-yield';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
+import { fetchWithTimeout } from '@faultmaven/copilot-ui/lib/utils/fetch-timeout';
 import { installExtensionHostContext } from '../extension/host/install';
 import { EventBus } from '../extension/messaging';
 
@@ -316,7 +316,7 @@ export default defineBackground({
         log.info('State verified, exchanging authorization code for tokens');
 
         // Exchange authorization code for access token
-        const { getHostEndpoints } = await import('../lib/host-endpoints');
+        const { getHostEndpoints } = await import('@faultmaven/copilot-ui/lib/host-endpoints');
         const apiUrl = await getHostEndpoints().apiUrl();
 
         const tokenResponse = await fetchWithTimeout(`${apiUrl}/api/v1/auth/oauth/token`, {

@@ -6,7 +6,7 @@ import {
   dashboardAdvertisesPanel,
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
-} from '../../../lib/auth/presence-marker';
+} from '../../../extension/auth/presence-marker';
 
 describe('announceCopilotPresence', () => {
   afterEach(() => {
