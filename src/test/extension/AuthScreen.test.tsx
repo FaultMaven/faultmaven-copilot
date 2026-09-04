@@ -1,6 +1,6 @@
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthScreen } from '../../shared/ui/components/AuthScreen';
+import { AuthScreen } from '../../extension/components/AuthScreen';
 
 /**
  * The panel's sign-in screen (copilot#185).

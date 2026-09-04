@@ -3,8 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../lib/api/query-client';
-import { HostAdapterProvider, extensionHost } from '../../shared/host';
-import SidePanelApp from '../../shared/ui/SidePanelApp'; // Path to your main React app
+import { ExtensionApp } from '../../extension/ExtensionApp';
 import '../../assets/styles/globals.css';      // Path to your global Tailwind styles
 import '../../assets/styles/sidepanel.css';    // Sidepanel-only height/overflow chain
 import { createLogger } from '../../lib/utils/logger';
@@ -18,12 +17,11 @@ function mountReactApp() {
     root.render(
       <React.StrictMode>
         <QueryClientProvider client={queryClient}>
-          {/* The host the shared UI runs in. Mounted here, in the entry point,
-              because which host this is, is the one thing the shared UI must
-              not decide for itself. */}
-          <HostAdapterProvider value={extensionHost}>
-            <SidePanelApp /> {/* This is your full SidePanelApp */}
-          </HostAdapterProvider>
+          {/* The host's own entry: first run, sign-in, and the session that
+              CopilotPanel cannot be mounted without. The host adapter is no
+              longer provided here — CopilotPanel publishes it, so the panel
+              cannot be handed one host in a prop and another in context. */}
+          <ExtensionApp />
         </QueryClientProvider>
       </React.StrictMode>
     );

@@ -11,10 +11,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { getAuthConfig, AuthConfig } from '../../../lib/auth/auth-config';
-import { createLogger } from '../../../lib/utils/logger';
+import { getAuthConfig, AuthConfig } from '../../lib/auth/auth-config';
+import { createLogger } from '../../lib/utils/logger';
 import { LocalLoginForm } from './LocalLoginForm';
-import { useAppStore } from '../../../lib/state/store';
+import { useAppStore } from '../../lib/state/store';
 
 const log = createLogger('AuthScreen');
 
