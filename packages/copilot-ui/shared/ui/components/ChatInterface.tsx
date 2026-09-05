@@ -23,6 +23,14 @@ interface ChatInterfaceProps {
   onDocumentView?: (docId: string) => void;
   onNewChat?: () => void;
   hasUnsavedNewChat?: boolean;
+  /**
+   * Render the transcript and NOTHING to add to it.
+   *
+   * Not a disabled composer: a disabled field says "you may write here, later",
+   * which is not what a shared case means, and the upload affordance beside it
+   * would still be there to press.
+   */
+  readOnly?: boolean;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;
 }
 
@@ -42,6 +50,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onDocumentView,
   onNewChat,
   hasUnsavedNewChat,
+  readOnly,
   setActiveCase
 }) => {
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
@@ -126,7 +135,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         />
       </div>
 
-      {/* Input Area */}
+      {/* Input Area — absent entirely when the host says this viewer may not
+          write. A disabled composer says "you may write here, later", which is
+          not what someone else's case means, and the upload affordance beside
+          it would still be there to press. */}
+      {!readOnly && (
       <UnifiedInputBar
         onQuerySubmit={onQuerySubmit}
         onTurnSubmit={onTurnSubmit}
@@ -151,6 +164,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 : "Ask FaultMaven..."
         }
       />
+      )}
     </div>
   );
 };

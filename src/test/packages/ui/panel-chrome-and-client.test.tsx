@@ -108,7 +108,14 @@ describe('CopilotPanel chrome', () => {
     render(<CopilotPanel host={stub.host} chrome="embedded" />);
 
     // The conversation is there…
-    expect(await screen.findByRole('form', { name: 'Message Input' })).toBeInTheDocument();
+    //
+    // `waitFor` re-queries, `findBy` does not: an embedded panel loads
+    // capabilities (the extension's first-run gate is not its gate), so the
+    // tree passes through "Connecting to FaultMaven…" and the node found on the
+    // first poll is detached by the time an assertion could read it.
+    await waitFor(() =>
+      expect(screen.getByRole('form', { name: 'Message Input' })).toBeInTheDocument(),
+    );
     // …and the host's own furniture is not duplicated inside it.
     expect(screen.queryByTestId('conversations-list')).toBeNull();
     expect(screen.queryByText('Stub Operator')).toBeNull();

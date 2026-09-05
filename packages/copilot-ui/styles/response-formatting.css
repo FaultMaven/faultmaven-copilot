@@ -1,11 +1,17 @@
-/* Response Formatting Styles — ADR 003 Dark Theme */
+/* Response Formatting Styles — ADR 003 Dark Theme
+ *
+ * SCOPED TO THE PANEL, like globals.css beside it. These are markdown-rendering
+ * rules — `.prose-sm` list spacing among them — and unscoped they beat a host's
+ * own typography plugin in every page that uses it, not only in the transcript
+ * they were written for.
+ */
 
 /* Code blocks — elevated surface for hierarchy */
-.code-block {
+.fm-copilot-panel .code-block {
   @apply bg-fm-codeblock rounded-lg border border-fm-codeblock-border mb-3 overflow-hidden;
 }
 
-.code-header {
+.fm-copilot-panel .code-header {
   @apply bg-fm-surface px-3 py-1.5 border-b border-fm-border;
   font-size: 11px;
   font-weight: 500;
@@ -13,43 +19,43 @@
   color: #8B949E;
 }
 
-.code-block pre {
+.fm-copilot-panel .code-block pre {
   @apply bg-fm-codeblock p-3 overflow-x-auto;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.code-block code {
+.fm-copilot-panel .code-block code {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   @apply text-fm-codeblock-text;
 }
 
 /* Inline code — subtle elevation */
-.inline-code {
+.fm-copilot-panel .inline-code {
   @apply bg-fm-code-bg px-1.5 py-0.5 rounded border border-fm-code-border text-fm-code;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.9em;
 }
 
 /* Special message blocks — left border accent for visual hierarchy */
-.warning-block {
+.fm-copilot-panel .warning-block {
   @apply bg-fm-surface-alt border-l-4 border-fm-warning p-3 mb-3 rounded-r-lg;
 }
 
-.error-block {
+.fm-copilot-panel .error-block {
   @apply bg-fm-surface-alt border-l-4 border-fm-critical p-3 mb-3 rounded-r-lg;
 }
 
-.solution-block {
+.fm-copilot-panel .solution-block {
   @apply bg-fm-surface-alt border-l-4 border-fm-success p-3 mb-3 rounded-r-lg;
 }
 
-.info-block {
+.fm-copilot-panel .info-block {
   @apply bg-fm-surface-alt border-l-4 border-fm-accent p-3 mb-3 rounded-r-lg;
 }
 
 /* Response headings — finding-title scale */
-.response-heading {
+.fm-copilot-panel .response-heading {
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
@@ -57,15 +63,15 @@
 }
 
 /* Tables — elevated surface */
-.table-container {
+.fm-copilot-panel .table-container {
   @apply overflow-x-auto mb-3;
 }
 
-.table-container table {
+.fm-copilot-panel .table-container table {
   @apply min-w-full border border-fm-border rounded-lg;
 }
 
-.table-container th {
+.fm-copilot-panel .table-container th {
   @apply bg-fm-surface px-3 py-2 text-left border-b border-fm-border;
   font-size: 11px;
   font-weight: 600;
@@ -74,81 +80,81 @@
   color: #8B949E;
 }
 
-.table-container td {
+.fm-copilot-panel .table-container td {
   @apply px-3 py-2 border-b border-fm-border;
   font-size: 13px;
   color: #E6EDF3;
 }
 
 /* Lists — body text scale */
-.prose-sm ul {
+.fm-copilot-panel .prose-sm ul {
   @apply list-disc pl-4 mb-2;
 }
 
-.prose-sm ol {
+.fm-copilot-panel .prose-sm ol {
   @apply list-decimal pl-4 mb-2;
 }
 
-.prose-sm li {
+.fm-copilot-panel .prose-sm li {
   @apply mb-1 text-fm-text-primary;
   font-size: 13px;
   line-height: 1.55;
 }
 
 /* Action items and steps — elevated cards */
-.action-item {
+.fm-copilot-panel .action-item {
   @apply flex items-start gap-2 p-2.5 bg-fm-surface border-l-4 border-fm-accent mb-2;
 }
 
-.step-item {
+.fm-copilot-panel .step-item {
   @apply flex items-start gap-2 p-2.5 bg-fm-surface border-l-4 border-fm-border mb-2;
 }
 
 /* Severity indicators — meta scale */
-.severity-high {
+.fm-copilot-panel .severity-high {
   @apply text-fm-critical;
   font-size: 11px;
   font-weight: 600;
 }
 
-.severity-medium {
+.fm-copilot-panel .severity-medium {
   @apply text-fm-warning;
   font-size: 11px;
   font-weight: 600;
 }
 
-.severity-low {
+.fm-copilot-panel .severity-low {
   @apply text-fm-success;
   font-size: 11px;
   font-weight: 600;
 }
 
 /* Command/Terminal blocks — monospace, deepest surface */
-.terminal-block {
+.fm-copilot-panel .terminal-block {
   @apply bg-fm-base text-fm-success p-3 rounded-lg mb-3 overflow-x-auto;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.terminal-block::before {
+.fm-copilot-panel .terminal-block::before {
   content: "$ ";
   @apply text-fm-text-tertiary;
 }
 
 /* Response type styling — elevated with accent border */
-.response-type-diagnostic {
+.fm-copilot-panel .response-type-diagnostic {
   @apply border-l-4 border-fm-warning pl-3 bg-fm-surface-alt;
 }
 
-.response-type-procedure {
+.fm-copilot-panel .response-type-procedure {
   @apply border-l-4 border-fm-accent pl-3 bg-fm-surface-alt;
 }
 
-.response-type-technical {
+.fm-copilot-panel .response-type-technical {
   @apply border-l-4 border-fm-accent pl-3 bg-fm-surface-alt;
 }
 
-.response-type-quick-answer {
+.fm-copilot-panel .response-type-quick-answer {
   @apply bg-fm-surface-alt p-3 rounded-lg border border-fm-success-border;
 }

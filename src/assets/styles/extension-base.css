@@ -1,0 +1,9 @@
+/* The extension's own base layer.
+ *
+ * `@tailwind base` emits Tailwind's preflight: a global reset of `*`, `html`,
+ * `body`, headings and more. That belongs to whoever owns the page, and in the
+ * extension that is us — the side panel and the options page are the whole
+ * document. The package's stylesheet deliberately does NOT emit it, because a
+ * host embedding the panel owns its own reset and a class cannot scope one.
+ */
+@tailwind base;

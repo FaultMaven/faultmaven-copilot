@@ -6,24 +6,92 @@
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/600.css";
 @import "./response-formatting.css";
-@tailwind base;
+
+/* No `@tailwind base`.
+ *
+ * Preflight is a global reset — `*`, `html`, `body`, every heading and every
+ * `hr` — and a class cannot scope it. A stylesheet a HOST imports must not
+ * bring one: the host owns its own reset and may already have applied it.
+ * The extension emits preflight from its own entry stylesheet, where the panel
+ * IS the page. */
 @tailwind components;
 @tailwind utilities;
 
-/* === ADR 003: SRE-Native Dark Theme === */
+/* === ADR 003: SRE-Native Dark Theme ===
+ *
+ * SCOPED TO THE PANEL. Every rule below is inside `.fm-copilot-panel`, which
+ * `CopilotPanel` puts on its own root element.
+ *
+ * This stylesheet used to reset `*`, restyle `body`, every `button` and every
+ * `a:hover` on the page, and set a 5-px scrollbar everywhere. In the extension
+ * the panel IS the page and none of that showed; in a host that imports it,
+ * the whole application was restyled — link hovers faded, every button got a
+ * transition, scrollbars shrank, and `.prose-sm` list rules beat the
+ * typography plugin in pages the panel has nothing to do with.
+ *
+ * Design tokens are NOT here — they are in the preset, which a host consumes
+ * deliberately and applies where it likes.
+ */
 
-@layer base {
-  *, *::before, *::after {
+/* `components`, not `base`: the base layer needs `@tailwind base`, which this
+ * stylesheet deliberately does not emit. The components layer is also the right
+ * home — utilities still override everything here, which they would not if
+ * these class-scoped rules sat outside a layer and beat them on specificity. */
+@layer components {
+  .fm-copilot-panel,
+  .fm-copilot-panel *,
+  .fm-copilot-panel *::before,
+  .fm-copilot-panel *::after {
     box-sizing: border-box;
     margin: 0;
   }
 
-  body {
+  .fm-copilot-panel {
     font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-size: 13px;
     line-height: 1.5;
+  }
+
+  /* The part of preflight the panel cannot do without: form controls.
+   *
+   * A host with no reset draws UA chrome on every button in the panel — its own
+   * border, its own background, its own 13px system font — because the panel's
+   * buttons are styled entirely with utilities and assume the element starts
+   * blank. The extension and a Tailwind host both emit preflight and see no
+   * change from these rules; a host that does not is no longer stuck with a
+   * panel full of grey system buttons.
+   *
+   * `:where()` is what makes this safe: it contributes NOTHING to specificity,
+   * so each rule weighs exactly one class — the same as the utilities that have
+   * to be able to override it. Written as `.fm-copilot-panel button` it would
+   * weigh a class AND an element, and `.text-sm` on a button would silently
+   * lose. */
+  .fm-copilot-panel :where(*, *::before, *::after) {
+    border-width: 0;
+    border-style: solid;
+  }
+
+  .fm-copilot-panel :where(button, input, optgroup, select, textarea) {
+    font-family: inherit;
+    font-size: 100%;
+    font-weight: inherit;
+    line-height: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+  }
+
+  .fm-copilot-panel :where(button, [type='button'], [type='reset'], [type='submit']) {
+    -webkit-appearance: button;
+    background-color: transparent;
+    background-image: none;
+  }
+
+  .fm-copilot-panel :where(ul, ol) {
+    list-style: none;
+    padding: 0;
   }
 }
 
@@ -44,28 +112,35 @@
 }
 
 /* === Scrollbar (Section 9) === */
-::-webkit-scrollbar {
+.fm-copilot-panel ::-webkit-scrollbar {
   width: 5px;
 }
-::-webkit-scrollbar-track {
+.fm-copilot-panel ::-webkit-scrollbar-track {
   background: transparent;
 }
-::-webkit-scrollbar-thumb {
+.fm-copilot-panel ::-webkit-scrollbar-thumb {
   background: #30363D;
   border-radius: 3px;
 }
 
+/* These three were global before the panel scope; `:where()` is here for the
+ * second reason, not the first. `.fm-copilot-panel a:hover` weighs two classes
+ * and an element, so `hover:opacity-100` on a link INSIDE the panel could not
+ * turn the fade off — the rule beat the utility written to override it. Wrapped
+ * in `:where()` each of these weighs exactly what the utility does and loses on
+ * order, which is how a default is supposed to behave. */
+
 /* === Textarea placeholder === */
-textarea::placeholder {
+.fm-copilot-panel :where(textarea)::placeholder {
   color: #8B949E;
 }
 
-/* === Global button transition === */
-button {
+/* === Button transition === */
+.fm-copilot-panel :where(button) {
   transition: all 0.1s;
 }
 
 /* === Link hover === */
-a:hover {
+.fm-copilot-panel :where(a):hover {
   opacity: 0.8;
 }

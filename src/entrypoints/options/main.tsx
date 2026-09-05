@@ -7,6 +7,7 @@ import type { User } from '@faultmaven/copilot-ui/lib/api/types';
 import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../extension/host/endpoints';
 import { installExtensionHostContext } from '../../extension/host/install';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
+import '../../assets/styles/extension-base.css';  // preflight: this host owns the page
 import '@faultmaven/copilot-ui/styles/globals.css';
 
 // This page reads and writes the configured endpoints and probes backend

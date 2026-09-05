@@ -18,6 +18,12 @@
 export { default as CopilotPanel } from './shared/ui/CopilotPanel';
 export { default } from './shared/ui/CopilotPanel';
 export type { CopilotPanelProps, InitialCase, PanelChrome } from './shared/ui/CopilotPanel';
+/**
+ * The class the package's stylesheet is scoped to. Every rule in
+ * `@faultmaven/copilot-ui/styles/globals.css` sits inside it, so importing that
+ * stylesheet cannot restyle the rest of a host's application.
+ */
+export { PANEL_ROOT_CLASS } from './shared/ui/CopilotPanel';
 
 /** The transcript on its own, for a host embedding the conversation alone. */
 export { ChatInterface } from './shared/ui/components/ChatInterface';
@@ -28,6 +34,7 @@ export {
   useHost,
 } from './shared/host';
 export type {
+  AuthOutcome,
   HostAdapter,
   HostCapabilities,
   HostEndpoints,
@@ -39,6 +46,19 @@ export type {
   StoredValue,
   WiredHost,
 } from './shared/host';
+
+/**
+ * The Dashboard-panel advertisement: a page that renders the panel itself says
+ * so, and the extension's side panel stands down on that tab. One definition,
+ * because a copy in either repository can drift while both stay green — and the
+ * subtle half is the predicate, where the empty string and `"false"` do not
+ * advertise.
+ */
+export {
+  DASHBOARD_PANEL_ATTR,
+  DASHBOARD_PANEL_MESSAGE,
+  dashboardAdvertisesPanel,
+} from './contract';
 
 /**
  * How a host hands its answers to the modules that cannot ask React for them —

@@ -1,7 +1,6 @@
 import { getApiTransport } from '../transport';
-import config from "../../../config";
 import { authenticatedFetch } from "../client";
-import { APIError, KnowledgeDocument } from "../types";
+import { KnowledgeDocument } from "../types";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 
 export async function getKnowledgeDocument(documentId: string): Promise<KnowledgeDocument> {

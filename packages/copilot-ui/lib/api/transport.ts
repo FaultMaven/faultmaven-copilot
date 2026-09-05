@@ -21,7 +21,20 @@
  */
 
 export interface ApiTransport {
-  /** Origin the API lives at, e.g. `https://api.faultmaven.ai`. No trailing slash. */
+  /**
+   * ABSOLUTE origin the API lives at, e.g. `https://api.faultmaven.ai`. No
+   * trailing slash.
+   *
+   * Absolute is a requirement, not a convention. Request sites build URLs with
+   * `new URL(`${baseUrl}/api/v1/…`)`, which THROWS on a relative value — and a
+   * same-origin deployment configures the empty string, which is the most
+   * natural way to say "wherever this page is served from". The result was a
+   * transcript that rendered empty, a case list that never arrived and a
+   * capabilities probe that hit the SPA rewrite and fell back to a fabricated
+   * feature set, with nothing thrown where anyone could see it.
+   *
+   * A host serving the API from its own origin answers `window.location.origin`.
+   */
   baseUrl(): Promise<string>;
   /** A currently-valid bearer. Throws when the session has ended. */
   accessToken(): Promise<string>;
@@ -36,20 +49,72 @@ export interface ApiTransport {
    */
   clearSession(): Promise<void>;
   /**
-   * The API rejected our credential. The host decides what that means.
+   * The API rejected our credential. The host decides what that means, and
+   * SAYS which it decided.
    *
-   * Awaited by the caller: the teardown this replaced completed before the
-   * error was thrown, and a fire-and-forget clear would race the next request
-   * into reading a credential that was on its way out.
+   *   'refreshed'  the host renewed the credential and the session continues.
+   *                The client retries the request once with a fresh bearer and
+   *                the user sees nothing.
+   *   'ended'      the session is over. The client surfaces it.
+   *
+   * The answer is load-bearing. Without it the client threw
+   * `AuthenticationError` after the callback regardless, so a host that
+   * successfully refreshed still got a blocking "session expired" modal whose
+   * only action wiped the panel while the surrounding app stayed signed in.
+   *
+   * Awaited: the teardown this replaced completed before the error was thrown,
+   * and a fire-and-forget clear would race the next request into reading a
+   * credential that was on its way out.
    */
-  onUnauthorized(): void | Promise<void>;
+  onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
 }
+
+/** What the host did about a rejected credential. */
+export type AuthOutcome = 'refreshed' | 'ended';
 
 let transport: ApiTransport | null = null;
 
-/** Install the host's transport. Called once, above the shared UI. */
+/**
+ * Is this a usable origin for building request URLs?
+ *
+ * `new URL(value)` with no base succeeds only for an absolute URL, which is
+ * exactly the property the request sites need.
+ */
+function isAbsoluteOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Install the host's transport. Called once, above the shared UI.
+ *
+ * The installed transport is WRAPPED so that `baseUrl()` is checked on every
+ * read. Not checked eagerly here, because `baseUrl()` is async: an eager check
+ * could only reject a promise nobody awaits, which is an unhandled rejection in
+ * one host and a silent no-op in another. Checking at the point of use turns
+ * the failure into a thrown error at the request site that caused it, naming
+ * the value and the fix.
+ */
 export function setApiTransport(next: ApiTransport): void {
-  transport = next;
+  transport = {
+    ...next,
+    async baseUrl() {
+      const value = await next.baseUrl();
+      if (!isAbsoluteOrigin(value)) {
+        throw new Error(
+          `The host's apiUrl() returned ${JSON.stringify(value)}, which is not an ` +
+            `absolute origin. Request URLs are built with new URL(), which cannot ` +
+            `resolve a relative value — a same-origin deployment should answer ` +
+            `window.location.origin rather than "" or a path.`,
+        );
+      }
+      return value;
+    },
+  };
 }
 
 /** Test seam: drop the installed transport so a leak between tests is loud. */

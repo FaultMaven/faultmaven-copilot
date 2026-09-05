@@ -1,4 +1,5 @@
 export type {
+  AuthOutcome,
   HostAdapter,
   HostCapabilities,
   HostEndpoints,
@@ -11,3 +12,8 @@ export type {
   WiredHost,
 } from './adapter';
 export { HostAdapterProvider, useHost } from './adapter';
+export {
+  DASHBOARD_PANEL_ATTR,
+  DASHBOARD_PANEL_MESSAGE,
+  dashboardAdvertisesPanel,
+} from '../../contract';

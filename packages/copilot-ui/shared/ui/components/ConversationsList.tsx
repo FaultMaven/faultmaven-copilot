@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
@@ -37,7 +37,6 @@ function loadCollapsedGroups(): Set<CaseGroupKey> {
 }
 
 interface ConversationsListProps {
-  activeSessionId?: string; // kept for compatibility
   activeCaseId?: string;
   onCaseSelect?: (caseId: string) => void;
   onSessionSelect?: (sessionId: string) => void; // kept for compatibility
@@ -46,7 +45,6 @@ interface ConversationsListProps {
   hasUnsavedNewChat?: boolean;
   refreshTrigger?: number;
   className?: string;
-  collapsed?: boolean;
   onFirstCaseDetected?: () => void;
   onAfterDelete?: (deletedCaseId: string, remaining: Array<{ case_id: string; updated_at?: string; created_at?: string }>) => void;
   onCasesLoaded?: (cases: UserCase[]) => void;
@@ -67,17 +65,13 @@ interface ConversationsListProps {
 }
 
 export function ConversationsList({
-  activeSessionId,
   activeCaseId,
   onCaseSelect,
-  onSessionSelect,
   onNewSession,
   conversationTitles = {},
   hasUnsavedNewChat = false,
   refreshTrigger = 0,
   className = '',
-  collapsed = false,
-  onFirstCaseDetected,
   onAfterDelete,
   onCasesLoaded,
   onCaseTitleChange,
@@ -197,7 +191,7 @@ export function ConversationsList({
     onCaseTitleChange?.(caseId, title, 'user');
   };
 
-  const handleGenerateTitle = async (caseId: string, sessionIdGuess?: string) => {
+  const handleGenerateTitle = async (caseId: string) => {
     try {
       // ARCHITECTURAL FIX: Resolve optimistic IDs to real IDs for API calls
       const resolvedCaseId = isOptimisticId(caseId)
@@ -432,11 +426,10 @@ export function ConversationsList({
                 isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
                 isUnsavedNew={false}
                 isPinned={pinnedCases.has(c.case_id)}
-                messageCount={c.message_count || 0}
                 onSelect={(id) => onCaseSelect && onCaseSelect(id)}
                 onDelete={(id) => handleDeleteCase(id)}
                 onRename={(id, t) => handleRenameCase(id, t)}
-                onGenerateTitle={(id) => handleGenerateTitle(id, (c as any).session_id || activeSessionId)}
+                onGenerateTitle={(id) => handleGenerateTitle(id)}
                 onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
               />
             ))}

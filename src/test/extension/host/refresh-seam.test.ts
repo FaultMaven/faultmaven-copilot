@@ -98,9 +98,13 @@ function extensionSession(): HostSession {
     },
     signOut: async () => {},
     subscribeAuthState: () => () => {},
-    onUnauthorized: () => {
+    // 'ended': the extension destroys the whole local credential chain, so
+    // there is no session left to continue. Same behaviour as before the
+    // outcome existed — it is now stated rather than assumed.
+    onUnauthorized: async () => {
       reportedToHost();
-      return authManager.clearAllAuthData();
+      await authManager.clearAllAuthData();
+      return 'ended' as const;
     },
   };
 }

@@ -74,7 +74,7 @@ const host: WiredHost = {
     user: { id: 'u1', username: 'op', roles: [] },
     accessToken: async () => 'stub',
     signOut: null,
-    onUnauthorized: () => {},
+    onUnauthorized: () => 'ended' as const,
     subscribeAuthState: () => () => {},
   },
 };

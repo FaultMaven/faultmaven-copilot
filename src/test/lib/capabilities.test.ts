@@ -19,7 +19,12 @@ const liveCaps = {
   limits: { maxFileBytes: 10485760, allowedExtensions: ['.md'] }
 };
 
-const okResponse = (body: any) => ({ ok: true, status: 200, json: async () => body });
+const okResponse = (body: any) => ({
+  ok: true,
+  status: 200,
+  headers: new Headers({ 'content-type': 'application/json' }),
+  json: async () => body
+});
 
 describe('CapabilitiesManager', () => {
   beforeEach(() => {

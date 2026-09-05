@@ -4,7 +4,7 @@ import { heartbeatSession } from '../../api/services/session-service';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
-import { getHostStore } from '../../host-store';
+import { ownedStorage } from '../../owned-storage';
 import { clearPersistedSession } from '../../api/session-core';
 
 const log = createLogger('SessionSlice');
@@ -52,7 +52,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       }
 
       try {
-        const result = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
+        const result = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
 
         if (result.sessionId) {
           log.debug('Using existing session', { sessionId: result.sessionId });
@@ -95,7 +95,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
               log.debug('Session ended; heartbeat stopped');
               return;
             }
-            const stored = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
+            const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
             if (stored.sessionId) {
               await heartbeatSession(stored.sessionId);
               log.debug('Session heartbeat sent', { sessionId: stored.sessionId });
@@ -134,7 +134,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         // duplicated the persistence logic that could drift from session-core.
         await coreRefreshSession();
 
-        const stored = (await getHostStore().get(['sessionId'])) as { sessionId?: string };
+        const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
         const sessionId = stored.sessionId as string | undefined;
         if (!sessionId) {
           throw new Error('Session refresh did not persist a session_id');

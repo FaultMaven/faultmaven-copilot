@@ -60,7 +60,7 @@ describe('session refresh → X-Session-Id bridge', () => {
         delete store.sessionCreatedAt;
         delete store.sessionResumed;
       },
-      onUnauthorized: () => {},
+      onUnauthorized: () => 'ended' as const,
     });
   });
 

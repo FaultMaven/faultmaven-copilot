@@ -37,6 +37,8 @@ export interface ContentAreaProps {
   failedOperations: any[];
 
   // Chat callbacks
+  /** Render the transcript without a way to add to it. */
+  readOnly?: boolean;
   onQuerySubmit: (query: string) => Promise<void>;
   onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
   onDocumentView?: (documentId: string) => void;
@@ -54,7 +56,6 @@ export interface ContentAreaProps {
  * Custom comparison prevents re-renders from function reference changes.
  */
 const ContentAreaComponent = ({
-  activeTab,
   activeCaseId,
   activeCase,
   conversations,
@@ -63,6 +64,7 @@ const ContentAreaComponent = ({
   sessionId,
   hasUnsavedNewChat,
   failedOperations,
+  readOnly,
   onQuerySubmit,
   onTurnSubmit,
   onDocumentView,
@@ -130,6 +132,7 @@ const ContentAreaComponent = ({
             loading={loading}
             submitting={submitting}
             sessionId={sessionId}
+            readOnly={readOnly}
             onQuerySubmit={onQuerySubmit}
             onTurnSubmit={onTurnSubmit}
             failedOperations={failedOperations}

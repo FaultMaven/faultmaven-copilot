@@ -1,4 +1,4 @@
-import { getHostStore } from '../host-store';
+import { ownedStorage } from '../owned-storage';
 import { getApiTransport } from '../api/transport';
 import config from "../../config";
 import { createLogger } from '../utils/logger';
@@ -74,7 +74,7 @@ export class ClientSessionManager {
       // No non-extension fallback any more: answering storage in whatever
       // environment this runs in is exactly what the host store is for, and a
       // localStorage branch here was a second storage path by another name.
-      const stored = (await getHostStore().get([ClientSessionManager.CLIENT_ID_KEY])) as
+      const stored = (await ownedStorage.get([ClientSessionManager.CLIENT_ID_KEY])) as
         Record<string, string | undefined>;
       this.clientId = stored[ClientSessionManager.CLIENT_ID_KEY] ?? null;
 
@@ -82,7 +82,7 @@ export class ClientSessionManager {
         // Generate UUID v4 using crypto.randomUUID() for performance
         this.clientId = crypto.randomUUID();
         
-        await getHostStore().set({ [ClientSessionManager.CLIENT_ID_KEY]: this.clientId });
+        await ownedStorage.set({ [ClientSessionManager.CLIENT_ID_KEY]: this.clientId });
         
         log.info('Generated new client ID:', this.clientId.slice(0, 8) + '...');
       } else {
@@ -176,7 +176,7 @@ export class ClientSessionManager {
   async clearClientId(): Promise<void> {
     this.clientId = null;
 
-    await getHostStore().remove([ClientSessionManager.CLIENT_ID_KEY]);
+    await ownedStorage.remove([ClientSessionManager.CLIENT_ID_KEY]);
     
     log.info('Client ID cleared - next session will be new');
   }

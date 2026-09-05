@@ -12,7 +12,7 @@
  */
 
 import { getUserCases, UserCase } from "../api";
-import { getHostStore } from '../host-store';
+import { ownedStorage } from '../owned-storage';
 import { OptimisticConversationItem } from "../optimistic";
 import { createLogger } from './logger';
 import { isPlaceholderCaseTitle } from '../state/case-title';
@@ -62,7 +62,7 @@ export class PersistenceManager {
     try {
       // Set recovery flag and timestamp to prevent concurrent recovery attempts
       const now = Date.now();
-      await getHostStore().set({
+      await ownedStorage.set({
         [PersistenceManager.RECOVERY_FLAG_KEY]: true,
         [PersistenceManager.LAST_RECOVERY_KEY]: now
       });
@@ -140,7 +140,7 @@ export class PersistenceManager {
 
       // Save recovered data to local storage
       log.info(' 💾 Saving recovered metadata to local storage...');
-      await getHostStore().set({
+      await ownedStorage.set({
         conversationTitles: recoveredTitles,
         titleSources: recoveredTitleSources,
         conversations: recoveredConversations, // Empty arrays - lazy-loaded on demand
@@ -169,7 +169,7 @@ export class PersistenceManager {
       return result;
     } finally {
       // Clear recovery flag
-      await getHostStore().remove([PersistenceManager.RECOVERY_FLAG_KEY]);
+      await ownedStorage.remove([PersistenceManager.RECOVERY_FLAG_KEY]);
     }
   }
 
@@ -178,7 +178,7 @@ export class PersistenceManager {
    */
   static async isRecoveryInProgress(): Promise<boolean> {
     try {
-      const stored = await getHostStore().get([PersistenceManager.RECOVERY_FLAG_KEY]);
+      const stored = await ownedStorage.get([PersistenceManager.RECOVERY_FLAG_KEY]);
       return !!stored[PersistenceManager.RECOVERY_FLAG_KEY];
     } catch {
       return false;
@@ -193,7 +193,7 @@ export class PersistenceManager {
    */
   static async markSyncComplete(): Promise<void> {
     try {
-      await getHostStore().set({
+      await ownedStorage.set({
         [PersistenceManager.SYNC_TIMESTAMP_KEY]: Date.now()
       });
     } catch (error) {
@@ -241,7 +241,7 @@ export class PersistenceManager {
         PersistenceManager.LAST_RECOVERY_KEY
       ];
       if (!options.preservePinnedCases) keys.push('pinnedCases');
-      await getHostStore().remove(keys);
+      await ownedStorage.remove(keys);
       log.info('Persistence data cleared', { preservePinnedCases: !!options.preservePinnedCases });
     } catch (error) {
       log.warn('Failed to clear persistence data:', error);

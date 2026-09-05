@@ -39,6 +39,26 @@ import {
   CONVERSATION_CACHE_VERSION,
   CONVERSATION_CACHE_VERSION_KEY
 } from '@faultmaven/copilot-ui/lib/state/store';
+import {
+  OWNED_KEYS_INDEX_KEY,
+  resetOwnedStorageIndex,
+} from '@faultmaven/copilot-ui/lib/owned-storage';
+
+/**
+ * What the persist actually wrote.
+ *
+ * The package registers a key before it writes it, so the FIRST `set` of a page
+ * is the owned-key index rather than the payload — and reading call 0 would
+ * assert against `{ faultmaven_owned_keys: [...] }`, which passes any
+ * `not.toHaveProperty` check while checking nothing.
+ */
+const persistedPayload = (): Record<string, any> =>
+  Object.assign(
+    {},
+    ...storageSet.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .filter((items) => !(OWNED_KEYS_INDEX_KEY in items)),
+  );
 
 // Let the debounced async persistence body run to completion.
 const drain = async () => {
@@ -70,6 +90,10 @@ describe('store debouncedPersist', () => {
   beforeEach(() => {
     storageSet.mockClear();
     storageRemove.mockClear();
+    // Module-level: without this the second test's first write finds the key
+    // already registered and emits no index write, so the two tests would see
+    // different call sequences.
+    resetOwnedStorageIndex();
   });
 
   afterEach(() => {
@@ -99,7 +123,7 @@ describe('store debouncedPersist', () => {
     });
     await drain();
 
-    const saved = storageSet.mock.calls[0][0] as Record<string, unknown>;
+    const saved = persistedPayload();
     expect(saved.conversationTitles).toEqual({ 'case-1': 'My Case' });
     expect(saved.conversations).toEqual({ 'case-1': [{ id: 'm1', optimistic: false }] });
 
@@ -119,7 +143,7 @@ describe('store debouncedPersist', () => {
     });
     await drain();
 
-    const saved = (storageSet.mock.calls[0]?.[0] ?? {}) as Record<string, unknown>;
+    const saved = persistedPayload();
     expect(saved).not.toHaveProperty('pendingOperations');
     const removedKeys = (storageRemove.mock.calls[0]?.[0] ?? []) as string[];
     expect(removedKeys).not.toContain('pendingOperations');
@@ -139,7 +163,7 @@ describe('store debouncedPersist', () => {
     });
     await drain();
 
-    const saved = storageSet.mock.calls[0][0] as Record<string, any>;
+    const saved = persistedPayload();
     const persistedIds = saved.conversations['case-1'].map((m: any) => m.id);
     expect(persistedIds).toEqual(['committed']);
   });
@@ -153,7 +177,7 @@ describe('store debouncedPersist', () => {
     });
     await drain();
 
-    const saved = (storageSet.mock.calls[0]?.[0] ?? {}) as Record<string, any>;
+    const saved = persistedPayload();
     // The whole conversation had nothing committed → it must not be persisted,
     // and the (now-empty) conversations map should be marked for removal.
     expect(saved.conversations).toBeUndefined();
@@ -165,7 +189,7 @@ describe('store debouncedPersist', () => {
     debouncedPersist({ ...emptyState(), pinnedCases: ['case-7'] });
     await drain();
 
-    const saved = storageSet.mock.calls[0][0] as Record<string, unknown>;
+    const saved = persistedPayload();
     expect(saved.pinnedCases).toEqual(['case-7']);
   });
 });

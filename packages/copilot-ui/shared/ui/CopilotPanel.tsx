@@ -14,7 +14,7 @@
  * user, and therefore no state in which it could render a sign-in screen. The
  * invariant is carried by the type rather than by a branch someone maintains.
  */
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
@@ -28,7 +28,6 @@ import { CaseSnapshot, isCaseTransition } from "../../lib/state/case-reconcile";
 import { applyCaseTitleChange } from "../../lib/state/case-title-change";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch } from "../../lib/state/session-epoch";
-import { ROLES } from "../../lib/utils/roles";
 import { createLogger } from "../../lib/utils/logger";
 import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
@@ -65,7 +64,22 @@ import { useDataUpload } from "./hooks/useDataUpload";
  */
 export type InitialCase =
   | { kind: 'new' }
-  | { kind: 'existing'; caseId: string };
+  | {
+      kind: 'existing';
+      caseId: string;
+      /**
+       * Show the case, do not let this user add to it.
+       *
+       * A teammate opening someone else's case gets the transcript and no
+       * composer or upload. Without it the panel offered both, and a turn sent
+       * into a case the user does not own is a write they cannot make — the
+       * failure arrives from the server, after they have typed it.
+       *
+       * WHO may write is the host's question: it knows the case's owner and the
+       * viewer. The panel only renders the answer.
+       */
+      readOnly?: boolean;
+    };
 
 /**
  * How much of the panel the host wants.
@@ -82,6 +96,15 @@ export type InitialCase =
  * Dashboard unable to show the full shell, neither of which is true.
  */
 export type PanelChrome = 'full' | 'embedded';
+
+/**
+ * The class the package's stylesheet is scoped to.
+ *
+ * Exported because it is a contract, not an implementation detail: a host
+ * rendering package markup outside `CopilotPanel` needs the same scope, and a
+ * host testing for style leakage needs to name it.
+ */
+export const PANEL_ROOT_CLASS = 'fm-copilot-panel';
 
 export interface CopilotPanelProps {
   /**
@@ -172,11 +195,9 @@ function CopilotPanelContent({
 
   const conversations = useAppStore((state) => state.conversations);
   const conversationTitles = useAppStore((state) => state.conversationTitles);
-  const titleSources = useAppStore((state) => state.titleSources);
   const pinnedCases = useAppStore((state) => state.pinnedCases);
   const activeCase = useAppStore((state) => state.activeCase);
 
-  const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed);
   const setViewingDocument = useAppStore((state) => state.setViewingDocument);
   const setIsDocumentModalOpen = useAppStore((state) => state.setIsDocumentModalOpen);
@@ -195,7 +216,6 @@ function CopilotPanelContent({
   // runs: `session` is non-nullable, so there is nobody to ask for and nothing
   // to gate on. The account row reads `session.user` too — the second copy the
   // store used to hold is gone, so there is no pair that could disagree.
-  const isAdmin = session.user.roles.includes(ROLES.ADMIN);
   // The panel only ever mounts once its host says the environment is ready, so
   // the session initialises unconditionally here.
   const { sessionId, clearSession } = useSessionManagement(true);
@@ -249,6 +269,11 @@ function CopilotPanelContent({
     }
   }, [initialCase]);
 
+  // A host may open a case this user can read and not write. The flag holds
+  // for the life of the mount: the panel does not re-decide it, because the
+  // question — is this viewer the owner — is the host's.
+  const readOnly = initialCase?.kind === 'existing' && initialCase.readOnly === true;
+
   // --- Data Recovery ---
   //
   // Hydration only. Whether anything was LOST — an extension reload, an update —
@@ -261,7 +286,7 @@ function CopilotPanelContent({
     handleUserRetry,
     handleDismissFailedOperation,
     getErrorMessageForOperation
-  } = usePendingOperations(activeCaseId || undefined, showError);
+  } = usePendingOperations(showError);
 
   // --- Message Submission ---
   const {
@@ -279,8 +304,12 @@ function CopilotPanelContent({
 
   // Initialize first-run status and capabilities
   useEffect(() => {
-    initializeApp();
-  }, [initializeApp]);
+    // A host that embeds the panel owns onboarding — and already knows where
+    // its backend is — so the extension's first-run flag must not gate its
+    // capabilities. Without this the only way for such a host to get a working
+    // panel was to write `hasCompletedFirstRun` into storage itself.
+    initializeApp({ skipOnboardingGate: chrome === 'embedded' });
+  }, [initializeApp, chrome]);
 
   // Reconcile case state TRANSITIONS only (same case observed changing
   // state). Keying this on raw activeCase state made every case select run
@@ -413,7 +442,11 @@ function CopilotPanelContent({
 
   return (
     <ErrorBoundary>
-      <div className="flex h-full bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden">
+      {/* `fm-copilot-panel` is the scope every rule in the package's stylesheet
+          sits inside. Without it the reset, the button transition, the link
+          hover, the scrollbar width and the markdown rules apply to the whole
+          host application. */}
+      <div className={`${PANEL_ROOT_CLASS} flex h-full bg-fm-canvas text-fm-text-primary text-sm font-fm-sans relative overflow-hidden`}>
         {/* The sidebar carries the case list AND the account row, so `embedded`
             omits the whole component rather than emptying it: a host that
             embeds the panel has its own case list and its own account menu,
@@ -437,16 +470,12 @@ function CopilotPanelContent({
               currentUser={session.user}
               isCollapsed={sidebarCollapsed}
               onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-              activeTab={activeTab}
               activeCaseId={activeCaseId || undefined}
-              sessionId={sessionId || undefined}
               hasUnsavedNewChat={hasUnsavedNewChat}
-              isAdmin={isAdmin}
               conversationTitles={conversationTitles}
               pinnedCases={pinnedCases}
               refreshTrigger={refreshSessions}
               dashboardUrl={capabilities?.dashboardUrl}
-              onTabChange={setActiveTab}
               // A path, not a URL: where the Dashboard lives is the host's
               // business (a configured endpoint in the extension, the current
               // origin on the web), and how it is reached — focus an existing tab,
@@ -512,6 +541,7 @@ function CopilotPanelContent({
             onError={(error) => log.error('Content area boundary caught error', { error })}
           >
             <ContentArea
+              readOnly={readOnly}
               activeTab={activeTab}
               activeCaseId={activeCaseId || undefined}
               activeCase={activeCase}

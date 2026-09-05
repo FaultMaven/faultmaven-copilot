@@ -19,18 +19,16 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
-import type { ErrorContext } from '../../../lib/errors/types';
+import type {} from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { useError } from '../../../lib/errors';
-import { useHost } from '../../host';
 
 const log = createLogger('useDataUpload');
 
 export function useDataUpload() {
-  const { store } = useHost();
   const [loading, setLoading] = useState(false);
   const { showError } = useError();
 

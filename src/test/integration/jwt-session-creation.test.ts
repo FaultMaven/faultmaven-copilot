@@ -81,7 +81,7 @@ function installHostChainTransport() {
     clearSession: async () => {
       await mockBrowser.storage.local.remove(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
     },
-    onUnauthorized: () => {},
+    onUnauthorized: () => 'ended' as const,
   });
 }
 

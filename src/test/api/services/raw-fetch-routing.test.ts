@@ -29,7 +29,7 @@ describe('raw-fetch bypass removed — services route through authenticatedFetch
       accessToken: async () => { throw new Error('not exercised'); },
       sessionId: async () => null,
       clearSession: async () => {},
-      onUnauthorized: () => {},
+      onUnauthorized: () => 'ended' as const,
     });
     // Ensure the real global fetch is NOT used by these services.
     vi.spyOn(globalThis, 'fetch' as any).mockImplementation(() => {
@@ -41,7 +41,7 @@ describe('raw-fetch bypass removed — services route through authenticatedFetch
     authenticatedFetchWithRetry.mockResolvedValue(okJson({ case_id: 'c1', state: 'inquiry' }));
     const signal = new AbortController().signal;
 
-    const result = await caseApi.getCaseUI('c1', 'sess', signal);
+    const result = await caseApi.getCaseUI('c1', signal);
 
     expect(authenticatedFetchWithRetry).toHaveBeenCalledWith(
       'https://api.test/api/v1/cases/c1/ui',

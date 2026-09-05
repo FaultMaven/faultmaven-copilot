@@ -99,6 +99,6 @@ _beforeEach(() => {
         'sessionId', 'sessionCreatedAt', 'sessionResumed',
       ]);
     },
-    onUnauthorized: () => {},
+    onUnauthorized: () => 'ended' as const,
   });
 });

@@ -89,7 +89,7 @@ export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {evidenceDetails.derived_evidence.map((evidence: DerivedEvidenceSummary, index: number) => (
+                    {evidenceDetails.derived_evidence.map((evidence: DerivedEvidenceSummary) => (
                       <div
                         key={evidence.evidence_id}
                         className="p-3 bg-fm-bg rounded-md border border-fm-border"

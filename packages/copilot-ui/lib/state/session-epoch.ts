@@ -77,6 +77,18 @@ let sessionEnding = false;
  *
  * One-shot for the page's lifetime; a reload starts a fresh module with it false.
  */
+/**
+ * A session has ENDED and is being torn down.
+ *
+ * Cleared again when an identity is established, because a host that does not
+ * reload — a web page, where sign-out unmounts the panel and sign-in remounts
+ * it — would otherwise latch this on the first sign-out and silently persist
+ * nothing for the rest of the page's life.
+ */
+export function clearSessionEnding(): void {
+  sessionEnding = false;
+}
+
 export function markSessionEnding(): void {
   sessionEnding = true;
 }
