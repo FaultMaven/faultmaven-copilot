@@ -20,7 +20,7 @@ import { selectCaseTitle } from '../case-title';
 import { messageKind } from '../message-kind';
 import { reconcileOptimisticIds } from '../reconcile-message-ids';
 import type { StoreState } from '../store';
-import { getHostStore } from '../../host-store';
+import { ownedStorage } from '../../owned-storage';
 
 const log = createLogger('CasesSlice');
 
@@ -77,9 +77,9 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       // handles the clear, which those sites relied on without doing. One owner
       // of the value, one place to look when it is wrong.
       if (targetId) {
-        await getHostStore().set({ faultmaven_current_case: targetId });
+        await ownedStorage.set({ faultmaven_current_case: targetId });
       } else {
-        await getHostStore().remove(['faultmaven_current_case']);
+        await ownedStorage.remove(['faultmaven_current_case']);
       }
     },
 

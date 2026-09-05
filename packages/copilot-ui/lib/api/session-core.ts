@@ -1,4 +1,4 @@
-import { getHostStore } from '../host-store';
+import { ownedStorage } from '../owned-storage';
 import { clientSessionManager } from "../session/client-session-manager";
 import { createLogger } from "../utils/logger";
 import { Session } from "./types";
@@ -43,7 +43,7 @@ const SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed'] as cons
 const CLIENT_KEY = 'clientId';
 
 async function persistSession(session: Session): Promise<void> {
-  await getHostStore().set({
+  await ownedStorage.set({
     sessionId: session.session_id,
     sessionCreatedAt: Date.now(),
     sessionResumed: session.session_resumed || false,
@@ -75,7 +75,7 @@ export async function clearPersistedSession(
 ): Promise<void> {
   const keys: string[] = [...SESSION_KEYS];
   if (includeClientId) keys.push(CLIENT_KEY);
-  await getHostStore().remove(keys);
+  await ownedStorage.remove(keys);
 }
 
 // In-context single-flight guard (used only when the Web Locks API is
@@ -86,7 +86,7 @@ async function refreshSessionOnce(metadata?: Record<string, any>): Promise<void>
   // Re-check: a concurrent request (or another extension context) may have
   // already refreshed the session while we waited for the lock/promise. If a
   // fresh sessionId is already in storage, don't POST a redundant one.
-  const existing = await getHostStore().get(['sessionId']);
+  const existing = await ownedStorage.get(['sessionId']);
   if (existing.sessionId) {
     log.debug('Session already refreshed by a concurrent caller; skipping create');
     return;

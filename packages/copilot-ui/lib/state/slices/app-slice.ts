@@ -4,7 +4,7 @@ import { capabilitiesManager, BackendCapabilities } from '../../capabilities';
 import { createLogger } from '../../utils/logger';
 import type { KnowledgeDocument } from '../../../lib/api';
 import type { StoreState } from '../store';
-import { getHostStore } from '../../host-store';
+import { ownedStorage } from '../../owned-storage';
 
 const log = createLogger('AppSlice');
 
@@ -52,7 +52,7 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   setHasCompletedFirstRun: (completed) => set({ hasCompletedFirstRun: completed }),
   setSidebarCollapsed: (collapsed) => {
     set({ sidebarCollapsed: collapsed });
-    getHostStore().set({ sidebarCollapsed: collapsed }).catch((err) => {
+    ownedStorage.set({ sidebarCollapsed: collapsed }).catch((err) => {
       log.error('Failed to persist sidebar state', err);
     });
   },
@@ -64,14 +64,14 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   initializeApp: async ({ skipOnboardingGate = false } = {}) => {
     try {
       // Load first-run status
-      const stored = (await getHostStore().get(['hasCompletedFirstRun'])) as {
+      const stored = (await ownedStorage.get(['hasCompletedFirstRun'])) as {
         hasCompletedFirstRun?: boolean;
       };
       const completedFirstRun = stored.hasCompletedFirstRun || false;
       set({ hasCompletedFirstRun: completedFirstRun });
 
       // Load sidebar state
-      const sidebarStored = (await getHostStore().get(['sidebarCollapsed'])) as {
+      const sidebarStored = (await ownedStorage.get(['sidebarCollapsed'])) as {
         sidebarCollapsed?: boolean;
       };
       if (sidebarStored.sidebarCollapsed !== undefined) {

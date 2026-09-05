@@ -3,6 +3,7 @@ import { createLogger } from '../../../lib/utils/logger';
 import { bumpEpoch, clearSessionEnding, markSessionEnding } from '../session-epoch';
 import { PersistenceManager } from '../../utils/persistence-manager';
 import { clearPersistedSession } from '../../api/session-core';
+import { purgeOwnedStorage } from '../../owned-storage';
 import { clientSessionManager } from '../../session/client-session-manager';
 import { idMappingManager, pendingOpsManager } from '../../optimistic';
 import type { StoreState } from '../store';
@@ -138,6 +139,21 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
         await clientSessionManager.clearClientId();
       } catch (error) {
         log.warn('Client-id clear failed during sign-out', error);
+      }
+      try {
+        // The sweep, and the only step that cannot go stale: everything the
+        // package has ever written to the host store, whether or not anyone
+        // remembered to name it above. The named steps stay because they do
+        // more than delete keys — stop the heartbeat, reset the in-memory
+        // singletons — but the STORAGE half of the purge is this one.
+        //
+        // It reaches only what the PACKAGE wrote. The extension's own keys —
+        // its endpoint configuration, its onboarding flag — are written by the
+        // host through `getHostStore()` and are not the package's to remove.
+        const removed = await purgeOwnedStorage();
+        log.debug('Purged the keys the package owns', { count: removed.length });
+      } catch (error) {
+        log.warn('Owned-storage purge failed during sign-out', error);
       }
       log.info('Signed out: persisted state and in-memory state cleared');
     })();

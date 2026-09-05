@@ -18,6 +18,11 @@ import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { idMappingManager, pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
+import {
+  OWNED_KEYS_INDEX_KEY,
+  resetOwnedStorageIndex,
+} from '@faultmaven/copilot-ui/lib/owned-storage';
+import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { createStubHost } from '../support/host';
 
 vi.mock('@faultmaven/copilot-ui/shared/ui/components/ConversationsList', () => ({
@@ -30,6 +35,9 @@ vi.mock('@faultmaven/copilot-ui/shared/ui/components/ConversationsList', () => (
  * being empty, not about a bare key. The package never sees the prefix.
  */
 const NS = 'fm.copilot.';
+
+/** A value that belongs to the departing user and to nothing else. */
+const SENTINEL = 'Disk pressure on worker-03 — user A only';
 
 /** What a signed-in session leaves behind. */
 const SEEDED = {
@@ -49,6 +57,8 @@ describe('a null auth state purges the panel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Module-level, so one test's registrations would answer the next one's.
+    resetOwnedStorageIndex();
     stub = createStubHost(
       Object.fromEntries(Object.entries(SEEDED).map(([k, v]) => [NS + k, v])),
     );
@@ -179,5 +189,71 @@ describe('a null auth state purges the panel', () => {
     await waitFor(() =>
       expect(stub.data[NS + 'conversationTitles']).toEqual({ 'case-b': 'B only' }),
     );
+  });
+  /**
+   * The list was the bug, so the interesting key is one nobody listed.
+   *
+   * `faultmaven_case_cache` is the package's own `UserCase[]` cache — case ids
+   * and titles — written by `CaseCacheManager` and never named by any of the
+   * clears above. The Dashboard, running the real package, found the previous
+   * user's titles still under `fm.copilot.faultmaven_case_cache` after a null
+   * auth state.
+   *
+   * Seeded the way the package writes it, not by poking the host's map: what is
+   * being tested is that WRITING a key is what makes it purgeable.
+   */
+  it('removes a key no purge list ever named', async () => {
+    await caseCacheManager.setCachedCases([
+      {
+        case_id: 'case-1',
+        title: SENTINEL,
+        state: 'investigating',
+        created_at: '2026-01-01T00:00:00Z',
+        owner_id: 'user-a',
+        organization_id: 'org-a',
+        closure_reason: null,
+        closed_at: null,
+      },
+    ]);
+    // Guards the guard: the sentinel is really in the host's key space first,
+    // so its absence afterwards is the purge and not a write that never landed.
+    expect(JSON.stringify(stub.data)).toContain(SENTINEL);
+
+    await signOutThroughTheHost();
+
+    await waitFor(() => {
+      const carrying = Object.entries(stub.data)
+        .filter(([, value]) => JSON.stringify(value).includes(SENTINEL))
+        .map(([key]) => key);
+      expect(carrying, `still carrying the previous user's title: ${carrying.join(', ')}`).toEqual(
+        [],
+      );
+    });
+  });
+
+  /**
+   * And a key this page never wrote.
+   *
+   * A page that loads and signs out without the panel writing anything has only
+   * what the PREVIOUS page life left: the data, and the index beside it. An
+   * in-memory registry would purge nothing here, which is the whole reason the
+   * index is persisted.
+   */
+  it("removes what a previous page life wrote, with no write in this one", async () => {
+    stub.data[NS + 'faultmaven_case_cache'] = {
+      cases: [{ case_id: 'case-1', title: SENTINEL }],
+      timestamp: Date.now(),
+    } as never;
+    stub.data[NS + OWNED_KEYS_INDEX_KEY] = ['faultmaven_case_cache'] as never;
+    resetOwnedStorageIndex();
+
+    await signOutThroughTheHost();
+
+    await waitFor(() => {
+      const carrying = Object.entries(stub.data)
+        .filter(([, value]) => JSON.stringify(value).includes(SENTINEL))
+        .map(([key]) => key);
+      expect(carrying, `survived from the previous page: ${carrying.join(', ')}`).toEqual([]);
+    });
   });
 });

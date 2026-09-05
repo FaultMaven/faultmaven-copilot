@@ -2,7 +2,7 @@
 
 import { createLogger } from './utils/logger';
 import { fetchWithTimeout } from './utils/fetch-timeout';
-import { getHostStore } from './host-store';
+import { ownedStorage } from './owned-storage';
 
 const log = createLogger('CapabilitiesManager');
 
@@ -107,7 +107,7 @@ export class CapabilitiesManager {
         // Cache for offline access. No availability guard: the host store
         // throws when it is not installed, and that is a wiring bug to surface
         // rather than a condition to tiptoe around.
-        await getHostStore().set({ backendCapabilities: caps });
+        await ownedStorage.set({ backendCapabilities: caps });
 
         log.info('Connected to backend', { deploymentMode: caps.deploymentMode });
         return caps;
@@ -116,7 +116,7 @@ export class CapabilitiesManager {
         log.warn('Capabilities fetch failed; serving degraded capabilities', error);
 
         // Try cache
-        const cached = (await getHostStore().get(['backendCapabilities'])) as {
+        const cached = (await ownedStorage.get(['backendCapabilities'])) as {
           backendCapabilities?: BackendCapabilities;
         };
         if (cached.backendCapabilities) {

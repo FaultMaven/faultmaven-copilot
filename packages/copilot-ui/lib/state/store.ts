@@ -9,7 +9,7 @@ import { createLogger } from '../utils/logger';
 import { idMappingManager, OptimisticConversationItem } from '../optimistic';
 import { memoryManager } from '../utils/memory-manager';
 import { isSessionEnding } from './session-epoch';
-import { getHostStore } from '../host-store';
+import { ownedStorage } from '../owned-storage';
 
 const log = createLogger('Store');
 
@@ -156,7 +156,7 @@ export const debouncedPersist = debounce(
       }
 
       if (Object.keys(storageData).length > 0) {
-        await getHostStore().set(storageData);
+        await ownedStorage.set(storageData);
         log.debug('Store batched save completed', {
           keys: Object.keys(storageData),
           removedKeys: keysToRemove
@@ -164,7 +164,7 @@ export const debouncedPersist = debounce(
       }
 
       if (keysToRemove.length > 0) {
-        await getHostStore().remove(keysToRemove);
+        await ownedStorage.remove(keysToRemove);
         log.debug('Store cleared empty keys', keysToRemove);
       }
     } catch (error) {

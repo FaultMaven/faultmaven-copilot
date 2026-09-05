@@ -1,7 +1,7 @@
 
 import { UserCase } from '../../types/case';
 import { createLogger } from '../utils/logger';
-import { getHostStore } from '../host-store';
+import { ownedStorage } from '../owned-storage';
 
 const log = createLogger('CaseCacheManager');
 
@@ -19,7 +19,7 @@ export class CaseCacheManager {
      */
     async getCachedCases(): Promise<UserCase[] | null> {
         try {
-            const stored = await getHostStore().get([CACHE_KEY]);
+            const stored = await ownedStorage.get([CACHE_KEY]);
             const cache = stored[CACHE_KEY] as CachedCaseList | undefined;
 
             if (!cache) {
@@ -52,7 +52,7 @@ export class CaseCacheManager {
                 cases,
                 timestamp: Date.now()
             };
-            await getHostStore().set({ [CACHE_KEY]: cache });
+            await ownedStorage.set({ [CACHE_KEY]: cache });
             log.debug('Cache updated', { count: cases.length });
         } catch (error) {
             log.error('Failed to write cache:', error);
@@ -64,7 +64,7 @@ export class CaseCacheManager {
      */
     async invalidateCache(): Promise<void> {
         try {
-            await getHostStore().remove([CACHE_KEY]);
+            await ownedStorage.remove([CACHE_KEY]);
             log.debug('Cache invalidated');
         } catch (error) {
             log.error('Failed to invalidate cache:', error);
