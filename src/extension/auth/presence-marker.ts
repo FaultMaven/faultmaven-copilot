@@ -24,12 +24,16 @@ export const COPILOT_PRESENCE_EVENT = 'faultmaven-copilot:ready';
  * the same three names and the same rule about what counts as advertising.
  * Re-exported here so this module stays the extension's one door to the
  * handshake, in both directions.
+ *
+ * From `/contract`, not from the package's main entry: this module is imported
+ * by the auth-bridge CONTENT SCRIPT, and the main entry brings the panel — the
+ * store, the transport, the markdown renderer — with it.
  */
 export {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
   dashboardAdvertisesPanel,
-} from '@faultmaven/copilot-ui';
+} from '@faultmaven/copilot-ui/contract';
 
 export function announceCopilotPresence(version: string): void {
   try {

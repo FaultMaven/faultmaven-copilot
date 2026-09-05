@@ -16,4 +16,4 @@ export {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
   dashboardAdvertisesPanel,
-} from './panel-advertisement';
+} from '../../contract';

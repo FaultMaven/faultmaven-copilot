@@ -58,7 +58,7 @@ export {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
   dashboardAdvertisesPanel,
-} from './shared/host/panel-advertisement';
+} from './contract';
 
 /**
  * How a host hands its answers to the modules that cannot ask React for them —

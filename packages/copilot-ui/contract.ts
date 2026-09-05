@@ -1,5 +1,18 @@
 /**
- * The Dashboard-panel advertisement, defined ONCE.
+ * The Dashboard-panel advertisement, defined ONCE — and reachable without the
+ * panel.
+ *
+ * `@faultmaven/copilot-ui/contract` is a subpath entry with NO imports, and it
+ * must stay that way. The three names below are needed by code that has no
+ * business loading the UI: the Dashboard's login page, which decides what to
+ * advertise before anyone is signed in, and the extension's content script,
+ * which reads the attribute on every page it is injected into. Reached through
+ * the package's main entry they arrive with the store, the transport and the
+ * persistence layer attached — 776 -> 983 kB on the Dashboard's login bundle,
+ * which ADR-016 D3 forbids, and a 4 MB content script here.
+ *
+ * A test asserts the transitive import graph of this module is exactly itself,
+ * so the next edit cannot quietly re-attach it.
  *
  * A page that renders the Copilot panel itself says so, and the extension's
  * side panel stands down on that tab rather than sitting beside a second copy

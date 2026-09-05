@@ -8,6 +8,7 @@
   "types": "./index.ts",
   "files": [
     "config.ts",
+    "contract.ts",
     "index.ts",
     "lib",
     "public",
