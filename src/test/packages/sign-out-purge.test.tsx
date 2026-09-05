@@ -16,7 +16,7 @@ import { render, waitFor } from '@testing-library/react';
 import React from 'react';
 import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { setHostStore, clearHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { idMappingManager, pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import {
   OWNED_KEYS_INDEX_KEY,
@@ -255,5 +255,121 @@ describe('a null auth state purges the panel', () => {
         .map(([key]) => key);
       expect(carrying, `survived from the previous page: ${carrying.join(', ')}`).toEqual([]);
     });
+  });
+});
+
+/**
+ * The host tearing its own store down mid-purge.
+ *
+ * The Dashboard's shell unmounts the panel on the SAME event that delivers the
+ * null auth state, and its cleanup cleared the host store while the purge was
+ * still awaiting: four `No HostStore installed` throws, caught by the per-step
+ * catches, and eight keys left behind. The host is fixing its ordering — and
+ * the package must not need it to.
+ */
+describe('a sign-out purge outlives the store installation', () => {
+  let stub: ReturnType<typeof createStubHost>;
+  let said: string[];
+
+  const install = () => {
+    setHostStore({
+      get: async (keys: string[]) => {
+        const out = await stub.store.get(keys.map((k) => NS + k));
+        return Object.fromEntries(
+          Object.entries(out).map(([k, v]) => [k.slice(NS.length), v]),
+        );
+      },
+      set: (items) =>
+        stub.store.set(Object.fromEntries(Object.entries(items).map(([k, v]) => [NS + k, v]))),
+      remove: (keys: string[]) => stub.store.remove(keys.map((k) => NS + k)),
+      subscribe: (keys: string[], onChange) =>
+        stub.store.subscribe(keys.map((k) => NS + k), onChange),
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetOwnedStorageIndex();
+    said = [];
+    for (const level of ['warn', 'error'] as const) {
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        said.push(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '));
+      });
+    }
+    stub = createStubHost(
+      Object.fromEntries(Object.entries(SEEDED).map(([k, v]) => [NS + k, v])),
+    );
+    install();
+    useAppStore.setState({
+      initializingCapabilities: false,
+      capabilitiesError: null,
+      currentUser: { id: 'user-a', username: 'alice', roles: ['user'] },
+      conversations: SEEDED.conversations,
+      conversationTitles: SEEDED.conversationTitles,
+      pinnedCases: new Set(['case-1']),
+      activeCaseId: 'case-1',
+      hasUnsavedNewChat: false,
+    } as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useAppStore.setState({ currentUser: null } as never);
+  });
+
+  it('empties the store it started with, even after the host clears it', async () => {
+    // The key nobody listed, written the way the package writes it.
+    await caseCacheManager.setCachedCases([
+      {
+        case_id: 'case-1',
+        title: SENTINEL,
+        state: 'investigating',
+        created_at: '2026-01-01T00:00:00Z',
+        owner_id: 'user-a',
+        organization_id: 'org-a',
+        closure_reason: null,
+        closed_at: null,
+      },
+    ]);
+    expect(JSON.stringify(stub.data)).toContain(SENTINEL); // there to begin with
+
+    render(<CopilotPanel host={stub.host} />);
+    await waitFor(() => expect(stub.subscribeAuthState).toHaveBeenCalled());
+
+    stub.authStateChanged(null);
+    // What the host's cleanup does: on the very next microtask, while the purge
+    // is between its awaits.
+    await Promise.resolve();
+    clearHostStore();
+
+    await waitFor(() => {
+      const surviving = Object.keys(stub.data);
+      expect(surviving, `left behind: ${surviving.join(', ')}`).toEqual([]);
+    });
+    expect(
+      said.filter((line) => line.includes('No HostStore installed')),
+      `the purge went looking for the store again:\n${said.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  /**
+   * And with no store at ALL, one line rather than four failures — the
+   * in-memory half still happens, because that is the half that does not need
+   * the host.
+   */
+  it('says so once when there is no store to purge through, and does not throw', async () => {
+    render(<CopilotPanel host={stub.host} />);
+    await waitFor(() => expect(stub.subscribeAuthState).toHaveBeenCalled());
+
+    clearHostStore();
+    expect(() => stub.authStateChanged(null)).not.toThrow();
+
+    await waitFor(() => expect(useAppStore.getState().currentUser).toBeNull());
+    expect(useAppStore.getState().conversationTitles).toEqual({});
+
+    const complaints = said.filter((line) =>
+      line.includes('Signed out with no host store installed'),
+    );
+    expect(complaints.length, `said it ${complaints.length} times`).toBe(1);
   });
 });

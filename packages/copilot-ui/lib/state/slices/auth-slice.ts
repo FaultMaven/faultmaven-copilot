@@ -3,7 +3,7 @@ import { createLogger } from '../../../lib/utils/logger';
 import { bumpEpoch, clearSessionEnding, markSessionEnding } from '../session-epoch';
 import { PersistenceManager } from '../../utils/persistence-manager';
 import { clearPersistedSession } from '../../api/session-core';
-import { purgeOwnedStorage } from '../../owned-storage';
+import { captureStore, purgeOwnedStorage, withStore } from '../../owned-storage';
 import { clientSessionManager } from '../../session/client-session-manager';
 import { idMappingManager, pendingOpsManager } from '../../optimistic';
 import type { StoreState } from '../store';
@@ -78,6 +78,18 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
    * extension's identity-change purge performs, wherever it arrives from.
    */
   const signOutLocally = () => {
+    // 0. Capture the store SYNCHRONOUSLY, before anything awaits.
+    //
+    //    A host may unmount the panel and clear its store on the same event
+    //    that delivers the null auth state — the Dashboard's shell does — and
+    //    the awaits between the steps below are exactly where that cleanup
+    //    runs. Re-resolving the store per call then threw `No HostStore
+    //    installed` four times and left eight keys behind: a purge that only
+    //    works when the host tears down in the right order is not a purge.
+    //
+    //    The host is fixing its ordering. This does not depend on it.
+    const store = captureStore();
+
     // 1. Fence FIRST, synchronously, before anything awaits: an in-flight writer
     //    whose continuation is already queued sees the moved epoch and skips its
     //    post-await writes rather than repopulating what we are clearing.
@@ -109,7 +121,19 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
     // 4. Persisted, and the heartbeat with it. Each step in its own catch: a
     //    throw in one must not skip the others, which is how a failed backend
     //    call used to leave a full set of local residue behind.
-    void (async () => {
+    if (!store) {
+      // Nothing to purge THROUGH. Said once, at error level, rather than four
+      // times from four failing steps: the in-memory teardown above has
+      // happened, and the persisted half cannot.
+      log.error(
+        'Signed out with no host store installed: the in-memory state is cleared, ' +
+          'but persisted state could not be purged. The host must install its ' +
+          'store before mounting the panel and tear it down after unmounting.',
+      );
+      return;
+    }
+
+    void withStore(store, async () => {
       try {
         // Stops the keep-alive interval as well as clearing the session keys.
         await get().clearSession();
@@ -156,7 +180,7 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
         log.warn('Owned-storage purge failed during sign-out', error);
       }
       log.info('Signed out: persisted state and in-memory state cleared');
-    })();
+    });
   };
 
   return {
