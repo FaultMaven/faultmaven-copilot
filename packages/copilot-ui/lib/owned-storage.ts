@@ -37,6 +37,64 @@ export const OWNED_KEYS_INDEX_KEY = 'faultmaven_owned_keys';
 let index: Promise<Set<string>> | null = null;
 
 /**
+ * The store a teardown is running against, for as long as it runs.
+ *
+ * A host may unmount the panel and clear its store on the SAME event that tells
+ * the panel nobody is signed in — the Dashboard's shell does — and a purge that
+ * re-resolves the store on every call then finds it gone halfway through: four
+ * `No HostStore installed` throws and eight keys left behind, because the
+ * awaits between the steps are exactly where the host's cleanup runs.
+ *
+ * So a purge captures the store once, synchronously, and every step runs
+ * against THAT one. This is the pin: it is ambient for the duration, which is
+ * deliberate — a write racing a sign-out belongs to the session being torn
+ * down, not to whatever the host installs next.
+ */
+let pinnedStore: HostStore | null = null;
+
+/** The store package code writes through right now. */
+function activeStore(): HostStore {
+  return pinnedStore ?? getHostStore();
+}
+
+/**
+ * Run `body` with every package storage call bound to `store`, whatever the
+ * host does to its own installation meanwhile.
+ *
+ * One door in and one door out: because no package module may call
+ * `getHostStore()` directly (there is a test), pinning it here pins every
+ * clear in the sign-out path — the persistence purge, the session keys, the
+ * client id — without any of them having to take a store argument.
+ */
+/**
+ * The installed store, or `null` if there is none.
+ *
+ * The seam THROWS on a missing store, which is right for a read that has
+ * nowhere to go — it is a wiring bug and should be loud. A teardown asking
+ * "is there anything to purge THROUGH?" is a different question, and the answer
+ * to it is not an exception.
+ */
+export function captureStore(): HostStore | null {
+  try {
+    return getHostStore();
+  } catch {
+    // Not installed. The caller decides what that means; from here it is not an
+    // error, because the only caller is a teardown that has other work to do.
+    return null;
+  }
+}
+
+export async function withStore<T>(store: HostStore, body: () => Promise<T>): Promise<T> {
+  const previous = pinnedStore;
+  pinnedStore = store;
+  try {
+    return await body();
+  } finally {
+    pinnedStore = previous;
+  }
+}
+
+/**
  * The keys this package has written, from the store rather than from memory:
  * a page that reloads and then signs out without writing anything must still
  * purge what the page before it wrote.
@@ -46,7 +104,7 @@ function loadIndex(): Promise<Set<string>> {
     index = (async () => {
       const known = new Set<string>();
       try {
-        const stored = await getHostStore().get([OWNED_KEYS_INDEX_KEY]);
+        const stored = await activeStore().get([OWNED_KEYS_INDEX_KEY]);
         const recorded = stored[OWNED_KEYS_INDEX_KEY];
         if (Array.isArray(recorded)) {
           for (const key of recorded) if (typeof key === 'string') known.add(key);
@@ -67,7 +125,7 @@ async function register(keys: string[]): Promise<void> {
   const fresh = keys.filter((key) => key !== OWNED_KEYS_INDEX_KEY && !known.has(key));
   if (fresh.length === 0) return;
   for (const key of fresh) known.add(key);
-  await getHostStore().set({ [OWNED_KEYS_INDEX_KEY]: [...known] });
+  await activeStore().set({ [OWNED_KEYS_INDEX_KEY]: [...known] });
 }
 
 /**
@@ -76,16 +134,16 @@ async function register(keys: string[]): Promise<void> {
  */
 export const ownedStorage = {
   get(keys: string[]): Promise<Record<string, StoredValue>> {
-    return getHostStore().get(keys);
+    return activeStore().get(keys);
   },
 
   async set(items: Record<string, StoredValue>): Promise<void> {
     await register(Object.keys(items));
-    await getHostStore().set(items);
+    await activeStore().set(items);
   },
 
   remove(keys: string[]): Promise<void> {
-    return getHostStore().remove(keys);
+    return activeStore().remove(keys);
   },
 } satisfies Omit<HostStore, 'subscribe'>;
 
@@ -99,8 +157,8 @@ export async function purgeOwnedStorage(): Promise<string[]> {
   const known = await loadIndex();
   const keys = [...known];
   try {
-    if (keys.length > 0) await getHostStore().remove(keys);
-    await getHostStore().remove([OWNED_KEYS_INDEX_KEY]);
+    if (keys.length > 0) await activeStore().remove(keys);
+    await activeStore().remove([OWNED_KEYS_INDEX_KEY]);
   } finally {
     // Whatever the store did with that, this page no longer claims those keys.
     index = Promise.resolve(new Set<string>());
