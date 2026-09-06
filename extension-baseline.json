@@ -24,7 +24,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "866536fcc9b373974a6c82ed071c391fd69f7ec4a0d422bc0a4babea99729eae"
+    "sha256": "95e0b45613d4afd042c7e0feb6731a0fb8377657a4d2fad5eea3e01d38a4dfce"
   },
   "iconSources": {
     "fileCount": 8,
@@ -174,7 +174,7 @@
     "chunks/requirementDiagram-LRYGKXZP-C5XdfqKl.js": "4482847d0f9aa94f9aa184553865b9591387d06631cd118b4ca8020c5356b20a",
     "chunks/sankeyDiagram-W5VNT64P-CvnRW4nQ.js": "2b30f3e3e2992f9615b8196cfcf099c01614c0efac46bb1d83a52dd40d3cbe20",
     "chunks/sequenceDiagram-SI44F4Z6-CvDhor9Z.js": "500960e8ae4cb392cf7a1072484fd02601b8db69b31c76d43a39f8a5501bf138",
-    "chunks/sidepanel_manual-fniGOT4f.js": "da193ae5ec08a06a6f0f18e171c8c1b8cd1e054b4aa489c3b1a4cb0dcd69b8ad",
+    "chunks/sidepanel_manual-CevvdMIP.js": "aaf167d42198baa98be4994769c26c22bc329fb7227007949ac96adeed8a91c0",
     "chunks/sizeCapture-X5ZJPWSS-BiksUOmT.js": "6885aaa4d301e9cf4bbd5d3ff43e4da0dc211b20f76c7273e4c3454fcd0adb8d",
     "chunks/stateDiagram-OKZ733FA-B54uIQOr.js": "178c6c0860ed1f35f5c11b11cc419867deac244c313e99c4a0ddd3ec2bb26e98",
     "chunks/stateDiagram-v2-UEYNNEHI-TXeh4hLa.js": "972c8a7ce4788adf70c6ae304cbf6b1991f1e785ddba6c331391df214865bf8e",
@@ -197,6 +197,6 @@
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "5f83e74ec0aaee80c5811a47564a43ef4a9e7ded22ccd1a0ba030938ee84d6a3",
     "options.html": "c5b46c05a23ff60fcb0f2eb27b614cdc04366518aa1309147575a8fc652e7e95",
-    "sidepanel_manual.html": "ace8736bb94045f746019b7a169243424da7f6a144cbb693cd8e751601e9a8c9"
+    "sidepanel_manual.html": "fec0363804e19a1bc98794930d9122ae0accd29aae79104dd671d6b0c133f80b"
   }
 }
