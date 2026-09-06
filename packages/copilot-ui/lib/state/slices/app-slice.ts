@@ -5,6 +5,7 @@ import { createLogger } from '../../utils/logger';
 import type { KnowledgeDocument } from '../../../lib/api';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
+import { hasAppBootstrapped, markAppBootstrapped } from '../app-bootstrap';
 
 const log = createLogger('AppSlice');
 
@@ -62,6 +63,24 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
   setHasUnsavedNewChat: (hasUnsaved) => set({ hasUnsavedNewChat: hasUnsaved }),
 
   initializeApp: async ({ skipOnboardingGate = false } = {}) => {
+    // One bootstrap per page load, however many components ask for one.
+    //
+    // Two do. Since #240 split the extension's entry out of the shared UI,
+    // ExtensionApp bootstraps before it will mount the panel, and CopilotPanel
+    // bootstraps on mount — and the entry ALSO renders a loading screen while
+    // `initializingCapabilities` is true, so the panel's call unmounted the
+    // panel that made it: mount → initializeApp → the flag goes true → the
+    // entry swaps the panel for its loading screen → unmount → capabilities
+    // settle → the flag goes false → remount → initializeApp → … The panel
+    // remounted for as long as the renderer survived, refetching capabilities
+    // every cycle, and the side-panel document died under it (#251).
+    //
+    // Guarding here rather than in either component is what makes it a property
+    // of the bootstrap instead of an arrangement two call sites have to keep:
+    // `loadCapabilities` is the only thing that raises the flag, so a bootstrap
+    // that runs once can no longer raise it a second time, and no host gating on
+    // it can be made to unmount the component that asked.
+    if (hasAppBootstrapped()) return;
     try {
       // Load first-run status
       const stored = (await ownedStorage.get(['hasCompletedFirstRun'])) as {
@@ -89,6 +108,12 @@ export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set, 
         set({ initializingCapabilities: false });
         return;
       }
+
+      // Latched HERE, past the onboarding gate above, rather than on entry: an
+      // un-onboarded host was turned away without bootstrapping anything, and
+      // marking that as done would leave capabilities permanently unloaded for
+      // the extension once its user finishes the first-run flow.
+      markAppBootstrapped();
 
       // Load capabilities if first run is completed
       await get().loadCapabilities();

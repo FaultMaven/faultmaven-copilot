@@ -65,6 +65,7 @@ Object.defineProperty(window, 'navigator', {
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
+import { resetAppBootstrap } from '@faultmaven/copilot-ui/lib/state/app-bootstrap';
 import { beforeEach as _beforeEach } from 'vitest';
 
 _beforeEach(() => {
@@ -101,4 +102,10 @@ _beforeEach(() => {
     },
     onUnauthorized: () => 'ended' as const,
   });
+  // Every test is a fresh page load, and the app bootstrap runs once per page
+  // load. The latch is module state shared by every case in a file, so without
+  // this the first case to mount a component that bootstraps latches it for the
+  // rest: they keep whatever `initializingCapabilities` they staged, never see
+  // it clear, and sit on the loading screen.
+  resetAppBootstrap();
 });
