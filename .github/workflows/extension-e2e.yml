@@ -29,6 +29,16 @@ on:
   schedule:
     - cron: '0 6 * * 1'                # Weekly Monday 6am UTC
 
+# One run per ref. Now that this fires on every pull request regardless of
+# paths, a branch pushed several times in a row would otherwise leave that many
+# full runs racing — each a build plus a Chromium download — and the superseded
+# ones are already answering a question nobody is asking. Cancelling them is
+# safe for a required check: required contexts are evaluated against the head
+# commit's run, and cancelling a run on a SUPERSEDED commit cannot affect it.
+concurrency:
+  group: extension-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

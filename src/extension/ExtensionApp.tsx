@@ -12,7 +12,7 @@
  * session come to exist"; the Dashboard will have a different one, and neither
  * answer reaches the panel.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extensionHost } from './host';
 import type { HostSession, HostUser, WiredHost } from '@faultmaven/copilot-ui/shared/host';
 import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
@@ -233,6 +233,37 @@ export function ExtensionApp() {
     window.location.reload();
   }, []);
 
+  // The capabilities gate is ONE-WAY: it covers startup, then stands down.
+  //
+  // CopilotPanel bootstraps on mount as well, and it has to — a host that
+  // embeds it has no entry above it to do that, and the Dashboard is one. But
+  // `loadCapabilities` raises `initializingCapabilities` while it runs, so a
+  // gate that kept reacting would swap the panel for this loading screen and
+  // UNMOUNT the component that made the call. The remount would call it again:
+  //
+  //   mount → initializeApp → the flag goes true → the entry swaps the panel
+  //   for the loading screen → unmount → capabilities settle → the flag goes
+  //   false → remount → initializeApp → …
+  //
+  // The panel remounted for as long as the renderer survived, refetching
+  // capabilities every cycle, and the side-panel document died under it (#251).
+  //
+  // Latching startup rather than de-duplicating the bootstrap is deliberate.
+  // CapabilitiesManager serves a degraded result (cache, or a fabricated
+  // fallback) when the fetch fails and records that it did, precisely so the
+  // NEXT call re-detects a recovered backend. A once-per-page-load guard on
+  // `initializeApp` would defeat that: on the Dashboard the panel remounts on
+  // every tab switch within one page load, and the fabricated
+  // `self-hosted`/`localhost:3333` capabilities would stick for the session.
+  //
+  // A ref, not state: it only ever goes false → true, and nothing needs to
+  // re-render when it flips — the render that sets it is already the render
+  // that stops gating.
+  const startupSettled = useRef(false);
+  if (hasCompletedFirstRun !== null && !initializingCapabilities) {
+    startupSettled.current = true;
+  }
+
   // Order preserved from the single component this was split out of: first run,
   // then bootstrap, then sign-in. Checking capabilities before authentication is
   // what stops the sign-in screen flashing during startup.
@@ -244,7 +275,7 @@ export function ExtensionApp() {
     );
   }
 
-  if (hasCompletedFirstRun === null || initializingCapabilities) {
+  if (hasCompletedFirstRun === null || (initializingCapabilities && !startupSettled.current)) {
     return (
       <ErrorBoundary>
         <LoadingScreen message="Connecting to FaultMaven..." />
