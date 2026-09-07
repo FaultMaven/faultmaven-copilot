@@ -1,15 +1,43 @@
 name: Extension E2E Tests
 on:
   workflow_dispatch:                    # Manual trigger
+  # Deliberately UNFILTERED, unlike the push trigger below.
+  #
+  # This workflow could not gate anything until now: with no `pull_request`
+  # trigger it never reported on a pull request, so it could not be a required
+  # check even in principle. #240 broke the side panel and merged green, and
+  # main stayed red for two days with nothing to catch it.
+  #
+  # A `paths:` filter here would put it straight back in that position. A
+  # filtered workflow does not run when the paths do not match, and a required
+  # check that never runs never reports — which blocks every PR that does not
+  # touch those paths, rather than letting it through. Requiring a context is
+  # only safe when the context always arrives.
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
       - 'src/**'
+      # The shared UI, which is most of what the panel renders. Absent until
+      # now, so a change confined to the package — the regression FIX for #251
+      # is one — reached main without this suite ever running on it.
+      - 'packages/**'
       - 'public/**'
       - 'manifest.json'
       - 'e2e/**'
   schedule:
     - cron: '0 6 * * 1'                # Weekly Monday 6am UTC
+
+# One run per ref. Now that this fires on every pull request regardless of
+# paths, a branch pushed several times in a row would otherwise leave that many
+# full runs racing — each a build plus a Chromium download — and the superseded
+# ones are already answering a question nobody is asking. Cancelling them is
+# safe for a required check: required contexts are evaluated against the head
+# commit's run, and cancelling a run on a SUPERSEDED commit cannot affect it.
+concurrency:
+  group: extension-e2e-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
