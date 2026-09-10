@@ -335,8 +335,20 @@ export enum ResponseType {
   ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
 }
 
+/**
+ * Where a citation came from, as the contract publishes it.
+ *
+ * Aliased to the generated schema rather than restated. Contract 3.3.0 made
+ * `SourceType` a published component and recorded that this client's own union
+ * — `log_analysis | user_input | system_metrics | external_api |
+ * previous_case` — shared exactly one member with it. Deriving the union means
+ * the next value the server adds arrives here as a compile error rather than
+ * as a citation the UI silently labels with its own raw slug.
+ */
+export type SourceType = components['schemas']['SourceType'];
+
 export interface Source {
-  type: 'log_analysis' | 'knowledge_base' | 'user_input' | 'system_metrics' | 'external_api' | 'previous_case';
+  type: SourceType;
   content: string;
   confidence?: number;
   metadata?: Record<string, any>;
