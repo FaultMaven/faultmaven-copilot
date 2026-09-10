@@ -23,8 +23,9 @@ const STUB_CASE = {
   created_at: new Date(Date.now() - 36 * 60 * 1000).toISOString(),
   updated_at: new Date().toISOString(),
   description: 'Stub case. Nothing here reaches a real backend.',
-  owner_id: 'stub-user',
-  organization_id: 'stub-org',
+  user_id: 'stub-user',
+  enterprise_id: 'stub-enterprise',
+  organization_id: null,
   closure_reason: null,
   closed_at: null,
 };

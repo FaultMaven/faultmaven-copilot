@@ -6,7 +6,12 @@
       "created_at": "2026-02-20T21:42:36.236Z",
       "updated_at": "2026-02-20T21:42:36.236Z",
       "current_turn": 0,
-      "state": "inquiry"
+      "state": "inquiry",
+      "user_id": "e2e-user",
+      "enterprise_id": "e2e-enterprise",
+      "organization_id": null,
+      "closure_reason": null,
+      "closed_at": null
     },
     {
       "case_id": "case-2",
@@ -14,7 +19,12 @@
       "created_at": "2026-02-19T21:42:36.236Z",
       "updated_at": "2026-02-19T21:42:36.236Z",
       "current_turn": 3,
-      "state": "resolved"
+      "state": "resolved",
+      "user_id": "e2e-user",
+      "enterprise_id": "e2e-enterprise",
+      "organization_id": null,
+      "closure_reason": null,
+      "closed_at": null
     }
   ],
   "total": 2,

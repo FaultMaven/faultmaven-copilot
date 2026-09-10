@@ -8,10 +8,29 @@ const log = createLogger('CaseCacheManager');
 interface CachedCaseList {
     cases: UserCase[];
     timestamp: number;
+    version: number;
 }
 
 const CACHE_KEY = 'faultmaven_case_cache';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Schema version of the persisted case rows.
+ *
+ * This cache is the only place a `UserCase` outlives the session, so it is the
+ * only place a row written by an OLDER build can be read back by a newer one.
+ * The TTL bounds staleness, not shape: a row five seconds old is served
+ * whatever build wrote it.
+ *
+ * v1 (ADR-017 Phase 7a) is the first stamped version. Rows written before it
+ * carry `organization_id` as the tenant and no `enterprise_id` at all, and are
+ * DISCARDED rather than tolerated — a row whose tenant field has moved is not
+ * a row this build can read, and reading it would put a case with no
+ * enterprise into the sidebar with nothing to say so.
+ *
+ * Bump this whenever the persisted `UserCase` shape changes.
+ */
+export const CASE_CACHE_VERSION = 1;
 
 export class CaseCacheManager {
     /**
@@ -24,6 +43,17 @@ export class CaseCacheManager {
 
             if (!cache) {
                 log.debug('Cache miss: No cache found');
+                return null;
+            }
+
+            // Shape before staleness: a row from an older build is unreadable
+            // whatever its age. An unstamped cache is pre-v1 by definition.
+            if (cache.version !== CASE_CACHE_VERSION) {
+                log.info('Cache miss: written by an older schema, discarding', {
+                    cachedVersion: cache.version,
+                    currentVersion: CASE_CACHE_VERSION
+                });
+                await this.invalidateCache();
                 return null;
             }
 
@@ -50,7 +80,8 @@ export class CaseCacheManager {
         try {
             const cache: CachedCaseList = {
                 cases,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                version: CASE_CACHE_VERSION
             };
             await ownedStorage.set({ [CACHE_KEY]: cache });
             log.debug('Cache updated', { count: cases.length });

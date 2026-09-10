@@ -22,7 +22,7 @@ const activeCase = {
   created_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
   owner_id: 'user-1',
-  organization_id: 'org-1',
+  enterprise_id: 'ent-1',
   closure_reason: null,
   closed_at: null
 } as unknown as UserCase;

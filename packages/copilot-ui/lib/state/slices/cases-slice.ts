@@ -153,7 +153,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           owner_id: '',
-          organization_id: '',
+          // Locally minted, so it names no tenant yet: `refreshActiveCase`
+          // below replaces the whole row with the server's, which does.
+          enterprise_id: '',
+          organization_id: null,
           closure_reason: null,
           closed_at: null,
           message_count: caseMessages.length || 0

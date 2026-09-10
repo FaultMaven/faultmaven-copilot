@@ -411,7 +411,7 @@ export interface paths {
          *     Raises:
          *         401 Unauthorized: No valid JWT token
          *         403 Forbidden: Caller is not a platform admin, or carries no
-         *             organization to be confined to
+         *             enterprise to be confined to
          *         422 Unprocessable Entity: Invalid query parameters
          */
         get: operations["list_users_api_v1_admin_users_get"];
@@ -448,7 +448,7 @@ export interface paths {
          *     Raises:
          *         401 Unauthorized: No valid JWT token
          *         403 Forbidden: Caller is not a platform admin, or carries no
-         *             organization to be confined to
+         *             enterprise to be confined to
          *         404 Not Found: User does not exist, or is not in the operator's
          *             organization — one answer for both, deliberately
          */
@@ -488,7 +488,7 @@ export interface paths {
          *     Raises:
          *         401 Unauthorized: No valid JWT token
          *         403 Forbidden: Caller is not a platform admin, or carries no
-         *             organization to be confined to
+         *             enterprise to be confined to
          *         404 Not Found: User does not exist, or is not in the operator's
          *             organization — one answer for both, deliberately
          *         409 Conflict: User already active
@@ -1459,7 +1459,12 @@ export interface paths {
          *     the case and all associated data are permanently removed.
          *
          *     The operation is idempotent - subsequent requests will return
-         *     204 No Content even if the case has already been deleted.
+         *     204 No Content even if the case has already been deleted, and so does a
+         *     request naming a case the caller cannot see.
+         *
+         *     Only the OWNER may delete. A teammate who can read the case through a team
+         *     share is refused with 403 (ADR-017 D4: a share is read visibility, not
+         *     ownership).
          *
          *     Returns 204 No Content on success.
          */
@@ -1954,7 +1959,7 @@ export interface paths {
          * @description Get session by ID.
          *
          *     Retrieves a specific investigation session by its ID.
-         *     The session must belong to a case owned by the organization.
+         *     The session must belong to a case owned by the enterprise.
          *
          *     Authentication:
          *         - JWT Bearer token: Authorization: Bearer <token>
@@ -2308,6 +2313,92 @@ export interface paths {
         get: operations["get_uploaded_file_details"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Invitations Addressed To Me
+         * @description The live offers addressed to the caller.
+         *
+         *     Addressed two ways, because an offer may predate the account: by
+         *     ``invited_user_id`` once it has resolved, and by the caller's own address
+         *     while it has not — which is how somebody invited before they signed up sees
+         *     the invitation waiting for them on their first visit.
+         *
+         *     Pending only. An offer past its deadline is stamped ``expired`` on the way
+         *     through and left out, so the list is what a person can actually act on.
+         *
+         *     The team names are resolved in **one** query for the whole page. The invitee
+         *     is not a member yet, so ``GET /teams`` cannot tell them what they are being
+         *     invited to; without the names the list is a column of opaque ids, and
+         *     fetching them one row at a time made the cost of opening a mailbox linear in
+         *     how many offers were in it.
+         */
+        get: operations["list_my_invitations_api_v1_invitations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/{invitation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Decline An Invitation
+         * @description Refuse an offer.
+         *
+         *     Recorded rather than deleted: the team admin's list is the record of who was
+         *     offered a place and what they said, and a row that vanished would read as an
+         *     offer never made. An offer that had already run out answers 410 and is
+         *     recorded as ``expired``, not as a decline nobody made.
+         */
+        delete: operations["decline_invitation_api_v1_invitations__invitation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/{invitation_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept An Invitation
+         * @description Consent: join the team this invitation names.
+         *
+         *     The only way a membership is created on this surface. An admin cannot add a
+         *     member; they can only offer.
+         *
+         *     410 when the offer has run out — distinct from the 404 an offer that was
+         *     never yours gets, because the caller was entitled to that invitation and is
+         *     entitled to know it lapsed rather than to be told it never existed.
+         */
+        post: operations["accept_invitation_api_v1_invitations__invitation_id__accept_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2923,7 +3014,7 @@ export interface paths {
         };
         /**
          * List Suggestions
-         * @description List the caller's organization's knowledge suggestions.
+         * @description List the caller's enterprise's knowledge suggestions.
          *
          *     Returns suggestions extracted from cases that are pending review.
          *     Includes lineage information for each suggestion (source case, extractor, timestamp).
@@ -2963,7 +3054,7 @@ export interface paths {
          *     and lineage information.
          *
          *     Resolved through the tenant-scoped lookup: an id belonging to another
-         *     organization answers 404, identically to an absent id, so the response is
+         *     enterprise answers 404, identically to an absent id, so the response is
          *     never an existence oracle.
          *
          *     Args:
@@ -2980,7 +3071,7 @@ export interface paths {
          *     Allows editing the suggested title, content, or type before approval.
          *     Content changes trigger a new PII scan.
          *
-         *     Tenant-scoped: an id outside the caller's organization answers 404 and
+         *     Tenant-scoped: an id outside the caller's enterprise answers 404 and
          *     nothing is written.
          *
          *     Args:
@@ -3093,6 +3184,42 @@ export interface paths {
          *         Updated suggestion with remediated status
          */
         post: operations["remediate_pii_api_v1_knowledge_suggestions__suggestion_id__remediate_pii_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meta/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Capabilities
+         * @description Return backend capabilities for browser extension configuration.
+         *
+         *     This endpoint is called by the FaultMaven Copilot browser extension
+         *     and the Dashboard to detect the deployment mode and gate features
+         *     (e.g. team sharing, the org/team management console) accordingly.
+         *
+         *     Served at two paths for one handler, so both answer byte-identically.
+         *     ``/api/v1/meta/capabilities`` is the canonical one: every other
+         *     client-facing route lives under ``/api``, and that is the only prefix the
+         *     Kubernetes ingress forwards here — a same-origin Dashboard
+         *     (``VITE_API_URL=""``, the deployed default) asking for the bare ``/v1``
+         *     path receives the SPA's own HTML and degrades its capabilities silently.
+         *     The bare ``/v1`` path stays as a deprecated alias because extensions
+         *     already installed are pinned to it.
+         *
+         *     Returns:
+         *         Backend capabilities including deployment mode, dashboard URL, and feature flags
+         */
+        get: operations["get_capabilities_api_v1_meta_capabilities_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3570,12 +3697,144 @@ export interface paths {
          *
          *     Read-only; the dashboard uses it to resolve team ids to names (case share
          *     badges) and to populate the share-to-team picker. Returns an empty list in
-         *     standalone, where team sharing is unwired (``team_service is None``).
+         *     standalone, where team sharing is unwired (``team_service is None``) — an
+         *     empty list, not the 403 the management routes answer, because "which teams
+         *     am I in?" has a true and useful answer there and it is "none".
          */
         get: operations["list_my_teams_api_v1_teams_get"];
         put?: never;
+        /**
+         * Create A Team
+         * @description Create a team in the caller's enterprise, with the caller as its admin.
+         *
+         *     Any authenticated account may do this (ADR-017 D4) — there is no role to
+         *     hold and nothing to be granted. The team is parented by the enterprise the
+         *     request is bound to and references no organization, so it may later span
+         *     cost centres.
+         *
+         *     409 when a live team in the enterprise already has that name. A retired team
+         *     does not hold its name: the uniqueness rule is partial on
+         *     ``deleted_at IS NULL``.
+         */
+        post: operations["create_team_api_v1_teams_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List A Team's Invitations
+         * @description Every offer this team has issued, and what became of it. Admin only.
+         *
+         *     Not filtered by status: the record of who was offered a place, and whether
+         *     they accepted, declined, were withdrawn or ran out of time, is the thing an
+         *     admin needs. Offers past their deadline are reported — and stamped —
+         *     ``expired`` here, which is what keeps lazy expiry indistinguishable from a
+         *     swept table at every surface a person sees.
+         */
+        get: operations["list_team_invitations_api_v1_teams__team_id__invitations_get"];
+        put?: never;
+        /**
+         * Invite An Address To A Team
+         * @description Offer an address a place on the team. Team admin only.
+         *
+         *     The rule is by **domain**, so nothing here enumerates accounts (ADR-017 D3):
+         *     an address is refused for being outside the enterprise's domain before any
+         *     account is looked up, and an address whose account is anchored to another
+         *     enterprise is refused with exactly the same status and body as one that has
+         *     no account at all.
+         *
+         *     Idempotent: inviting an address that already has a live offer on this team
+         *     returns that offer rather than minting a second one — including when a
+         *     concurrent invite won the race.
+         */
+        post: operations["create_team_invitation_api_v1_teams__team_id__invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/invitations/{invitation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke A Team Invitation
+         * @description Withdraw an offer. Team admin only.
+         *
+         *     410 for an offer that has already run out: ``revoked_by`` is the record of
+         *     who ended it, and writing a withdrawal nobody performed would put a decision
+         *     in the record that no person made.
+         */
+        delete: operations["revoke_team_invitation_api_v1_teams__team_id__invitations__invitation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Team Members
+         * @description The roster, readable by any member of the team.
+         *
+         *     A team the caller is not in is 404, whether it is in their enterprise or
+         *     not: who is on a team is exactly what a team shares, so it is readable by
+         *     the people who agreed to share it and by nobody else.
+         */
+        get: operations["list_team_members_api_v1_teams__team_id__members_get"];
+        put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Leave A Team
+         * @description Leave a team. The last member out takes the team with them.
+         *
+         *     ``/members/me`` rather than ``/members/{user_id}``: consent forms a team and
+         *     only the member's own withdrawal unforms their part of it. There is no
+         *     "remove somebody else" on this surface at all.
+         *
+         *     Refused (409) when the leaver is the team's only admin and other members
+         *     remain — those members would be left sharing into a team nobody can
+         *     administer. The sole member of a team strands nobody, so their leaving
+         *     retires it, and its pending invitations are revoked with it.
+         */
+        delete: operations["leave_team_api_v1_teams__team_id__members_me_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3837,14 +4096,8 @@ export interface paths {
         };
         /**
          * Get Capabilities
-         * @description Return backend capabilities for browser extension configuration.
-         *
-         *     This endpoint is called by the FaultMaven Copilot browser extension
-         *     and the Dashboard to detect the deployment mode and gate features
-         *     (e.g. team sharing, the org/team management console) accordingly.
-         *
-         *     Returns:
-         *         Backend capabilities including deployment mode, dashboard URL, and feature flags
+         * @deprecated
+         * @description Deprecated: use `GET /api/v1/meta/capabilities`, which serves the identical response. This path is kept for already-installed browser extensions and is unreachable for a same-origin client: the Kubernetes ingress routes `/api`, `/health` and `/metrics` to this service and everything else to the Dashboard SPA, so this path is answered with the SPA's HTML.
          */
         get: operations["get_capabilities_v1_meta_capabilities_get"];
         put?: never;
@@ -3942,6 +4195,8 @@ export interface components {
             created_at: string;
             /** Current Turn */
             current_turn: number;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Is Terminal */
             is_terminal: boolean;
             /**
@@ -3950,7 +4205,7 @@ export interface components {
              */
             last_activity_at: string;
             /** Organization Id */
-            organization_id: string;
+            organization_id?: string | null;
             /** Resolved At */
             resolved_at: string | null;
             /**
@@ -4003,6 +4258,8 @@ export interface components {
             created_at: string;
             /** Email */
             email: string;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Full Name */
             full_name: string;
             /** Is Active */
@@ -4011,8 +4268,6 @@ export interface components {
             is_verified: boolean;
             /** Last Login At */
             last_login_at?: string | null;
-            /** Organization Id */
-            organization_id: string;
             /** Roles */
             roles: string[];
             /**
@@ -4392,8 +4647,8 @@ export interface components {
             revoked_by?: string | null;
             /** Target Case Id */
             target_case_id: string;
-            /** Target Organization Id */
-            target_organization_id: string;
+            /** Target Enterprise Id */
+            target_enterprise_id: string;
         };
         /**
          * BreakGlassGrantListResponse
@@ -4429,10 +4684,10 @@ export interface components {
              */
             case_id: string;
             /**
-             * Organization Id
-             * @description Organization owning the case; the RLS scope the read rebinds to
+             * Enterprise Id
+             * @description Enterprise owning the case; the RLS scope the read rebinds to
              */
-            organization_id: string;
+            enterprise_id: string;
             /**
              * Reason
              * @description Why this content must be read. Recorded on every access taken.
@@ -4496,6 +4751,8 @@ export interface components {
             current_turn: number;
             /** Description */
             description: string;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Escalated */
             escalated: boolean;
             /** Evidence Count */
@@ -4512,7 +4769,7 @@ export interface components {
             /** Milestones Completed */
             milestones_completed: string[];
             /** Organization Id */
-            organization_id: string;
+            organization_id?: string | null;
             /** Pending Milestones */
             pending_milestones: string[];
             /** Resolved At */
@@ -4761,6 +5018,8 @@ export interface components {
             current_turn: number;
             /** Description */
             description: string;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Is Terminal */
             is_terminal: boolean;
             /**
@@ -4769,7 +5028,7 @@ export interface components {
              */
             last_activity_at: string;
             /** Organization Id */
-            organization_id: string;
+            organization_id?: string | null;
             /** Resolved At */
             resolved_at: string | null;
             /** Shared Team Ids */
@@ -5500,6 +5759,8 @@ export interface components {
             created_at: string;
             /** Ended At */
             ended_at?: string | null;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Findings Summary */
             findings_summary?: string | null;
             /**
@@ -5507,8 +5768,6 @@ export interface components {
              * Format: date-time
              */
             last_activity_at: string;
-            /** Organization Id */
-            organization_id: string;
             /** Session Goal */
             session_goal?: string | null;
             /** Session Id */
@@ -5550,6 +5809,58 @@ export interface components {
          * @enum {string}
          */
         InvestigationStage: "diagnosis" | "mitigation" | "treatment";
+        /**
+         * InvitationCreateRequest
+         * @description The address being offered a place on the team.
+         */
+        InvitationCreateRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
+        /**
+         * InvitationResponse
+         * @description An offer to join a team, and what became of it.
+         *
+         *     ``invited_user_id`` is ``None`` while the address has no account in this
+         *     enterprise. That is a legitimate steady state, not a pending write: an
+         *     address with no account can be invited, and the offer resolves if and when
+         *     that address signs up **into this enterprise** (ADR-017 D4). One that signs
+         *     up elsewhere never resolves, and the offer expires where it was issued.
+         */
+        InvitationResponse: {
+            /** Accepted At */
+            accepted_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Enterprise Id */
+            enterprise_id: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Invitation Id */
+            invitation_id: string;
+            /** Invited By */
+            invited_by?: string | null;
+            /** Invited User Id */
+            invited_user_id?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /** Revoked By */
+            revoked_by?: string | null;
+            /** Status */
+            status: string;
+            /** Team Id */
+            team_id: string;
+            /** Team Name */
+            team_name?: string | null;
+        };
         /**
          * KnowledgeBaseDocument
          * @description Response model for knowledge base document operations.
@@ -5773,6 +6084,11 @@ export interface components {
              */
             selected_model?: string | null;
             /**
+             * Selected Model Priced
+             * @description Whether selected_model has a rate in the cost table. False means this provider's calls report $0 spend. None when no model is resolved yet (provider not initialized).
+             */
+            selected_model_priced?: boolean | null;
+            /**
              * State
              * @description Provider lifecycle state: not_configured, configured, or active
              * @default not_configured
@@ -5983,8 +6299,8 @@ export interface components {
             reason?: string | null;
             /** Target Case Id */
             target_case_id?: string | null;
-            /** Target Organization Id */
-            target_organization_id?: string | null;
+            /** Target Enterprise Id */
+            target_enterprise_id?: string | null;
         };
         /**
          * OperatorAccessAuditListResponse
@@ -6075,12 +6391,12 @@ export interface components {
             sso_jit_personal_tenant_enabled: boolean;
             /**
              * Sso Jit Personal Tenant Max Per Hour
-             * @description SSO_JIT_PERSONAL_TENANT_MAX_PER_HOUR — the ceiling on NEW personal tenants provisioned per rolling hour, deployment-wide. It bounds provisioning only; tenants that already exist sign in regardless.
+             * @description SSO_JIT_PERSONAL_TENANT_MAX_PER_HOUR — the ceiling on NEW personal enterprises provisioned per rolling hour, deployment-wide. It bounds provisioning only; tenants that already exist sign in regardless.
              */
             sso_jit_personal_tenant_max_per_hour: number;
             /**
              * Tenant Daily Turn Cap
-             * @description TENANT_DAILY_TURN_CAP — investigation turns a PERSONAL tenant may take per UTC day before further turns are refused with 429. The deployment DEFAULT only: a company organization is uncapped, a single-tenant deployment is never capped, and a per-organization override set with fm-set-turn-cap beats this value.
+             * @description TENANT_DAILY_TURN_CAP — investigation turns an account in NO organization may take per UTC day before further turns are refused with 429. The deployment DEFAULT only: an organization is uncapped, a single-tenant deployment is never capped, and a per-organization override set with fm-set-turn-cap beats this value.
              */
             tenant_daily_turn_cap: number;
         };
@@ -6713,6 +7029,25 @@ export interface components {
             verified: boolean;
         };
         /**
+         * Source
+         * @description Represents a single piece of citable evidence to build user trust.
+         */
+        Source: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Content */
+            content: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+            type: components["schemas"]["SourceType"];
+            /** Verification Reason */
+            verification_reason?: string | null;
+            /** Verification Status */
+            verification_status?: ("verified" | "community" | "experimental") | null;
+        };
+        /**
          * SourceFileReference
          * @description Reference to source file that evidence was derived from.
          */
@@ -6724,6 +7059,12 @@ export interface components {
             /** Uploaded At Turn */
             uploaded_at_turn: number;
         };
+        /**
+         * SourceType
+         * @description Defines the origin of a piece of evidence.
+         * @enum {string}
+         */
+        SourceType: "knowledge_base" | "log_file" | "web_search" | "documentation" | "previous_analysis" | "user_provided";
         /**
          * SuggestedActionResponse
          * @description A follow-up suggestion returned with agent responses.
@@ -6747,16 +7088,49 @@ export interface components {
             type: string;
         };
         /**
+         * TeamCreateRequest
+         * @description What it takes to create a team: a name, and optionally a description.
+         *
+         *     ``max_length`` matches ``teams.name``'s ``VARCHAR(200)`` exactly. A wider
+         *     request field does not accept more — it defers the refusal to PostgreSQL,
+         *     which answers ``StringDataRightTruncation`` and a 500 where a 422 naming the
+         *     field belongs. (``description`` is ``TEXT``; the cap here is a request-size
+         *     bound, not a column one.)
+         */
+        TeamCreateRequest: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name: string;
+        };
+        /**
+         * TeamMemberResponse
+         * @description One row of a team's roster.
+         */
+        TeamMemberResponse: {
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /** Team Id */
+            team_id: string;
+            /** Team Role */
+            team_role?: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /**
          * TeamResponse
          * @description A team the caller belongs to.
          */
         TeamResponse: {
             /** Description */
             description?: string | null;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Name */
             name: string;
-            /** Organization Id */
-            organization_id: string;
             /** Team Id */
             team_id: string;
         };
@@ -6900,12 +7274,22 @@ export interface components {
              * @description True when the case's conclusion claims 'verified' certainty while the assurance grade is below 'confirmed' (conclusion_overclaims seam). None when no cause is stated.
              */
             cause_overclaim?: boolean | null;
+            /**
+             * Investigation Turn
+             * @description How many of the case's turns so far were investigation work. turn_number is the message clock and advances on every exchange; this excludes out-of-band turns (small talk, trivia, questions about FaultMaven itself), which are answered outside the investigation and recorded as such (#1329). Every message, aside or not, is charged against the tenant's daily turn cap. Clients that display a turn counter should prefer this.
+             */
+            investigation_turn?: number | null;
             /** Milestones Completed */
             milestones_completed: string[];
             /** Progress Made */
             progress_made: boolean;
             /** @description Progress transparency state. Present when investigation has stalled and agent is surfacing milestone dependencies. */
             progress_transparency?: components["schemas"]["ProgressTransparencyInfo"] | null;
+            /**
+             * Sources
+             * @description Knowledge the engine put in front of the model for this turn: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED). Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when nothing was pre-fetched — including when the push is disabled. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary.
+             */
+            sources?: components["schemas"]["Source"][];
             /** Suggested Actions */
             suggested_actions?: components["schemas"]["SuggestedActionResponse"][];
             /** Turn Number */
@@ -7044,6 +7428,8 @@ export interface components {
             created_at: string;
             /** Email */
             email: string;
+            /** Enterprise Id */
+            enterprise_id: string;
             /** Full Name */
             full_name: string;
             /** Is Active */
@@ -7056,8 +7442,6 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            /** Organization Id */
-            organization_id: string;
             /** Permissions */
             permissions: string[];
             /** Roles */
@@ -7307,8 +7691,8 @@ export interface operations {
             query?: {
                 /** @description Filter by the operator who performed the access */
                 operator_user_id?: string | null;
-                /** @description Filter by the organization accessed */
-                target_organization_id?: string | null;
+                /** @description Filter by the enterprise accessed */
+                target_enterprise_id?: string | null;
                 /** @description Filter by case accessed */
                 target_case_id?: string | null;
                 /** @description Filter by access kind (list | content_open) */
@@ -7500,8 +7884,8 @@ export interface operations {
                 operator_user_id?: string | null;
                 /** @description Filter by the case granted */
                 case_id?: string | null;
-                /** @description Filter by the organization whose case was granted */
-                organization_id?: string | null;
+                /** @description Filter by the enterprise whose case was granted */
+                enterprise_id?: string | null;
                 /** @description Only grants that authorise a read right now */
                 live_only?: boolean;
                 /** @description Items per page */
@@ -10006,6 +10390,88 @@ export interface operations {
             };
         };
     };
+    list_my_invitations_api_v1_invitations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponse"][];
+                };
+            };
+        };
+    };
+    decline_invitation_api_v1_invitations__invitation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invitation ID */
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invitation_api_v1_invitations__invitation_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invitation ID */
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_search_analytics_api_v1_knowledge_analytics_search_get: {
         parameters: {
             query?: never;
@@ -10957,6 +11423,26 @@ export interface operations {
             };
         };
     };
+    get_capabilities_api_v1_meta_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_reports_for_case_api_v1_reports_case__case_id__get: {
         parameters: {
             query?: {
@@ -11650,6 +12136,201 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamResponse"][];
+                };
+            };
+        };
+    };
+    create_team_api_v1_teams_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_team_invitations_api_v1_teams__team_id__invitations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_team_invitation_api_v1_teams__team_id__invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_team_invitation_api_v1_teams__team_id__invitations__invitation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: string;
+                /** @description Invitation ID */
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_team_members_api_v1_teams__team_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leave_team_api_v1_teams__team_id__members_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -13,7 +13,6 @@ export interface AuthState {
     is_dev_user: boolean;
     is_active: boolean;
     roles?: string[];
-    organization_id?: string; // Multi-tenant organization context per commit b434152a
   };
 }
 
@@ -23,7 +22,11 @@ export interface AuthUser {
   name: string;
 }
 
-/** The tenant a session is bound to, as `/auth/me` names it.
+/** Who pays for the account, as `/auth/me` names it.
+ *
+ * BILLING, not isolation (ADR-017 D1/D2): an organization is a cost centre and
+ * gates no data. The tenant a session is bound to is its enterprise, which
+ * `/auth/me` does not publish at all.
  *
  * Aliased to the generated schema rather than restated. It was hand-written
  * while faultmaven#1068 was in flight and the field did not exist in the spec;
@@ -39,7 +42,7 @@ export interface UserProfile {
   created_at: string;
   is_dev_user: boolean;
   roles?: string[];
-  /** Absent when there is no tenant worth naming, or its row was unreadable.
+  /** Null for every account nobody pays for, and when the row was unreadable.
    *  Never a permission signal — `/auth/me` already succeeded. */
   organization?: AccountOrganization | null;
 }
@@ -219,7 +222,10 @@ export interface Case {
   resolved_at?: string;
   message_count?: number;
   owner_id: string;
-  organization_id: string; // Required per multi-tenant storage fixes (commit b434152a)
+  /** Isolation tenant (ADR-017, contract 3.0.0). Required on every served row. */
+  enterprise_id: string;
+  /** Billing attribution only; null when nobody pays for the account. */
+  organization_id?: string | null;
   closure_reason: string | null; // Required for terminal states per commit b434152a
   closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
 }
@@ -329,8 +335,20 @@ export enum ResponseType {
   ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
 }
 
+/**
+ * Where a citation came from, as the contract publishes it.
+ *
+ * Aliased to the generated schema rather than restated. Contract 3.3.0 made
+ * `SourceType` a published component and recorded that this client's own union
+ * — `log_analysis | user_input | system_metrics | external_api |
+ * previous_case` — shared exactly one member with it. Deriving the union means
+ * the next value the server adds arrives here as a compile error rather than
+ * as a citation the UI silently labels with its own raw slug.
+ */
+export type SourceType = components['schemas']['SourceType'];
+
 export interface Source {
-  type: 'log_analysis' | 'knowledge_base' | 'user_input' | 'system_metrics' | 'external_api' | 'previous_case';
+  type: SourceType;
   content: string;
   confidence?: number;
   metadata?: Record<string, any>;

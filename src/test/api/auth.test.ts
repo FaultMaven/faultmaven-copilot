@@ -697,7 +697,8 @@ describe('Authentication API', () => {
           title: 'Test Case',
           status: 'inquiry',
           created_at: '2024-01-01T00:00:00Z',
-          user_id: 'user-1'
+          user_id: 'user-1',
+          enterprise_id: 'ent-1'
         })
       });
 

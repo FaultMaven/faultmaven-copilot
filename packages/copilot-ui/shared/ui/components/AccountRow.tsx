@@ -21,7 +21,9 @@ interface AccountRowProps {
  */
 export function AccountRow({ user, collapsed }: AccountRowProps) {
   // The organization is only on /auth/me — the stored auth payload carries no
-  // tenant name.
+  // organization name. It is the account's BILLING organization (ADR-017 D5),
+  // not the enterprise its data is isolated by; it is shown because it is the
+  // name a person recognises, and it grants nothing.
   //
   // Held in the query cache rather than component state because this component
   // is NOT stable across a sidebar toggle: the collapsed rail is an early
@@ -44,7 +46,7 @@ export function AccountRow({ user, collapsed }: AccountRowProps) {
     // "one read per signed-in account" is a property of this row, and the
     // toggle-remount above would otherwise turn any expiry into a request per
     // toggle. Keyed on user_id, so a different account is a different entry;
-    // for one account the tenant and role are fixed for the panel's lifetime.
+    // for one account the organization and role are fixed for the panel's lifetime.
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -99,8 +101,9 @@ export function AccountRow({ user, collapsed }: AccountRowProps) {
         <span className="text-[10px] text-fm-text-tertiary truncate">
           {orgName ?? user.email}
         </span>
-        {/* Expanded, the name and the tenant are already visible text, so only
-            the email needs announcing — and only when the tenant displaced it.
+        {/* Expanded, the name and the organization are already visible text, so
+            only the email needs announcing — and only when the organization
+            displaced it.
             It sits in a `title` otherwise, which reaches neither keyboard nor
             touch. */}
         {orgName && <span className="sr-only">{user.email}</span>}

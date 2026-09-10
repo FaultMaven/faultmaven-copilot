@@ -46,7 +46,6 @@ function toHostUser(user: {
   display_name?: string;
   email?: string;
   roles?: string[];
-  organization_id?: string;
 } | null | undefined): HostUser | null {
   if (!user?.user_id) return null;
   return {
@@ -55,7 +54,6 @@ function toHostUser(user: {
     displayName: user.display_name,
     email: user.email,
     roles: user.roles ?? [],
-    organizationId: user.organization_id,
   };
 }
 

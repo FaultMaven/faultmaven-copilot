@@ -93,7 +93,7 @@ describe('PersistenceManager', () => {
 
       const base = {
         owner_id: 'user1',
-        organization_id: 'org1',
+        enterprise_id: 'ent1',
         created_at: '2026-08-16T00:00:00Z',
         updated_at: '2026-08-16T01:00:00Z',
         state: 'investigating' as const,
@@ -129,7 +129,7 @@ describe('PersistenceManager', () => {
         {
           case_id: 'case1',
           owner_id: 'user1',
-          organization_id: 'org1',
+          enterprise_id: 'ent1',
           title: 'Test Chat 1',
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T01:00:00Z',
@@ -141,7 +141,7 @@ describe('PersistenceManager', () => {
         {
           case_id: 'case2',
           owner_id: 'user1',
-          organization_id: 'org1',
+          enterprise_id: 'ent1',
           title: 'Test Chat 2',
           created_at: '2023-01-02T00:00:00Z',
           updated_at: '2023-01-02T01:00:00Z',
@@ -212,7 +212,7 @@ describe('PersistenceManager', () => {
         {
           case_id: 'case1',
           owner_id: 'user1',
-          organization_id: 'org1',
+          enterprise_id: 'ent1',
           title: 'Working Chat',
           created_at: '2023-01-01T00:00:00Z',
           updated_at: '2023-01-01T01:00:00Z',
@@ -224,7 +224,7 @@ describe('PersistenceManager', () => {
         {
           case_id: 'case2',
           owner_id: 'user1',
-          organization_id: 'org1',
+          enterprise_id: 'ent1',
           title: 'Another Chat',
           created_at: '2023-01-02T00:00:00Z',
           updated_at: '2023-01-02T01:00:00Z',

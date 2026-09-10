@@ -98,14 +98,22 @@ export interface HostNavigation {
 export type { AuthOutcome } from '../../lib/api/transport';
 import type { AuthOutcome } from '../../lib/api/transport';
 
-/** The signed-in user, as the host knows them. */
+/**
+ * The signed-in user, as the host knows them.
+ *
+ * There is no tenant field, and adding one would be a claim nothing checks.
+ * `GET /auth/me` names no enterprise at all, and its nullable `organization`
+ * is a BILLING stamp (ADR-017 D1/D2) — neither answers a question this package
+ * asks. The organization id this interface used to carry was written by the
+ * hosts and read by nobody, in this package or in either of them, so it is
+ * gone rather than renamed (ADR-017 Phase 7a).
+ */
 export interface HostUser {
   id: string;
   username: string;
   displayName?: string;
   email?: string;
   roles: string[];
-  organizationId?: string;
 }
 
 /**

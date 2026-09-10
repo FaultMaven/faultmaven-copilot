@@ -343,7 +343,7 @@ describe('cases-slice', () => {
       created_at: '2026-07-01T00:00:00Z',
       updated_at: '2026-07-02T00:00:00Z',
       owner_id: 'u1',
-      organization_id: 'o1',
+      enterprise_id: 'e1',
       closure_reason: 'inquiry_only',
       closed_at: '2026-07-02T00:00:00Z'
     };

@@ -1,4 +1,5 @@
 import { getApiTransport } from '../transport';
+import type { components } from "../../../types/api.generated";
 import { Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
@@ -267,9 +268,44 @@ export function generateDefaultCaseName(existingCases?: UserCase[]): string {
 
 // API Functions
 
-// Map one backend case row (CaseSummary or CaseDetail) to the client UserCase
-// shape. API returns user_id; UserCase expects owner_id.
-function toUserCase(c: any): UserCase {
+/**
+ * A case row as the server serves it: `CaseSummary` on the list and create
+ * paths, `CaseDetail` on the single-case read. Both are contract-required to
+ * name the case's enterprise.
+ *
+ * The intersection names the three fields this mapper has always read
+ * defensively and NO published schema carries — they resolve to `undefined`
+ * against a 3.4.0 server and are left exactly as they were, because they are
+ * not what this contract change is about.
+ */
+type ServerCaseRow = (
+  | components["schemas"]["CaseSummary"]
+  | components["schemas"]["CaseDetail"]
+) & {
+  priority?: string;
+  message_count?: number;
+  owner_id?: string;
+};
+
+/**
+ * Map one backend case row to the client `UserCase`. API returns user_id;
+ * UserCase expects owner_id.
+ *
+ * THE BOUNDARY. A case's tenant is its ENTERPRISE (ADR-017 D1/D2; contract
+ * 3.0.0 made `enterprise_id` required on both row schemas), so a row that does
+ * not name one is REJECTED rather than defaulted. This read used to be
+ * `organization_id || ''`: a row whose tenant was missing became a case
+ * belonging to `''`, and nothing downstream could tell that apart from a case
+ * whose tenant really was empty. `organization_id` is carried through
+ * untouched as the nullable BILLING stamp the contract still emits.
+ */
+function toUserCase(row: unknown): UserCase {
+  const c = row as ServerCaseRow;
+  if (typeof c?.enterprise_id !== 'string' || c.enterprise_id.length === 0) {
+    throw new Error(
+      'Contract violation: case row has no enterprise_id, the tenant a case belongs to (API contract 3.0.0)'
+    );
+  }
   return {
     case_id: c.case_id,
     title: c.title,
@@ -278,10 +314,11 @@ function toUserCase(c: any): UserCase {
     updated_at: c.updated_at,
     description: c.description,
     priority: c.priority,
-    resolved_at: c.resolved_at,
+    resolved_at: c.resolved_at ?? undefined,
     message_count: c.current_turn || c.message_count || 0,
     owner_id: c.user_id || c.owner_id || '',  // API uses user_id
-    organization_id: c.organization_id || '',  // Multi-tenant field per commit b434152a
+    enterprise_id: c.enterprise_id,  // Isolation tenant (ADR-017)
+    organization_id: c.organization_id ?? null,  // Billing attribution only
     closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
     closed_at: c.closed_at ?? null  // Terminal state timestamp per commit b434152a
   };
@@ -357,7 +394,7 @@ export async function getUserCases(filters?: {
     return [];
   }
 
-  const userCases = data.cases.map((c: any) => toUserCase(c));
+  const userCases = data.cases.map((c: unknown) => toUserCase(c));
 
   // Update cache if this was a default list
   if (isDefaultList) {

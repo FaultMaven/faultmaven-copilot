@@ -24,8 +24,8 @@ describe('Data Integrity', () => {
   describe('sanitizeBackendCases', () => {
     it('should filter out optimistic IDs from backend data', () => {
       const mixed: UserCase[] = [
-        { case_id: 'real-1', title: 'Real 1', state: 'investigating', priority: 'medium', created_at: '', updated_at: '', owner_id: 'test', organization_id: 'test', closure_reason: null, closed_at: null },
-        { case_id: 'opt_123', title: 'Fake', state: 'investigating', priority: 'medium', created_at: '', updated_at: '', owner_id: 'test', organization_id: 'test', closure_reason: null, closed_at: null }
+        { case_id: 'real-1', title: 'Real 1', state: 'investigating', priority: 'medium', created_at: '', updated_at: '', owner_id: 'test', enterprise_id: 'test', closure_reason: null, closed_at: null },
+        { case_id: 'opt_123', title: 'Fake', state: 'investigating', priority: 'medium', created_at: '', updated_at: '', owner_id: 'test', enterprise_id: 'test', closure_reason: null, closed_at: null }
       ];
       
       const sanitized = sanitizeBackendCases(mixed);
