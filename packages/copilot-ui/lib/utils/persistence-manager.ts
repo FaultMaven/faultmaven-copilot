@@ -104,14 +104,15 @@ export class PersistenceManager {
       const recoveredConversations: Record<string, OptimisticConversationItem[]> = {};
 
       // Process case metadata only (no conversation fetching)
-      // Updated 2026-01-30: Full UserCase objects now include organization_id, description, closure_reason, closed_at
-      // per backend storage fixes (commit b434152a). These fields are automatically included in the
-      // getUserCases() response and will be available when UI components access the case data.
+      // Full UserCase objects carry enterprise_id (the isolation tenant),
+      // organization_id (nullable billing attribution), description,
+      // closure_reason and closed_at. All are included in the getUserCases()
+      // response and available wherever UI components read the case data.
       log.info(' 📋 Processing case metadata...');
       for (const userCase of cases) {
         // Extract metadata only
-        // Note: userCase now contains organization_id, description, closure_reason, closed_at
-        // These fields are preserved in the UserCase objects returned by getUserCases()
+        // Note: userCase carries enterprise_id, organization_id, description,
+        // closure_reason and closed_at, preserved by getUserCases().
         // Recover ONLY a title worth preferring over the backend's own. This
         // loop used to copy every case's backend title into the store — the same
         // seeding removed from the two turn hooks (fm#1069) — which pins a

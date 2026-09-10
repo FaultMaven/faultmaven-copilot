@@ -106,7 +106,7 @@ describe('useMessageSubmission', () => {
         state: 'inquiry',
         created_at: '2026-01-01T00:00:00Z',
         owner_id: 'u1',
-        organization_id: 'o1',
+        enterprise_id: 'e1',
         closure_reason: null,
         closed_at: null,
         message_count: 0

@@ -79,7 +79,7 @@ describe('ChatInterface e2e', () => {
           state: 'inquiry',
           created_at: new Date().toISOString(),
           owner_id: 'user-1',
-          organization_id: 'org-1',
+          enterprise_id: 'ent-1',
           closure_reason: null,
           closed_at: null
         }}
@@ -125,7 +125,7 @@ describe('ChatInterface e2e', () => {
           state: 'inquiry',
           created_at: new Date().toISOString(),
           owner_id: 'user-1',
-          organization_id: 'org-1',
+          enterprise_id: 'ent-1',
           closure_reason: null,
           closed_at: null
         }}
@@ -176,7 +176,7 @@ describe('ChatInterface e2e', () => {
         state: 'inquiry' as const,
         created_at: new Date().toISOString(),
         owner_id: 'user-1',
-        organization_id: 'org-1',
+        enterprise_id: 'ent-1',
         closure_reason: null,
         closed_at: null,
       },
@@ -238,7 +238,7 @@ describe('ChatInterface e2e', () => {
       state,
       created_at: new Date().toISOString(),
       owner_id: 'user-1',
-      organization_id: 'org-1',
+      enterprise_id: 'ent-1',
       closure_reason: null,
       closed_at: null,
     });

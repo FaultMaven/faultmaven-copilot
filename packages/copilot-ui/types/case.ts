@@ -34,7 +34,11 @@ export type UserCaseState = CaseState;
 /**
  * User Case Interface
  * Consolidates definitions from api.ts and optimistic/types.ts
- * Updated 2026-01-30: Added organization_id, closure_reason, closed_at per backend storage fixes
+ *
+ * The tenant a case belongs to is the ENTERPRISE (ADR-017, contract 3.0.0).
+ * `enterprise_id` is what the read was scoped by and is always present on a
+ * row the server served; `organization_id` is billing attribution, nullable,
+ * and answers "who pays", never "who may see this".
  */
 export interface UserCase {
   case_id: string;
@@ -47,7 +51,10 @@ export interface UserCase {
   resolved_at?: string;
   message_count?: number;
   owner_id: string; // Required per v2.0 security
-  organization_id: string; // Required per multi-tenant storage fixes (commit b434152a)
+  /** Isolation tenant. Required — the server never serves a row without it. */
+  enterprise_id: string;
+  /** Billing attribution only. Null for every account nobody pays for. */
+  organization_id?: string | null;
   closure_reason: string | null; // Required for terminal states (RESOLVED, CLOSED) per commit b434152a
   closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
   valid_next_states?: string[]; // Server-provided list of allowed case actions (empty for dispositions)

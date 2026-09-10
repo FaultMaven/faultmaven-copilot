@@ -1,6 +1,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CaseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
+import { CASE_CACHE_VERSION, CaseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { UserCase } from '@faultmaven/copilot-ui/types/case';
 
 // Mock wxt/browser
@@ -50,7 +50,7 @@ describe('CaseCacheManager', () => {
             updated_at: new Date().toISOString(),
             message_count: 5,
             owner_id: 'user1',
-            organization_id: 'org1',
+            enterprise_id: 'ent1',
             closure_reason: null,
             closed_at: null
         }
@@ -72,7 +72,8 @@ describe('CaseCacheManager', () => {
             mockStorage.get.mockResolvedValue({
                 faultmaven_case_cache: {
                     cases: mockCases,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    version: CASE_CACHE_VERSION
                 }
             });
 
@@ -80,12 +81,58 @@ describe('CaseCacheManager', () => {
             expect(result).toEqual(mockCases);
         });
 
+        // ADR-017 Phase 7a. A row written before the tenant field moved names its
+        // case's organization and no enterprise at all. It is DISCARDED, not
+        // read: a UserCase whose `enterprise_id` is absent is a case with no
+        // tenant, and the sidebar has no way to say so.
+        it('drops a case row persisted under an older schema version', async () => {
+            const preEnterpriseRow = {
+                case_id: '123',
+                title: 'Test Case',
+                state: 'inquiry',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                message_count: 5,
+                owner_id: 'user1',
+                organization_id: 'org1',
+                closure_reason: null,
+                closed_at: null
+            };
+            mockStorage.get.mockResolvedValue({
+                faultmaven_case_cache: {
+                    cases: [preEnterpriseRow],
+                    timestamp: Date.now(),
+                    version: CASE_CACHE_VERSION - 1
+                }
+            });
+
+            const result = await manager.getCachedCases();
+            expect(result).toBeNull();
+            expect(mockStorage.remove).toHaveBeenCalledWith(['faultmaven_case_cache']);
+        });
+
+        // The shape written before this version was STAMPED at all: no `version`
+        // key. Same verdict, and the check must not read `undefined` as current.
+        it('drops a case row persisted with no schema stamp', async () => {
+            mockStorage.get.mockResolvedValue({
+                faultmaven_case_cache: {
+                    cases: mockCases,
+                    timestamp: Date.now()
+                }
+            });
+
+            const result = await manager.getCachedCases();
+            expect(result).toBeNull();
+            expect(mockStorage.remove).toHaveBeenCalledWith(['faultmaven_case_cache']);
+        });
+
         it('returns null and invalidates when cache is expired', async () => {
             const past = Date.now() - (6 * 60 * 1000); // 6 minutes ago
             mockStorage.get.mockResolvedValue({
                 faultmaven_case_cache: {
                     cases: mockCases,
-                    timestamp: past
+                    timestamp: past,
+                    version: CASE_CACHE_VERSION
                 }
             });
 
@@ -102,7 +149,8 @@ describe('CaseCacheManager', () => {
             expect(mockStorage.set).toHaveBeenCalledWith(expect.objectContaining({
                 faultmaven_case_cache: expect.objectContaining({
                     cases: mockCases,
-                    timestamp: expect.any(Number)
+                    timestamp: expect.any(Number),
+                    version: CASE_CACHE_VERSION
                 })
             }));
         });
@@ -114,7 +162,8 @@ describe('CaseCacheManager', () => {
             mockStorage.get.mockResolvedValue({
                 faultmaven_case_cache: {
                     cases: mockCases,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    version: CASE_CACHE_VERSION
                 }
             });
 
@@ -139,7 +188,8 @@ describe('CaseCacheManager', () => {
             mockStorage.get.mockResolvedValue({
                 faultmaven_case_cache: {
                     cases: mockCases,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    version: CASE_CACHE_VERSION
                 }
             });
 

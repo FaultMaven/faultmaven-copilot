@@ -53,7 +53,8 @@ describe('Case Service', () => {
         title: 'New Case',
         state: 'inquiry',
         created_at: '2024-01-01T00:00:00Z',
-        user_id: 'user-1'
+        user_id: 'user-1',
+        enterprise_id: 'ent-1'
       }));
 
       await caseService.createCase({ title: 'New Case', priority: 'medium' as const });
@@ -69,7 +70,8 @@ describe('Case Service', () => {
         title: 'New Case',
         status: 'inquiry',
         created_at: '2024-01-01T00:00:00Z',
-        user_id: 'user-1'
+        user_id: 'user-1',
+        enterprise_id: 'ent-1'
       };
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
 
@@ -96,7 +98,8 @@ describe('Case Service', () => {
     it('sends an Idempotency-Key header when a key is provided', async () => {
       const responseData = {
         case_id: 'case-123', title: 'New Case', status: 'inquiry',
-        created_at: '2024-01-01T00:00:00Z', user_id: 'user-1'
+        created_at: '2024-01-01T00:00:00Z', user_id: 'user-1',
+        enterprise_id: 'ent-1'
       };
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
 
@@ -112,7 +115,8 @@ describe('Case Service', () => {
     it('omits the Idempotency-Key header when no key is provided', async () => {
       const responseData = {
         case_id: 'case-123', title: 'New Case', status: 'inquiry',
-        created_at: '2024-01-01T00:00:00Z', user_id: 'user-1'
+        created_at: '2024-01-01T00:00:00Z', user_id: 'user-1',
+        enterprise_id: 'ent-1'
       };
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(responseData));
 
@@ -123,11 +127,67 @@ describe('Case Service', () => {
     });
   });
 
+  // ADR-017 Phase 7a. A case's tenant is its ENTERPRISE, and contract 3.0.0
+  // makes `enterprise_id` required on both row schemas. The mapper used to read
+  // `organization_id || ''`, so a row naming no tenant became a case belonging
+  // to `''` and nothing downstream could tell. It is REJECTED now, and the old
+  // shape — `organization_id` and nothing else — is what proves it.
+  describe('the tenant boundary', () => {
+    // Typed rather than `as any`: what the mock resolves to is the only thing
+    // these cases vary, so the cast belongs in one place.
+    const respondWith = (row: unknown) =>
+      vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
+        mockResponse(row) as unknown as Response
+      );
+
+    const preAdr017Row = {
+      case_id: 'case-old',
+      title: 'A row from before the key moved',
+      state: 'inquiry',
+      created_at: '2024-01-01T00:00:00Z',
+      user_id: 'user-1',
+      organization_id: 'org-1'
+    };
+
+    it('rejects a listed row that names no enterprise', async () => {
+      respondWith({ cases: [preAdr017Row] });
+
+      await expect(caseService.getUserCases({ limit: 25 })).rejects.toThrow(/enterprise_id/);
+    });
+
+    it('rejects a single-case read that names no enterprise', async () => {
+      respondWith(preAdr017Row);
+
+      await expect(caseService.getCase('case-old')).rejects.toThrow(/enterprise_id/);
+    });
+
+    it('rejects an empty enterprise_id as firmly as an absent one', async () => {
+      respondWith({ ...preAdr017Row, enterprise_id: '' });
+
+      await expect(caseService.getCase('case-old')).rejects.toThrow(/enterprise_id/);
+    });
+
+    it('carries organization_id through as the nullable billing stamp', async () => {
+      respondWith({ ...preAdr017Row, enterprise_id: 'ent-1', organization_id: 'org-1' });
+
+      const billed = await caseService.getCase('case-old');
+      expect(billed.enterprise_id).toBe('ent-1');
+      expect(billed.organization_id).toBe('org-1');
+
+      // Null is the shape every beta account is served: nobody pays for it.
+      respondWith({ ...preAdr017Row, enterprise_id: 'ent-1', organization_id: null });
+
+      const unbilled = await caseService.getCase('case-old');
+      expect(unbilled.enterprise_id).toBe('ent-1');
+      expect(unbilled.organization_id).toBeNull();
+    });
+  });
+
   describe('getUserCases', () => {
     it('should fetch user cases', async () => {
       const mockCases = [
-        { case_id: '1', title: 'Case 1', status: 'inquiry', created_at: '2024-01-01', user_id: 'user-1' },
-        { case_id: '2', title: 'Case 2', status: 'investigating', created_at: '2024-01-02', user_id: 'user-2' }
+        { case_id: '1', title: 'Case 1', status: 'inquiry', created_at: '2024-01-01', user_id: 'user-1', enterprise_id: 'ent-1' },
+        { case_id: '2', title: 'Case 2', status: 'investigating', created_at: '2024-01-02', user_id: 'user-2', enterprise_id: 'ent-1' }
       ];
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: mockCases }));
 
@@ -162,7 +222,7 @@ describe('Case Service', () => {
         setSpy.mockRestore();
       });
 
-      const fresh = { case_id: 'fresh', title: 'Fresh', status: 'inquiry', created_at: '2024-01-01', user_id: 'user-1' };
+      const fresh = { case_id: 'fresh', title: 'Fresh', status: 'inquiry', created_at: '2024-01-01', user_id: 'user-1', enterprise_id: 'ent-1' };
 
       it('does not read or write the shared cache for a non-default page size', async () => {
         getSpy.mockResolvedValue([{ case_id: 'cached' } as any]);
