@@ -42,7 +42,6 @@ export interface AuthStateChangedEvent extends BaseEvent {
       display_name?: string;
       email?: string;
       roles?: string[];
-      organization_id?: string;
     };
   } | null;
 }
