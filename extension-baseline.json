@@ -1,6 +1,7 @@
 {
   "version": "1.0.3",
   "manifestSurface": {
+    "key": null,
     "permissions": [
       "storage",
       "sidePanel",

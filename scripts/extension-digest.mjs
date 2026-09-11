@@ -126,6 +126,14 @@ function computeDigest() {
   return {
     version: manifest.version,
     manifestSurface: {
+      // Identity. `key` decides the extension id, and since the FM_STORE_KEY
+      // opt-in exists there is a way for a locally produced build to carry the
+      // PUBLISHED id. Tracked here rather than left to the package hash alone,
+      // because a package-hash change says only "the artifact moved" and its
+      // printed remedy is to accept it into the baseline — one rote command away
+      // from baselining a store identity into the shipped manifest. Named here,
+      // the leak names itself.
+      key: manifest.key ?? null,
       permissions: manifest.permissions ?? [],
       host_permissions: manifest.host_permissions ?? [],
       optional_host_permissions: manifest.optional_host_permissions ?? [],
@@ -169,10 +177,17 @@ if (!surfaceChanged && !packageChanged && !iconsChanged) {
 
 console.error('Extension artifact changed.\n');
 if (surfaceChanged) {
-  console.error('  ‼ MANIFEST SURFACE CHANGED — permissions, hosts or CSP.');
+  console.error('  ‼ MANIFEST SURFACE CHANGED — identity, permissions, hosts or CSP.');
   console.error('    Store review compares these against the listing\'s permission');
   console.error('    justifications. Update the LISTING as well as the package, or the');
   console.error('    two disagree and review flags it.\n');
+  if (JSON.stringify(base.manifestSurface?.key) !== JSON.stringify(current.manifestSurface.key)) {
+    console.error('    ‼ `key` is the EXTENSION IDENTITY, and it is not a listing question.');
+    console.error('      A built manifest carrying one almost certainly came from a build');
+    console.error('      with FM_STORE_KEY set — a pre-release identity check, not a');
+    console.error('      release. Rebuild without it rather than accepting this into the');
+    console.error('      baseline.\n');
+  }
   for (const k of Object.keys(current.manifestSurface)) {
     const a = JSON.stringify(base.manifestSurface?.[k]);
     const b = JSON.stringify(current.manifestSurface[k]);
