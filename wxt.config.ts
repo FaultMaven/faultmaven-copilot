@@ -19,6 +19,44 @@ export default defineConfig({
     // release.yml asserts the built manifests match the release tag.
     description: "__MSG_appDescription__",
     default_locale: 'en',
+    // Pre-release testing against the public host: OPT-IN store identity.
+    //
+    // Chrome derives an extension's id from this `key` (the item's PUBLIC key),
+    // and an unpacked build that sets nothing takes an id derived from its
+    // DIRECTORY PATH instead — so a local build is never the published one. The
+    // public host admits exactly one redirect,
+    // `https://<published id>.chromiumapp.org/` (OAUTH_REDIRECT_URI_PATTERNS,
+    // narrowed to the store id by faultmaven#1169), so a local build cannot sign
+    // in there at all: GET /auth/oauth/authorize refuses with
+    // INVALID_REDIRECT_URI and the dashboard renders its generic "not one this
+    // FaultMaven deployment recognises" page. That is the deployment working as
+    // designed; it is also what makes a release candidate untestable against the
+    // environment it is about to ship to.
+    //
+    // Setting this makes a local build take the published id, so the release
+    // candidate exercises the REAL sign-in path — including the first-party
+    // consent skip, which is pinned to the same redirect and would otherwise
+    // behave differently in testing than in production.
+    //
+    // ‼ OPT-IN, and it must stay that way. Unset — which is every CI job, every
+    // `pnpm zip`, and every release — this spreads NOTHING into the manifest, so
+    // the shipped artifact is byte-identical to what it was before this block
+    // existed. That is the whole reason it is an env var and not a committed
+    // value: a testing affordance must not move the thing being tested. Do not
+    // set FM_STORE_KEY in any workflow.
+    //
+    // The value is the store item's public key (base64 SubjectPublicKeyInfo),
+    // which is not a secret but is deliberately not committed here — it is read
+    // from an installed copy's manifest (`key`) or from the CRX header, by
+    // whoever is doing the testing:
+    //
+    //     FM_STORE_KEY=MIIBIjANBg... pnpm build
+    //
+    // then load `.output/chrome-mv3` unpacked in a profile where the store copy
+    // is NOT installed — Chrome refuses two extensions with the same id. The key
+    // fixes the local id and nothing else; what may be published is governed by
+    // the developer account, not by this field.
+    ...(process.env.FM_STORE_KEY ? { key: process.env.FM_STORE_KEY } : {}),
     // The panel is opened programmatically from the toolbar-icon handler
     // (sidePanel.open, Chrome 116+), so an older Chromium would install the
     // extension and then fail at the one action that reveals its entire UI.
