@@ -55,6 +55,14 @@ For development, or to run a build the store does not have yet:
 4. Click **Load unpacked**
 5. Select the `.output/chrome-mv3/` folder
 
+**Signing in to FaultMaven Cloud from an unpacked build.** The Cloud admits the OAuth redirect of the *published* extension and no other, and an unpacked build's id is derived from the folder it was loaded from — so sign-in is refused with an authorization error. To exercise a release candidate against the Cloud, build it with the store item's public key so it takes the published id:
+
+```bash
+FM_STORE_KEY=<store item public key> pnpm build
+```
+
+Pass it per invocation rather than parking it in `.env.local`: dotenv files are loaded into the build, so a value left there pins the published identity into every later build — including a zip you might upload. The build prints the id it took whenever the variable is applied, and refuses a value that is not a valid key. Chrome will not load two extensions with the same id, so the store copy has to be absent from the profile you test in. Self-hosted backends are unaffected, unless the deployment has narrowed its own redirect allowlist the same way.
+
 </details>
 
 ### Connection
