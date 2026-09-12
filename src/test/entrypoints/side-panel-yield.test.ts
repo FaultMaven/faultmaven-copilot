@@ -534,6 +534,46 @@ describe('Side panel yields on Dashboard tabs that advertise a built-in panel', 
       expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
     });
 
+    it('WINS over an advertisement that is still in flight', async () => {
+      /**
+       * The dark tab this module exists to prevent, arriving through a race.
+       *
+       * The yield and the release are both read-modify-write sequences on one
+       * tab's options, and the background dispatches them without awaiting.
+       * Their awaits are not the same length: the yield first resolves
+       * `isTrustedDashboardOrigin`, which for a SELF-HOSTED origin reads
+       * `browser.storage.local`, while the release awaits only `getOptions`.
+       * Unserialized, they interleave like this —
+       *
+       *   1. yield starts, awaits the storage read
+       *   2. release reads the options, sees the tab is not disabled, returns
+       *      WITHOUT writing
+       *   3. yield resumes and writes `enabled: false`
+       *
+       * — and the tab ends up hidden with a page showing no panel, with the
+       * withdrawal already spent. A SELF-HOSTED origin is essential to the
+       * setup: the Cloud constant short-circuits before the storage read and
+       * the window never opens.
+       */
+      storageStore.dashboardUrl = SELF_HOSTED_DASHBOARD;
+      mount();
+      await settle();
+
+      await navigate(20, `${SELF_HOSTED_DASHBOARD}/cases/abc-123`);
+
+      // BOTH DISPATCHED BEFORE EITHER SETTLES, which is what the background
+      // does — neither handler awaits.
+      const advertised = advertisePanel(20, SELF_HOSTED_DASHBOARD);
+      const withdrawn = withdrawPanel(20);
+      await Promise.all([advertised, withdrawn]);
+      await settle();
+
+      expect(
+        await panelIsVisibleOn(20),
+        'the withdrawal arrived second and must win: the page is showing no panel',
+      ).toBe(true);
+    });
+
     it('can be asserted and withdrawn repeatedly on one tab', async () => {
       // The preference is a toggle, and a user may flip it more than once
       // without ever reloading the page.

@@ -118,6 +118,50 @@ function globalPanelPath(): string | undefined {
   }
 }
 
+/**
+ * Work queued per tab, so two messages about one tab cannot interleave.
+ *
+ * THE RACE THIS CLOSES, which is the dark tab this whole module exists to
+ * prevent. The yield and the release are both read-modify-write sequences on
+ * the same per-tab options, and the background dispatches them without
+ * awaiting. Their awaits are not the same length: the yield first resolves
+ * `isTrustedDashboardOrigin`, which for a SELF-HOSTED origin reads
+ * `browser.storage.local`, while the release awaits only `getOptions`. So an
+ * advertise immediately followed by a withdrawal — a route redirect, a sign-out
+ * just after load, a preference toggled twice — interleaved like this:
+ *
+ *   1. yield starts, awaits the storage read
+ *   2. release starts, reads options, sees `enabled !== false`, returns
+ *      WITHOUT writing, because the yield has not landed yet
+ *   3. yield resumes and writes `enabled: false`
+ *
+ * Final state: the tab is yielded and the page is showing no panel. Neither
+ * surface, and nothing left to release it — the withdrawal was already spent.
+ *
+ * Ordering follows ARRIVAL, which is what makes the outcome correct rather than
+ * merely deterministic: the withdrawal queued behind the yield sees the yield's
+ * write and undoes it.
+ *
+ * In-memory and per-worker, which is all it needs to be. It orders operations
+ * that are in flight together; nothing is remembered across an MV3 eviction,
+ * and nothing needs to be — the browser's own per-tab options are the state.
+ */
+const tabWork = new Map<number, Promise<void>>();
+
+function onTab(tabId: number, work: () => Promise<void>): Promise<void> {
+  // The stored promise is always the CAUGHT one, so a failed operation cannot
+  // reject the chain and strand every later operation for that tab.
+  const previous = tabWork.get(tabId) ?? Promise.resolve();
+  const next = previous.then(work);
+  const quiet = next.catch(() => {});
+  tabWork.set(tabId, quiet);
+  void quiet.then(() => {
+    // Only if nothing else queued behind us, or we would drop a live chain.
+    if (tabWork.get(tabId) === quiet) tabWork.delete(tabId);
+  });
+  return next;
+}
+
 /** The origin of a URL, or undefined where there isn't a meaningful one. */
 function originOf(url: string | undefined): string | undefined {
   if (!url) return undefined;
@@ -166,6 +210,13 @@ async function yieldTab(sidePanel: PerTabSidePanel, tabId: number): Promise<void
  *    tab would stay dark. Reading the state back cannot lose it.
  */
 async function releaseTab(sidePanel: PerTabSidePanel, tabId: number): Promise<void> {
+  // SOLE-WRITER INVARIANT, and callers lean on it. `yieldTab` above is the only
+  // thing in this extension that writes `enabled: false`, so "the options say
+  // false" means "this rule hid it" and nothing else. That is what lets the
+  // release paths skip an origin check without being able to un-hide a panel
+  // somebody else disabled. Anything that ever disables a panel for another
+  // reason — a privacy mode, a per-tab mute — breaks that reading and has to
+  // come with a way to tell the two apart.
   const current = await sidePanel.getOptions({ tabId });
   // Only an explicit `false` is ours to undo. A tab with no tab-specific
   // options reports the defaults, and must be left exactly as it is.
@@ -196,113 +247,101 @@ export async function yieldSidePanelForAdvertisedTab(
   if (typeof tabId !== 'number' || tabId < 0) return;
   if (!origin) return;
 
-  try {
-    if (!(await isTrustedDashboardOrigin(origin))) {
-      log.warn('Ignoring a built-in panel advertisement from a non-Dashboard origin', { origin });
-      return;
+  await onTab(tabId, async () => {
+    try {
+      if (!(await isTrustedDashboardOrigin(origin))) {
+        log.warn('Ignoring a built-in panel advertisement from a non-Dashboard origin', { origin });
+        return;
+      }
+      await yieldTab(sidePanel, tabId);
+    } catch (error) {
+      log.debug('Could not yield the side panel for an advertising tab', { tabId, error });
     }
-    await yieldTab(sidePanel, tabId);
-  } catch (error) {
-    log.debug('Could not yield the side panel for an advertising tab', { tabId, error });
-  }
+  });
 }
 
 /**
- * A Dashboard page has told us its built-in panel is GONE (ADR-018 D0).
+ * Give one tab its panel back.
  *
- * The counterpart to the advertisement, and the thing that makes a
- * Dashboard-side preference possible at all: without it the claim is monotonic,
- * and a user who turns the built-in panel off on a yielded tab is left with
- * neither surface.
+ * ONE function for both reasons it happens — the page withdrew, or the document
+ * it asserted for is being replaced. They had identical bodies, and finding a
+ * bug in one of two identical bodies is how it gets fixed in one of them.
+ * `reason` exists only so the log says which.
  *
- * DELIBERATELY NOT ORIGIN-GATED, which is where it differs from the yield path
- * above. The asymmetry is the whole posture of this module in one place:
+ * DELIBERATELY NOT ORIGIN-GATED, which is where this differs from the yield
+ * path. The asymmetry is this module's whole posture in one place:
  *
  *  - Hiding the panel on a tab that has none of its own is the SEVERE failure,
- *    so the yield path refuses anything it cannot attribute to a Dashboard.
- *  - Showing the panel is the MILD failure, so the release path must not have a
+ *    so the yield refuses anything it cannot attribute to a Dashboard.
+ *  - Showing the panel is the MILD failure, so the release must not carry a
  *    check that can strand a tab dark. An origin this worker cannot resolve is
  *    not a reason to keep someone's only surface hidden.
  *
- * Nothing is lost by that. `releaseTab` rewrites only a tab this rule
- * explicitly disabled, the content script already refuses to forward a message
- * from an untrusted origin, and the background rejects senders that are not
- * this extension. The worst a bogus withdrawal achieves is the browser's
- * default behaviour.
+ * Nothing is lost by that, and the reason is `releaseTab`'s sole-writer
+ * invariant above: only this rule ever writes `enabled: false`, so a release
+ * can only ever undo this rule's own work. The content script additionally
+ * refuses to forward from an untrusted origin, and the background rejects
+ * senders that are not this extension.
  */
-export async function releaseSidePanelForWithdrawnTab(
-  tabId: number | undefined
+export async function releaseSidePanelForTab(
+  tabId: number | undefined,
+  reason: 'withdrawn' | 'navigating'
 ): Promise<void> {
   const sidePanel = perTabSidePanel();
   if (!sidePanel) return;
   if (typeof tabId !== 'number' || tabId < 0) return;
 
-  try {
-    await releaseTab(sidePanel, tabId);
-  } catch (error) {
-    log.debug('Could not release the side panel for a withdrawing tab', { tabId, error });
-  }
-}
-
-/**
- * A tab is loading a NEW DOCUMENT, so any assertion it held is void.
- *
- * The yield belonged to the document being replaced. Under ADR-018 D0 the
- * claim is live rather than a property of the build, so it cannot be assumed to
- * survive: the same URL may mount no panel this time because the user changed
- * the preference, or signed out, in between.
- *
- * Called only when the document is actually being replaced — `status:
- * 'loading'` — and NOT on the stream of other `tabs.onUpdated` events a page
- * emits (title, favicon, an SPA route change). Releasing on those would undo a
- * yield the page had just correctly asked for, seconds after it asked, and the
- * panel would never stay hidden at all.
- */
-export async function releaseSidePanelForNavigatingTab(
-  tabId: number | undefined
-): Promise<void> {
-  const sidePanel = perTabSidePanel();
-  if (!sidePanel) return;
-  if (typeof tabId !== 'number' || tabId < 0) return;
-
-  try {
-    await releaseTab(sidePanel, tabId);
-  } catch (error) {
-    log.debug('Side panel release skipped for a navigating tab', { tabId, error });
-  }
+  await onTab(tabId, async () => {
+    try {
+      await releaseTab(sidePanel, tabId);
+    } catch (error) {
+      // A tab can close underneath us, and a browser can refuse an option
+      // write. Neither is worth failing anything over.
+      log.debug('Side panel release skipped', { tabId, reason, error });
+    }
+  });
 }
 
 /**
  * Bring one tab back into line with the invariant.
  *
- * This only ever RELEASES. A tab that has left the Dashboard gets its panel
- * back; a tab that is ON a Dashboard origin is left exactly as it is, because
- * whether that Dashboard is showing its own panel is not something a URL can
- * answer — only the page's advertisement can, and that arrives on its own
- * channel.
+ * Runs on EVERY tab update and at worker startup, and only ever RELEASES.
  *
- * Leaving Dashboard tabs alone HERE is still right, and is why the navigation
- * release above is a separate call with a narrower trigger. This one runs on
- * every tab update and at worker startup; if it released Dashboard tabs it
- * would undo a live yield on the next title change, and a worker restart would
- * un-hide every already-correct tab with no page left to re-assert.
+ * `documentReplaced` is what a navigation adds. Without it, a tab on a
+ * Dashboard origin is left exactly as it is — whether that Dashboard is
+ * *showing* a panel is not something a URL can answer, only the page's own
+ * message can, and releasing on the stream of title/favicon/SPA-route updates
+ * a page emits would undo a live yield seconds after the page asked for it. A
+ * worker restart would do the same to every already-correct tab, with no page
+ * left to re-assert.
+ *
+ * With it, a Dashboard tab IS released: the assertion belonged to the document
+ * going away, and the same URL may mount no panel this time because the user
+ * changed the preference or signed out in between (ADR-018 D0).
+ *
+ * Folded in here rather than given its own listener so one update means one
+ * read-modify-write. Two passes over every tab on every page load in the
+ * browser doubled the side-panel API traffic and put two concurrent
+ * read-modify-writes on the same key — the very shape the queue above exists to
+ * stop.
  */
 export async function reconcileSidePanelForTab(
   tabId: number | undefined,
-  url: string | undefined
+  url: string | undefined,
+  { documentReplaced = false }: { documentReplaced?: boolean } = {}
 ): Promise<void> {
   const sidePanel = perTabSidePanel();
   if (!sidePanel) return;
   if (typeof tabId !== 'number' || tabId < 0) return;
 
-  try {
-    if (await isDashboardTab(url)) return;
-    await releaseTab(sidePanel, tabId);
-  } catch (error) {
-    // A tab can close underneath us, and a browser can refuse an option write.
-    // Neither is worth failing anything over: the next navigation reconciles.
-    log.debug('Side panel reconcile skipped for tab', { tabId, error });
-  }
+  await onTab(tabId, async () => {
+    try {
+      if ((await isDashboardTab(url)) && !documentReplaced) return;
+      await releaseTab(sidePanel, tabId);
+    } catch (error) {
+      log.debug('Side panel reconcile skipped for tab', { tabId, error });
+    }
+  });
 }
 
 /**

@@ -8,8 +8,7 @@ import { enforceUserDataScope } from '../extension/auth/user-scope';
 import {
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
-  releaseSidePanelForNavigatingTab,
-  releaseSidePanelForWithdrawnTab,
+  releaseSidePanelForTab,
   yieldSidePanelForAdvertisedTab,
 } from '../extension/side-panel-yield';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -580,7 +579,7 @@ export default defineBackground({
       // direction, so the release path must not carry a check that can strand a
       // tab dark — see the note on the function itself.
       if (request.action === "dashboardPanelWithdrawn") {
-        releaseSidePanelForWithdrawnTab(sender?.tab?.id);
+        releaseSidePanelForTab(sender?.tab?.id, 'withdrawn');
         sendResponse({ status: "received" });
         return false;
       }
@@ -658,26 +657,22 @@ export default defineBackground({
       reconcileSidePanelForAllTabs();
 
       browser.tabs.onUpdated.addListener((tabId: number, changeInfo: any, tab: any) => {
-        // A NEW DOCUMENT voids whatever the old one claimed (ADR-018 D0). The
-        // yield was the page's live statement about itself, and the page is
-        // being replaced — possibly by one that mounts no panel, because the
-        // user changed the preference or signed out in between. The fresh
-        // document re-asserts if it has one.
+        // EVERY update, not just the ones where changeInfo.url is set. The
+        // reconcile reads the tab's current options before writing and is
+        // idempotent, so a redundant run costs a no-op — whereas a missed one
+        // leaves a tab that has LEFT the Dashboard with its panel still
+        // suppressed, which is the failure that actually hurts.
         //
-        // Gated on `status === 'loading'` and nothing else. A page emits a
-        // stream of other updates — title, favicon, an SPA route change — and
-        // releasing on those would undo a yield seconds after the page asked
-        // for it, so the panel would never stay hidden at all.
-        if (changeInfo?.status === 'loading') {
-          void releaseSidePanelForNavigatingTab(tabId);
-        }
-
-        // Every update carrying a URL, not just the ones where changeInfo.url
-        // is set. The reconcile reads the tab's current options before writing
-        // and is idempotent, so a redundant run costs a no-op — whereas a
-        // missed one leaves a tab that has LEFT the Dashboard with its panel
-        // still suppressed, which is the failure that actually hurts.
-        void reconcileSidePanelForTab(tabId, tab?.url);
+        // `documentReplaced` is the one thing this listener adds: a NEW
+        // DOCUMENT voids whatever the old one claimed (ADR-018 D0), because the
+        // same URL may mount no panel this time. It is gated on
+        // `status === 'loading'` and nothing else — a page emits a stream of
+        // title, favicon and SPA-route updates, and treating those as a
+        // navigation would undo a live yield seconds after the page asked for
+        // it.
+        void reconcileSidePanelForTab(tabId, tab?.url, {
+          documentReplaced: changeInfo?.status === 'loading',
+        });
       });
     }
 

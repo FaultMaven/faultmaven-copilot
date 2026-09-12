@@ -86,12 +86,47 @@ describe('the contract entry point', () => {
     ).toContain('contract.ts');
   });
 
-  it('carries the three names both repositories need', async () => {
+  it('carries the names both repositories need, at the exact values they send', async () => {
     const contract = await import('@faultmaven/copilot-ui/contract');
 
+    // THE VALUES, not just the presence of the names. These are wire formats
+    // crossing two repositories on two release trains: rename
+    // `DASHBOARD_PANEL_WITHDRAWN_MESSAGE`'s STRING and every suite here stays
+    // green — the extension simply stops recognising a message every Dashboard
+    // in the field is posting, so no tab is ever released again. That is the
+    // dark-tab failure, arriving through a refactor nobody could see.
     expect(contract.DASHBOARD_PANEL_ATTR).toBe('data-faultmaven-dashboard-panel');
     expect(contract.DASHBOARD_PANEL_MESSAGE).toBe('FM_DASHBOARD_PANEL_AVAILABLE');
+    expect(contract.DASHBOARD_PANEL_WITHDRAWN_MESSAGE).toBe('FM_DASHBOARD_PANEL_WITHDRAWN');
     expect(typeof contract.dashboardAdvertisesPanel).toBe('function');
+  });
+
+  it.each([
+    ['index.ts', join(PKG, 'index.ts')],
+    ['shared/host/index.ts', join(PKG, 'shared', 'host', 'index.ts')],
+  ])('re-exports every handshake name from %s, not just the subpath', (_label, file) => {
+    // The Dashboard is told to import the package ENTRY and nothing else (its
+    // CLAUDE.md makes that a rule), so a name reachable only from `/contract`
+    // is a name that consumer has to hardcode — the exact drift a single
+    // definition exists to prevent. Both re-export sites were already listing
+    // the other three and silently omitted the new one.
+    //
+    // Read from SOURCE rather than imported: evaluating the entry pulls in the
+    // whole panel — React, the markdown renderer, the store — which is seconds
+    // of work to answer a question about an export list, and slow enough to
+    // time out inside the full suite while passing alone.
+    const source = readFileSync(file, 'utf8');
+    const block = source.match(/export \{([^}]*)\} from '(?:\.|\.\.\/\.\.)\/contract';/);
+
+    expect(block, `${file} does not re-export from the contract module at all`).not.toBeNull();
+    for (const name of [
+      'DASHBOARD_PANEL_ATTR',
+      'DASHBOARD_PANEL_MESSAGE',
+      'DASHBOARD_PANEL_WITHDRAWN_MESSAGE',
+      'dashboardAdvertisesPanel',
+    ]) {
+      expect(block![1]).toContain(name);
+    }
   });
 
   it('imports NOTHING, so a bundle of it is the module alone', () => {

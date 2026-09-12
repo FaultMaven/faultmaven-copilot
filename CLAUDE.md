@@ -766,20 +766,37 @@ panel, the store and the transport with it, into a **content script**.
 - `yieldSidePanelForAdvertisedTab(tabId, origin)` — the only thing that hides
   the panel. Origin-gated against `isTrustedDashboardOrigin`, re-derived from
   what the BROWSER attributed to the sender, never from the message body.
-- `releaseSidePanelForWithdrawnTab(tabId)` — the retraction. **Deliberately not
-  origin-gated**: hiding is the severe failure and is checked hard; showing is
-  the mild one, so the release path must not carry a check that can strand a tab
-  dark.
-- `releaseSidePanelForNavigatingTab(tabId)` — a new document voids the old one's
-  claim. Gated on `changeInfo.status === 'loading'` and nothing else: a page
-  emits title, favicon and SPA-route updates long after load, and releasing on
-  those would undo a yield seconds after the page asked for it.
-- `reconcileSidePanelForTab(tabId, url)` — runs on every update and at worker
-  startup, and **leaves Dashboard tabs alone**. If it released them, a title
-  change would undo a live yield and a worker restart would un-hide every
-  already-correct tab with no page left to re-assert. The browser's own per-tab
+- `releaseSidePanelForTab(tabId, reason)` — the retraction, and the release a
+  replaced document forces. One function for both, because they had identical
+  bodies and a bug found in one of two identical bodies gets fixed in one of
+  them. **Deliberately not origin-gated**: hiding is the severe failure and is
+  checked hard; showing is the mild one, so the release path must not carry a
+  check that can strand a tab dark. It is safe because `releaseTab` rewrites
+  only options that say `enabled: false`, and `yieldTab` is the **sole writer**
+  of that — anything that ever disables a panel for another reason breaks that
+  reading.
+- `reconcileSidePanelForTab(tabId, url, { documentReplaced })` — runs on every
+  update and at worker startup, and **leaves Dashboard tabs alone unless the
+  document is being replaced**. Without that exception a title change would undo
+  a live yield and a worker restart would un-hide every already-correct tab with
+  no page left to re-assert; with it, a reload drops a yield that belonged to
+  the document going away. `documentReplaced` comes from
+  `changeInfo.status === 'loading'` and nothing else. The browser's own per-tab
   `enabled: false` is the memory — nothing is kept in the worker, which MV3
   evicts routinely.
+
+### Every write to one tab is serialized
+
+`onTab(tabId, work)` chains operations per tab, and it is not a nicety. The
+yield and the release are both read-modify-write sequences on the same options,
+the background dispatches them without awaiting, and their awaits differ in
+length — the yield resolves `isTrustedDashboardOrigin`, which for a
+**self-hosted** origin reads `browser.storage.local`, while the release awaits
+only `getOptions`. Unserialized, an advertise immediately followed by a
+withdrawal interleaves so that the release reads the options *before* the yield
+writes, returns without writing, and the yield then hides a tab whose page is
+showing no panel: **neither surface, and the withdrawal already spent.** Ordering
+follows arrival, so the withdrawal queued behind the yield undoes it.
 
 ### The costs, both accepted deliberately
 
@@ -790,6 +807,14 @@ panel, the store and the transport with it, into a **content script**.
   `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` ignores it and leaves the tab yielded —
   the dark-tab failure. **This release must reach the field before the Dashboard
   starts withdrawing** (ADR-018 sequences row 4 strictly before row 5).
+- **The page must re-assert on `pageshow`, not only on mount.** `status:
+  'loading'` is reported for things that create no new document — a bfcache
+  back/forward, an aborted navigation, a link that becomes a download — so the
+  tab is released while no content script is re-injected and no React effect
+  re-runs. A page that asserts only on mount never yields again for the life of
+  that document. The extension cannot fix this from its side: it has no way to
+  ask a page what it is currently showing, and the failure direction is the mild
+  one. Recorded in `contract.ts` where the Dashboard implementer will read it.
 
 Firefox has no `browser.sidePanel` at all; every entry point feature-detects
 rather than checking a build-target list, so the MV2 build registers nothing.

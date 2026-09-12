@@ -91,8 +91,17 @@ export default defineContentScript({
      * Tell the background worker the Dashboard's panel is gone.
      *
      * A failure here is the one that actually hurts: the tab stays yielded with
-     * nothing in it. It is logged at warn rather than debug for that reason,
-     * and the page will withdraw again on its next mount.
+     * nothing in it, so it is logged at warn rather than debug.
+     *
+     * There is no retry, and the honest recovery is a RELOAD rather than a
+     * remount. The withdrawal is emitted when the panel goes away, so the page's
+     * next mount posts an availability message, not another withdrawal — an
+     * earlier version of this comment claimed otherwise. What does recover the
+     * tab is loading a new document in it: that releases the yield on the
+     * extension side regardless of what the page says (ADR-018 D0). The failure
+     * this leaves is a tab that stays dark until it is reloaded, which is the
+     * price of the send channel being gone — typically because the extension
+     * was reloaded underneath this content script.
      */
     async function reportDashboardPanelWithdrawn() {
       try {
@@ -129,11 +138,13 @@ export default defineContentScript({
         return;
       }
 
-      // The page telling us its built-in copilot panel is available. This is
-      // the channel for a dashboard that only mounts the panel after the
-      // document loaded; a dashboard that knows at render time should carry
-      // DASHBOARD_PANEL_ATTR in its initial HTML instead, which the
-      // document_end check below picks up with no window in between.
+      // The page telling us its built-in copilot panel is showing. Since
+      // ADR-018 D0 this is the ONLY channel that yields — the document_end read
+      // of DASHBOARD_PANEL_ATTR that used to sit below is gone, because an
+      // attribute in the initial HTML is a claim about the BUILD and cannot be
+      // one about this user on this route. A Dashboard must post this when its
+      // panel mounts, including after a bfcache restore (`pageshow`), where no
+      // new document is created and nothing else will say so.
       if (message && message.type === DASHBOARD_PANEL_MESSAGE) {
         log.info("Dashboard advertises its built-in panel", { origin: event.origin });
         await reportDashboardPanelAvailable();

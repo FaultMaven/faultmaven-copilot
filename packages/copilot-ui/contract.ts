@@ -34,11 +34,18 @@
  *   inferred from the origin alone; that is the whole point of the signal, and
  *   why a version check or a build-date guess is not a substitute.
  * - The ATTRIBUTE is a BUILD CAPABILITY claim — "this deployment could host a
- *   panel" — and must stay answerable at document_start, which is what
- *   distinguishes a build that has the feature from one that predates it. Since
- *   ADR-018 D0 it does NOT, by itself, cause a yield: it cannot express a
- *   per-user preference (not knowable before React) or a route with no panel
- *   (one document serves `/login` and `/cases`).
+ *   panel" — answerable at document_start. Since ADR-018 D0 it does NOT, by
+ *   itself, cause a yield: it cannot express a per-user preference (not knowable
+ *   before React) or a route with no panel (one document serves `/login` and
+ *   `/cases`).
+ *
+ *   BE HONEST ABOUT ITS STATUS: nothing in the extension reads it any more. It
+ *   is retained because the name is a published cross-repo contract the
+ *   Dashboard still renders, and because ADR-018 D0 keeps it deliberately as
+ *   the one signal available before React runs. It is INERT until something
+ *   consumes it — so do not add behaviour that assumes a reader, and if a
+ *   flash-avoidance path is ever built on it, build the reader in the same
+ *   change.
  * - Values `"false"`, `"0"` and the empty string do NOT advertise, so a
  *   Dashboard can render the attribute unconditionally and flip its value. Any
  *   other value (`"1"`, a version string) advertises.
@@ -50,6 +57,17 @@
  *   deliberately: every ambiguous branch fails towards SHOWING the panel, and a
  *   flash is the mild failure while a dark tab with neither surface is the
  *   severe one.
+ * - THE PAGE MUST RE-ASSERT WHENEVER IT IS SHOWN AGAIN, not only on a fresh
+ *   mount. The extension releases a tab whose document is being replaced, and
+ *   `tabs.onUpdated` reports `status: 'loading'` for things that do NOT create
+ *   a new document — a back/forward bfcache restore, an aborted navigation, a
+ *   link that turns into a download. In those cases no content script is
+ *   re-injected and no React effect re-runs, so a page that only asserts on
+ *   mount is released and never yields again for the life of that document.
+ *   Posting the assertion from `pageshow` as well as from the panel's mount
+ *   closes it. The extension cannot: it has no way to ask a page what it is
+ *   currently showing, and the failure direction is the mild one — two panels,
+ *   not none — so it does not guess.
  * - A WITHDRAWAL IS NOT OPTIONAL for a page that has asserted. Without it the
  *   advertisement is monotonic — a page could say "I host a panel" and never
  *   "not any more" — which is what made a Dashboard-side preference impossible:

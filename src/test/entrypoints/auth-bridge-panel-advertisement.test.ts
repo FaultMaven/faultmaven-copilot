@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * The page -> extension half of the built-in panel contract (#229).
@@ -78,11 +78,40 @@ async function pagePosts(data: any, origin: string, source: any = window) {
 }
 
 describe('Dashboard built-in panel advertisement (bridge side)', () => {
+  /**
+   * `bridge.main()` registers a `window` message listener and never removes it,
+   * and jsdom's `window` is shared by every test in this file. Without this the
+   * listeners ACCUMULATE: by the last test a single posted message fans out to
+   * every listener every earlier test installed, so one page message produces N
+   * `sendMessage` calls.
+   *
+   * The existing assertions survived that because they ask `.some()`. Any
+   * count-based one — "forwards it exactly once", or catching a bridge that
+   * reports twice — was structurally invisible, which is worse than a failing
+   * test. Replacing the window per test is the cheapest honest isolation: it
+   * takes every listener with it.
+   */
+  let listeners: { type: string; fn: EventListenerOrEventListenerObject }[] = [];
+  const realAdd = window.addEventListener.bind(window);
+  const realRemove = window.removeEventListener.bind(window);
+
   beforeEach(() => {
     vi.clearAllMocks();
     for (const key of Object.keys(storageStore)) delete storageStore[key];
     document.documentElement.removeAttribute(DASHBOARD_PANEL_ATTR);
     localStorage.clear();
+
+    listeners = [];
+    window.addEventListener = ((type: string, fn: EventListenerOrEventListenerObject, opts?: unknown) => {
+      listeners.push({ type, fn });
+      return realAdd(type, fn, opts as never);
+    }) as typeof window.addEventListener;
+  });
+
+  afterEach(() => {
+    for (const { type, fn } of listeners) realRemove(type, fn);
+    window.addEventListener = realAdd as typeof window.addEventListener;
+    listeners = [];
   });
 
   describe('the attribute the page renders into its initial HTML', () => {
@@ -158,6 +187,22 @@ describe('Dashboard built-in panel advertisement (bridge side)', () => {
       await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, 'https://evil.example.com');
 
       expect(reportedWithdrawal()).toBe(false);
+    });
+
+    it('forwards each message EXACTLY ONCE', async () => {
+      // Only meaningful now that listeners no longer accumulate across tests —
+      // before that, this assertion could not have failed for the right reason
+      // or passed for it. A bridge that reported twice would double the work
+      // the background does for every advertisement.
+      bridge.main!({} as any);
+      await settle();
+
+      await pagePosts({ type: DASHBOARD_PANEL_MESSAGE }, CLOUD_DASHBOARD);
+      await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, CLOUD_DASHBOARD);
+
+      const calls = mockBrowser.runtime.sendMessage.mock.calls.map((c: any[]) => c[0]?.action);
+      expect(calls.filter((a: string) => a === 'dashboardPanelAvailable')).toHaveLength(1);
+      expect(calls.filter((a: string) => a === 'dashboardPanelWithdrawn')).toHaveLength(1);
     });
 
     it('does not confuse the two messages in either direction', async () => {
