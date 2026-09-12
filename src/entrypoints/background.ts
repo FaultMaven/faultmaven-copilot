@@ -8,6 +8,8 @@ import { enforceUserDataScope } from '../extension/auth/user-scope';
 import {
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
+  releaseSidePanelForNavigatingTab,
+  releaseSidePanelForWithdrawnTab,
   yieldSidePanelForAdvertisedTab,
 } from '../extension/side-panel-yield';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -569,6 +571,20 @@ export default defineBackground({
         return false;
       }
 
+      // The same page saying its built-in panel is GONE (ADR-018 D0). Without
+      // this the claim is monotonic: a user who turns the Dashboard's panel off
+      // on an already-yielded tab is left with neither surface and no way back
+      // but navigating off the origin.
+      //
+      // No origin argument, unlike the yield above. Releasing is the safe
+      // direction, so the release path must not carry a check that can strand a
+      // tab dark — see the note on the function itself.
+      if (request.action === "dashboardPanelWithdrawn") {
+        releaseSidePanelForWithdrawnTab(sender?.tab?.id);
+        sendResponse({ status: "received" });
+        return false;
+      }
+
       if (request.action === "initiateOIDCLogin") {
         // Note: Action name kept for backward compatibility with UI
         // But now uses Dashboard OAuth flow instead of OIDC
@@ -641,7 +657,21 @@ export default defineBackground({
       // tab can have moved off the Dashboard while the worker was evicted.
       reconcileSidePanelForAllTabs();
 
-      browser.tabs.onUpdated.addListener((tabId: number, _changeInfo: any, tab: any) => {
+      browser.tabs.onUpdated.addListener((tabId: number, changeInfo: any, tab: any) => {
+        // A NEW DOCUMENT voids whatever the old one claimed (ADR-018 D0). The
+        // yield was the page's live statement about itself, and the page is
+        // being replaced — possibly by one that mounts no panel, because the
+        // user changed the preference or signed out in between. The fresh
+        // document re-asserts if it has one.
+        //
+        // Gated on `status === 'loading'` and nothing else. A page emits a
+        // stream of other updates — title, favicon, an SPA route change — and
+        // releasing on those would undo a yield seconds after the page asked
+        // for it, so the panel would never stay hidden at all.
+        if (changeInfo?.status === 'loading') {
+          void releaseSidePanelForNavigatingTab(tabId);
+        }
+
         // Every update carrying a URL, not just the ones where changeInfo.url
         // is set. The reconcile reads the tab's current options before writing
         // and is idempotent, so a redundant run costs a no-op — whereas a

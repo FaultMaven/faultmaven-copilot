@@ -23,21 +23,38 @@
  * It lives in the package because the package is the one thing both hosts
  * already share.
  *
- * SEMANTICS, exactly:
- * - The signal is a CLAIM BY THE PAGE, per document load: "this build renders
- *   the copilot panel itself". Not a claim about the account, the route, or
- *   whether the panel is currently on screen.
+ * SEMANTICS, exactly (revised by ADR-018 D0 — see the note below):
+ * - The signal is a CLAIM BY THE PAGE: "a built-in panel is showing on this
+ *   tab right now, for this user, on this route." It WAS a per-document-load
+ *   claim about the build; D0 made it live, because a build-level claim cannot
+ *   express a per-user preference or a route that mounts no panel.
  * - Advertising is OPT-IN and silence is the safe answer. A Dashboard that says
  *   nothing — an older self-hosted image, or Cloud before its own panel ships —
  *   keeps the extension's side panel exactly as it is. Nothing here may ever be
  *   inferred from the origin alone; that is the whole point of the signal, and
  *   why a version check or a build-date guess is not a substitute.
- * - The ATTRIBUTE is the per-load state and SHOULD be in the initial HTML.
- *   Setting it late is allowed but leaves a window in which the extension panel
- *   is still shown; a page that only learns late should post the message.
+ * - The ATTRIBUTE is a BUILD CAPABILITY claim — "this deployment could host a
+ *   panel" — and must stay answerable at document_start, which is what
+ *   distinguishes a build that has the feature from one that predates it. Since
+ *   ADR-018 D0 it does NOT, by itself, cause a yield: it cannot express a
+ *   per-user preference (not knowable before React) or a route with no panel
+ *   (one document serves `/login` and `/cases`).
  * - Values `"false"`, `"0"` and the empty string do NOT advertise, so a
  *   Dashboard can render the attribute unconditionally and flip its value. Any
  *   other value (`"1"`, a version string) advertises.
+ * - YIELDING REQUIRES THE LIVE MESSAGE. The page posts
+ *   `DASHBOARD_PANEL_MESSAGE` when a panel is actually mounted and showing, and
+ *   `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` when it stops. This costs a brief
+ *   window on load where the extension's panel is visible before a yield — the
+ *   flash the document_end attribute read existed to avoid. Accepted
+ *   deliberately: every ambiguous branch fails towards SHOWING the panel, and a
+ *   flash is the mild failure while a dark tab with neither surface is the
+ *   severe one.
+ * - A WITHDRAWAL IS NOT OPTIONAL for a page that has asserted. Without it the
+ *   advertisement is monotonic — a page could say "I host a panel" and never
+ *   "not any more" — which is what made a Dashboard-side preference impossible:
+ *   turning the built-in panel off on an already-yielded tab left the user with
+ *   NEITHER surface and no way back but navigating off the origin.
  * - The message carries no payload. It is a nudge to re-read the state, and it
  *   is only honoured on a configured Dashboard origin — the content script
  *   validates `event.origin` and the background worker independently re-checks
@@ -49,16 +66,42 @@
 /** Set on `<html>` by a page that renders the panel itself. */
 export const DASHBOARD_PANEL_ATTR = 'data-faultmaven-dashboard-panel';
 
-/** Posted by the page to its own window when the panel arrives after load. */
+/**
+ * Posted by the page to its own window while a built-in panel is showing.
+ *
+ * THE thing that yields the extension's side panel since ADR-018 D0. The
+ * attribute above no longer does.
+ */
 export const DASHBOARD_PANEL_MESSAGE = 'FM_DASHBOARD_PANEL_AVAILABLE';
 
 /**
- * Does the current document advertise a built-in panel?
+ * Its counterpart: the page has stopped showing a built-in panel.
+ *
+ * Posted when the preference turns the panel off, when a route that mounts no
+ * panel takes over, or on sign-out — anything that makes the assertion above
+ * untrue without the document going away. The extension releases the tab.
+ *
+ * SEQUENCING, because this crosses a release boundary in two repositories: an
+ * extension that predates this constant ignores the message and leaves the tab
+ * YIELDED, which is the dark-tab failure. A Dashboard must therefore not
+ * withdraw until extensions in the field understand it — ADR-018 sequences the
+ * extension side (row 4) strictly before the Dashboard side (row 5) for exactly
+ * this reason.
+ */
+export const DASHBOARD_PANEL_WITHDRAWN_MESSAGE = 'FM_DASHBOARD_PANEL_WITHDRAWN';
+
+/**
+ * Does this document's BUILD claim it can host a panel?
  *
  * ONE predicate, shared, because "what counts as advertising" is the subtle
  * half of the contract — the empty string and `"false"` do not — and two
- * implementations of that rule are two chances to disagree about whether a
- * user sees one panel or two.
+ * implementations of that rule are two chances to disagree.
+ *
+ * NOT a yield trigger since ADR-018 D0. It answers "could this deployment host
+ * a panel", which is knowable at document_start; whether one is showing *right
+ * now, for this user, on this route* is knowable only to a React tree, and
+ * travels as `DASHBOARD_PANEL_MESSAGE`. The extension no longer suppresses its
+ * panel on the strength of this alone.
  *
  * Read from the DOM at call time rather than cached: a page that mounts its
  * panel after hydration flips the attribute later, and the second read is the

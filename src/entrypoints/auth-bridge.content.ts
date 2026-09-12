@@ -4,8 +4,8 @@ import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { isTrustedDashboardOrigin } from '../extension/auth/trusted-origin';
 import {
   announceCopilotPresence,
-  dashboardAdvertisesPanel,
   DASHBOARD_PANEL_MESSAGE,
+  DASHBOARD_PANEL_WITHDRAWN_MESSAGE,
 } from '../extension/auth/presence-marker';
 
 /**
@@ -88,6 +88,22 @@ export default defineContentScript({
     }
 
     /**
+     * Tell the background worker the Dashboard's panel is gone.
+     *
+     * A failure here is the one that actually hurts: the tab stays yielded with
+     * nothing in it. It is logged at warn rather than debug for that reason,
+     * and the page will withdraw again on its next mount.
+     */
+    async function reportDashboardPanelWithdrawn() {
+      try {
+        await browser.runtime.sendMessage({ action: 'dashboardPanelWithdrawn' });
+        log.info('Reported the dashboard\'s panel withdrawal to the background');
+      } catch (error) {
+        log.warn('Could not report the dashboard panel withdrawal:', error);
+      }
+    }
+
+    /**
      * Listen for window messages from the web app (postMessage)
      * CRITICAL: Validates origin to prevent malicious injection
      */
@@ -121,6 +137,16 @@ export default defineContentScript({
       if (message && message.type === DASHBOARD_PANEL_MESSAGE) {
         log.info("Dashboard advertises its built-in panel", { origin: event.origin });
         await reportDashboardPanelAvailable();
+        return;
+      }
+
+      // …and the retraction (ADR-018 D0). The page is still the Dashboard; it
+      // has simply stopped showing a panel — the preference turned it off, a
+      // route with none took over, or the user signed out. Without this the
+      // assertion could only ever be made, never unmade.
+      if (message && message.type === DASHBOARD_PANEL_WITHDRAWN_MESSAGE) {
+        log.info("Dashboard withdrew its built-in panel", { origin: event.origin });
+        await reportDashboardPanelWithdrawn();
       }
     });
 
@@ -173,12 +199,18 @@ export default defineContentScript({
     // Check on load (for extension installed after login)
     checkLocalStorage();
 
-    // And read the panel claim the page rendered into its initial HTML. Same
-    // shape as checkLocalStorage above: the live listener catches what happens
-    // from here on, this catches what was already true when we were injected.
-    if (dashboardAdvertisesPanel()) {
-      reportDashboardPanelAvailable();
-    }
+    // NO document_end READ OF THE PANEL ATTRIBUTE (ADR-018 D0, row 7).
+    //
+    // This used to yield on `DASHBOARD_PANEL_ATTR` in the initial HTML, which
+    // is a claim about the BUILD and cannot be one about this user on this
+    // route: the preference is not knowable before React runs, and one document
+    // serves `/login` and `/cases`. Yielding on it hid the extension's panel on
+    // pages that mount none.
+    //
+    // Only the live message pair decides now. The cost is a brief flash of the
+    // extension's panel before a Dashboard that does host one asserts — the
+    // exact window this read existed to close — and it is the mild failure
+    // against a dark tab, which is the severe one.
   }
 });
 

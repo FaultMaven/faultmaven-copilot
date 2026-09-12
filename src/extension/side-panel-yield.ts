@@ -13,9 +13,27 @@ import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
  * two chat panels for one account.
  *
  * INVARIANT: on a tab whose origin is a configured Dashboard origin AND whose
- * page advertises that it hosts the built-in panel, the extension's panel is
- * not visible. On every other tab — including a Dashboard that does NOT
- * advertise — it behaves exactly as before.
+ * page is CURRENTLY SHOWING a built-in panel, the extension's panel is not
+ * visible. On every other tab — including a Dashboard that does NOT advertise —
+ * it behaves exactly as before.
+ *
+ * "CURRENTLY SHOWING", not "is a build that could" (ADR-018 D0). The claim used
+ * to be a property of the deployment, readable from `DASHBOARD_PANEL_ATTR` in
+ * the initial HTML. That could never express a per-user preference — not
+ * knowable before React — or a route that mounts no panel, since one document
+ * serves `/login` and `/cases`. Worse, it was MONOTONIC: a page could assert
+ * and never retract, so turning the built-in panel off on an already-yielded
+ * tab left the user with NEITHER surface. Three things follow, and all of them
+ * are this module's job:
+ *
+ *  1. Only the live `DASHBOARD_PANEL_MESSAGE` yields.
+ *  2. A `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` releases.
+ *  3. A tab loading a NEW DOCUMENT releases, because the assertion belonged to
+ *     the document that is going away — the fresh one must say so again.
+ *
+ * (3) reintroduces a brief flash on reload, which the old document_end read
+ * existed to avoid. Accepted deliberately, and consistent with the posture
+ * below: a flash is the mild failure, a dark tab the severe one.
  *
  * Origin alone is deliberately NOT enough. A self-hosted Dashboard image from
  * before the built-in panel shipped, or Cloud between this extension release
@@ -190,16 +208,84 @@ export async function yieldSidePanelForAdvertisedTab(
 }
 
 /**
+ * A Dashboard page has told us its built-in panel is GONE (ADR-018 D0).
+ *
+ * The counterpart to the advertisement, and the thing that makes a
+ * Dashboard-side preference possible at all: without it the claim is monotonic,
+ * and a user who turns the built-in panel off on a yielded tab is left with
+ * neither surface.
+ *
+ * DELIBERATELY NOT ORIGIN-GATED, which is where it differs from the yield path
+ * above. The asymmetry is the whole posture of this module in one place:
+ *
+ *  - Hiding the panel on a tab that has none of its own is the SEVERE failure,
+ *    so the yield path refuses anything it cannot attribute to a Dashboard.
+ *  - Showing the panel is the MILD failure, so the release path must not have a
+ *    check that can strand a tab dark. An origin this worker cannot resolve is
+ *    not a reason to keep someone's only surface hidden.
+ *
+ * Nothing is lost by that. `releaseTab` rewrites only a tab this rule
+ * explicitly disabled, the content script already refuses to forward a message
+ * from an untrusted origin, and the background rejects senders that are not
+ * this extension. The worst a bogus withdrawal achieves is the browser's
+ * default behaviour.
+ */
+export async function releaseSidePanelForWithdrawnTab(
+  tabId: number | undefined
+): Promise<void> {
+  const sidePanel = perTabSidePanel();
+  if (!sidePanel) return;
+  if (typeof tabId !== 'number' || tabId < 0) return;
+
+  try {
+    await releaseTab(sidePanel, tabId);
+  } catch (error) {
+    log.debug('Could not release the side panel for a withdrawing tab', { tabId, error });
+  }
+}
+
+/**
+ * A tab is loading a NEW DOCUMENT, so any assertion it held is void.
+ *
+ * The yield belonged to the document being replaced. Under ADR-018 D0 the
+ * claim is live rather than a property of the build, so it cannot be assumed to
+ * survive: the same URL may mount no panel this time because the user changed
+ * the preference, or signed out, in between.
+ *
+ * Called only when the document is actually being replaced — `status:
+ * 'loading'` — and NOT on the stream of other `tabs.onUpdated` events a page
+ * emits (title, favicon, an SPA route change). Releasing on those would undo a
+ * yield the page had just correctly asked for, seconds after it asked, and the
+ * panel would never stay hidden at all.
+ */
+export async function releaseSidePanelForNavigatingTab(
+  tabId: number | undefined
+): Promise<void> {
+  const sidePanel = perTabSidePanel();
+  if (!sidePanel) return;
+  if (typeof tabId !== 'number' || tabId < 0) return;
+
+  try {
+    await releaseTab(sidePanel, tabId);
+  } catch (error) {
+    log.debug('Side panel release skipped for a navigating tab', { tabId, error });
+  }
+}
+
+/**
  * Bring one tab back into line with the invariant.
  *
  * This only ever RELEASES. A tab that has left the Dashboard gets its panel
  * back; a tab that is ON a Dashboard origin is left exactly as it is, because
- * whether that Dashboard hosts its own panel is not something a URL can answer
- * — only the page's advertisement can, and that arrives on its own channel.
+ * whether that Dashboard is showing its own panel is not something a URL can
+ * answer — only the page's advertisement can, and that arrives on its own
+ * channel.
  *
- * Leaving Dashboard tabs alone here is also what keeps the panel from flashing:
- * a tab that is already yielded stays yielded across a reload rather than being
- * released and re-hidden a moment later once the page re-advertises.
+ * Leaving Dashboard tabs alone HERE is still right, and is why the navigation
+ * release above is a separate call with a narrower trigger. This one runs on
+ * every tab update and at worker startup; if it released Dashboard tabs it
+ * would undo a live yield on the next title change, and a worker restart would
+ * un-hide every already-correct tab with no page left to re-assert.
  */
 export async function reconcileSidePanelForTab(
   tabId: number | undefined,
