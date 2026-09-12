@@ -57,6 +57,7 @@ export type {
 export {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
+  DASHBOARD_PANEL_WITHDRAWN_MESSAGE,
   dashboardAdvertisesPanel,
 } from './contract';
 

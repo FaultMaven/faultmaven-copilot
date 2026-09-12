@@ -8,6 +8,7 @@ import { enforceUserDataScope } from '../extension/auth/user-scope';
 import {
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
+  releaseSidePanelForTab,
   yieldSidePanelForAdvertisedTab,
 } from '../extension/side-panel-yield';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -569,6 +570,20 @@ export default defineBackground({
         return false;
       }
 
+      // The same page saying its built-in panel is GONE (ADR-018 D0). Without
+      // this the claim is monotonic: a user who turns the Dashboard's panel off
+      // on an already-yielded tab is left with neither surface and no way back
+      // but navigating off the origin.
+      //
+      // No origin argument, unlike the yield above. Releasing is the safe
+      // direction, so the release path must not carry a check that can strand a
+      // tab dark — see the note on the function itself.
+      if (request.action === "dashboardPanelWithdrawn") {
+        releaseSidePanelForTab(sender?.tab?.id, 'withdrawn');
+        sendResponse({ status: "received" });
+        return false;
+      }
+
       if (request.action === "initiateOIDCLogin") {
         // Note: Action name kept for backward compatibility with UI
         // But now uses Dashboard OAuth flow instead of OIDC
@@ -641,13 +656,23 @@ export default defineBackground({
       // tab can have moved off the Dashboard while the worker was evicted.
       reconcileSidePanelForAllTabs();
 
-      browser.tabs.onUpdated.addListener((tabId: number, _changeInfo: any, tab: any) => {
-        // Every update carrying a URL, not just the ones where changeInfo.url
-        // is set. The reconcile reads the tab's current options before writing
-        // and is idempotent, so a redundant run costs a no-op — whereas a
-        // missed one leaves a tab that has LEFT the Dashboard with its panel
-        // still suppressed, which is the failure that actually hurts.
-        void reconcileSidePanelForTab(tabId, tab?.url);
+      browser.tabs.onUpdated.addListener((tabId: number, changeInfo: any, tab: any) => {
+        // EVERY update, not just the ones where changeInfo.url is set. The
+        // reconcile reads the tab's current options before writing and is
+        // idempotent, so a redundant run costs a no-op — whereas a missed one
+        // leaves a tab that has LEFT the Dashboard with its panel still
+        // suppressed, which is the failure that actually hurts.
+        //
+        // `documentReplaced` is the one thing this listener adds: a NEW
+        // DOCUMENT voids whatever the old one claimed (ADR-018 D0), because the
+        // same URL may mount no panel this time. It is gated on
+        // `status === 'loading'` and nothing else — a page emits a stream of
+        // title, favicon and SPA-route updates, and treating those as a
+        // navigation would undo a live yield seconds after the page asked for
+        // it.
+        void reconcileSidePanelForTab(tabId, tab?.url, {
+          documentReplaced: changeInfo?.status === 'loading',
+        });
       });
     }
 

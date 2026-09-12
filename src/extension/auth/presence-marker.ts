@@ -28,10 +28,18 @@ export const COPILOT_PRESENCE_EVENT = 'faultmaven-copilot:ready';
  * From `/contract`, not from the package's main entry: this module is imported
  * by the auth-bridge CONTENT SCRIPT, and the main entry brings the panel — the
  * store, the transport, the markdown renderer — with it.
+ *
+ * `DASHBOARD_PANEL_ATTR` and `dashboardAdvertisesPanel` are re-exported but the
+ * extension no longer ACTS on them (ADR-018 D0): the attribute is a build
+ * capability claim, and only the live message pair yields and releases. They
+ * stay part of this door because the contract still carries them and the
+ * Dashboard still renders the attribute — dropping them here would hide half
+ * the handshake from the one module that is supposed to describe all of it.
  */
 export {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
+  DASHBOARD_PANEL_WITHDRAWN_MESSAGE,
   dashboardAdvertisesPanel,
 } from '@faultmaven/copilot-ui/contract';
 

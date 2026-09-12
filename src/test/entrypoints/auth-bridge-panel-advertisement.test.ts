@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * The page -> extension half of the built-in panel contract (#229).
@@ -46,6 +46,7 @@ import bridge from '../../entrypoints/auth-bridge.content';
 import {
   DASHBOARD_PANEL_ATTR,
   DASHBOARD_PANEL_MESSAGE,
+  DASHBOARD_PANEL_WITHDRAWN_MESSAGE,
 } from '../../extension/auth/presence-marker';
 
 const CLOUD_DASHBOARD = 'https://app.faultmaven.ai';
@@ -64,6 +65,12 @@ function reportedPanel(): boolean {
   );
 }
 
+function reportedWithdrawal(): boolean {
+  return mockBrowser.runtime.sendMessage.mock.calls.some(
+    (call: any[]) => call[0]?.action === 'dashboardPanelWithdrawn'
+  );
+}
+
 /** Post a message the way the Dashboard page would. */
 async function pagePosts(data: any, origin: string, source: any = window) {
   window.dispatchEvent(new MessageEvent('message', { data, origin, source }));
@@ -71,45 +78,148 @@ async function pagePosts(data: any, origin: string, source: any = window) {
 }
 
 describe('Dashboard built-in panel advertisement (bridge side)', () => {
+  /**
+   * `bridge.main()` registers a `window` message listener and never removes it,
+   * and jsdom's `window` is shared by every test in this file. Without this the
+   * listeners ACCUMULATE: by the last test a single posted message fans out to
+   * every listener every earlier test installed, so one page message produces N
+   * `sendMessage` calls.
+   *
+   * The existing assertions survived that because they ask `.some()`. Any
+   * count-based one — "forwards it exactly once", or catching a bridge that
+   * reports twice — was structurally invisible, which is worse than a failing
+   * test. Replacing the window per test is the cheapest honest isolation: it
+   * takes every listener with it.
+   */
+  let listeners: { type: string; fn: EventListenerOrEventListenerObject }[] = [];
+  const realAdd = window.addEventListener.bind(window);
+  const realRemove = window.removeEventListener.bind(window);
+
   beforeEach(() => {
     vi.clearAllMocks();
     for (const key of Object.keys(storageStore)) delete storageStore[key];
     document.documentElement.removeAttribute(DASHBOARD_PANEL_ATTR);
     localStorage.clear();
+
+    listeners = [];
+    window.addEventListener = ((type: string, fn: EventListenerOrEventListenerObject, opts?: unknown) => {
+      listeners.push({ type, fn });
+      return realAdd(type, fn, opts as never);
+    }) as typeof window.addEventListener;
+  });
+
+  afterEach(() => {
+    for (const { type, fn } of listeners) realRemove(type, fn);
+    window.addEventListener = realAdd as typeof window.addEventListener;
+    listeners = [];
   });
 
   describe('the attribute the page renders into its initial HTML', () => {
-    it('reports a built-in panel when the attribute advertises', async () => {
-      document.documentElement.setAttribute(DASHBOARD_PANEL_ATTR, '1');
-
-      bridge.main!({} as any);
-      await settle();
-
-      expect(reportedPanel()).toBe(true);
-    });
-
-    it('reports nothing when the page carries no attribute at all', async () => {
-      bridge.main!({} as any);
-      await settle();
-
-      // Silence is the safe answer: a Dashboard that says nothing keeps the
-      // extension's panel. This is the deployment-lag case — an older
-      // self-hosted image, or Cloud before its own panel ships.
-      expect(reportedPanel()).toBe(false);
-    });
-
-    it.each(['', 'false', '0'])(
-      'treats the attribute value %o as NOT advertising',
+    /**
+     * ADR-018 D0 row 7: the attribute NO LONGER YIELDS, in any value.
+     *
+     * It is a claim about the BUILD — "this deployment could host a panel" —
+     * and it is in the initial HTML, before React and before there is a user.
+     * It therefore cannot express the two things that actually decide whether a
+     * panel is on screen: a per-profile preference, and a route (one document
+     * serves `/login` and `/cases`). Yielding on it hid the extension's panel
+     * on pages that mount none, and could never be retracted.
+     *
+     * Every value is asserted, not just the advertising one, because the
+     * regression to guard against is someone restoring the document_end read —
+     * and a test that only checked `'1'` would let `'true'` back in.
+     */
+    it.each(['1', 'true', '2.1.0', '', 'false', '0'])(
+      'never reports a panel on the strength of the attribute alone (%o)',
       async (value) => {
         document.documentElement.setAttribute(DASHBOARD_PANEL_ATTR, value);
 
         bridge.main!({} as any);
         await settle();
 
-        // So a Dashboard can render the attribute unconditionally and flip it.
         expect(reportedPanel()).toBe(false);
       }
     );
+
+    it('reports nothing when the page carries no attribute at all', async () => {
+      bridge.main!({} as any);
+      await settle();
+
+      // Silence is still the safe answer, and now it is the ONLY answer the
+      // attribute can give. This is the deployment-lag case — an older
+      // self-hosted image, or Cloud before its own panel ships.
+      expect(reportedPanel()).toBe(false);
+    });
+  });
+
+  describe('the withdrawal (ADR-018 D0)', () => {
+    it('forwards a withdrawal from the Dashboard origin', async () => {
+      // The counterpart to the advertisement. Without it the claim is
+      // monotonic — a page can say "I host a panel" and never "not any more" —
+      // and a user who turns the built-in panel off on an already-yielded tab
+      // is left with NEITHER surface.
+      bridge.main!({} as any);
+      await settle();
+
+      await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, CLOUD_DASHBOARD);
+
+      expect(reportedWithdrawal()).toBe(true);
+    });
+
+    it('forwards a withdrawal from a configured self-hosted Dashboard', async () => {
+      storageStore.dashboardUrl = SELF_HOSTED_DASHBOARD;
+      bridge.main!({} as any);
+      await settle();
+
+      await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, SELF_HOSTED_DASHBOARD);
+
+      expect(reportedWithdrawal()).toBe(true);
+    });
+
+    it('ignores a withdrawal from an untrusted origin', async () => {
+      // The same origin gate as every other message on this channel. A
+      // withdrawal from elsewhere cannot do harm — releasing only ever SHOWS
+      // the panel — but the bridge has one rule about who may speak to it, and
+      // an exception here would be a second rule to keep in step.
+      bridge.main!({} as any);
+      await settle();
+
+      await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, 'https://evil.example.com');
+
+      expect(reportedWithdrawal()).toBe(false);
+    });
+
+    it('forwards each message EXACTLY ONCE', async () => {
+      // Only meaningful now that listeners no longer accumulate across tests —
+      // before that, this assertion could not have failed for the right reason
+      // or passed for it. A bridge that reported twice would double the work
+      // the background does for every advertisement.
+      bridge.main!({} as any);
+      await settle();
+
+      await pagePosts({ type: DASHBOARD_PANEL_MESSAGE }, CLOUD_DASHBOARD);
+      await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, CLOUD_DASHBOARD);
+
+      const calls = mockBrowser.runtime.sendMessage.mock.calls.map((c: any[]) => c[0]?.action);
+      expect(calls.filter((a: string) => a === 'dashboardPanelAvailable')).toHaveLength(1);
+      expect(calls.filter((a: string) => a === 'dashboardPanelWithdrawn')).toHaveLength(1);
+    });
+
+    it('does not confuse the two messages in either direction', async () => {
+      // They differ by one word in a string constant and mean opposite things.
+      bridge.main!({} as any);
+      await settle();
+
+      await pagePosts({ type: DASHBOARD_PANEL_MESSAGE }, CLOUD_DASHBOARD);
+      expect(reportedPanel()).toBe(true);
+      expect(reportedWithdrawal()).toBe(false);
+
+      vi.clearAllMocks();
+
+      await pagePosts({ type: DASHBOARD_PANEL_WITHDRAWN_MESSAGE }, CLOUD_DASHBOARD);
+      expect(reportedWithdrawal()).toBe(true);
+      expect(reportedPanel()).toBe(false);
+    });
   });
 
   describe('the message a page posts when it only learns later', () => {

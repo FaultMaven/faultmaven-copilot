@@ -219,6 +219,33 @@ async function advertisePanel(tabId: number, origin: string) {
   await settle();
 }
 
+/** Drive a full document load — what a reload or a cross-document link does. */
+async function reload(tabId: number, url: string) {
+  dispatchTabUpdate(tabId, { status: 'loading', url }, { id: tabId, url });
+  dispatchTabUpdate(tabId, { status: 'complete', url }, { id: tabId, url });
+  await settle();
+}
+
+/**
+ * Deliver the WITHDRAWAL the way the auth-bridge content script does.
+ *
+ * No origin: the release path deliberately does not gate on one. Hiding the
+ * panel is the severe failure and is origin-gated; SHOWING it is the mild one,
+ * so a check that could fail here would be a way to strand a tab dark.
+ */
+async function withdrawPanel(tabId: number) {
+  expect(
+    typeof listeners.message,
+    'the worker registered no runtime.onMessage listener'
+  ).toBe('function');
+  listeners.message(
+    { action: 'dashboardPanelWithdrawn' },
+    { id: 'test-copilot-id', tab: { id: tabId } },
+    vi.fn()
+  );
+  await settle();
+}
+
 /** What the browser would do with this tab: is the panel shown on it? */
 async function panelIsVisibleOn(tabId: number): Promise<boolean> {
   const options = await mockSidePanel.getOptions({ tabId });
@@ -391,7 +418,16 @@ describe('Side panel yields on Dashboard tabs that advertise a built-in panel', 
       expect(await panelIsVisibleOn(13)).toBe(false);
     });
 
-    it('keeps a yielded tab yielded across a same-origin reload', async () => {
+    it('RELEASES a yielded tab when it loads a new document, and re-yields when the page says so again', async () => {
+      // REVERSED BY ADR-018 D0. This used to assert the opposite — that a
+      // yielded tab stayed yielded across a reload, to avoid flashing the panel
+      // open before the page could re-advertise.
+      //
+      // The claim is live now, not a property of the build: the same URL may
+      // mount no panel this time, because the user changed the preference or
+      // signed out in between. A yield that outlived its document would leave
+      // that tab dark with nothing able to release it. The flash is the price,
+      // and it is the mild failure against a tab with neither surface.
       mount();
       await settle();
 
@@ -399,16 +435,159 @@ describe('Side panel yields on Dashboard tabs that advertise a built-in panel', 
       await advertisePanel(14, CLOUD_DASHBOARD);
       expect(await panelIsVisibleOn(14)).toBe(false);
 
-      // Navigation within the Dashboard must not release-then-re-yield: that
-      // would flash the panel open on every page load before the page has had
-      // a chance to advertise again.
-      dispatchTabUpdate(14, { status: 'loading', url: `${CLOUD_DASHBOARD}/cases/def-456` }, {
-        id: 14,
-        url: `${CLOUD_DASHBOARD}/cases/def-456`,
+      await reload(14, `${CLOUD_DASHBOARD}/cases/def-456`);
+      expect(await panelIsVisibleOn(14)).toBe(true);
+
+      // …and the fresh document asserting puts it back.
+      await advertisePanel(14, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(14)).toBe(false);
+    });
+
+    it('does NOT release on the other updates a page emits after it has asserted', async () => {
+      // The regression this gate exists for. A page emits a stream of
+      // `tabs.onUpdated` events long after load — title, favicon, an SPA route
+      // change — and releasing on those would undo the yield seconds after the
+      // page asked for it, so the panel would never stay hidden at all.
+      mount();
+      await settle();
+
+      await navigate(15, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await advertisePanel(15, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(15)).toBe(false);
+
+      dispatchTabUpdate(15, { title: 'Checkout latency · FaultMaven' }, {
+        id: 15,
+        url: `${CLOUD_DASHBOARD}/cases/abc-123`,
+      });
+      dispatchTabUpdate(15, { favIconUrl: `${CLOUD_DASHBOARD}/favicon.ico` }, {
+        id: 15,
+        url: `${CLOUD_DASHBOARD}/cases/abc-123`,
+      });
+      // An SPA route change: a new URL with no document load behind it.
+      dispatchTabUpdate(15, { url: `${CLOUD_DASHBOARD}/cases/abc-123?tab=report` }, {
+        id: 15,
+        url: `${CLOUD_DASHBOARD}/cases/abc-123?tab=report`,
+      });
+      dispatchTabUpdate(15, { status: 'complete' }, {
+        id: 15,
+        url: `${CLOUD_DASHBOARD}/cases/abc-123?tab=report`,
       });
       await settle();
 
-      expect(await panelIsVisibleOn(14)).toBe(false);
+      expect(await panelIsVisibleOn(15)).toBe(false);
+    });
+  });
+
+  describe('the withdrawal (ADR-018 D0)', () => {
+    it('releases a yielded tab when the page says its panel is gone', async () => {
+      // The counterpart to the advertisement, and the thing that makes a
+      // Dashboard-side preference possible at all. Without it the claim is
+      // monotonic — a page can assert and never retract — so a user who turns
+      // the built-in panel off on an already-yielded tab is left with NEITHER
+      // surface, and the only way back is navigating off the origin.
+      mount();
+      await settle();
+
+      await navigate(16, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await advertisePanel(16, CLOUD_DASHBOARD);
+      expect(await panelIsVisibleOn(16)).toBe(false);
+
+      await withdrawPanel(16);
+      expect(await panelIsVisibleOn(16)).toBe(true);
+
+      // The release restores the panel the manifest declares, not a guess.
+      expect(mockSidePanel.setOptions).toHaveBeenCalledWith({
+        tabId: 16,
+        enabled: true,
+        path: MANIFEST_PANEL_PATH,
+      });
+    });
+
+    it('leaves a tab this rule never yielded exactly as it is', async () => {
+      // A withdrawal from a tab with no tab-specific options must not give it
+      // any: it already has the pristine window-level panel, and writing
+      // options it never asked for is how a tab acquires state nobody set.
+      mount();
+      await settle();
+
+      await navigate(17, `${GRAFANA}/d/abc/incident`);
+      mockSidePanel.setOptions.mockClear();
+
+      await withdrawPanel(17);
+
+      expect(await panelIsVisibleOn(17)).toBe(true);
+      expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent — a second withdrawal changes nothing', async () => {
+      mount();
+      await settle();
+
+      await navigate(18, `${CLOUD_DASHBOARD}/cases/abc-123`);
+      await advertisePanel(18, CLOUD_DASHBOARD);
+      await withdrawPanel(18);
+      mockSidePanel.setOptions.mockClear();
+
+      await withdrawPanel(18);
+
+      expect(await panelIsVisibleOn(18)).toBe(true);
+      expect(mockSidePanel.setOptions).not.toHaveBeenCalled();
+    });
+
+    it('WINS over an advertisement that is still in flight', async () => {
+      /**
+       * The dark tab this module exists to prevent, arriving through a race.
+       *
+       * The yield and the release are both read-modify-write sequences on one
+       * tab's options, and the background dispatches them without awaiting.
+       * Their awaits are not the same length: the yield first resolves
+       * `isTrustedDashboardOrigin`, which for a SELF-HOSTED origin reads
+       * `browser.storage.local`, while the release awaits only `getOptions`.
+       * Unserialized, they interleave like this —
+       *
+       *   1. yield starts, awaits the storage read
+       *   2. release reads the options, sees the tab is not disabled, returns
+       *      WITHOUT writing
+       *   3. yield resumes and writes `enabled: false`
+       *
+       * — and the tab ends up hidden with a page showing no panel, with the
+       * withdrawal already spent. A SELF-HOSTED origin is essential to the
+       * setup: the Cloud constant short-circuits before the storage read and
+       * the window never opens.
+       */
+      storageStore.dashboardUrl = SELF_HOSTED_DASHBOARD;
+      mount();
+      await settle();
+
+      await navigate(20, `${SELF_HOSTED_DASHBOARD}/cases/abc-123`);
+
+      // BOTH DISPATCHED BEFORE EITHER SETTLES, which is what the background
+      // does — neither handler awaits.
+      const advertised = advertisePanel(20, SELF_HOSTED_DASHBOARD);
+      const withdrawn = withdrawPanel(20);
+      await Promise.all([advertised, withdrawn]);
+      await settle();
+
+      expect(
+        await panelIsVisibleOn(20),
+        'the withdrawal arrived second and must win: the page is showing no panel',
+      ).toBe(true);
+    });
+
+    it('can be asserted and withdrawn repeatedly on one tab', async () => {
+      // The preference is a toggle, and a user may flip it more than once
+      // without ever reloading the page.
+      mount();
+      await settle();
+
+      await navigate(19, `${CLOUD_DASHBOARD}/cases/abc-123`);
+
+      for (const _ of [1, 2, 3]) {
+        await advertisePanel(19, CLOUD_DASHBOARD);
+        expect(await panelIsVisibleOn(19)).toBe(false);
+        await withdrawPanel(19);
+        expect(await panelIsVisibleOn(19)).toBe(true);
+      }
     });
   });
 

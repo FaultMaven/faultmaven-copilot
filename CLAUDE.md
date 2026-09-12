@@ -728,6 +728,97 @@ EventBus.on('auth_state_changed', (event) => {
 });
 ```
 
+## The side panel yields to a Dashboard that is showing its own (ADR-016 D4, as reversed by ADR-018 D0/D4)
+
+The panel opens **window-wide** (`sidePanel.open({ windowId })` from the toolbar
+icon), so it is up on every tab in that window — including a Dashboard tab that
+renders the copilot itself, where it is a second copy of the same thing.
+`src/extension/side-panel-yield.ts` is the whole rule.
+
+### The claim is LIVE, not a property of the build
+
+Before ADR-018 the yield keyed off `DASHBOARD_PANEL_ATTR` in the Dashboard's
+initial HTML, read at document_end. That could never work, for three reasons
+that are now designed around rather than lived with:
+
+- it cannot express a **per-user preference** — not knowable before React runs;
+- it cannot express a **route** — one SPA document serves `/login` and `/cases`;
+- it was **monotonic**. A page could say "I host a panel" and never "not any
+  more", so turning the Dashboard's built-in panel off on an already-yielded tab
+  left the user with **neither** surface and no way back but leaving the origin.
+
+So the three names in `@faultmaven/copilot-ui/contract` now mean:
+
+| Name | Meaning | Yields? |
+|---|---|---|
+| `DASHBOARD_PANEL_ATTR` | a BUILD CAPABILITY claim — "this deployment could host a panel" | **No** (ADR-018 row 7) |
+| `DASHBOARD_PANEL_MESSAGE` | "a panel is showing on this tab, right now, for this user" | **Yes** |
+| `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` | "…not any more" | releases |
+
+They live in the PACKAGE because both repositories need the same names and the
+same rule about what counts as advertising; `src/extension/auth/presence-marker.ts`
+re-exports them so the extension has one door to the handshake in both
+directions. From `/contract`, never the package entry — the entry brings the
+panel, the store and the transport with it, into a **content script**.
+
+### Three release paths, one yield path
+
+- `yieldSidePanelForAdvertisedTab(tabId, origin)` — the only thing that hides
+  the panel. Origin-gated against `isTrustedDashboardOrigin`, re-derived from
+  what the BROWSER attributed to the sender, never from the message body.
+- `releaseSidePanelForTab(tabId, reason)` — the retraction, and the release a
+  replaced document forces. One function for both, because they had identical
+  bodies and a bug found in one of two identical bodies gets fixed in one of
+  them. **Deliberately not origin-gated**: hiding is the severe failure and is
+  checked hard; showing is the mild one, so the release path must not carry a
+  check that can strand a tab dark. It is safe because `releaseTab` rewrites
+  only options that say `enabled: false`, and `yieldTab` is the **sole writer**
+  of that — anything that ever disables a panel for another reason breaks that
+  reading.
+- `reconcileSidePanelForTab(tabId, url, { documentReplaced })` — runs on every
+  update and at worker startup, and **leaves Dashboard tabs alone unless the
+  document is being replaced**. Without that exception a title change would undo
+  a live yield and a worker restart would un-hide every already-correct tab with
+  no page left to re-assert; with it, a reload drops a yield that belonged to
+  the document going away. `documentReplaced` comes from
+  `changeInfo.status === 'loading'` and nothing else. The browser's own per-tab
+  `enabled: false` is the memory — nothing is kept in the worker, which MV3
+  evicts routinely.
+
+### Every write to one tab is serialized
+
+`onTab(tabId, work)` chains operations per tab, and it is not a nicety. The
+yield and the release are both read-modify-write sequences on the same options,
+the background dispatches them without awaiting, and their awaits differ in
+length — the yield resolves `isTrustedDashboardOrigin`, which for a
+**self-hosted** origin reads `browser.storage.local`, while the release awaits
+only `getOptions`. Unserialized, an advertise immediately followed by a
+withdrawal interleaves so that the release reads the options *before* the yield
+writes, returns without writing, and the yield then hides a tab whose page is
+showing no panel: **neither surface, and the withdrawal already spent.** Ordering
+follows arrival, so the withdrawal queued behind the yield undoes it.
+
+### The costs, both accepted deliberately
+
+- **A flash on load.** Requiring the live message means the extension's panel is
+  briefly visible before a Dashboard that does host one asserts. Mild; a dark
+  tab is severe. Every ambiguous branch in this module fails towards *showing*.
+- **Cross-repo release order.** An extension that predates
+  `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` ignores it and leaves the tab yielded —
+  the dark-tab failure. **This release must reach the field before the Dashboard
+  starts withdrawing** (ADR-018 sequences row 4 strictly before row 5).
+- **The page must re-assert on `pageshow`, not only on mount.** `status:
+  'loading'` is reported for things that create no new document — a bfcache
+  back/forward, an aborted navigation, a link that becomes a download — so the
+  tab is released while no content script is re-injected and no React effect
+  re-runs. A page that asserts only on mount never yields again for the life of
+  that document. The extension cannot fix this from its side: it has no way to
+  ask a page what it is currently showing, and the failure direction is the mild
+  one. Recorded in `contract.ts` where the Dashboard implementer will read it.
+
+Firefox has no `browser.sidePanel` at all; every entry point feature-detects
+rather than checking a build-target list, so the MV2 build registers nothing.
+
 ## Extension Manifest
 
 Key permissions (Manifest v3):
