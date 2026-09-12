@@ -25,7 +25,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "287dc94e374a34820d452a9c2c65ea2fb81fb678cb1f0b2b8ff20b65465d25f7"
+    "sha256": "72b0f51163c7791ec5ee083afebbdddd4ac8c5a47c0c0d6f75cd2276219f8dbb"
   },
   "iconSources": {
     "fileCount": 8,
@@ -118,7 +118,7 @@
     "assets/jetbrains-mono-vietnamese-500-normal-DNRqzVM1.woff": "6b14186bc983291a126aa8d6d9c3044415c968262279eecbb9bb194f1daf7800",
     "assets/jetbrains-mono-vietnamese-600-normal-OWROknRo.woff": "1e3421e0f17174374ea4b6103d2f0118cf914c36004ca10cd4b092b8390ee6ed",
     "assets/sidepanel_manual-DY09GgKC.css": "a2289e0121955cab64788c75782a59832df2c2f58e5d33143a1777e657477b03",
-    "background.js": "d6ce0d68a054c31e9d4b75772c16d751aa8b334303ef72607cb32f1a2d3edf7a",
+    "background.js": "ed5521d418db115b86af29aff3ba9ce6903485dba4eb4143917e4ea9ca15b1dc",
     "chunks/abnfDiagram-N423BO3Z-VGfsnz7a.js": "f887a6d321e3ab0a1c9cc7e822aa1d6de58a0471657169ff79ad680c9a817abd",
     "chunks/arc-DMNVX9Lc.js": "151dedf43ea6186596b643fa2c7ccf0e29a1ff69d3683c503e9d43964faf4492",
     "chunks/architectureDiagram-T3A2C74G-Cb-rPjmB.js": "9b78f73bbe0e12c7f3605a0f29ca2afe9c0d88fe7f1e6f84a376d1ac629c9071",
@@ -185,7 +185,7 @@
     "chunks/vennDiagram-T6HMQDX7-sGnvkgbu.js": "b00f14fb1128e9eeec7f0173265994359f6c206449071304c3cfeffd28f82a2b",
     "chunks/wardleyDiagram-T6FBY63Y-DSfH_evl.js": "f72077462a76c5909be6b4815bbddd640260078d86d52b88dd13a314bdf32226",
     "chunks/xychartDiagram-ELKLHX3M-DB9mSsvD.js": "6feb743091294bd168b61ce82d2e48102438bcf18b746e45816438c310f317f3",
-    "content-scripts/auth-bridge.js": "6ffaa2a4f10f9928c1d679e511051122e4e119ef4e2ac6d959868fba5ad2238f",
+    "content-scripts/auth-bridge.js": "b0712ef8bac90154c69c0fb568c2c01a3a014d4cd7894a2d44edc8af71aa720f",
     "icon/design-dark.svg": "c990f59c48ced0f8bf36c7b8337ea1681c6c1760e5e236453c24f45c7a704473",
     "icon/design-light.svg": "65b1b361320de8ffffde74db14af15ea9223317eec79e4cbbe8718b5470235fd",
     "icon/design-transparent.svg": "dda0bab5de69713722564fd1fdca5500ff757e9e5cd3c5dc9a10cb1751c6eb43",
