@@ -85,6 +85,17 @@ export interface ConversationItem {
   errorMessage?: string; // User-friendly error message
   onRetry?: (itemId: string) => void | Promise<void>; // Retry callback
   turn_number?: number; // Turn number for navigation to conversation context
+  /**
+   * Which turn OF THE INVESTIGATION this row belongs to (API contract 3.5.0,
+   * FaultMaven/faultmaven#1387) — what the UI prints as "Turn N".
+   *
+   * Distinct from `turn_number` above, which is the message clock and advances
+   * on asides too. Null/absent from a server older than 3.5.0, and from a row
+   * this client minted that has not yet been reconciled against the backend;
+   * `displayedTurn` in `lib/state/turn-label` handles both. Never use it to
+   * ADDRESS a turn — see that module.
+   */
+  investigation_turn?: number | null;
 }
 
 /**

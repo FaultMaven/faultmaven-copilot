@@ -534,4 +534,181 @@ describe('useMessageSubmission', () => {
       expect(stub.data.faultmaven_current_case).toBe('real-case-id');
     });
   });
+  /**
+   * #251 — the row's "Turn N" label.
+   *
+   * `TurnResponse.investigation_turn` is the case's investigation turn AS OF
+   * the turn just submitted, which makes it the label for that row and only
+   * that row — and the same value `/messages` will return for it later, so
+   * the number does not move when the panel is reopened.
+   */
+  describe('investigation turn on the submitted row', () => {
+    const priorTurn = (n: number, investigation: number) => ({
+      id: `m-${n}`,
+      question: `q${n}`,
+      timestamp: '2026-09-01T10:00:00Z',
+      turn_number: n,
+      investigation_turn: investigation,
+      optimistic: false
+    });
+
+    it('takes the backend value onto both rows of the turn', async () => {
+      // Turn 8 of the conversation, turn 7 of the investigation: one earlier
+      // exchange was an aside.
+      useAppStore.setState({
+        conversations: { 'case-123': [priorTurn(7, 7) as any, priorTurn(8, 7) as any] }
+      });
+      const { result } = render();
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'Checking the pod memory limits.',
+        turn_number: 9,
+        investigation_turn: 8,
+        milestones_completed: [],
+        case_state: 'investigating',
+        progress_made: true,
+        attachments_processed: []
+      });
+
+      await act(async () => {
+        await result.current.handleQuerySubmit('what is the memory limit?');
+      });
+
+      const conv = useAppStore.getState().conversations['case-123'] as any[];
+      const submitted = conv.filter((m) => m.id === 'user-msg-id' || m.id === 'ai-msg-id');
+      expect(submitted).toHaveLength(2);
+      for (const row of submitted) {
+        expect(row.turn_number).toBe(9);
+        expect(row.investigation_turn).toBe(8);
+      }
+    });
+
+    it('predicts the next investigation turn while the turn is in flight', async () => {
+      // Read at the moment the request goes out — the optimistic rows are
+      // already in the store by then. Without the prediction these rows fall
+      // back to the message clock and show 9, then visibly correct to 8.
+      useAppStore.setState({
+        conversations: { 'case-123': [priorTurn(7, 7) as any, priorTurn(8, 7) as any] }
+      });
+      const { result } = render();
+
+      let inFlight: any[] = [];
+      (api.submitTurn as any).mockImplementation(async () => {
+        inFlight = (useAppStore.getState().conversations['case-123'] as any[])
+          .filter((m) => m.optimistic);
+        return {
+          agent_response: 'ok',
+          turn_number: 9,
+          investigation_turn: 8,
+          milestones_completed: [],
+          case_state: 'investigating',
+          progress_made: true,
+          attachments_processed: []
+        };
+      });
+
+      await act(async () => {
+        await result.current.handleQuerySubmit('what is the memory limit?');
+      });
+
+      expect(inFlight).toHaveLength(2);
+      expect(inFlight.map((m) => m.investigation_turn)).toEqual([8, 8]);
+      expect(inFlight.map((m) => m.turn_number)).toEqual([9, 9]);
+    });
+
+    it('corrects the prediction down when the turn was an aside', async () => {
+      // The user asks for a haiku: the message clock advances and the
+      // investigation turn does not, so the label the prediction put up is
+      // replaced by the server's.
+      useAppStore.setState({
+        conversations: { 'case-123': [priorTurn(7, 7) as any] }
+      });
+      const { result } = render();
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'Warm sun on the sill…',
+        turn_number: 8,
+        investigation_turn: 7,
+        milestones_completed: [],
+        case_state: 'investigating',
+        progress_made: false,
+        attachments_processed: []
+      });
+
+      await act(async () => {
+        await result.current.handleQuerySubmit('write me a haiku about a sleepy cat');
+      });
+
+      const conv = useAppStore.getState().conversations['case-123'] as any[];
+      const submitted = conv.filter((m) => m.id === 'user-msg-id' || m.id === 'ai-msg-id');
+      expect(submitted.map((m) => m.investigation_turn)).toEqual([7, 7]);
+      expect(submitted.map((m) => m.turn_number)).toEqual([8, 8]);
+    });
+
+    it('does not take the response value when the server sends no per-row field', async () => {
+      // `TurnResponse.investigation_turn` shipped in contract 2.7.0, the
+      // per-row `Message.investigation_turn` only in 3.5.0. Against a server
+      // in between, history rows arrive with null and fall back to the clock;
+      // adopting the response here would label this row 8 while the row above
+      // it reads 9, and reload would renumber it. The rows reading null ARE
+      // the signal that the server does not send the field.
+      useAppStore.setState({
+        conversations: {
+          'case-123': [
+            { ...priorTurn(7, 7), investigation_turn: null } as any,
+            { ...priorTurn(8, 8), investigation_turn: null } as any
+          ]
+        }
+      });
+      const { result } = render();
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok',
+        turn_number: 9,
+        investigation_turn: 8, // the 2.7.0 channel still answers
+        milestones_completed: [],
+        case_state: 'investigating',
+        progress_made: true,
+        attachments_processed: []
+      });
+
+      await act(async () => {
+        await result.current.handleQuerySubmit('what changed?');
+      });
+
+      const conv = useAppStore.getState().conversations['case-123'] as any[];
+      const submitted = conv.filter((m) => m.id === 'user-msg-id' || m.id === 'ai-msg-id');
+      expect(submitted).toHaveLength(2);
+      for (const row of submitted) {
+        expect(row.investigation_turn).toBeNull();
+        expect(row.turn_number).toBe(9);
+      }
+    });
+
+    it('leaves the label to the message clock when a server sends none', async () => {
+      // A backend older than contract 2.7.0. `null`, not 0 — 0 is a real
+      // investigation turn and would print as a turn the case has not reached.
+      useAppStore.setState({ conversations: { 'case-123': [] } });
+      const { result } = render();
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok',
+        turn_number: 1,
+        milestones_completed: [],
+        case_state: 'inquiry',
+        progress_made: false,
+        attachments_processed: []
+      });
+
+      await act(async () => {
+        await result.current.handleQuerySubmit('why is it broken?');
+      });
+
+      const conv = useAppStore.getState().conversations['case-123'] as any[];
+      for (const row of conv) {
+        expect(row.investigation_turn).toBeNull();
+        expect(row.turn_number).toBe(1);
+      }
+    });
+  });
 });

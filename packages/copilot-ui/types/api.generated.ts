@@ -4197,6 +4197,8 @@ export interface components {
             current_turn: number;
             /** Enterprise Id */
             enterprise_id: string;
+            /** Investigation Turn */
+            investigation_turn?: number | null;
             /** Is Terminal */
             is_terminal: boolean;
             /**
@@ -4747,7 +4749,10 @@ export interface components {
              */
             created_at: string;
             current_stage: components["schemas"]["InvestigationStage"] | null;
-            /** Current Turn */
+            /**
+             * Current Turn
+             * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
+             */
             current_turn: number;
             /** Description */
             description: string;
@@ -4759,6 +4764,11 @@ export interface components {
             evidence_count: number;
             /** Hypothesis Count */
             hypothesis_count: number;
+            /**
+             * Investigation Turn
+             * @description How many of this case's turns so far were investigation work (#1329/#1387) — the same quantity `TurnResponse.investigation_turn` and `CaseUIResponse.investigation_turn` report. Excludes out-of-band turns (small talk, trivia, questions about FaultMaven itself), which are answered outside the investigation: an aside advances `current_turn` and leaves this alone. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /** Is Terminal */
             is_terminal: boolean;
             /**
@@ -5014,12 +5024,20 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Current Turn */
+            /**
+             * Current Turn
+             * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
+             */
             current_turn: number;
             /** Description */
             description: string;
             /** Enterprise Id */
             enterprise_id: string;
+            /**
+             * Investigation Turn
+             * @description How many of this case's turns so far were investigation work (#1329/#1387) — the same quantity `TurnResponse.investigation_turn` and `CaseUIResponse.investigation_turn` report. Excludes out-of-band turns (small talk, trivia, questions about FaultMaven itself), which are answered outside the investigation: an aside advances `current_turn` and leaves this alone. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /** Is Terminal */
             is_terminal: boolean;
             /**
@@ -5078,7 +5096,7 @@ export interface components {
             created_at: string;
             /**
              * Current Turn
-             * @description Current turn counter
+             * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
              */
             current_turn: number;
             /**
@@ -5096,6 +5114,11 @@ export interface components {
             } | null;
             /** @description Nested inquiry phase data */
             inquiry: components["schemas"]["InquiryResponseData"];
+            /**
+             * Investigation Turn
+             * @description How many of this case's turns so far were investigation work (#1329/#1387) — the same quantity `TurnResponse.investigation_turn` reports, carried on the case read so a header or a resolution summary can show it without having just submitted a turn. Excludes out-of-band turns (small talk, trivia, questions about FaultMaven itself), which are answered outside the investigation: an aside advances `current_turn` and leaves this alone. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /**
              * @description Always 'inquiry' for this response type (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -5154,7 +5177,7 @@ export interface components {
             created_at: string;
             /**
              * Current Turn
-             * @description Current turn counter
+             * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
              */
             current_turn: number;
             /**
@@ -5170,6 +5193,11 @@ export interface components {
             disposition_eligibility?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Investigation Turn
+             * @description How many of this case's turns so far were investigation work (#1329/#1387) — the same quantity `TurnResponse.investigation_turn` reports, carried on the case read so a header or a resolution summary can show it without having just submitted a turn. Excludes out-of-band turns (small talk, trivia, questions about FaultMaven itself), which are answered outside the investigation: an aside advances `current_turn` and leaves this alone. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /**
              * Latest Evidence
              * @description Most recent evidence collected (last 5)
@@ -5242,7 +5270,7 @@ export interface components {
             created_at: string;
             /**
              * Current Turn
-             * @description Current turn counter
+             * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
              */
             current_turn: number;
             /**
@@ -5258,6 +5286,11 @@ export interface components {
             disposition_eligibility?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Investigation Turn
+             * @description How many of this case's turns so far were investigation work (#1329/#1387) — the same quantity `TurnResponse.investigation_turn` reports, carried on the case read so a header or a resolution summary can show it without having just submitted a turn. Excludes out-of-band turns (small talk, trivia, questions about FaultMaven itself), which are answered outside the investigation: an aside advances `current_turn` and leaves this alone. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /**
              * Problem Statement
              * @description Confirmed problem statement carried over from INQUIRY (sourced from case.description).
@@ -6171,6 +6204,11 @@ export interface components {
              * @description ISO 8601 datetime string (matches SQL schema)
              */
             created_at: string;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row belongs to (#1387): the message clock at this row minus the out-of-band turns at or before it. `turn_number` is the message clock and advances on every exchange, asides included (small talk, trivia, questions about FaultMaven itself); this does not, so an aside carries the same value as the investigation turn before it. A client displaying "Turn N" against a conversation row should prefer this, and keep `turn_number` for anything that ADDRESSES a turn (anchors, `uploaded_at_turn` lookups) — those are message-clock references and re-basing them breaks jump-to-turn. On the newest row this equals `TurnResponse.investigation_turn`, which is the same quantity read at the case level. Null on a row that owns no turn — a `system` notice reporting a background job, stamped with whichever turn was open when the job finished — and on a server that predates the field.
+             */
+            investigation_turn?: number | null;
             /** Message Id */
             message_id: string;
             /**

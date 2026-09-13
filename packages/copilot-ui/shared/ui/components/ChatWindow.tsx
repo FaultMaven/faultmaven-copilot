@@ -24,6 +24,7 @@ import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { ResolutionActionsCard } from "./ResolutionActionsCard";
 import { caseApi } from "../../../lib/api/case-service";
 import { createLogger } from "../../../lib/utils/logger";
+import { displayedTurn, investigationTurnFor } from "../../../lib/state/turn-label";
 import type { CaseUIResponse, UserCase } from "../../../types/case";
 
 const log = createLogger('ChatWindow');
@@ -118,7 +119,13 @@ const ChatWindowComponent = function ChatWindow({
   const conversationHistoryRef = useRef<HTMLDivElement>(null);
 
   /**
-   * Format timestamp for display with turn number
+   * Format timestamp for display with turn number.
+   *
+   * `turnNumber` is the number to PRINT, which is the investigation turn —
+   * pass it through `displayedTurn`, never `item.turn_number` directly. A
+   * falsy value prints no turn at all: that is how the notice row below drops
+   * the claim, and it also covers investigation turn 0 (an aside before the
+   * investigation has had a turn), where there is no turn to name yet.
    */
   const formatTimestampWithTurn = useCallback((timestamp: string, turnNumber?: number) => {
     const date = new Date(timestamp);
@@ -140,7 +147,28 @@ const ChatWindowComponent = function ChatWindow({
   }, []);
 
   /**
-   * Scroll to a specific turn in the conversation
+   * What to PRINT for a turn named elsewhere — the evidence surfaces, which
+   * carry `uploaded_at_turn` and would otherwise show the message clock beside
+   * a conversation showing the investigation turn.
+   *
+   * `undefined` when the row is not held (a long case trimmed to a recent
+   * suffix, or the files list rendering before the conversation delta fetch
+   * resolves), and the surfaces then print no turn at all. They must NOT fall
+   * back to the clock: that prints the other counter without saying so, and
+   * renumbers itself in place once the rows arrive.
+   */
+  const turnLabel = useCallback(
+    (messageTurn: number) => investigationTurnFor(messageTurn, conversation),
+    [conversation]
+  );
+
+  /**
+   * Scroll to a specific turn in the conversation.
+   *
+   * Takes the MESSAGE clock, not the displayed label: its callers feed it
+   * `uploaded_at_turn` from `EvidenceDetailsModal` and `CaseDetails`, which
+   * is `turn_number`, and `data-turn` on the row below is stamped with the
+   * same. Re-basing either to match the label breaks jump-to-turn silently.
    */
   const scrollToTurn = useCallback((turnNumber: number) => {
     const element = document.querySelector(`[data-turn="${turnNumber}"]`);
@@ -294,6 +322,7 @@ const ChatWindowComponent = function ChatWindow({
           initialExpanded={false}
           onStatusChangeRequest={handleStatusChangeRequest}
           onScrollToTurn={scrollToTurn}
+          turnLabel={turnLabel}
         />
       )}
 
@@ -311,7 +340,12 @@ const ChatWindowComponent = function ChatWindow({
         <div className="h-4" />
         {Array.isArray(conversation) && conversation.map((item) => (
           <React.Fragment key={item.id}>
-            {/* User Message — right-aligned bubble */}
+            {/* User Message — right-aligned bubble.
+                `data-turn` stays the MESSAGE clock while the label shows the
+                investigation turn (#251): this is the anchor `scrollToTurn`
+                queries, and it is fed `uploaded_at_turn` from the evidence
+                surfaces. The two numbers differ on any case with an aside, so
+                matching them here would break jump-to-turn. */}
             {item.question && (
               <div className="flex justify-end px-4 py-2" data-turn={item.turn_number}>
                 <div
@@ -363,7 +397,7 @@ const ChatWindowComponent = function ChatWindow({
                       <span className="text-micro text-fm-critical font-medium">Failed</span>
                     )}
                     {/* Removed "Sending..." — redundant with response loading indicator */}
-                    <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
+                    <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, displayedTurn(item))}</span>
                   </div>
                 </div>
               </div>
@@ -376,7 +410,7 @@ const ChatWindowComponent = function ChatWindow({
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <img src="/icon/square-transparent.svg" alt="FM" className="w-4 h-4 rounded" />
                   <span className="text-meta font-semibold text-fm-text-primary">FaultMaven</span>
-                  <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, item.turn_number)}</span>
+                  <span className="text-micro text-fm-text-tertiary">{formatTimestampWithTurn(item.timestamp, displayedTurn(item))}</span>
                 </div>
 
                 {/* Content elevated */}

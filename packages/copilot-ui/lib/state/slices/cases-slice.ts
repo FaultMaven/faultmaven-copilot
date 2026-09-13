@@ -269,6 +269,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
                 id: msg.message_id,
                 timestamp: msg.created_at,
                 turn_number: msg.turn_number,
+                // The label (#251). Carried per row rather than derived here:
+                // this client cannot count asides itself — the persisted
+                // conversation is capped to a recent SUFFIX
+                // (`sanitizeAndCapForPersistence`) and the delta fetch
+                // deliberately does not re-append the trimmed head, so a local
+                // count would start from the wrong base on exactly the long
+                // cases where a turn counter earns its keep.
+                investigation_turn: msg.investigation_turn ?? null,
                 optimistic: false,
                 originalId: msg.message_id,
                 question: kind === 'user' ? msg.content : undefined,

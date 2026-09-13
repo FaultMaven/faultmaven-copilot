@@ -26,6 +26,14 @@ interface EnhancedCaseHeaderProps {
   initialExpanded?: boolean;
   onStatusChangeRequest?: (newStatus: UserCaseState) => void;
   onScrollToTurn?: (turnNumber: number) => void;
+  /**
+   * How to PRINT a turn number that the surfaces below name but do not render
+   * (#251). Given the MESSAGE clock, returns the investigation turn where the
+   * conversation holds that row, and `undefined` where it does not — in which
+   * case no turn is shown. Forwarded unchanged to `CaseDetails` and on to
+   * `EvidenceDetailsModal`; see the prop's doc there.
+   */
+  turnLabel?: (messageTurn: number) => number | undefined;
 }
 
 export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
@@ -36,6 +44,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   initialExpanded = true,
   onStatusChangeRequest,
   onScrollToTurn,
+  turnLabel,
 }) => {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -154,6 +163,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
               expandedSection={expandedSection}
               onToggleSection={handleToggleSection}
               onScrollToTurn={handleScrollToTurn}
+              turnLabel={turnLabel}
             />
           </div>
         )}

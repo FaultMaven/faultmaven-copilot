@@ -24,6 +24,10 @@ import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
+import {
+  predictedInvestigationTurn,
+  serverSuppliesInvestigationTurn
+} from '../../../lib/state/turn-label';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -174,42 +178,56 @@ export function useDataUpload() {
       ? turnResponse.attachments_processed
       : localAttachments;
 
-    setConversations(prev => ({
-      ...prev,
-      [targetCaseId]: (prev[targetCaseId] || []).map(item => {
-        if (item.id === userMessageId) {
-          return {
-            ...item,
-            attachments: attachments.length > 0 ? attachments : undefined,
-            turn_number: turnResponse.turn_number,
-            optimistic: false,
-            originalId: userMessageId,
-          } as OptimisticConversationItem;
-        }
-        if (item.id === aiMessageId) {
-          return {
-            ...item,
-            response: turnResponse.agent_response || "Data uploaded and processed successfully.",
-            turn_number: turnResponse.turn_number,
-            suggestedActions: turnResponse.suggested_actions ?? null,
-            optimistic: false,
-            loading: false,
-            // Clear any error state from a prior failed attempt (#101) so a
-            // successful resubmit doesn't render red / get dropped from persist.
-            error: false,
-            failed: false,
-            errorMessage: undefined,
-            originalId: aiMessageId,
-            metadata: {
-              milestones_completed: turnResponse.milestones_completed,
-              progress_made: turnResponse.progress_made,
-              attachments_processed: turnResponse.attachments_processed,
-            },
-          } as OptimisticConversationItem;
-        }
-        return item;
-      })
-    }));
+    setConversations(prev => {
+      // See useMessageSubmission: `TurnResponse.investigation_turn` exists from
+      // contract 2.7.0 and the per-row field only from 3.5.0, so adopting the
+      // response's value against a server in between numbers one conversation
+      // two ways.
+      const rows = prev[targetCaseId] || [];
+      const investigationTurn = serverSuppliesInvestigationTurn(rows)
+        ? turnResponse.investigation_turn ?? null
+        : null;
+      return {
+        ...prev,
+        [targetCaseId]: rows.map(item => {
+          if (item.id === userMessageId) {
+            return {
+              ...item,
+              attachments: attachments.length > 0 ? attachments : undefined,
+              turn_number: turnResponse.turn_number,
+              // See useMessageSubmission: the case's investigation turn as of
+              // THIS turn is the label for this row and only this row.
+              investigation_turn: investigationTurn,
+              optimistic: false,
+              originalId: userMessageId,
+            } as OptimisticConversationItem;
+          }
+          if (item.id === aiMessageId) {
+            return {
+              ...item,
+              response: turnResponse.agent_response || "Data uploaded and processed successfully.",
+              turn_number: turnResponse.turn_number,
+              investigation_turn: investigationTurn,
+              suggestedActions: turnResponse.suggested_actions ?? null,
+              optimistic: false,
+              loading: false,
+              // Clear any error state from a prior failed attempt (#101) so a
+              // successful resubmit doesn't render red / get dropped from persist.
+              error: false,
+              failed: false,
+              errorMessage: undefined,
+              originalId: aiMessageId,
+              metadata: {
+                milestones_completed: turnResponse.milestones_completed,
+                progress_made: turnResponse.progress_made,
+                attachments_processed: turnResponse.attachments_processed,
+              },
+            } as OptimisticConversationItem;
+          }
+          return item;
+        })
+      };
+    });
 
     if (turnResponse.attachments_processed.length > 0) {
       setCaseEvidence(prev => ({
@@ -416,6 +434,14 @@ export function useDataUpload() {
         Math.max(max, msg.turn_number || 0), 0
       );
       const nextTurnNumber = highestTurn + 1;
+      // The backend's out-of-band triage never runs on a turn that carries an
+      // attachment, so for those the prediction is the answer rather than a
+      // guess. That is a property of the PAYLOAD, not of this hook:
+      // `handleTurnSubmit` accepts a query-only turn too, and UnifiedInputBar
+      // merely happens to route those through `useMessageSubmission` instead.
+      // A bare query submitted here gets an ordinary prediction, corrected by
+      // the response like any other.
+      const nextInvestigationTurn = predictedInvestigationTurn(existingMessages);
 
       const optimisticUserMessage: OptimisticConversationItem = {
         id: userMessageId,
@@ -423,6 +449,7 @@ export function useDataUpload() {
         attachments: localAttachments.length > 0 ? localAttachments : undefined,
         timestamp: messageTimestamp,
         turn_number: nextTurnNumber,
+        investigation_turn: nextInvestigationTurn ?? null,
         optimistic: true,
         loading: false,
       };
@@ -433,6 +460,7 @@ export function useDataUpload() {
         response: '',
         timestamp: messageTimestamp,
         turn_number: nextTurnNumber,
+        investigation_turn: nextInvestigationTurn ?? null,
         optimistic: true,
         loading: true,
       };

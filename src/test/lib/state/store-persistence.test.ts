@@ -214,6 +214,17 @@ describe('CONVERSATION_CACHE_VERSION', () => {
     expect(CONVERSATION_CACHE_VERSION).toBeGreaterThan(2);
   });
 
+  it('rejects caches written before rows carried an investigation turn (#251)', () => {
+    // The delta fetch re-reads only the TAIL, so a row already in the cache
+    // never gains a field a later build started reading. `investigation_turn`
+    // is a LABEL, so a mixed cache numbers one conversation two ways — old
+    // rows print the message clock, new rows print the investigation turn, and
+    // on any case with an aside those disagree. Stated as the property for the
+    // same reason as above: the question is whether this build may trust a
+    // cache the previous one wrote, not which integer says so.
+    expect(CONVERSATION_CACHE_VERSION).toBeGreaterThan(3);
+  });
+
   it('is stamped with the conversations it describes, and cleared with them', () => {
     // The version must never outlive the map it refers to: a stale stamp on an
     // absent cache would let the next build trust conversations it did not write.

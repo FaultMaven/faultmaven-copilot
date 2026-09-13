@@ -33,6 +33,10 @@ import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
+import {
+  predictedInvestigationTurn,
+  serverSuppliesInvestigationTurn
+} from '../../../lib/state/turn-label';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
@@ -331,6 +335,19 @@ export function useMessageSubmission() {
 
       setConversations(prev => {
         const conv = prev[caseId] || [];
+        // `TurnResponse.investigation_turn` shipped in contract 2.7.0 and the
+        // per-row `Message.investigation_turn` only in 3.5.0, so against a
+        // server in between one channel answers and the other does not.
+        // Taking the label from both numbers ONE conversation two ways: the
+        // history falls back to the clock while this row takes the
+        // investigation count, so it can repeat the number above it and then
+        // change when the panel is reopened. If no row here carries the field,
+        // the server does not send it — leave this row on the clock with its
+        // neighbours.
+        const adoptFromResponse = serverSuppliesInvestigationTurn(conv);
+        const investigationTurn = adoptFromResponse
+          ? response.investigation_turn ?? null
+          : null;
         return {
           ...prev,
           [caseId]: conv.map(item => {
@@ -348,6 +365,12 @@ export function useMessageSubmission() {
                 // whenever the prediction was off, putting back the duplicate
                 // it exists to prevent.
                 turn_number: response.turn_number,
+                // The label the row will keep (#251). `TurnResponse` reports
+                // the case's investigation turn AS OF this turn, so it is the
+                // right value for this row and only this row — which is also
+                // what the row will be given when it is re-read from
+                // `/messages` later, so the number does not move on reload.
+                investigation_turn: investigationTurn,
                 originalId: userMessageId
               } as OptimisticConversationItem;
             } else if (item.id === aiMessageId) {
@@ -355,6 +378,7 @@ export function useMessageSubmission() {
                 ...item,
                 response: response.agent_response,
                 turn_number: response.turn_number,
+                investigation_turn: investigationTurn,
                 suggestedActions: response.suggested_actions ?? null,
                 optimistic: false,
                 loading: false,
@@ -488,6 +512,10 @@ export function useMessageSubmission() {
       Math.max(max, msg.turn_number || 0), 0
     );
     const nextTurnNumber = highestTurn + 1;
+    // The label to show while the turn is in flight. Predicted for the same
+    // reason `nextTurnNumber` is, and replaced by the backend's value above
+    // when the response lands; see `predictedInvestigationTurn`.
+    const nextInvestigationTurn = predictedInvestigationTurn(existingMessages);
 
     const userMessage: OptimisticConversationItem = {
       id: userMessageId,
@@ -496,6 +524,7 @@ export function useMessageSubmission() {
       error: false,
       timestamp: messageTimestamp,
       turn_number: nextTurnNumber,
+      investigation_turn: nextInvestigationTurn ?? null,
       optimistic: true,
       loading: false,
       failed: false,
@@ -510,6 +539,7 @@ export function useMessageSubmission() {
       error: false,
       timestamp: messageTimestamp,
       turn_number: nextTurnNumber,
+      investigation_turn: nextInvestigationTurn ?? null,
       optimistic: true,
       loading: true,
       failed: false,

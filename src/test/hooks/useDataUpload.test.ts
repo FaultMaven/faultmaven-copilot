@@ -249,3 +249,117 @@ describe('useDataUpload — reaches storage through the host', () => {
     expect(stub.data.faultmaven_current_case).toBe('real-case-id');
   });
 });
+
+describe('useDataUpload — the submitted row\'s investigation turn (#251)', () => {
+  let stub: ReturnType<typeof createStubHost>;
+  const render = () =>
+    renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+
+  const setConversation = (rows: unknown[]) =>
+    useAppStore.setState({
+      sessionId: 'session-123',
+      activeCaseId: 'case-123',
+      conversations: { 'case-123': rows as any },
+      titleSources: {},
+      conversationTitles: {},
+      pinnedCases: new Set(),
+      caseEvidence: {}
+    });
+
+  /** An earlier aside: the clock is at 8, the investigation only at 7. */
+  const labelledRow = {
+    id: 'm-8',
+    question: 'write me a haiku',
+    timestamp: '2026-09-01T10:00:00Z',
+    turn_number: 8,
+    investigation_turn: 7,
+    optimistic: false
+  };
+
+  /** The same row as persisted before this field existed. */
+  const unlabelledRow = { ...labelledRow, investigation_turn: undefined };
+
+  const turnResponse = {
+    agent_response: 'Reading the logs now.',
+    turn_number: 9,
+    investigation_turn: 8,
+    milestones_completed: [],
+    case_state: 'investigating',
+    progress_made: true,
+    attachments_processed: []
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stub = createStubHost();
+    setHostStore(stub.store);
+    pendingOpsManager.clear();
+    OptimisticIdGenerator.resetCounters();
+  });
+
+  it('predicts the next investigation turn while the upload is in flight', async () => {
+    // A turn carrying an attachment is never an aside — the backend's
+    // out-of-band triage never runs on one — so the prediction is the answer.
+    // Without it the in-flight bubble falls back to the clock and reads 9.
+    setConversation([labelledRow]);
+    let inFlight: any[] = [];
+    (api.submitTurn as any).mockImplementation(async () => {
+      inFlight = (useAppStore.getState().conversations['case-123'] as any[])
+        .filter((m) => m.optimistic);
+      return turnResponse;
+    });
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'here are the logs' });
+    });
+
+    expect(inFlight.map((m) => m.investigation_turn)).toEqual([8, 8]);
+    expect(inFlight.map((m) => m.turn_number)).toEqual([9, 9]);
+  });
+
+  it('lets the backend correct a prediction made from a stale local copy', async () => {
+    // The prediction reads the highest investigation turn this client HOLDS.
+    // When the local copy is behind the backend — a conversation not yet
+    // delta-fetched this session — that is short, and the response is the
+    // authoritative value. This is the test that fails if the response value
+    // is dropped, because here the two genuinely differ.
+    setConversation([{ ...labelledRow, turn_number: 3, investigation_turn: 3 }]);
+    (api.submitTurn as any).mockResolvedValue(turnResponse);
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'here are the logs' });
+    });
+
+    const committed = (useAppStore.getState().conversations['case-123'] as any[])
+      .filter((m) => m.turn_number === 9);
+    expect(committed).toHaveLength(2);
+    for (const row of committed) {
+      // 8 from the response, not 4 from the prediction.
+      expect(row.investigation_turn).toBe(8);
+    }
+  });
+
+  it('does not take the response value when the server sends no per-row field', async () => {
+    // A store whose rows all read null is indistinguishable from a server
+    // older than contract 3.5.0 — and that is the honest reading, because
+    // `TurnResponse.investigation_turn` answers from 2.7.0 either way.
+    // Adopting it here would label this row from one counter while every row
+    // around it falls back to the other.
+    setConversation([unlabelledRow]);
+    (api.submitTurn as any).mockResolvedValue(turnResponse);
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'here are the logs' });
+    });
+
+    const committed = (useAppStore.getState().conversations['case-123'] as any[])
+      .filter((m) => m.turn_number === 9);
+    expect(committed).toHaveLength(2);
+    for (const row of committed) {
+      expect(row.investigation_turn).toBeNull();
+    }
+  });
+});

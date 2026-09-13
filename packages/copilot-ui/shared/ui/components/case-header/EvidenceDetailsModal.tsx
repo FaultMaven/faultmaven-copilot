@@ -8,12 +8,30 @@
 import React from 'react';
 import type { UploadedFileDetailsResponse, DerivedEvidenceSummary } from '../../../../types/case';
 
+/**
+ * The default `turnLabel`: name no turn.
+ *
+ * A surface mounted without a resolver cannot know the investigation turn, and
+ * the clock is the wrong number rather than a lesser one — see the prop's doc.
+ */
+const noTurnLabel = (): number | undefined => undefined;
+
 interface EvidenceDetailsModalProps {
   isOpen: boolean;
   evidenceDetails: UploadedFileDetailsResponse | null;
   evidenceLoading: boolean;
   onClose: () => void;
   onScrollToTurn?: (turnNumber: number) => void;
+  /**
+   * How to PRINT a turn number that this surface names but does not render
+   * (#251). Given the MESSAGE clock, returns the investigation turn where the
+   * conversation holds that row, and `undefined` where it does not — in which
+   * case NO turn is shown. Falling back to the clock would print the other
+   * counter without saying so, and renumber in place once the rows arrive.
+   * Anything passed to `onScrollToTurn` stays the clock: the anchor and the
+   * label differ by design.
+   */
+  turnLabel?: (messageTurn: number) => number | undefined;
 }
 
 export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
@@ -22,8 +40,16 @@ export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
   evidenceLoading,
   onClose,
   onScrollToTurn,
+  turnLabel = noTurnLabel,
 }) => {
   if (!isOpen) return null;
+
+  // The number to PRINT beside the file, or undefined when the conversation
+  // does not hold that row. `uploaded_at_turn` itself — the message clock —
+  // is what `onScrollToTurn` gets below; the two differ on purpose.
+  const uploadedAtTurn = evidenceDetails
+    ? turnLabel(evidenceDetails.uploaded_at_turn)
+    : undefined;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -56,10 +82,10 @@ export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
                   📄 {evidenceDetails.filename}
                 </div>
                 <div className="text-xs text-fm-text-tertiary">
-                  Uploaded at Turn {evidenceDetails.uploaded_at_turn}
+                  {uploadedAtTurn !== undefined && `Uploaded at Turn ${uploadedAtTurn}`}
                   {onScrollToTurn && (
                     <>
-                      {' · '}
+                      {uploadedAtTurn !== undefined ? ' · ' : ''}
                       <button
                         onClick={() => onScrollToTurn(evidenceDetails.uploaded_at_turn)}
                         className="text-fm-accent hover:text-fm-accent/80 hover:underline"

@@ -166,12 +166,29 @@ const MilestoneMap: React.FC<MilestoneMapProps> = ({
 
 // ==================== Main Component ====================
 
+/**
+ * The default `turnLabel`: name no turn. A surface mounted without a resolver
+ * cannot know the investigation turn, and the clock is the wrong number rather
+ * than a lesser one — see the prop's doc.
+ */
+const noTurnLabel = (): number | undefined => undefined;
+
 interface CaseDetailsProps {
   caseData: CaseUIResponse;
   activeCase: UserCase | null;
   expandedSection: string | null;
   onToggleSection: (section: string) => void;
   onScrollToTurn?: (turnNumber: number) => void;
+  /**
+   * How to PRINT a turn number that this surface names but does not render
+   * (#251). Given the MESSAGE clock, returns the investigation turn where the
+   * conversation holds that row, and `undefined` where it does not — in which
+   * case NO turn is shown. Falling back to the clock would print the other
+   * counter without saying so, and renumber in place once the rows arrive.
+   * Anything passed to `onScrollToTurn` stays the clock: the anchor and the
+   * label differ by design.
+   */
+  turnLabel?: (messageTurn: number) => number | undefined;
 }
 
 export const CaseDetails: React.FC<CaseDetailsProps> = ({
@@ -180,7 +197,17 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   expandedSection,
   onToggleSection,
   onScrollToTurn,
+  turnLabel = noTurnLabel,
 }) => {
+  // The jump chip's text. The investigation turn when the conversation holds
+  // that row, and a bare arrow when it does not — never the clock, which would
+  // be the other counter shown without saying so. `onScrollToTurn` still gets
+  // `uploaded_at_turn` itself.
+  const labelFor = (messageTurn: number) => {
+    const shown = turnLabel(messageTurn);
+    return shown === undefined ? '→ chat' : `→ T${shown}`;
+  };
+
   // Configured Dashboard URL for deep-links (NOT the backend-reported one,
   // which is localhost on a self-hosted server).
   const dashboardUrl = useConfiguredEndpoint('dashboard');
@@ -571,7 +598,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
                           className="text-fm-accent hover:text-fm-accent/80 flex-shrink-0"
                           title="Jump to turn"
                         >
-                          → T{file.uploaded_at_turn}
+                          {labelFor(file.uploaded_at_turn)}
                         </button>
                       )}
                     </div>
@@ -592,6 +619,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
         evidenceLoading={evidenceLoading}
         onClose={handleCloseEvidence}
         onScrollToTurn={onScrollToTurn}
+        turnLabel={turnLabel}
       />
     </div>
   );

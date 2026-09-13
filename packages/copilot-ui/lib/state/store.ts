@@ -50,6 +50,17 @@ export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & Pend
  *    — replacing what the user actually said. Discarding is the only way to be
  *    sure every turn number in the cache came from the backend.
  *
+ * v4 (#251) discards caches written before rows carried `investigation_turn`.
+ * The delta fetch only re-reads the TAIL, so a row already in the cache never
+ * gains a field a later build started reading — and this one is a LABEL. A
+ * mixed cache renders one conversation numbered two ways: the old rows print
+ * the message clock, the new ones print the investigation turn, and on any case
+ * with an aside those disagree. Two numbering schemes in one transcript is
+ * worse than one that is consistently wrong, which is the complaint #251 is
+ * about. Nothing here is broken by the old rows — they fall back to the clock
+ * quite happily — so this bump buys consistency rather than correctness, and
+ * that is the whole of its justification.
+ *
  * A version mismatch discards the cached conversations at hydrate
  * (`useDataRecovery`), so each case reopens at offset 0 and re-reads the whole
  * list — notices included, in backend order, with backend message_ids. Nothing
@@ -62,7 +73,7 @@ export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & Pend
  * the store may assume about the rows it already holds. Both invalidate the
  * prefix assumption the offset depends on.
  */
-export const CONVERSATION_CACHE_VERSION = 3;
+export const CONVERSATION_CACHE_VERSION = 4;
 
 /** Storage key holding {@link CONVERSATION_CACHE_VERSION} for the persisted map. */
 export const CONVERSATION_CACHE_VERSION_KEY = 'conversationCacheVersion';

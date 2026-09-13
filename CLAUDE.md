@@ -562,6 +562,29 @@ Two invariants to keep when touching the mapper:
    membership is suppressed in `ChatWindow` because the value is only whichever
    turn was open when the background job finished. `formatTimestampWithTurn` is
    called without the turn for exactly this reason.
+3. **Two turn counters, and they are not interchangeable** (#251, API contract
+   3.5.0). `turn_number` / `current_turn` is the MESSAGE clock and advances on
+   asides too — small talk, trivia, a question about FaultMaven itself.
+   `investigation_turn` is how far the investigation has got, and an aside
+   leaves it alone; it is what "Turn N" must print, via `displayedTurn`
+   (`lib/state/turn-label.ts`), which falls back to the clock for a server
+   older than 3.5.0. ⚠️ **The clock is what ADDRESSES a turn.** `data-turn` and
+   `scrollToTurn` stay on it because they are fed `uploaded_at_turn` from
+   `EvidenceDetailsModal` and `CaseDetails`; re-basing the anchor to match the
+   label breaks jump-to-turn with no error. The same split applies to the case
+   header's `T{n}` and the resolution card's "N turns". Those two evidence
+   surfaces NAME a turn they do not render, so they take a `turnLabel`
+   resolver (threaded `ChatWindow` → `EnhancedCaseHeader` → `CaseDetails` →
+   `EvidenceDetailsModal`, backed by `investigationTurnFor`) to print the
+   number the conversation prints — while still handing `onScrollToTurn` the
+   raw `uploaded_at_turn`. Label and anchor differ on purpose. That resolver
+   returns `undefined` when the conversation does not hold the row, and those
+   surfaces then print NO turn: falling back to the clock would show the other
+   counter without saying so, and renumber in place once the delta fetch lands.
+   ⚠️ Adopting `TurnResponse.investigation_turn` onto a submitted row is gated
+   on `serverSuppliesInvestigationTurn` — that field exists from contract
+   2.7.0 and the per-row one only from 3.5.0, so against a server in between,
+   taking both would number one conversation two ways.
 
 **Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
 persisted `conversations` map, and `useDataRecovery` discards a cache carrying a

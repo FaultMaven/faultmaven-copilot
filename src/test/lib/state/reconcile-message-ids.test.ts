@@ -174,3 +174,52 @@ describe('reconcileOptimisticIds', () => {
     expect(adopted.has('m-3-sys')).toBe(false);
   });
 });
+
+describe('adoption overwrites both predicted turn numbers (#251)', () => {
+  it('takes the backend investigation turn, not the local prediction', () => {
+    // `investigation_turn` is the same class of value as `turn_number` here:
+    // both were written by this client as predictions. The local guess is
+    // `highest + 1`, and on a turn the backend classified as an ASIDE the
+    // truth is `highest` — so leaving the prediction in place strands the row
+    // one label too high for the life of the cache, since the id-dedup then
+    // blocks any correction.
+    const existing = [
+      row({ id: 'opt_msg_1', question: 'write me a haiku', turn_number: 8, investigation_turn: 8 })
+    ];
+    const incoming = [
+      row({ id: 'm-8-u', question: 'write me a haiku', turn_number: 8, investigation_turn: 7 })
+    ];
+
+    const { rows, adopted } = reconcileOptimisticIds(existing, incoming);
+
+    expect(adopted.has('m-8-u')).toBe(true);
+    expect(rows[0].id).toBe('m-8-u');
+    expect(rows[0].turn_number).toBe(8);
+    expect(rows[0].investigation_turn).toBe(7);
+  });
+
+  it('adopts investigation turn 0 rather than reading it as absent', () => {
+    // A greeting on a fresh case sits at 0. `||` here would keep the local 1.
+    const existing = [
+      row({ id: 'opt_msg_1', question: 'hi', turn_number: 1, investigation_turn: 1 })
+    ];
+    const incoming = [
+      row({ id: 'm-1-u', question: 'hi', turn_number: 1, investigation_turn: 0 })
+    ];
+
+    const { rows } = reconcileOptimisticIds(existing, incoming);
+    expect(rows[0].investigation_turn).toBe(0);
+  });
+
+  it('writes null when the backend row carries none', () => {
+    // An older server: the row must not keep a prediction the backend cannot
+    // confirm, or one conversation ends up numbered two ways.
+    const existing = [
+      row({ id: 'opt_msg_1', question: 'q', turn_number: 4, investigation_turn: 4 })
+    ];
+    const incoming = [row({ id: 'm-4-u', question: 'q', turn_number: 4 })];
+
+    const { rows } = reconcileOptimisticIds(existing, incoming);
+    expect(rows[0].investigation_turn).toBeNull();
+  });
+});
