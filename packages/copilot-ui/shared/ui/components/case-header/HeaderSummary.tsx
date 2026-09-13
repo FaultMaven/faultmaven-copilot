@@ -362,7 +362,13 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
         )}
 
         <span className="text-fm-text-tertiary">·</span>
-        <span className="text-fm-text-secondary">T{caseData.current_turn}</span>
+        {/* The INVESTIGATION turn, not the message clock (#251): an aside —
+            small talk, trivia, a question about FaultMaven itself — advances
+            `current_turn` and must leave this alone, which is the #1329
+            symptom ("State: investigating Turn 8" after a haiku) read off the
+            header. Falls back to the clock on a server older than contract
+            3.5.0. */}
+        <span className="text-fm-text-secondary">T{caseData.investigation_turn ?? caseData.current_turn}</span>
         <span className="text-fm-text-tertiary">·</span>
         <span>{formatTimeAgo(caseData.updated_at)}</span>
 

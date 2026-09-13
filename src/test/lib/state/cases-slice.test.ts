@@ -121,6 +121,35 @@ describe('cases-slice', () => {
       expect(conv.map((m: any) => m.id)).toEqual(['real-1', 'real-2']);
     });
 
+    it('carries the row\'s investigation turn, which it cannot derive itself (#251)', async () => {
+      // The label ChatWindow prints. It has to come off the row: this client
+      // caps a persisted conversation to a recent SUFFIX
+      // (`sanitizeAndCapForPersistence`) and the delta fetch deliberately does
+      // not re-append the trimmed head, so counting non-aside turns locally
+      // would start from the wrong base on exactly the long cases where a turn
+      // counter is worth having.
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'm-7-u', role: 'user', content: 'logs', turn_number: 7, investigation_turn: 7 },
+          // The aside: the message clock moved, the investigation turn did not.
+          { message_id: 'm-8-u', role: 'user', content: 'write a haiku', turn_number: 8, investigation_turn: 7 },
+          // A row from a server older than contract 3.5.0 reads as absent, not
+          // as zero — ChatWindow falls back to the clock for it.
+          { message_id: 'm-9-u', role: 'user', content: 'and now?', turn_number: 9 }
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-turns');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const conv = useAppStore.getState().conversations['case-turns'] as any[];
+      expect(conv.map((m) => [m.turn_number, m.investigation_turn])).toEqual([
+        [7, 7],
+        [8, 7],
+        [9, null]
+      ]);
+    });
+
     it('keeps a system turn as a notice instead of dropping it (#209)', async () => {
       // The backend role CHECK admits 'system', and that is the channel the
       // runbook-conversion outcome travels on — including the FAILURE notice,

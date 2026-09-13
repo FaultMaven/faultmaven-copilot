@@ -24,6 +24,7 @@ import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
+import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -182,6 +183,9 @@ export function useDataUpload() {
             ...item,
             attachments: attachments.length > 0 ? attachments : undefined,
             turn_number: turnResponse.turn_number,
+            // See useMessageSubmission: the case's investigation turn as of
+            // THIS turn is the label for this row and only this row.
+            investigation_turn: turnResponse.investigation_turn ?? null,
             optimistic: false,
             originalId: userMessageId,
           } as OptimisticConversationItem;
@@ -191,6 +195,7 @@ export function useDataUpload() {
             ...item,
             response: turnResponse.agent_response || "Data uploaded and processed successfully.",
             turn_number: turnResponse.turn_number,
+            investigation_turn: turnResponse.investigation_turn ?? null,
             suggestedActions: turnResponse.suggested_actions ?? null,
             optimistic: false,
             loading: false,
@@ -416,6 +421,10 @@ export function useDataUpload() {
         Math.max(max, msg.turn_number || 0), 0
       );
       const nextTurnNumber = highestTurn + 1;
+      // A turn carrying an attachment is never an aside — the backend's
+      // out-of-band triage never runs on one — so the prediction here is the
+      // answer, not a guess. See `predictedInvestigationTurn`.
+      const nextInvestigationTurn = predictedInvestigationTurn(existingMessages);
 
       const optimisticUserMessage: OptimisticConversationItem = {
         id: userMessageId,
@@ -423,6 +432,7 @@ export function useDataUpload() {
         attachments: localAttachments.length > 0 ? localAttachments : undefined,
         timestamp: messageTimestamp,
         turn_number: nextTurnNumber,
+        investigation_turn: nextInvestigationTurn ?? null,
         optimistic: true,
         loading: false,
       };
@@ -433,6 +443,7 @@ export function useDataUpload() {
         response: '',
         timestamp: messageTimestamp,
         turn_number: nextTurnNumber,
+        investigation_turn: nextInvestigationTurn ?? null,
         optimistic: true,
         loading: true,
       };

@@ -204,7 +204,20 @@ export interface AttachmentResult {
  */
 export interface TurnResponse {
   agent_response: string;
+  /**
+   * The MESSAGE clock. Advances on every exchange, asides included, and is
+   * what evidence `uploaded_at_turn` and the conversation anchors are keyed
+   * on — so use it to ADDRESS a turn, not to display one.
+   */
   turn_number: number;
+  /**
+   * How many of the case's turns so far were investigation work (API contract
+   * 2.7.0 / 3.5.0, FaultMaven/faultmaven#1329). This is what a client shows as
+   * "Turn N": an out-of-band exchange — small talk, trivia, a question about
+   * FaultMaven itself — advances `turn_number` and leaves this alone. Optional
+   * because a server older than 2.7.0 does not send it.
+   */
+  investigation_turn?: number | null;
   milestones_completed: string[];
   case_state: CaseState;
   progress_made: boolean;

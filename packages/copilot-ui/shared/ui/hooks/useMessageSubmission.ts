@@ -33,6 +33,7 @@ import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
+import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
@@ -348,6 +349,12 @@ export function useMessageSubmission() {
                 // whenever the prediction was off, putting back the duplicate
                 // it exists to prevent.
                 turn_number: response.turn_number,
+                // The label the row will keep (#251). `TurnResponse` reports
+                // the case's investigation turn AS OF this turn, so it is the
+                // right value for this row and only this row — which is also
+                // what the row will be given when it is re-read from
+                // `/messages` later, so the number does not move on reload.
+                investigation_turn: response.investigation_turn ?? null,
                 originalId: userMessageId
               } as OptimisticConversationItem;
             } else if (item.id === aiMessageId) {
@@ -355,6 +362,7 @@ export function useMessageSubmission() {
                 ...item,
                 response: response.agent_response,
                 turn_number: response.turn_number,
+                investigation_turn: response.investigation_turn ?? null,
                 suggestedActions: response.suggested_actions ?? null,
                 optimistic: false,
                 loading: false,
@@ -488,6 +496,10 @@ export function useMessageSubmission() {
       Math.max(max, msg.turn_number || 0), 0
     );
     const nextTurnNumber = highestTurn + 1;
+    // The label to show while the turn is in flight. Predicted for the same
+    // reason `nextTurnNumber` is, and replaced by the backend's value above
+    // when the response lands; see `predictedInvestigationTurn`.
+    const nextInvestigationTurn = predictedInvestigationTurn(existingMessages);
 
     const userMessage: OptimisticConversationItem = {
       id: userMessageId,
@@ -496,6 +508,7 @@ export function useMessageSubmission() {
       error: false,
       timestamp: messageTimestamp,
       turn_number: nextTurnNumber,
+      investigation_turn: nextInvestigationTurn ?? null,
       optimistic: true,
       loading: false,
       failed: false,
@@ -510,6 +523,7 @@ export function useMessageSubmission() {
       error: false,
       timestamp: messageTimestamp,
       turn_number: nextTurnNumber,
+      investigation_turn: nextInvestigationTurn ?? null,
       optimistic: true,
       loading: true,
       failed: false,
