@@ -144,6 +144,31 @@ export function dashboardAdvertisesPanel(doc?: Document): boolean {
 }
 
 /**
+ * Set on `<html>` by the extension's auth bridge, valued with its version — the
+ * OLDEST half of this handshake, and the last to move here (copilot#261).
+ *
+ * It lived in `presence-marker.ts` and, separately, in the Dashboard, which is
+ * the drift this file exists to end. The failure direction is the worst of the
+ * set: rename it on one side only and `installedCopilotVersion()` returns null
+ * for every build stamping the new name. For an install with no capability
+ * attribute — anything from before capabilities — the Dashboard reads that as
+ * "nobody is listening", ASSERTS, and hands a yield to an extension that cannot
+ * release it. Tab with neither surface, and nothing red on either side.
+ */
+export const COPILOT_PRESENCE_ATTR = 'data-faultmaven-copilot';
+
+/**
+ * Dispatched on `window` once the bridge has stamped the attributes.
+ *
+ * Carries no detail: `CustomEvent.detail` can be dropped crossing the
+ * content-script → page world boundary, so this only says "look again" and the
+ * values are read back off the attributes. That is also why the bridge running
+ * at `document_end` is survivable — a consumer that read too early is told to
+ * re-read.
+ */
+export const COPILOT_PRESENCE_EVENT = 'faultmaven-copilot:ready';
+
+/**
  * What the installed extension can DO, space-separated, on `<html>` beside the
  * version (ADR-019 D2).
  *
@@ -176,31 +201,6 @@ export function dashboardAdvertisesPanel(doc?: Document): boolean {
  * two move together — and `presence-marker`'s own test asserts the advertised
  * list against what is actually wired.
  */
-/**
- * Set on `<html>` by the extension's auth bridge, valued with its version — the
- * OLDEST half of this handshake, and the last to move here (copilot#261).
- *
- * It lived in `presence-marker.ts` and, separately, in the Dashboard, which is
- * the drift this file exists to end. The failure direction is the worst of the
- * set: rename it on one side only and `installedCopilotVersion()` returns null
- * for every build stamping the new name. For an install with no capability
- * attribute — anything from before capabilities — the Dashboard reads that as
- * "nobody is listening", ASSERTS, and hands a yield to an extension that cannot
- * release it. Tab with neither surface, and nothing red on either side.
- */
-export const COPILOT_PRESENCE_ATTR = 'data-faultmaven-copilot';
-
-/**
- * Dispatched on `window` once the bridge has stamped the attributes.
- *
- * Carries no detail: `CustomEvent.detail` can be dropped crossing the
- * content-script → page world boundary, so this only says "look again" and the
- * values are read back off the attributes. That is also why the bridge running
- * at `document_end` is survivable — a consumer that read too early is told to
- * re-read.
- */
-export const COPILOT_PRESENCE_EVENT = 'faultmaven-copilot:ready';
-
 export const COPILOT_CAPABILITIES_ATTR = 'data-faultmaven-copilot-capabilities';
 
 /**

@@ -7,15 +7,12 @@
  * on, so the dashboard can show an "open from your toolbar" hint instead of an
  * install CTA (a web page can't open the side panel itself).
  *
- * Contract with the dashboard — keep these names stable:
- * - sets `data-faultmaven-copilot="<version>"` on <html>
- * - dispatches a `faultmaven-copilot:ready` window event
- *
- * (The event only signals readiness; the version is read from the attribute,
- * since CustomEvent.detail can be dropped crossing the content-script → page
- * world boundary.)
+ * Contract with the dashboard: this build stamps {@link COPILOT_PRESENCE_ATTR}
+ * with its version and dispatches {@link COPILOT_PRESENCE_EVENT}. THE VALUES
+ * ARE NOT REPEATED HERE — they are the contract's, and prose naming them is a
+ * third copy that a rename leaves asserting the old names with nothing red.
+ * Their rationale lives beside them in `@faultmaven/copilot-ui/contract`.
  */
-export { COPILOT_PRESENCE_ATTR, COPILOT_PRESENCE_EVENT } from '@faultmaven/copilot-ui/contract';
 
 /**
  * The other direction — the Dashboard page announcing that IT hosts a built-in
@@ -42,16 +39,28 @@ export {
   dashboardAdvertisesPanel,
 } from '@faultmaven/copilot-ui/contract';
 
+// ONE import of the contract, and ONE re-export clause built from it. Three
+// statements naming the same specifier — a bare `export … from`, then an
+// `import` of overlapping symbols — is three binding lists to keep in sync, and
+// the `export … from` creates no local binding, which a reader has to notice.
 import {
   CAPABILITY_PANEL_WITHDRAW,
   COPILOT_CAPABILITIES_ATTR,
   COPILOT_PRESENCE_ATTR,
   COPILOT_PRESENCE_EVENT,
+  copilotCapabilities,
+  copilotImplements,
   type CopilotCapability,
 } from '@faultmaven/copilot-ui/contract';
 
-export { CAPABILITY_PANEL_WITHDRAW, COPILOT_CAPABILITIES_ATTR };
-export { copilotCapabilities, copilotImplements } from '@faultmaven/copilot-ui/contract';
+export {
+  CAPABILITY_PANEL_WITHDRAW,
+  COPILOT_CAPABILITIES_ATTR,
+  COPILOT_PRESENCE_ATTR,
+  COPILOT_PRESENCE_EVENT,
+  copilotCapabilities,
+  copilotImplements,
+};
 export type { CopilotCapability };
 
 /**

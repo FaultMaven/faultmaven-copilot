@@ -158,12 +158,30 @@ describe('the advertised capability list', () => {
     expect(COPILOT_PRESENCE_EVENT).toBe('faultmaven-copilot:ready');
   });
 
-  it('takes the presence names from the CONTRACT, not from a local literal', () => {
-    // The point of #261. Re-exporting is what makes a rename upstream reach
-    // this build; a literal here would keep stamping the old name while the
-    // Dashboard read the new one.
+  it('declares no presence name of its own — asserted against the SOURCE', async () => {
+    // The point of #261, and a value comparison cannot show it: a local literal
+    // holding the CORRECT value satisfies `toBe(CONTRACT_PRESENCE_ATTR)` just as
+    // a re-export does, so the earlier version of this test added nothing over
+    // the value pin above. Only a drifted literal failed, which that pin already
+    // caught.
+    //
+    // What actually has to stay true is structural — this module declares
+    // neither name — so it is read off the source, the way `contract-entry.test.ts`
+    // checks how the extension reaches the contract.
+    const source = await readSource('extension/auth/presence-marker.ts');
+
+    expect(source).not.toMatch(/export\s+const\s+COPILOT_PRESENCE_(ATTR|EVENT)\s*=/);
+    expect(source).toMatch(/COPILOT_PRESENCE_ATTR[\s\S]{0,400}from\s+'@faultmaven\/copilot-ui\/contract'/);
+    // …and the values still agree, so the re-export is of the right symbols.
     expect(COPILOT_PRESENCE_ATTR).toBe(CONTRACT_PRESENCE_ATTR);
     expect(COPILOT_PRESENCE_EVENT).toBe(CONTRACT_PRESENCE_EVENT);
+  });
+
+  it('proves that source check can fail', () => {
+    // A source assertion that cannot fail is the defect this block keeps
+    // finding, so the pattern is shown rejecting a local declaration.
+    const localLiteral = "export const COPILOT_PRESENCE_ATTR = 'data-faultmaven-copilot';";
+    expect(/export\s+const\s+COPILOT_PRESENCE_(ATTR|EVENT)\s*=/.test(localLiteral)).toBe(true);
   });
 });
 
