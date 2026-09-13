@@ -138,3 +138,47 @@ export function dashboardAdvertisesPanel(doc: Document = document): boolean {
     return false;
   }
 }
+
+/**
+ * What the installed extension can DO, space-separated, on `<html>` beside the
+ * version (ADR-019 D2).
+ *
+ * WHY THIS EXISTS AT ALL. The Dashboard deploys in minutes; this extension
+ * waits on Chrome Web Store review, so the field always holds Dashboards newer
+ * than the extensions talking to them. ADR-018 D0 first answered that with a
+ * version floor on the Dashboard side — and a version is a PROXY for a
+ * capability, wrong for exactly the builds we develop against: an unpacked
+ * build WITH the withdrawal listener still reports its manifest version, so the
+ * floor refused the build the feature was being tested with.
+ *
+ * A TOKEN MEANS "THIS BUILD IMPLEMENTS IT", never "this build is new enough".
+ * Forks, nightlies and unpacked builds advertise what they have.
+ *
+ * A list rather than JSON: it is read on every page load by code that must stay
+ * cheap, and a list is the whole of what is needed.
+ *
+ * READING IT, precisely — the three answers are different and a consumer must
+ * keep them apart:
+ *
+ *   attribute absent     a build from before capabilities. Nothing is claimed;
+ *                        fall back to whatever evidence you had before.
+ *   attribute empty      this build can do none of the things you asked about.
+ *                        AUTHORITATIVE — not the same as absent.
+ *   token present        this build implements that behaviour.
+ *
+ * ⚠️ A TOKEN IS A CLAIM, NOT A PROOF. A build advertising something it does not
+ * implement is worse than one that says nothing, because the consumer will
+ * trust it. The tokens live here, beside the behaviour they describe, so the
+ * two move together — and `presence-marker`'s own test asserts the advertised
+ * list against what is actually wired.
+ */
+export const COPILOT_CAPABILITIES_ATTR = 'data-faultmaven-copilot-capabilities';
+
+/**
+ * This build listens for {@link DASHBOARD_PANEL_WITHDRAWN_MESSAGE} and releases
+ * a yielded tab.
+ *
+ * The capability the Dashboard must confirm before it asserts at all: a yield
+ * handed to a build that cannot retract it is a tab with neither surface.
+ */
+export const CAPABILITY_PANEL_WITHDRAW = 'panel-withdraw';

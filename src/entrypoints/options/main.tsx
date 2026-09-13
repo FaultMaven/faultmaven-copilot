@@ -95,6 +95,7 @@ function OptionsApp() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
@@ -102,6 +103,39 @@ function OptionsApp() {
     loadSettings();
     authManager.getCurrentUser().then(setUser).catch(() => setUser(null));
   }, []);
+
+  /**
+   * Host permission as STATE, not only as a side effect of saving.
+   *
+   * Saving already requests it and refuses to persist if denied, so the
+   * configure path is covered. What was not: a grant REVOKED afterwards — from
+   * chrome://extensions, or by a profile change. Nothing re-asks, and
+   * `reconcileAuthBridgeRegistration` responds by silently unregistering the
+   * auth bridge and logging at `info`.
+   *
+   * The consequences are invisible and undiagnosable from the outside: the
+   * Dashboard's panel advertisement is never relayed, so the extension never
+   * yields and the user sees TWO chat panels — and because presence is set by
+   * that same bridge, the Dashboard cannot even detect the extension to explain
+   * it. Recovery required guessing that re-saving unchanged settings would fix
+   * it.
+   *
+   * Re-checked on the permission events, so granting from the button below (or
+   * from the browser's own UI) updates without a reload.
+   */
+  useEffect(() => {
+    const recheck = () => {
+      void refreshPermissionState();
+    };
+    recheck();
+    browser.permissions?.onAdded?.addListener(recheck);
+    browser.permissions?.onRemoved?.addListener(recheck);
+    return () => {
+      browser.permissions?.onAdded?.removeListener(recheck);
+      browser.permissions?.onRemoved?.removeListener(recheck);
+    };
+    // Re-run when the configured origins change, since that is what is checked.
+  }, [apiBaseUrl, dashboardUrl]);
 
   const handleSignOut = async () => {
     try {
@@ -112,6 +146,41 @@ function OptionsApp() {
       log.error('Sign out failed', error);
       showStatus('✗ Sign out failed', 'error');
     }
+  };
+
+  /**
+   * Do we hold host permission for the origins currently configured?
+   *
+   * `null` while unknown — so the warning never flashes on load before the
+   * answer arrives, which would tell a correctly-configured user their setup is
+   * broken for a frame.
+   */
+  const refreshPermissionState = async () => {
+    const origins = Array.from(
+      new Set([apiBaseUrl, dashboardUrl].map(originPattern).filter((o): o is string => !!o)),
+    );
+    if (origins.length === 0) {
+      setPermissionGranted(null);
+      return;
+    }
+    try {
+      setPermissionGranted(await browser.permissions.contains({ origins }));
+    } catch (error) {
+      // Cannot tell — say nothing rather than accuse a working setup.
+      log.warn('Could not read host permission state', error);
+      setPermissionGranted(null);
+    }
+  };
+
+  const handleGrantAccess = async () => {
+    const granted = await ensureOriginPermission([apiBaseUrl, dashboardUrl].filter(Boolean));
+    await refreshPermissionState();
+    showStatus(
+      granted
+        ? '✓ Access granted. The Copilot can talk to your server again.'
+        : '✗ Access was not granted.',
+      granted ? 'success' : 'error',
+    );
   };
 
   const loadSettings = async () => {
@@ -381,6 +450,25 @@ function OptionsApp() {
               {testing ? 'Testing...' : 'Test Connection'}
             </button>
           </div>
+
+          {/* Host permission — shown only when we KNOW it is missing. `null`
+              means "not asked yet", and a warning on an unknown is a warning
+              that accuses a working setup for a frame on every load. */}
+          {permissionGranted === false && (
+            <div className="mt-4 p-3 rounded-lg text-sm bg-fm-warning-bg text-fm-warning border border-fm-warning-border">
+              <p className="mb-2">
+                The Copilot does not have access to your configured server. Chat cannot sign in,
+                and on your Dashboard you may see two chat panels instead of one.
+              </p>
+              <button
+                type="button"
+                onClick={handleGrantAccess}
+                className="px-3 py-1.5 rounded-fm-btn text-sm font-medium border border-fm-warning-border hover:bg-fm-warning-bg"
+              >
+                Grant access
+              </button>
+            </div>
+          )}
 
           {/* Status Message */}
           {statusMessage && (
