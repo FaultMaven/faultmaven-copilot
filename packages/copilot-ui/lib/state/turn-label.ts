@@ -33,6 +33,13 @@ export interface TurnLabelled {
  * not yet reconciled. `??` rather than `||` because 0 is a real answer: an
  * aside before the investigation has had a turn sits at investigation turn 0,
  * and the caller renders no label for it, which is the honest reading.
+ *
+ * ⚠️ Do not call this on a NOTICE row. The server sends null there too — a
+ * notice owns no turn, being stamped with whichever turn was open when its
+ * background job finished — and null is indistinguishable from "old server",
+ * so the fallback would print the very number the notice must not claim.
+ * `ChatWindow` renders notices through `formatTimestampWithTurn` with no turn
+ * at all, which is the rule; keep it that way rather than routing them here.
  */
 export function displayedTurn(item: TurnLabelled): number | undefined {
   return item.investigation_turn ?? item.turn_number;
