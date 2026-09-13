@@ -16,6 +16,7 @@
     "styles",
     "tailwind-preset.cjs",
     "tsconfig.json",
+    "turn-label.ts",
     "types"
   ],
   "scripts": {
