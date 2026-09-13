@@ -144,10 +144,17 @@ export function reconcileOptimisticIds(
       ...row,
       id: claim.row.id,
       originalId: claim.row.id,
-      // The backend copy is authoritative for both: content may have been
-      // redacted server-side, and the local turn_number was a client-side
-      // prediction for the user row.
+      // The backend copy is authoritative for all three: content may have been
+      // redacted server-side, and both turn numbers were client-side
+      // PREDICTIONS on the user row.
       turn_number: claim.row.turn_number,
+      // `investigation_turn` is the same class of guess as `turn_number`
+      // (`predictedInvestigationTurn`), so it has to be overwritten for the
+      // same reason. Leaving the prediction in place would strand a row whose
+      // turn the backend classified as an aside one label too high — for the
+      // life of the cache, since id-dedup then blocks any correction. `??
+      // null`, not `||`: 0 is a real investigation turn.
+      investigation_turn: claim.row.investigation_turn ?? null,
       // ONLY the slot they matched on. Writing all three would clear the other
       // two, and `ChatWindow` renders `question` and `response` off the same
       // item independently — so a row with two truthy slots is renderable, and

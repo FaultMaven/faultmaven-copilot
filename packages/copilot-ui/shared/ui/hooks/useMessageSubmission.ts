@@ -33,7 +33,10 @@ import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
-import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
+import {
+  predictedInvestigationTurn,
+  serverSuppliesInvestigationTurn
+} from '../../../lib/state/turn-label';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
@@ -332,6 +335,19 @@ export function useMessageSubmission() {
 
       setConversations(prev => {
         const conv = prev[caseId] || [];
+        // `TurnResponse.investigation_turn` shipped in contract 2.7.0 and the
+        // per-row `Message.investigation_turn` only in 3.5.0, so against a
+        // server in between one channel answers and the other does not.
+        // Taking the label from both numbers ONE conversation two ways: the
+        // history falls back to the clock while this row takes the
+        // investigation count, so it can repeat the number above it and then
+        // change when the panel is reopened. If no row here carries the field,
+        // the server does not send it — leave this row on the clock with its
+        // neighbours.
+        const adoptFromResponse = serverSuppliesInvestigationTurn(conv);
+        const investigationTurn = adoptFromResponse
+          ? response.investigation_turn ?? null
+          : null;
         return {
           ...prev,
           [caseId]: conv.map(item => {
@@ -354,7 +370,7 @@ export function useMessageSubmission() {
                 // right value for this row and only this row — which is also
                 // what the row will be given when it is re-read from
                 // `/messages` later, so the number does not move on reload.
-                investigation_turn: response.investigation_turn ?? null,
+                investigation_turn: investigationTurn,
                 originalId: userMessageId
               } as OptimisticConversationItem;
             } else if (item.id === aiMessageId) {
@@ -362,7 +378,7 @@ export function useMessageSubmission() {
                 ...item,
                 response: response.agent_response,
                 turn_number: response.turn_number,
-                investigation_turn: response.investigation_turn ?? null,
+                investigation_turn: investigationTurn,
                 suggestedActions: response.suggested_actions ?? null,
                 optimistic: false,
                 loading: false,

@@ -645,6 +645,46 @@ describe('useMessageSubmission', () => {
       expect(submitted.map((m) => m.turn_number)).toEqual([8, 8]);
     });
 
+    it('does not take the response value when the server sends no per-row field', async () => {
+      // `TurnResponse.investigation_turn` shipped in contract 2.7.0, the
+      // per-row `Message.investigation_turn` only in 3.5.0. Against a server
+      // in between, history rows arrive with null and fall back to the clock;
+      // adopting the response here would label this row 8 while the row above
+      // it reads 9, and reload would renumber it. The rows reading null ARE
+      // the signal that the server does not send the field.
+      useAppStore.setState({
+        conversations: {
+          'case-123': [
+            { ...priorTurn(7, 7), investigation_turn: null } as any,
+            { ...priorTurn(8, 8), investigation_turn: null } as any
+          ]
+        }
+      });
+      const { result } = render();
+
+      (api.submitTurn as any).mockResolvedValue({
+        agent_response: 'ok',
+        turn_number: 9,
+        investigation_turn: 8, // the 2.7.0 channel still answers
+        milestones_completed: [],
+        case_state: 'investigating',
+        progress_made: true,
+        attachments_processed: []
+      });
+
+      await act(async () => {
+        await result.current.handleQuerySubmit('what changed?');
+      });
+
+      const conv = useAppStore.getState().conversations['case-123'] as any[];
+      const submitted = conv.filter((m) => m.id === 'user-msg-id' || m.id === 'ai-msg-id');
+      expect(submitted).toHaveLength(2);
+      for (const row of submitted) {
+        expect(row.investigation_turn).toBeNull();
+        expect(row.turn_number).toBe(9);
+      }
+    });
+
     it('leaves the label to the message clock when a server sends none', async () => {
       // A backend older than contract 2.7.0. `null`, not 0 — 0 is a real
       // investigation turn and would print as a turn the case has not reached.

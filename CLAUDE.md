@@ -577,7 +577,14 @@ Two invariants to keep when touching the mapper:
    resolver (threaded `ChatWindow` → `EnhancedCaseHeader` → `CaseDetails` →
    `EvidenceDetailsModal`, backed by `investigationTurnFor`) to print the
    number the conversation prints — while still handing `onScrollToTurn` the
-   raw `uploaded_at_turn`. Label and anchor differ on purpose.
+   raw `uploaded_at_turn`. Label and anchor differ on purpose. That resolver
+   returns `undefined` when the conversation does not hold the row, and those
+   surfaces then print NO turn: falling back to the clock would show the other
+   counter without saying so, and renumber in place once the delta fetch lands.
+   ⚠️ Adopting `TurnResponse.investigation_turn` onto a submitted row is gated
+   on `serverSuppliesInvestigationTurn` — that field exists from contract
+   2.7.0 and the per-row one only from 3.5.0, so against a server in between,
+   taking both would number one conversation two ways.
 
 **Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
 persisted `conversations` map, and `useDataRecovery` discards a cache carrying a

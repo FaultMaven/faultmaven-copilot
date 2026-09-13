@@ -27,13 +27,13 @@ interface EnhancedCaseHeaderProps {
   onStatusChangeRequest?: (newStatus: UserCaseState) => void;
   onScrollToTurn?: (turnNumber: number) => void;
   /**
-   * How to PRINT a turn number that this surface names but does not render
-   * (#251). Given the MESSAGE clock, returns the number to show — the
-   * investigation turn where the conversation holds that row. Anything passed
-   * to `onScrollToTurn` stays the clock: the anchor and the label differ by
-   * design. Defaults to showing the clock.
+   * How to PRINT a turn number that the surfaces below name but do not render
+   * (#251). Given the MESSAGE clock, returns the investigation turn where the
+   * conversation holds that row, and `undefined` where it does not — in which
+   * case no turn is shown. Forwarded unchanged to `CaseDetails` and on to
+   * `EvidenceDetailsModal`; see the prop's doc there.
    */
-  turnLabel?: (messageTurn: number) => number;
+  turnLabel?: (messageTurn: number) => number | undefined;
 }
 
 export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({

@@ -57,22 +57,58 @@ export function displayedTurn(item: TurnLabelled): number | undefined {
  * them, and the response overwrites it either way.
  *
  * `undefined` when no local row carries an investigation turn at all: a store
- * persisted before this field existed would otherwise make the highest look
- * like 0 and the prediction like 1, which is a far bigger jump than the
- * fallback it replaces. A case with no messages also returns `undefined`, and
- * there the clock fallback is right by construction — turn 1 of a case with no
- * asides yet IS investigation turn 1.
+ * persisted before this field existed, a server older than 3.5.0, or a case
+ * with no messages. There the caller falls back to the clock, which is the
+ * same thing every row around it is showing.
+ *
+ * On a BRAND-NEW case that fallback prints "Turn 1" for the in-flight bubble,
+ * and the server can still answer 0 — a whole-message greeting is classified
+ * out-of-band, so the first exchange can be an aside and the label then
+ * disappears when the response lands. That is a real one-step correction on
+ * the opening turn, and it is not avoidable client-side: nothing here can know
+ * how the message will be classified until the server says.
  */
 export function predictedInvestigationTurn(
   messages: readonly TurnLabelled[]
 ): number | undefined {
-  let highest = -1;
+  const highest = highestInvestigationTurn(messages);
+  return highest === undefined ? undefined : highest + 1;
+}
+
+/**
+ * Whether the server this conversation came from populates
+ * `Message.investigation_turn` — i.e. is on API contract 3.5.0 or later.
+ *
+ * `TurnResponse.investigation_turn` shipped in **2.7.0** and the per-row field
+ * only in **3.5.0**, so against any server in between one channel answers and
+ * the other does not. Taking the label from both would number one conversation
+ * two ways: history rows fall back to the clock while the row just submitted
+ * takes the investigation count, so the new row can repeat the number above it
+ * and then change when the panel is reopened. Asking the rows themselves is
+ * the check that needs no new endpoint — `/v1/meta/capabilities` advertises
+ * features and limits, not a contract version.
+ *
+ * False on a case with no committed rows yet, which is the honest answer: this
+ * client has seen no evidence either way, and falling back to the clock
+ * everywhere is at least self-consistent until the first delta fetch.
+ */
+export function serverSuppliesInvestigationTurn(
+  messages: readonly TurnLabelled[] | undefined
+): boolean {
+  return Array.isArray(messages) && highestInvestigationTurn(messages) !== undefined;
+}
+
+/** The largest investigation turn any row carries, or `undefined` if none does. */
+function highestInvestigationTurn(
+  messages: readonly TurnLabelled[]
+): number | undefined {
+  let highest: number | undefined;
   for (const msg of messages) {
     if (typeof msg.investigation_turn === 'number') {
-      highest = Math.max(highest, msg.investigation_turn);
+      highest = highest === undefined ? msg.investigation_turn : Math.max(highest, msg.investigation_turn);
     }
   }
-  return highest >= 0 ? highest + 1 : undefined;
+  return highest;
 }
 
 /**
@@ -90,9 +126,16 @@ export function predictedInvestigationTurn(
  *
  * `undefined` rather than a guess when the row is not loaded: the persisted
  * conversation is capped to a recent suffix, so a file uploaded early in a
- * long case has no local row to read, and the caller falls back to the clock.
- * Reading other rows is sound here in a way it is not for labelling a row —
- * this answers "what is that turn called", which is a lookup, not a count.
+ * long case has no local row to read. Reading other rows is sound here in a
+ * way it is not for labelling a row — this answers "what is that turn called",
+ * which is a lookup, not a count, and it fails visibly rather than silently.
+ *
+ * ⚠️ Callers must render NOTHING on `undefined`, not the clock. Falling back
+ * would print the other counter without saying so, and — because the files
+ * list can render before the conversation delta fetch resolves — the number
+ * would then change in place once the rows arrive. A label that appears is
+ * fine; a label that renumbers itself is the defect this whole release is
+ * about.
  */
 export function investigationTurnFor(
   messageTurn: number,

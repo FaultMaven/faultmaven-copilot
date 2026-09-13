@@ -32,12 +32,12 @@ const ResolutionActionsCardComponent: React.FC<ResolutionActionsCardProps> = ({
   // How many turns the investigation took — the INVESTIGATION count, not the
   // message clock (#251), so asides do not inflate the summary. Falls back to
   // the clock on a server older than contract 3.5.0.
-  const turnsTaken =
-    resolvedData?.investigation_turn
-    ?? (caseData as any)?.investigation_turn
-    ?? resolvedData?.current_turn
-    ?? (caseData as any)?.current_turn
-    ?? null;
+  //
+  // Read off `caseData`, not `resolvedData`: the latter is `caseData` narrowed
+  // to the resolved member, so a `resolvedData?.x ?? caseData?.x` pair is the
+  // same value twice. Every member of the union declares both fields, so this
+  // needs no cast either — which keeps a future rename visible to `tsc`.
+  const turnsTaken = caseData?.investigation_turn ?? caseData?.current_turn ?? null;
 
   const fallbackDurationMinutes = (() => {
     if (totalDurationMinutes !== null) return null;

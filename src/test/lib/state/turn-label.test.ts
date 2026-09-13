@@ -10,7 +10,8 @@ import { describe, it, expect } from 'vitest';
 import {
   displayedTurn,
   investigationTurnFor,
-  predictedInvestigationTurn
+  predictedInvestigationTurn,
+  serverSuppliesInvestigationTurn
 } from '@faultmaven/copilot-ui/lib/state/turn-label';
 
 describe('displayedTurn', () => {
@@ -107,5 +108,33 @@ describe('investigationTurnFor', () => {
     expect(
       investigationTurnFor(4, [{ turn_number: 4 }, { turn_number: 4, investigation_turn: 3 }])
     ).toBe(3);
+  });
+});
+
+describe('serverSuppliesInvestigationTurn', () => {
+  it('is true once any row carries the per-row field', () => {
+    expect(
+      serverSuppliesInvestigationTurn([
+        { turn_number: 1 },
+        { turn_number: 2, investigation_turn: 2 }
+      ])
+    ).toBe(true);
+  });
+
+  it('is false when no row carries it — an older server, or nothing fetched yet', () => {
+    // `TurnResponse.investigation_turn` shipped in contract 2.7.0 and the
+    // per-row field only in 3.5.0, so a server in between answers one channel
+    // and not the other. Rows that all read null ARE the signal.
+    expect(serverSuppliesInvestigationTurn([{ turn_number: 7 }, { turn_number: 8 }])).toBe(false);
+    expect(serverSuppliesInvestigationTurn([])).toBe(false);
+    expect(serverSuppliesInvestigationTurn(undefined)).toBe(false);
+  });
+
+  it('counts investigation turn 0 as an answer', () => {
+    // A case whose only exchange was a greeting sits at 0. `||` would read
+    // that as "no field" and put the client back on the clock.
+    expect(
+      serverSuppliesInvestigationTurn([{ turn_number: 1, investigation_turn: 0 }])
+    ).toBe(true);
   });
 });

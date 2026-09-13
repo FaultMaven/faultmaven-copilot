@@ -147,6 +147,22 @@ const ChatWindowComponent = function ChatWindow({
   }, []);
 
   /**
+   * What to PRINT for a turn named elsewhere — the evidence surfaces, which
+   * carry `uploaded_at_turn` and would otherwise show the message clock beside
+   * a conversation showing the investigation turn.
+   *
+   * `undefined` when the row is not held (a long case trimmed to a recent
+   * suffix, or the files list rendering before the conversation delta fetch
+   * resolves), and the surfaces then print no turn at all. They must NOT fall
+   * back to the clock: that prints the other counter without saying so, and
+   * renumbers itself in place once the rows arrive.
+   */
+  const turnLabel = useCallback(
+    (messageTurn: number) => investigationTurnFor(messageTurn, conversation),
+    [conversation]
+  );
+
+  /**
    * Scroll to a specific turn in the conversation.
    *
    * Takes the MESSAGE clock, not the displayed label: its callers feed it
@@ -154,19 +170,6 @@ const ChatWindowComponent = function ChatWindow({
    * is `turn_number`, and `data-turn` on the row below is stamped with the
    * same. Re-basing either to match the label breaks jump-to-turn silently.
    */
-  /**
-   * What to PRINT for a turn named elsewhere — the evidence surfaces, which
-   * carry `uploaded_at_turn` and would otherwise show the message clock beside
-   * a conversation showing the investigation turn. Falls back to the clock
-   * when the row is not loaded (a long case trimmed to a recent suffix).
-   */
-  const turnLabel = useCallback(
-    (messageTurn: number) =>
-      investigationTurnFor(messageTurn, Array.isArray(conversation) ? conversation : undefined)
-      ?? messageTurn,
-    [conversation]
-  );
-
   const scrollToTurn = useCallback((turnNumber: number) => {
     const element = document.querySelector(`[data-turn="${turnNumber}"]`);
     if (element) {
