@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  COPILOT_PRESENCE_ATTR as CONTRACT_PRESENCE_ATTR,
+  COPILOT_PRESENCE_EVENT as CONTRACT_PRESENCE_EVENT,
+} from '@faultmaven/copilot-ui/contract';
+import {
   announceCopilotPresence,
   COPILOT_PRESENCE_ATTR,
   COPILOT_PRESENCE_EVENT,
@@ -140,12 +144,26 @@ describe('the advertised capability list', () => {
     expect(COPILOT_CAPABILITIES).toEqual([CAPABILITY_PANEL_WITHDRAW]);
   });
 
-  it('pins the two names the Dashboard implements against', () => {
+  it('pins every name the Dashboard implements against', () => {
     // Same reason DASHBOARD_PANEL_ATTR is pinned above: a rename that lands
     // only in this repo leaves the Dashboard reading an attribute nobody
     // writes, and nothing is red on either side.
+    //
+    // The presence pair is the one whose failure is worst (copilot#261): lose
+    // it and the Dashboard reads a live extension as "nobody is listening",
+    // asserts, and hands a yield to a build that cannot release it.
     expect(COPILOT_CAPABILITIES_ATTR).toBe('data-faultmaven-copilot-capabilities');
     expect(CAPABILITY_PANEL_WITHDRAW).toBe('panel-withdraw');
+    expect(COPILOT_PRESENCE_ATTR).toBe('data-faultmaven-copilot');
+    expect(COPILOT_PRESENCE_EVENT).toBe('faultmaven-copilot:ready');
+  });
+
+  it('takes the presence names from the CONTRACT, not from a local literal', () => {
+    // The point of #261. Re-exporting is what makes a rename upstream reach
+    // this build; a literal here would keep stamping the old name while the
+    // Dashboard read the new one.
+    expect(COPILOT_PRESENCE_ATTR).toBe(CONTRACT_PRESENCE_ATTR);
+    expect(COPILOT_PRESENCE_EVENT).toBe(CONTRACT_PRESENCE_EVENT);
   });
 });
 

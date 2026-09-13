@@ -15,8 +15,7 @@
  * since CustomEvent.detail can be dropped crossing the content-script → page
  * world boundary.)
  */
-export const COPILOT_PRESENCE_ATTR = 'data-faultmaven-copilot';
-export const COPILOT_PRESENCE_EVENT = 'faultmaven-copilot:ready';
+export { COPILOT_PRESENCE_ATTR, COPILOT_PRESENCE_EVENT } from '@faultmaven/copilot-ui/contract';
 
 /**
  * The other direction — the Dashboard page announcing that IT hosts a built-in
@@ -46,6 +45,8 @@ export {
 import {
   CAPABILITY_PANEL_WITHDRAW,
   COPILOT_CAPABILITIES_ATTR,
+  COPILOT_PRESENCE_ATTR,
+  COPILOT_PRESENCE_EVENT,
   type CopilotCapability,
 } from '@faultmaven/copilot-ui/contract';
 
