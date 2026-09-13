@@ -46,9 +46,12 @@ export {
 import {
   CAPABILITY_PANEL_WITHDRAW,
   COPILOT_CAPABILITIES_ATTR,
+  type CopilotCapability,
 } from '@faultmaven/copilot-ui/contract';
 
 export { CAPABILITY_PANEL_WITHDRAW, COPILOT_CAPABILITIES_ATTR };
+export { copilotCapabilities, copilotImplements } from '@faultmaven/copilot-ui/contract';
+export type { CopilotCapability };
 
 /**
  * Everything THIS BUILD implements, in the order the contract declares them.
@@ -61,16 +64,28 @@ export { CAPABILITY_PANEL_WITHDRAW, COPILOT_CAPABILITIES_ATTR };
  *
  * Add to this list in the same commit that adds the behaviour, never earlier.
  */
-export const COPILOT_CAPABILITIES: readonly string[] = [CAPABILITY_PANEL_WITHDRAW];
+export const COPILOT_CAPABILITIES: readonly CopilotCapability[] = [CAPABILITY_PANEL_WITHDRAW];
 
 export function announceCopilotPresence(version: string): void {
   try {
-    // CAPABILITIES FIRST, version second. A consumer that checks capabilities
-    // before presence — which ADR-019 D3 requires, so that a build mid-write is
-    // never mistaken for "no extension at all" — sees a complete answer at
-    // every instant if the list lands first. Written the other way round there
-    // is a window in which the version is readable and the list is not, which
-    // is precisely the state that reads as "an old build".
+    // CAPABILITIES FIRST, version second — a CONVENTION, and deliberately not
+    // claimed as more than that.
+    //
+    // There is no observable window between these two statements. They run
+    // synchronously in one task, and the isolated world shares the page's event
+    // loop: no page-world read, event handler or MutationObserver callback can
+    // be delivered between them. An earlier version of this comment asserted
+    // the order closed a race that "reads as an old build". It does not — that
+    // state is unreachable — and defending an unreachable state is how a test
+    // ends up asserting nothing.
+    //
+    // The real window is elsewhere and ordering cannot touch it: this runs at
+    // `document_end`, so a consumer that reads before then sees NEITHER
+    // attribute. That is what the readiness event and the consumer's re-check
+    // are for.
+    //
+    // The order is kept because it costs nothing and stays correct if a future
+    // edit ever puts a suspension point between the two writes.
     document.documentElement.setAttribute(
       COPILOT_CAPABILITIES_ATTR,
       COPILOT_CAPABILITIES.join(' '),

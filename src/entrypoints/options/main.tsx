@@ -6,6 +6,7 @@ import { authManager } from '../../extension/auth/auth-manager';
 import type { User } from '@faultmaven/copilot-ui/lib/api/types';
 import { getApiUrl, getDashboardUrl, setEndpoints, validateEndpointUrl } from '../../extension/host/endpoints';
 import { installExtensionHostContext } from '../../extension/host/install';
+import { hasDashboardOriginPermission } from '../../extension/auth/auth-bridge-registration';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import '../../assets/styles/extension-base.css';  // preflight: this host owns the page
 import '@faultmaven/copilot-ui/styles/globals.css';
@@ -59,6 +60,33 @@ async function ensureOriginPermission(urls: string[]): Promise<boolean> {
   }
 }
 
+/**
+ * Which configured origins we hold host permission for.
+ *
+ * TWO QUESTIONS, NOT ONE. They have different consequences and different
+ * answers, and collapsing them into a union of both origins was wrong in both
+ * directions: it reported "you may see two chat panels" to someone whose
+ * Dashboard origin was fine but whose API origin was not, and it said "chat
+ * cannot sign in" when only the Dashboard origin was missing.
+ *
+ * `dashboard` is asked through `hasDashboardOriginPermission`, the SAME
+ * predicate the reconciler gates the auth bridge on, so this page and the
+ * bridge cannot disagree about whether the bridge can run.
+ *
+ * An unconfigured or unparseable URL answers `true` — there is no origin to
+ * hold a permission for, so there is nothing to warn about.
+ */
+type HostAccess = { api: boolean; dashboard: boolean };
+
+async function readHostAccess(apiBaseUrl: string, dashboardUrl: string): Promise<HostAccess> {
+  const apiOrigin = originPattern(apiBaseUrl);
+  const [api, dashboard] = await Promise.all([
+    apiOrigin ? browser.permissions.contains({ origins: [apiOrigin] }) : Promise.resolve(true),
+    dashboardUrl ? hasDashboardOriginPermission(dashboardUrl) : Promise.resolve(true),
+  ]);
+  return { api, dashboard };
+}
+
 /** Ping an API base URL's capabilities/health endpoint with a timeout. */
 async function probeApi(apiBaseUrl: string): Promise<{ ok: boolean; error?: string }> {
   const base = apiBaseUrl.replace(/\/+$/, '');
@@ -87,7 +115,12 @@ async function probeApi(apiBaseUrl: string): Promise<{ ok: boolean; error?: stri
   }
 }
 
-function OptionsApp() {
+/**
+ * Exported for test. The previous options test re-implemented this page's
+ * permission logic locally rather than importing it, so it could not have
+ * caught a defect in the page — and did not.
+ */
+export function OptionsApp() {
   const [selectedPreset, setSelectedPreset] = useState<PresetKey>('cloud');
   const [apiBaseUrl, setApiBaseUrl] = useState<string>(PRESETS.cloud.apiBaseUrl);
   const [dashboardUrl, setDashboardUrl] = useState<string>(PRESETS.cloud.dashboardUrl);
@@ -95,7 +128,20 @@ function OptionsApp() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  /**
+   * The endpoints AS PERSISTED, which is a different question from the two
+   * controlled inputs above.
+   *
+   * The permission warning is about the configuration the extension is ACTUALLY
+   * running on, and only Save changes that. Reading the draft instead meant
+   * that merely opening the Server Type dropdown and choosing "Standalone"
+   * re-checked `localhost` — an OPTIONAL host permission nobody holds until
+   * they save — and accused a correctly-configured user of a broken install,
+   * which is the precise thing the doc below says this state exists to avoid.
+   */
+  const [savedApiBaseUrl, setSavedApiBaseUrl] = useState<string>('');
+  const [savedDashboardUrl, setSavedDashboardUrl] = useState<string>('');
+  const [access, setAccess] = useState<HostAccess | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
@@ -124,18 +170,27 @@ function OptionsApp() {
    * from the browser's own UI) updates without a reload.
    */
   useEffect(() => {
+    // STALE-RESPONSE GUARD. `contains()` is a cross-process call and several can
+    // be in flight at once (mount, settings loading, a grant event). Without
+    // this, an earlier answer about origins that are no longer configured can
+    // settle last and win — suppressing the warning on a genuinely broken
+    // install, or raising it on a working one.
+    let cancelled = false;
     const recheck = () => {
-      void refreshPermissionState();
+      void refreshAccessState(() => cancelled);
     };
     recheck();
     browser.permissions?.onAdded?.addListener(recheck);
     browser.permissions?.onRemoved?.addListener(recheck);
     return () => {
+      cancelled = true;
       browser.permissions?.onAdded?.removeListener(recheck);
       browser.permissions?.onRemoved?.removeListener(recheck);
     };
-    // Re-run when the configured origins change, since that is what is checked.
-  }, [apiBaseUrl, dashboardUrl]);
+    // Keyed on the SAVED endpoints, not the inputs: typing in a URL field is
+    // not a change to what the extension is running on, and keying on the
+    // inputs re-ran this (two listener swaps and an IPC) on every keystroke.
+  }, [savedApiBaseUrl, savedDashboardUrl]);
 
   const handleSignOut = async () => {
     try {
@@ -155,29 +210,34 @@ function OptionsApp() {
    * answer arrives, which would tell a correctly-configured user their setup is
    * broken for a frame.
    */
-  const refreshPermissionState = async () => {
-    const origins = Array.from(
-      new Set([apiBaseUrl, dashboardUrl].map(originPattern).filter((o): o is string => !!o)),
-    );
-    if (origins.length === 0) {
-      setPermissionGranted(null);
-      return;
-    }
+  const refreshAccessState = async (isCancelled: () => boolean = () => false) => {
     try {
-      setPermissionGranted(await browser.permissions.contains({ origins }));
+      const next = await readHostAccess(savedApiBaseUrl, savedDashboardUrl);
+      if (!isCancelled()) setAccess(next);
     } catch (error) {
       // Cannot tell — say nothing rather than accuse a working setup.
       log.warn('Could not read host permission state', error);
-      setPermissionGranted(null);
+      if (!isCancelled()) setAccess(null);
     }
   };
 
+  /**
+   * Request the missing permissions for the SAVED endpoints.
+   *
+   * Saved, never the draft inputs. `handleSave` refuses to persist a URL that
+   * fails `validateEndpointUrl` (non-localhost must be https), so granting for
+   * the draft would hand a permanent host permission to an origin the save path
+   * would have rejected — and, since nothing persists it, one the user can
+   * neither see in settings nor revoke by changing them.
+   */
   const handleGrantAccess = async () => {
-    const granted = await ensureOriginPermission([apiBaseUrl, dashboardUrl].filter(Boolean));
-    await refreshPermissionState();
+    const granted = await ensureOriginPermission(
+      [savedApiBaseUrl, savedDashboardUrl].filter(Boolean),
+    );
+    await refreshAccessState();
     showStatus(
       granted
-        ? '✓ Access granted. The Copilot can talk to your server again.'
+        ? '✓ Access granted. Reload any open Dashboard tab to apply it there.'
         : '✗ Access was not granted.',
       granted ? 'success' : 'error',
     );
@@ -189,6 +249,8 @@ function OptionsApp() {
       const [api, dash] = await Promise.all([getApiUrl(), getDashboardUrl()]);
       setApiBaseUrl(api);
       setDashboardUrl(dash);
+      setSavedApiBaseUrl(api);
+      setSavedDashboardUrl(dash);
 
       const matched = (Object.keys(PRESETS) as PresetKey[]).find(
         key => PRESETS[key].apiBaseUrl === api && PRESETS[key].dashboardUrl === dash
@@ -294,6 +356,9 @@ function OptionsApp() {
 
       await setEndpoints({ apiBaseUrl: api, dashboardUrl: dash || undefined });
       await browser.storage.local.set({ hasCompletedFirstRun: true });
+      // These, not the inputs, are what the permission warning is about.
+      setSavedApiBaseUrl(api);
+      setSavedDashboardUrl(dash);
       showStatus('✓ Settings saved. Reload the extension to apply.', 'success');
 
       try {
@@ -451,14 +516,21 @@ function OptionsApp() {
             </button>
           </div>
 
-          {/* Host permission — shown only when we KNOW it is missing. `null`
-              means "not asked yet", and a warning on an unknown is a warning
-              that accuses a working setup for a frame on every load. */}
-          {permissionGranted === false && (
+          {/* Host permission — shown only when we KNOW something is missing.
+              `null` means "not asked yet", and a warning on an unknown is a
+              warning that accuses a working setup for a frame on every load.
+              The two origins are reported separately because they fail
+              differently: the API origin is what chat signs in through, the
+              Dashboard origin is what the auth bridge (and therefore the panel
+              yield) needs. */}
+          {access && !(access.api && access.dashboard) && (
             <div className="mt-4 p-3 rounded-lg text-sm bg-fm-warning-bg text-fm-warning border border-fm-warning-border">
               <p className="mb-2">
-                The Copilot does not have access to your configured server. Chat cannot sign in,
-                and on your Dashboard you may see two chat panels instead of one.
+                {!access.api && !access.dashboard
+                  ? 'The Copilot does not have access to your configured server. Chat cannot sign in, and on your Dashboard you may see two chat panels instead of one.'
+                  : !access.api
+                    ? 'The Copilot does not have access to your FaultMaven server, so chat cannot sign in.'
+                    : 'The Copilot does not have access to your Dashboard, so it cannot tell when the Dashboard is showing its own chat panel — you may see two chat panels instead of one.'}
               </p>
               <button
                 type="button"

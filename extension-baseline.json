@@ -25,7 +25,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "97cb1342e6acc6aefa4d909ee166387a06f11bdaf6a9a9d336eb24fa8d2080d1"
+    "sha256": "843bc073e9e3290395fbb8ddbf15e4be9fe4f496a3c85b024ab3eec2459b249d"
   },
   "iconSources": {
     "fileCount": 8,
@@ -118,7 +118,7 @@
     "assets/jetbrains-mono-vietnamese-500-normal-DNRqzVM1.woff": "6b14186bc983291a126aa8d6d9c3044415c968262279eecbb9bb194f1daf7800",
     "assets/jetbrains-mono-vietnamese-600-normal-OWROknRo.woff": "1e3421e0f17174374ea4b6103d2f0118cf914c36004ca10cd4b092b8390ee6ed",
     "assets/sidepanel_manual-DY09GgKC.css": "a2289e0121955cab64788c75782a59832df2c2f58e5d33143a1777e657477b03",
-    "background.js": "ed5521d418db115b86af29aff3ba9ce6903485dba4eb4143917e4ea9ca15b1dc",
+    "background.js": "f129a2a208942e39d3fea4c76b65d7ec803beea9f4d7fad746ee597b57a485ea",
     "chunks/abnfDiagram-N423BO3Z-Ao5O-NgW.js": "d65adbf7ef533b2d017847fd838ca643eecc993641827caab343474a0b4a2146",
     "chunks/arc-DgVhoJen.js": "be09f513365cbf4ea01ecbfeb750cc764d6a1a7814e0f839936480f481538a3c",
     "chunks/architectureDiagram-T3A2C74G-Chawh5RK.js": "80428ba0781e2aa97dac3280c8f9886eb37cebe03e2947f578d016a2ce3ccff3",
@@ -166,7 +166,7 @@
     "chunks/map-Czzmt4hB.js": "f15e10db8661ed2bf93075bcb018f62927333b9c2be5437933414af533c2d83c",
     "chunks/mermaid.core-k_H4N_CA.js": "3d394729cb96da8f1f5dac0a30a6df7489901eeb509a160056ad4bc9160123d2",
     "chunks/mindmap-definition-FAOFIHXS-BIAnNJwN.js": "0eabcb7b1548501de3c07fa4ac8f58a2e66e55e87cfbc6734897da56b475b51f",
-    "chunks/options-BYYsq7Ct.js": "130765492b6c1d2b83055d61dc7ecd8274b3d9ccf588ea54e53bfa1b54a50d6a",
+    "chunks/options-D338RDkW.js": "e6e19b79960f91be4b93ed53b2404cde89c9b9d68096ac5f8dcfdc376197004a",
     "chunks/ordinal-Cboi1Yqb.js": "71be569ce2355b7f256a834b3a4c11668fe80a880b3587c1b3b14e9e5dedf478",
     "chunks/pegDiagram-VL7TDLO6-C803kt7u.js": "320f9ce910e6a648cb01b73e5a2302cde86c1e9c15a0558030870bdf9d374f3f",
     "chunks/pieDiagram-7S7Q4E2Y-qPYzuK_L.js": "11fd84f2b74b6772b4356b369dc9791732eab4054ba3db271ac357d6fe9c84da",
@@ -197,7 +197,7 @@
     "icon/square-light.svg": "055b776191c81d19c72c87914ec2bacca30e75e57aa3aa54986af06648034a06",
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "1c5448ab1150a21287a6c85f0c1f0521c387983f4a3b4a9defe42614383b0028",
-    "options.html": "9aac8312e062c6850e5f8f391b6dba3e2b6a3ac239039bccfbb47dbf1b11d5b6",
+    "options.html": "d449ca4adae3e3b7ac60026ea6f3a1542d9eae35caa46bf9f0894c753bc019a0",
     "sidepanel_manual.html": "f09f53c271f09bf21eb83f5d103133daff39886a3454361daf1ee8d7722b1293"
   }
 }
