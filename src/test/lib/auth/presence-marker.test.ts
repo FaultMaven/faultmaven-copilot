@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  COPILOT_PRESENCE_ATTR as CONTRACT_PRESENCE_ATTR,
+  COPILOT_PRESENCE_EVENT as CONTRACT_PRESENCE_EVENT,
+} from '@faultmaven/copilot-ui/contract';
+import {
   announceCopilotPresence,
   COPILOT_PRESENCE_ATTR,
   COPILOT_PRESENCE_EVENT,
@@ -140,12 +144,44 @@ describe('the advertised capability list', () => {
     expect(COPILOT_CAPABILITIES).toEqual([CAPABILITY_PANEL_WITHDRAW]);
   });
 
-  it('pins the two names the Dashboard implements against', () => {
+  it('pins every name the Dashboard implements against', () => {
     // Same reason DASHBOARD_PANEL_ATTR is pinned above: a rename that lands
     // only in this repo leaves the Dashboard reading an attribute nobody
     // writes, and nothing is red on either side.
+    //
+    // The presence pair is the one whose failure is worst (copilot#261): lose
+    // it and the Dashboard reads a live extension as "nobody is listening",
+    // asserts, and hands a yield to a build that cannot release it.
     expect(COPILOT_CAPABILITIES_ATTR).toBe('data-faultmaven-copilot-capabilities');
     expect(CAPABILITY_PANEL_WITHDRAW).toBe('panel-withdraw');
+    expect(COPILOT_PRESENCE_ATTR).toBe('data-faultmaven-copilot');
+    expect(COPILOT_PRESENCE_EVENT).toBe('faultmaven-copilot:ready');
+  });
+
+  it('declares no presence name of its own — asserted against the SOURCE', async () => {
+    // The point of #261, and a value comparison cannot show it: a local literal
+    // holding the CORRECT value satisfies `toBe(CONTRACT_PRESENCE_ATTR)` just as
+    // a re-export does, so the earlier version of this test added nothing over
+    // the value pin above. Only a drifted literal failed, which that pin already
+    // caught.
+    //
+    // What actually has to stay true is structural — this module declares
+    // neither name — so it is read off the source, the way `contract-entry.test.ts`
+    // checks how the extension reaches the contract.
+    const source = await readSource('extension/auth/presence-marker.ts');
+
+    expect(source).not.toMatch(/export\s+const\s+COPILOT_PRESENCE_(ATTR|EVENT)\s*=/);
+    expect(source).toMatch(/COPILOT_PRESENCE_ATTR[\s\S]{0,400}from\s+'@faultmaven\/copilot-ui\/contract'/);
+    // …and the values still agree, so the re-export is of the right symbols.
+    expect(COPILOT_PRESENCE_ATTR).toBe(CONTRACT_PRESENCE_ATTR);
+    expect(COPILOT_PRESENCE_EVENT).toBe(CONTRACT_PRESENCE_EVENT);
+  });
+
+  it('proves that source check can fail', () => {
+    // A source assertion that cannot fail is the defect this block keeps
+    // finding, so the pattern is shown rejecting a local declaration.
+    const localLiteral = "export const COPILOT_PRESENCE_ATTR = 'data-faultmaven-copilot';";
+    expect(/export\s+const\s+COPILOT_PRESENCE_(ATTR|EVENT)\s*=/.test(localLiteral)).toBe(true);
   });
 });
 

@@ -25,7 +25,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "843bc073e9e3290395fbb8ddbf15e4be9fe4f496a3c85b024ab3eec2459b249d"
+    "sha256": "c0172b88e9e83aed0ba8c7097f47bbb9af8cb206823be5ecf9aa14900c413f79"
   },
   "iconSources": {
     "fileCount": 8,
@@ -185,7 +185,7 @@
     "chunks/vennDiagram-T6HMQDX7-BdhjoKYV.js": "be121bcddada15278d8fef1ba8e54c7e36551deae2c82b06a86e6d61cc0f47cb",
     "chunks/wardleyDiagram-T6FBY63Y-DBRA4xNy.js": "be884b7af4086423854d628b481f6fceb71da6ae6a6703030a97bc8a95644ad0",
     "chunks/xychartDiagram-ELKLHX3M-7hOYruvF.js": "61d20cee547e0bdee6b3643eadb2f883e072f474b5dbdd3a8a28910402df8dae",
-    "content-scripts/auth-bridge.js": "73d502ef43a31efa4da92199920883a95ea32c70fc7925d4435438d3082f1644",
+    "content-scripts/auth-bridge.js": "d4cbae4aa0de95696d1cbaaa21f9223fd82f7c12dc65e23ec290a65707f37892",
     "icon/design-dark.svg": "c990f59c48ced0f8bf36c7b8337ea1681c6c1760e5e236453c24f45c7a704473",
     "icon/design-light.svg": "65b1b361320de8ffffde74db14af15ea9223317eec79e4cbbe8718b5470235fd",
     "icon/design-transparent.svg": "dda0bab5de69713722564fd1fdca5500ff757e9e5cd3c5dc9a10cb1751c6eb43",
