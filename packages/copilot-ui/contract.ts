@@ -128,13 +128,122 @@ export const DASHBOARD_PANEL_WITHDRAWN_MESSAGE = 'FM_DASHBOARD_PANEL_WITHDRAWN';
  * Fails closed to `false`: "we could not tell" must mean "keep the extension's
  * panel", never "hide it".
  */
-export function dashboardAdvertisesPanel(doc: Document = document): boolean {
+export function dashboardAdvertisesPanel(doc?: Document): boolean {
   try {
-    const value = doc.documentElement.getAttribute(DASHBOARD_PANEL_ATTR);
+    // RESOLVED INSIDE THE TRY. As a default parameter (`doc: Document =
+    // document`) the fallback is evaluated BEFORE the try block is entered, so
+    // in a context with no DOM the ReferenceError escapes the catch this
+    // function relies on to fail closed.
+    const value = (doc ?? document).documentElement.getAttribute(DASHBOARD_PANEL_ATTR);
     if (value === null) return false;
     return value !== '' && value !== 'false' && value !== '0';
   } catch {
     // No DOM / non-page context — nothing is advertising.
     return false;
   }
+}
+
+/**
+ * What the installed extension can DO, space-separated, on `<html>` beside the
+ * version (ADR-019 D2).
+ *
+ * WHY THIS EXISTS AT ALL. The Dashboard deploys in minutes; this extension
+ * waits on Chrome Web Store review, so the field always holds Dashboards newer
+ * than the extensions talking to them. ADR-018 D0 first answered that with a
+ * version floor on the Dashboard side — and a version is a PROXY for a
+ * capability, wrong for exactly the builds we develop against: an unpacked
+ * build WITH the withdrawal listener still reports its manifest version, so the
+ * floor refused the build the feature was being tested with.
+ *
+ * A TOKEN MEANS "THIS BUILD IMPLEMENTS IT", never "this build is new enough".
+ * Forks, nightlies and unpacked builds advertise what they have.
+ *
+ * A list rather than JSON: it is read on every page load by code that must stay
+ * cheap, and a list is the whole of what is needed.
+ *
+ * READING IT, precisely — the three answers are different and a consumer must
+ * keep them apart:
+ *
+ *   attribute absent     a build from before capabilities. Nothing is claimed;
+ *                        fall back to whatever evidence you had before.
+ *   attribute empty      this build can do none of the things you asked about.
+ *                        AUTHORITATIVE — not the same as absent.
+ *   token present        this build implements that behaviour.
+ *
+ * ⚠️ A TOKEN IS A CLAIM, NOT A PROOF. A build advertising something it does not
+ * implement is worse than one that says nothing, because the consumer will
+ * trust it. The tokens live here, beside the behaviour they describe, so the
+ * two move together — and `presence-marker`'s own test asserts the advertised
+ * list against what is actually wired.
+ */
+export const COPILOT_CAPABILITIES_ATTR = 'data-faultmaven-copilot-capabilities';
+
+/**
+ * This build listens for {@link DASHBOARD_PANEL_WITHDRAWN_MESSAGE} and releases
+ * a yielded tab.
+ *
+ * The capability the Dashboard must confirm before it asserts at all: a yield
+ * handed to a build that cannot retract it is a tab with neither surface.
+ */
+export const CAPABILITY_PANEL_WITHDRAW = 'panel-withdraw';
+
+/**
+ * A capability token declared in THIS file. Typing the advertised list as
+ * `readonly CopilotCapability[]` rather than `readonly string[]` is what stops
+ * a hand-written or misspelled token — `'panel-withdrawal'` — from compiling
+ * into what a build promises. The failure that prevents is silent on both
+ * sides: the consumer simply never finds the token it was looking for and
+ * degrades forever, with nothing red anywhere.
+ */
+export type CopilotCapability = typeof CAPABILITY_PANEL_WITHDRAW;
+
+/**
+ * What the installed extension advertises, or `null` if it advertises nothing.
+ *
+ * THE NAMES WERE NEVER THE SUBTLE PART — the reading rule is, exactly as it is
+ * for {@link dashboardAdvertisesPanel}, which exists for this same reason. Two
+ * implementations of "absent vs empty vs token", or of how the list is split,
+ * are two chances to disagree, and a disagreement here is invisible: one side
+ * degrades forever while both stay green.
+ *
+ * The three answers, kept apart:
+ *
+ *   `null`   the attribute is absent — a build from before capabilities, or no
+ *            extension at all. NOTHING IS CLAIMED: fall back to whatever
+ *            evidence you had. Callers must not read this as "cannot".
+ *   `[]`     the attribute is present and empty — "this build can do none of
+ *            the things you might ask about". AUTHORITATIVE, and deliberately
+ *            distinct from `null`.
+ *   tokens   each one a promise that the behaviour is compiled into the build.
+ *
+ * Read from the DOM at call time, never cached: the marker is stamped by a
+ * content script at `document_end`, so an early read legitimately sees nothing
+ * and a later one is the read that matters.
+ *
+ * Fails to `null` rather than `[]`: "we could not tell" is the absence of
+ * evidence, not evidence of absence.
+ */
+export function copilotCapabilities(doc?: Document): readonly string[] | null {
+  try {
+    // Inside the try, for the reason given on dashboardAdvertisesPanel.
+    const raw = (doc ?? document).documentElement.getAttribute(COPILOT_CAPABILITIES_ATTR);
+    if (raw === null) return null;
+    return raw.split(/\s+/).filter(Boolean);
+  } catch {
+    // No DOM / non-page context — we cannot tell, which is not "cannot do".
+    return null;
+  }
+}
+
+/**
+ * Does the installed extension implement `token`?
+ *
+ * `false` when the attribute is ABSENT as well as when the token is missing, so
+ * a caller that wants to fall back to other evidence for a pre-capabilities
+ * build must ask {@link copilotCapabilities} for the `null` and decide for
+ * itself. That distinction is the whole point of ADR-019 D3, so this function
+ * deliberately does not make it for you.
+ */
+export function copilotImplements(token: string, doc?: Document): boolean {
+  return copilotCapabilities(doc)?.includes(token) ?? false;
 }

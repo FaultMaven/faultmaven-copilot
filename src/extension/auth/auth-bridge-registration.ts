@@ -16,6 +16,36 @@ const log = createLogger('AuthBridgeReg');
 const AUTH_BRIDGE_ID = 'auth-bridge';
 const AUTH_BRIDGE_JS = 'content-scripts/auth-bridge.js';
 
+/**
+ * The origin pattern the bridge must be registered for, or `null` if the
+ * configured Dashboard URL is not a URL at all.
+ */
+export function dashboardMatchPattern(dashboardUrl: string): string | null {
+  try {
+    return `${new URL(dashboardUrl).origin}/*`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Do we hold the host permission THE BRIDGE ACTUALLY NEEDS?
+ *
+ * Exported because the options page asks the same question in order to offer a
+ * Grant button, and two spellings of it drift in both directions at once. The
+ * bridge is gated on the DASHBOARD origin alone — not on the API origin, which
+ * the extension reaches from the background worker where host permissions work
+ * differently. A union of the two reports a broken install to someone whose
+ * bridge is registered and working, and stays quiet for someone whose is not.
+ *
+ * `false` when the URL is unusable: there is no origin to hold permission for.
+ */
+export async function hasDashboardOriginPermission(dashboardUrl: string): Promise<boolean> {
+  const matchPattern = dashboardMatchPattern(dashboardUrl);
+  if (!matchPattern) return false;
+  return browser.permissions.contains({ origins: [matchPattern] });
+}
+
 export async function unregisterAuthBridge(): Promise<void> {
   try {
     await browser.scripting.unregisterContentScripts({ ids: [AUTH_BRIDGE_ID] });
@@ -39,17 +69,16 @@ export function reconcileAuthBridgeRegistration(): Promise<void> {
 async function doReconcile(): Promise<void> {
   try {
     const dashboardUrl = await getHostEndpoints().dashboardUrl();
-    let matchPattern: string;
-    try {
-      matchPattern = `${new URL(dashboardUrl).origin}/*`;
-    } catch {
+    const matchPattern = dashboardMatchPattern(dashboardUrl);
+    if (!matchPattern) {
       log.warn('Invalid dashboard URL, skipping registration', { dashboardUrl });
       return;
     }
 
     // Only register where we hold host permission; the bridge can't run there
     // otherwise. It registers once permission is granted or the URL changes.
-    const hasPerm = await browser.permissions.contains({ origins: [matchPattern] });
+    // Same predicate the options page offers its Grant button on.
+    const hasPerm = await hasDashboardOriginPermission(dashboardUrl);
     if (!hasPerm) {
       await unregisterAuthBridge();
       log.info('No host permission for dashboard origin yet', { matchPattern });
