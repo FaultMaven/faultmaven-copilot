@@ -64,7 +64,20 @@ export function isUsableTimestamp(value: unknown): value is number {
 }
 
 /**
- * The same rule, as a narrowing read: the timestamp, or `null`.
+ * Is this a DURATION we can turn into a timestamp?
+ *
+ * Separate from `isUsableTimestamp` because the fields differ in kind and in
+ * what counts as valid: `expires_in` is seconds-from-now, and zero or negative
+ * is not merely odd but produces an `expires_at` already in the past at the
+ * instant of sign-in. Validating a duration with the timestamp predicate let
+ * `expires_in: 0` through.
+ */
+export function isUsableDuration(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+/**
+ * `isUsableTimestamp` as a narrowing read: the timestamp, or `null`.
  *
  * Lives beside the predicate rather than being re-spelled in the reader, so
  * there is one rule with one home — a second *name* for it in `token-manager`

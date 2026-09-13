@@ -645,8 +645,45 @@ describe('Authentication API', () => {
     });
 
     const REVOKE_URL = 'https://api.faultmaven.ai/api/v1/auth/oauth/revoke';
+    const REVOKE_HANDOFF = { action: 'revokeRefreshToken', refreshToken: 'refresh-token' };
 
-    it('OAuth mode: best-effort revokes the refresh token server-side before teardown', async () => {
+    const signedInWithRefreshToken = () =>
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'token-to-clear' },
+        access_token: 'token-to-clear',
+        expires_at: Date.now() + 3600000,
+        refresh_token: 'refresh-token',
+        refresh_expires_at: Date.now() + 604800000
+      });
+
+    it('hands the refresh token to the worker instead of calling from here', async () => {
+      // The call itself is asserted in revoke-refresh-token.test.ts. What
+      // belongs to `logoutAuth` is that it does NOT make it: an un-awaited fetch
+      // belongs to the document that started it, and this one runs in the side
+      // panel — a user who signs out and closes the panel would take it with
+      // them. The auth mode is not consulted here either; the worker's copy
+      // decides that.
+      signedInWithRefreshToken();
+
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
+
+      await logoutAuth();
+
+      await vi.waitFor(() =>
+        expect(mockBrowserRuntime.sendMessage).toHaveBeenCalledWith(REVOKE_HANDOFF)
+      );
+      expect(fetch).not.toHaveBeenCalledWith(REVOKE_URL, expect.anything());
+      // Local teardown still runs.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      );
+    });
+
+    it('makes the call here when the hand-off cannot be delivered', async () => {
+      // No worker listening — an evicted worker, or `logoutAuth` called FROM the
+      // worker, where Chrome does not deliver a message to the sender's own
+      // listener. The fallback is what keeps the hand-off strictly better than
+      // the direct call rather than a new way to lose the revoke.
       mockGetAuthConfig.mockResolvedValue({
         provider: 'oidc',
         features: {
@@ -656,38 +693,82 @@ describe('Authentication API', () => {
           requires_redirect: true
         }
       });
+      signedInWithRefreshToken();
+      mockBrowserRuntime.sendMessage.mockRejectedValue(
+        new Error('Could not establish connection. Receiving end does not exist.')
+      );
+
+      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
+
+      await logoutAuth();
+
+      await vi.waitFor(() =>
+        expect(fetch).toHaveBeenCalledWith(
+          REVOKE_URL,
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              token: 'refresh-token',
+              token_type_hint: 'refresh_token',
+              client_id: 'faultmaven-copilot'
+            })
+          })
+        )
+      );
+    });
+
+    it('neither a failed hand-off nor a failed revoke blocks logout', async () => {
+      mockGetAuthConfig.mockResolvedValue({
+        provider: 'oidc',
+        features: {
+          supports_registration: false,
+          supports_password_reset: false,
+          supports_email_verification: false,
+          requires_redirect: true
+        }
+      });
+      signedInWithRefreshToken();
+      mockBrowserRuntime.sendMessage.mockRejectedValue(new Error('no receiver'));
+
+      global.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url === REVOKE_URL) {
+          return Promise.reject(new Error('network down'));
+        }
+        return Promise.resolve(mockFetchResponse({ ok: true }));
+      });
+
+      // Logout resolves despite both failures, and reports the sign-out as
+      // unconfirmed: this body carries no `all_sessions_ended`, which is what a
+      // backend predating the field looks like. Unconfirmed, not assumed.
+      await expect(logoutAuth()).resolves.toEqual({ allSessionsEnded: false });
+      // ...the logout endpoint was still called...
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.faultmaven.ai/api/v1/auth/logout',
+        expect.objectContaining({ method: 'POST' })
+      );
+      // ...and local teardown still ran.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      );
+    });
+
+    it('with no refresh token there is nothing to hand off', async () => {
+      // Access-token-only / never-fully-authenticated. Guarded here as well as
+      // in the worker so an empty message is not sent at all.
       mockBrowserStorage.local.get.mockResolvedValue({
         authState: { access_token: 'token-to-clear' },
         access_token: 'token-to-clear',
-        expires_at: Date.now() + 3600000,
-        refresh_token: 'refresh-token',
-        refresh_expires_at: Date.now() + 604800000
+        expires_at: Date.now() + 3600000
       });
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
 
       await logoutAuth();
 
-      // `waitFor`: the revoke is deliberately NOT awaited by logoutAuth — it
-      // waits on the network and would otherwise stall the panel that asked for
-      // the sign-out. It still has to happen.
-      await vi.waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        REVOKE_URL,
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            token: 'refresh-token',
-            token_type_hint: 'refresh_token',
-            client_id: 'faultmaven-copilot'
-          })
-        })
-      ));
-      // Local teardown still runs.
-      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
-        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
+      expect(mockBrowserRuntime.sendMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'revokeRefreshToken' })
       );
+      expect(fetch).not.toHaveBeenCalledWith(REVOKE_URL, expect.anything());
     });
 
     it('refreshes a near-expiry session so the sign-out can be confirmed', async () => {
@@ -780,86 +861,6 @@ describe('Authentication API', () => {
       );
     }, 20_000);
 
-    it('OAuth mode: a failing revoke never blocks logout', async () => {
-      mockGetAuthConfig.mockResolvedValue({
-        provider: 'oidc',
-        features: {
-          supports_registration: false,
-          supports_password_reset: false,
-          supports_email_verification: false,
-          requires_redirect: true
-        }
-      });
-      mockBrowserStorage.local.get.mockResolvedValue({
-        authState: { access_token: 'token-to-clear' },
-        access_token: 'token-to-clear',
-        expires_at: Date.now() + 3600000,
-        refresh_token: 'refresh-token',
-        refresh_expires_at: Date.now() + 604800000
-      });
-
-      global.fetch = vi.fn().mockImplementation((url: string) => {
-        if (url === REVOKE_URL) {
-          return Promise.reject(new Error('network down'));
-        }
-        return Promise.resolve(mockFetchResponse({ ok: true }));
-      });
-
-      // Logout resolves despite the revoke failure, and reports the sign-out as
-      // unconfirmed: this body carries no `all_sessions_ended`, which is what a
-      // backend predating the field looks like. Unconfirmed, not assumed.
-      await expect(logoutAuth()).resolves.toEqual({ allSessionsEnded: false });
-      // ...the logout endpoint was still called...
-      expect(fetch).toHaveBeenCalledWith(
-        'https://api.faultmaven.ai/api/v1/auth/logout',
-        expect.objectContaining({ method: 'POST' })
-      );
-      // ...and local teardown still ran.
-      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
-        expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
-      );
-    });
-
-    it('local mode: does not attempt refresh-token revoke', async () => {
-      // Default mock is local mode.
-      mockBrowserStorage.local.get.mockResolvedValue({
-        authState: { access_token: 'token-to-clear' },
-        access_token: 'token-to-clear',
-        expires_at: Date.now() + 3600000,
-        refresh_token: 'refresh-token',
-        refresh_expires_at: Date.now() + 604800000
-      });
-
-      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
-
-      await logoutAuth();
-
-      expect(fetch).not.toHaveBeenCalledWith(REVOKE_URL, expect.anything());
-    });
-
-    it('OAuth mode with no refresh token: does not attempt revoke', async () => {
-      mockGetAuthConfig.mockResolvedValue({
-        provider: 'oidc',
-        features: {
-          supports_registration: false,
-          supports_password_reset: false,
-          supports_email_verification: false,
-          requires_redirect: true
-        }
-      });
-      // No refresh_token in storage (access-token-only / never-fully-authenticated).
-      mockBrowserStorage.local.get.mockResolvedValue({
-        authState: { access_token: 'token-to-clear' },
-        access_token: 'token-to-clear',
-        expires_at: Date.now() + 3600000
-      });
-
-      global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
-
-      await logoutAuth();
-
-      expect(fetch).not.toHaveBeenCalledWith(REVOKE_URL, expect.anything());
-    });
   });
 
   describe('Authenticated API calls', () => {

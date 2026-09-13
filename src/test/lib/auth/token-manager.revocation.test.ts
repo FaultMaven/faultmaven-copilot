@@ -667,3 +667,60 @@ describe('TokenManager — an unmeasurable expiry heals', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * An early return must never disagree with the terminal branch below it.
+ *
+ * `assess()` answers the unmeasurable-expiry case before it reaches the terminal
+ * logic, and that early return gated on `canRefresh` — which additionally
+ * requires an OPEN refresh window. So a held refresh token past its window fell
+ * through to `usable`: the stale access token presented on every request
+ * forever, no refresh ever attempted, and the first 401 carrying that bearer
+ * routed to the HARD teardown, destroying the credential the backend would
+ * still have honoured. The terminal branch answers `refreshable` for exactly
+ * that shape; the early return has to agree with it.
+ */
+describe('TokenManager — the unmeasurable-expiry branch agrees with the terminal one', () => {
+  let tokenManager: TokenManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (mockBrowserStorage.local as any).__reset();
+    mockGetAuthConfig.mockResolvedValue({ provider: 'oidc' });
+    tokenManager = new TokenManager();
+    (global as any).navigator = {};
+  });
+
+  it('refreshes a held token with no expiry AND a closed window', async () => {
+    // Reachable from a local login whose response carries `refresh_expires_in`
+    // but no usable `expires_in`: the writer stores the window and omits the
+    // expiry, and the window later closes.
+    await mockBrowserStorage.local.set({
+      access_token: 'stale',
+      token_type: 'bearer',
+      refresh_token: 'held-past-its-window',
+      refresh_expires_at: Date.now() - 1000,
+      // no expires_at
+    });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'healed', token_type: 'bearer', expires_in: 900,
+        refresh_token: 'rotated',
+      }),
+    });
+
+    expect(await tokenManager.getValidAccessToken()).toBe('healed');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('still presents it when there is genuinely nothing to refresh with', async () => {
+    await mockBrowserStorage.local.set({
+      access_token: 'unmeasurable', token_type: 'bearer',
+    });
+    global.fetch = vi.fn();
+
+    expect(await tokenManager.getValidAccessToken()).toBe('unmeasurable');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

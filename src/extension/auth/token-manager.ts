@@ -17,7 +17,7 @@ import { retryWithBackoff, isRetryableError } from '@faultmaven/copilot-ui/lib/u
 import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
 import { getAuthConfig } from './auth-config';
 import { SessionEndedError } from './session-ended-error';
-import { AUTH_STATE_KEY, CREDENTIAL_KEYS, isUsableTimestamp, timestampOrNull } from './storage-keys';
+import { AUTH_STATE_KEY, CREDENTIAL_KEYS, isUsableDuration, timestampOrNull, type CredentialKey } from './storage-keys';
 
 const log = createLogger('TokenManager');
 
@@ -130,7 +130,14 @@ export class TokenManager {
     //     presenting it converges, whereas calling it dead destroys a session
     //     that may be fine.
     if (expiry === null) {
-      return canRefresh
+      // PRESENCE, not `canRefresh`. `canRefresh` additionally requires an open
+      // window, so a held refresh token past its window fell through to
+      // `usable` — the stale token presented forever, no refresh ever
+      // attempted, and the first 401 carrying it routing to the HARD teardown
+      // that destroys the credential the backend would still have honoured.
+      // The terminal branch below already answers `refreshable` for exactly
+      // that shape; this early return must not disagree with it.
+      return tokens.refresh_token
         ? {
             kind: 'refreshable',
             refreshToken: tokens.refresh_token as string,
@@ -163,8 +170,6 @@ export class TokenManager {
       };
     }
 
-    // Nothing to refresh with. Spend what is left first — we get here inside the
-    // proactive-refresh window, not at expiry, so minutes can remain.
     // Spend what is left before anything else — we get here inside the
     // proactive-refresh window, not at expiry, so minutes can remain.
     if (spendableToken) return { kind: 'usable', accessToken: spendableToken };
@@ -409,7 +414,7 @@ export class TokenManager {
       !newTokens ||
       typeof newTokens.access_token !== 'string' ||
       typeof newTokens.refresh_token !== 'string' ||
-      !isUsableTimestamp(newTokens.expires_in)
+      !isUsableDuration(newTokens.expires_in)
     ) {
       const err: any = new Error('Token refresh returned an invalid token payload');
       err.status = 502; // synthetic, retryable
@@ -435,7 +440,7 @@ export class TokenManager {
 
     const now = Date.now();
     const expiresAt = now + newTokens.expires_in * 1000;
-    const rotated: Record<string, any> = {
+    const rotated: Partial<Record<CredentialKey, any>> & { authState?: any } = {
       access_token: newTokens.access_token,
       token_type: newTokens.token_type,
       expires_at: expiresAt,
@@ -454,7 +459,7 @@ export class TokenManager {
       },
     };
 
-    const hasRefreshWindow = isUsableTimestamp(newTokens.refresh_expires_in);
+    const hasRefreshWindow = isUsableDuration(newTokens.refresh_expires_in);
     if (hasRefreshWindow) {
       rotated.refresh_expires_at = now + newTokens.refresh_expires_in * 1000;
     }
@@ -503,11 +508,6 @@ export class TokenManager {
   }
 
   /**
-   * The one place the refresh token is read from storage on its own. Array
-   * form, like getStoredTokens: a bare string returns `{}` against the storage
-   * adapters used elsewhere, which would silently disable the compare-and-swap.
-   */
-  /**
    * The stored access token AS-IS — no refresh, no verdict, no teardown.
    *
    * The FALLBACK for callers that must not let a verdict escape. `logoutAuth`
@@ -522,6 +522,17 @@ export class TokenManager {
     return typeof access_token === 'string' ? access_token : null;
   }
 
+  /** Is ANY credential key still at rest? Used by the orphan sweep. */
+  async hasAnyCredential(): Promise<boolean> {
+    const stored = await browser.storage.local.get([...CREDENTIAL_KEYS]);
+    return CREDENTIAL_KEYS.some((k) => stored[k] !== undefined);
+  }
+
+  /**
+   * The one place the refresh token is read from storage on its own. Array
+   * form, like getStoredTokens: a bare string returns `{}` against the storage
+   * adapters used elsewhere, which would silently disable the compare-and-swap.
+   */
   async getRefreshToken(): Promise<string | null> {
     const { refresh_token } = await browser.storage.local.get(['refresh_token']);
     return typeof refresh_token === 'string' ? refresh_token : null;

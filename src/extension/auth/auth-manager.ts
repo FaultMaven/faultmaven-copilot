@@ -72,9 +72,10 @@ class AuthManager {
    * TokenManager (`access_token`, `refresh_token`, `refresh_expires_at`, …).
    *
    * clearAuthState() alone is NOT sufficient for logout: it leaves the token
-   * keys in storage, so `getAuthHeaders` keeps attaching a live Bearer and
-   * TokenManager will silently re-mint a session from the surviving
-   * `refresh_token` — the previous user stays authenticated on a shared machine.
+   * keys, and TokenManager will silently re-mint a session from the surviving
+   * `refresh_token` — the previous user stays authenticated on a shared
+   * machine. (It is TokenManager that re-mints, not `getAuthHeaders`: that
+   * reads only `transport.accessToken()` and never touches `authState`.)
    */
   async clearAllAuthData(): Promise<void> {
     // SINGLE-FLIGHTED HERE, not at one call site. Four places tear a session
@@ -84,10 +85,10 @@ class AuthManager {
     // case fetch in flight, so a revoked credential otherwise means three
     // teardowns, three cache purges and three sign-out notifications.
     //
-    // WEAKER than the Web Lock it replaces, deliberately: that lock is
-    // cross-context, this promise is per-JS-context. Sufficient because the
-    // act-site and `onUnauthorized` both run in the panel — the only context
-    // that issues panel requests.
+    // Per-JS-context, not cross-context. Sufficient because the act-site and
+    // `onUnauthorized` both run in the panel, which is the only context that
+    // issues panel requests. (It replaces no lock — `clearAllAuthData` never
+    // held one.)
     this.teardownInFlight ??= this.runTeardown().finally(() => {
       this.teardownInFlight = null;
     });
@@ -164,7 +165,11 @@ class AuthManager {
         // `isAuthenticated()` therefore asks the one question guaranteed to
         // answer false, and the sweep never fired. (The first test for this
         // staged a LIVE orphan, so it passed and proved nothing.)
-        if (await tokenManager.peekAccessToken()) {
+        // ANY credential key, not just the access token: a partially-failed
+        // teardown can leave `refresh_token` behind on its own, and gating on
+        // the access token alone left it at rest forever with nothing that
+        // would ever remove it.
+        if (await tokenManager.hasAnyCredential()) {
           log.warn('Credentials outlived their session row; clearing them');
           await tokenManager.clearTokens();
         }

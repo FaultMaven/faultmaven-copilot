@@ -14,7 +14,7 @@ import { fetchWithTimeout } from '@faultmaven/copilot-ui/lib/utils/fetch-timeout
 import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
 import { enforceUserDataScope } from './user-scope';
 import { authManager } from './auth-manager';
-import { AUTH_STATE_KEY, isUsableTimestamp, type CredentialKey } from './storage-keys';
+import { AUTH_STATE_KEY, isUsableDuration, type CredentialKey } from './storage-keys';
 import { EventBus } from '../messaging';
 import type { AuthTokenResponse, APIError } from '@faultmaven/copilot-ui/lib/api/types';
 
@@ -261,7 +261,7 @@ export class LocalAuthClient {
     // liveness read then has to rule on. Store NO expiry rather than a corrupt
     // one — and no sentinel either, so "unknown" has exactly one encoding
     // (an absent key) wherever it is read.
-    const expiresAt = isUsableTimestamp(tokenResponse.expires_in)
+    const expiresAt = isUsableDuration(tokenResponse.expires_in)
       ? Date.now() + tokenResponse.expires_in * 1000
       : null;
     const refreshToken = (tokenResponse as any).refresh_token;
@@ -299,7 +299,7 @@ export class LocalAuthClient {
     }
     if (refreshToken) {
       data.refresh_token = refreshToken;
-      if (isUsableTimestamp(refreshExpiresIn)) {
+      if (isUsableDuration(refreshExpiresIn)) {
         data.refresh_expires_at = Date.now() + refreshExpiresIn * 1000;
       } else {
         keysToRemove.push('refresh_expires_at');

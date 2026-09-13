@@ -5,7 +5,11 @@ import { browser } from 'wxt/browser';
 import { reconcileAuthBridgeRegistration } from '../extension/auth/auth-bridge-registration';
 import { initiateDashboardOAuth, cleanupOAuthState } from '../extension/auth/dashboard-oauth';
 import { enforceUserDataScope } from '../extension/auth/user-scope';
-import { isUsableTimestamp, type CredentialKey } from '../extension/auth/storage-keys';
+import {
+  REVOKE_REFRESH_TOKEN_ACTION,
+  revokeRefreshTokenBestEffort,
+} from '../extension/auth/revoke-refresh-token';
+import { AUTH_STATE_KEY, isUsableDuration, isUsableTimestamp, type CredentialKey } from '../extension/auth/storage-keys';
 import {
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
@@ -85,7 +89,7 @@ export default defineBackground({
         // dashboard's AuthState); mirror the OAuth-callback storage format here.
         if (payload?.access_token) {
           // Typed against CREDENTIAL_KEYS — see local-auth-client.storeTokens.
-          const tokenData: Partial<Record<CredentialKey, any>> = {
+          const tokenData: Partial<Record<CredentialKey, any>> & { authState?: any } = {
             access_token: payload.access_token,
             token_type: payload.token_type ?? 'bearer',
             user: payload.user,
@@ -121,7 +125,7 @@ export default defineBackground({
             // definitively rejects (identical to the OAuth-callback path).
             if (isUsableTimestamp(payload.refresh_expires_at)) {
               tokenData.refresh_expires_at = payload.refresh_expires_at;
-            } else if (isUsableTimestamp(payload.refresh_expires_in)) {
+            } else if (isUsableDuration(payload.refresh_expires_in)) {
               tokenData.refresh_expires_at = Date.now() + payload.refresh_expires_in * 1000;
             } else {
               keysToRemove.push('refresh_expires_at');
@@ -129,16 +133,25 @@ export default defineBackground({
           } else {
             keysToRemove.push('refresh_token', 'refresh_expires_at');
           }
+          // ATOMIC with the credential keys. Writing them first and `authState`
+          // afterwards leaves a window where storage says "credentials, no row"
+          // — which is exactly the orphan `reconcileSession` sweeps, so a panel
+          // mounting mid-sign-in wiped the credential the sign-in had just
+          // created and bounced the user back to the sign-in screen.
+          // `LocalAuthClient.storeTokens` already writes both in one `set()`.
+          //
+          // The row carries a SANITIZED expiry, not the raw payload's: an
+          // unusable one must be absent, never a sentinel, or every reader has
+          // to rule on it again.
+          const sanitizedRow = { ...payload };
+          if (!isUsableTimestamp(payload.expires_at)) delete sanitizedRow.expires_at;
+          tokenData[AUTH_STATE_KEY] = sanitizedRow;
+
           await browser.storage.local.set(tokenData);
           if (keysToRemove.length > 0) {
             await browser.storage.local.remove(keysToRemove);
           }
         }
-
-        // Keep the composite authState: authManager's getters read it. NOT request
-        // auth — fetch-utils.ts reads only transport.accessToken() and never
-        // mentions authState.
-        await authManager.saveAuthState(payload);
 
         // Purge a prior user's at-rest data if this bridge login hands the
         // profile to a DIFFERENT user (#144). Runs BEFORE the broadcast/reload so
@@ -376,7 +389,7 @@ export default defineBackground({
         // (which reads as never-expiring / corrupt), matching TokenManager.
         if (
           typeof tokens.access_token !== 'string' ||
-          !isUsableTimestamp(tokens.expires_in) ||
+          !isUsableDuration(tokens.expires_in) ||
           typeof tokens.user_id !== 'string' ||
           typeof tokens.username !== 'string'
         ) {
@@ -436,19 +449,30 @@ export default defineBackground({
         // field added here and forgotten in that list survives a full logout at
         // rest, with no compile error and no test that would notice.
         // Guaranteed usable: the validator above refuses the response outright
-        // unless `expires_in` passes `isUsableTimestamp`. One validator, not two
+        // unless `expires_in` passes `isUsableDuration`. One validator, not two
         // that disagree about what a valid `expires_in` is.
         const oauthExpiresAt = Date.now() + tokens.expires_in * 1000;
-        const oauthTokenData: Partial<Record<CredentialKey, any>> = {
+        const oauthTokenData: Partial<Record<CredentialKey, any>> & { authState?: any } = {
           expires_at: oauthExpiresAt,
           access_token: tokens.access_token,
           token_type: tokens.token_type,
           refresh_token: tokens.refresh_token,
           user: user
         };
-        if (isUsableTimestamp(tokens.refresh_expires_in)) {
+        if (isUsableDuration(tokens.refresh_expires_in)) {
           oauthTokenData.refresh_expires_at = Date.now() + tokens.refresh_expires_in * 1000;
         }
+
+        // ATOMIC — see handleStoreAuth. The composite row goes in the SAME write
+        // as the credential keys, so no reader can observe a half-written
+        // sign-in (credentials present, row absent) and sweep it away.
+        const authState = {
+          access_token: tokens.access_token,
+          token_type: tokens.token_type,
+          expires_at: oauthExpiresAt,
+          user: user
+        };
+        oauthTokenData[AUTH_STATE_KEY] = authState;
 
         await browser.storage.local.set(oauthTokenData);
 
@@ -456,20 +480,9 @@ export default defineBackground({
         // be inherited from the PREVIOUS session — a past expiry or a closed
         // window that this login has no business carrying. Remove, never write a
         // sentinel.
-        if (!isUsableTimestamp(tokens.refresh_expires_in)) {
+        if (!isUsableDuration(tokens.refresh_expires_in)) {
           await browser.storage.local.remove(['refresh_expires_at']);
         }
-
-        // Create auth state for compatibility with existing auth system
-        const authState = {
-          access_token: tokens.access_token,
-          token_type: tokens.token_type,
-          expires_at: oauthExpiresAt,
-          user: user
-        };
-
-        // Use AuthManager to save state
-        await authManager.saveAuthState(authState);
 
         // Purge a prior user's at-rest data if this OAuth login hands the profile
         // to a DIFFERENT user on a shared browser profile (#144). Runs BEFORE the
@@ -614,6 +627,23 @@ export default defineBackground({
       // tab dark — see the note on the function itself.
       if (request.action === "dashboardPanelWithdrawn") {
         releaseSidePanelForTab(sender?.tab?.id, 'withdrawn');
+        sendResponse({ status: "received" });
+        return false;
+      }
+
+      // The side panel's sign-out handing off its refresh-token revoke (RFC
+      // 7009). It runs HERE rather than there because an un-awaited fetch
+      // belongs to the document that started it, and a user who signs out and
+      // closes the panel would otherwise take the call with them. The worker has
+      // nobody waiting on it, so this is dispatched un-awaited too.
+      //
+      // The sender gate above is what makes carrying a refresh token in a
+      // message payload safe; `runtime.sendMessage` never reaches a content
+      // script, so the token does not enter any page's world.
+      if (request.action === REVOKE_REFRESH_TOKEN_ACTION) {
+        void revokeRefreshTokenBestEffort(
+          typeof request.refreshToken === 'string' ? request.refreshToken : null,
+        );
         sendResponse({ status: "received" });
         return false;
       }
