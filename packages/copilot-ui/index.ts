@@ -87,6 +87,33 @@ export type { ApiTransport } from './lib/api/transport';
 export { clearPersistedSession } from './lib/api/session-core';
 export type { ClearPersistedSessionOptions } from './lib/api/session-core';
 
+/**
+ * WHICH TURN A SURFACE SHOWS, as distinct from the one it addresses.
+ *
+ * Exported from the entry because the Dashboard displays turns too — a
+ * read-only transcript, a case header, an evidence list, a markdown export —
+ * and every one of them sits on the same page as this package's panel. Two
+ * implementations of "which number do I print" is two chances to print
+ * different numbers for one exchange, on one screen, which is the defect
+ * contract 3.5.0 exists to end (FaultMaven/faultmaven#1387).
+ *
+ * The names were never the hard part; the RULES are. `??` not `||` because 0
+ * is a real answer. Decide once per conversation, not per row, or one
+ * transcript is numbered two ways. Render nothing — never the clock — when a
+ * lookup misses, because a label that renumbers itself in place is the thing
+ * being fixed. Those rules now have one home.
+ *
+ * Deep imports (`/lib/state/turn-label`) stay off limits to the Dashboard, so
+ * this is the door.
+ */
+export {
+  displayedTurn,
+  predictedInvestigationTurn,
+  serverSuppliesInvestigationTurn,
+  investigationTurnFor,
+} from './lib/state/turn-label';
+export type { TurnLabelled } from './lib/state/turn-label';
+
 /** The shapes a host renders or hands in. */
 export type { UserCase, UserCaseState, Message, CaseDetail } from './types/case';
 export type { OptimisticConversationItem, PendingOperation } from './lib/optimistic';
