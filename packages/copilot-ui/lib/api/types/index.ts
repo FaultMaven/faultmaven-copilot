@@ -4,7 +4,14 @@ import type { components } from '../../../types/api.generated';
 export interface AuthState {
   access_token: string;
   token_type: 'bearer';
-  expires_at: number; // Unix timestamp
+  /**
+   * Access-token expiry, Unix ms — OPTIONAL because a login response need not
+   * carry a usable `expires_in`, and the writers deliberately store NO expiry
+   * rather than a NaN one. Required typing let `authState.expires_at - now`
+   * compile to NaN, which readers then disagreed about. Read it through the
+   * host's timestamp guard, never bare.
+   */
+  expires_at?: number;
   user: {
     user_id: string;
     username: string;

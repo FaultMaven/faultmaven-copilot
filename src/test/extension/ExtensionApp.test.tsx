@@ -59,6 +59,12 @@ vi.mock('../../extension/auth/auth-manager', () => ({
     isAuthenticated: vi.fn(async () => authState.isAuthenticated),
     getCurrentUser: vi.fn(async () => (authState.isAuthenticated ? HOST_USER : null)),
     clearAllAuthData: vi.fn().mockResolvedValue(undefined),
+    // Startup's single pass: reconcileSession returns the state it validated and
+    // userFromAuthState maps it, so both must answer from the same fixture the
+    // other methods do — stubbing them independently is how the panel came to
+    // render signed-out against a signed-in fixture.
+    reconcileSession: vi.fn(async () => (authState.isAuthenticated ? { user: HOST_USER } : null)),
+    userFromAuthState: vi.fn((state: any) => (state ? HOST_USER : null)),
   },
 }));
 vi.mock('@faultmaven/copilot-ui/lib/capabilities', () => ({ capabilitiesManager: { fetch: capsFetch } }));

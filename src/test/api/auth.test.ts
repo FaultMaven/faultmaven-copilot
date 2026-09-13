@@ -178,8 +178,16 @@ describe('Authentication API', () => {
     });
 
     it('retrieves valid auth state from storage', async () => {
+      // The credential keys are staged too: getAuthState now asks
+      // tokenManager.isAuthenticated() unconditionally, so a row with no
+      // credential behind it is (correctly) reconciled away rather than
+      // returned. That reconciliation is what removed the need for an
+      // orphan-repair read on the per-request hot path.
       mockBrowserStorage.local.get.mockResolvedValue({
-        authState: mockAuthState
+        authState: mockAuthState,
+        access_token: mockAuthState.access_token,
+        expires_at: mockAuthState.expires_at,
+        user: mockAuthState.user
       });
 
       const result = await authManager.getAuthState();
@@ -188,7 +196,7 @@ describe('Authentication API', () => {
       expect(mockBrowserStorage.local.get).toHaveBeenCalledWith(['authState']);
     });
 
-    it('returns null for expired auth state', async () => {
+    it('returns null for a dead session WITHOUT tearing anything down', async () => {
       const expiredAuthState = {
         ...mockAuthState,
         expires_at: Date.now() - 1000 // Expired 1 second ago
@@ -201,8 +209,123 @@ describe('Authentication API', () => {
       const result = await authManager.getAuthState();
 
       expect(result).toBeNull();
-      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+      // A read answers the question and nothing else. It used to tear down here,
+      // which made every caller destructive — `extension-reload.ts` asks this to
+      // decide whether the extension reloaded, and the options page to render a
+      // name. Repair is `reconcileSession()`, below.
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalled();
     });
+
+    it('reconcileSession clears BOTH halves when the chain is definitively dead', async () => {
+      // A reader that detects death and then performs a PARTIAL teardown leaves
+      // the previous user's tokens and profile at rest with nothing coming back
+      // for them: the panel renders the sign-in screen, so no later call reaches
+      // TokenManager's own terminal paths. Asserting only `remove(['authState'])`
+      // — as the test above does — passes either way, which is why this one
+      // exists separately.
+      const expiredAuthState = { ...mockAuthState, expires_at: Date.now() - 1000 };
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: expiredAuthState,
+        // No access_token and no refresh_token: nothing left to refresh with.
+      });
+
+      await authManager.reconcileSession();
+
+      // A reader that detects death and then performs a PARTIAL teardown leaves
+      // the previous user's tokens and profile at rest with nothing coming back
+      // for them. Both halves, or it is not a teardown.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token', 'user'])
+      );
+    });
+
+    it('clearAllAuthData NEVER rejects, and still clears the credentials', async () => {
+      // It used to rethrow. Every caller does something load-bearing straight
+      // afterwards — `logoutAuth` and `LocalAuthClient.signOut` broadcast
+      // `auth_state_changed`, and `onUnauthorized` must return an AuthOutcome
+      // because `client.ts` awaits it unguarded — so a throw suppressed exactly
+      // the notification that makes a sign-out observable, with the credentials
+      // already gone. That is this area's original bug pointed the other way.
+      mockBrowserStorage.local.remove.mockImplementationOnce(() => {
+        throw new Error('storage unavailable');
+      });
+
+      await expect(authManager.clearAllAuthData()).resolves.toBeUndefined();
+
+      // The other half still ran.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token'])
+      );
+    });
+
+    it('clearAllAuthData single-flights concurrent teardowns', async () => {
+      // Four call sites tear a session down, and two of them fire once per
+      // failing request: a revoked credential 401s the heartbeat, the turn poll
+      // and the case fetch at once. Inside TokenManager the refresh lock
+      // serialized this; owning it here is what replaces that.
+      mockBrowserStorage.local.get.mockResolvedValue({});
+
+      await Promise.all([
+        authManager.clearAllAuthData(),
+        authManager.clearAllAuthData(),
+        authManager.clearAllAuthData(),
+      ]);
+
+      // One identity removal and one credential removal, not three of each.
+      const authStateRemovals = mockBrowserStorage.local.remove.mock.calls.filter(
+        (call: any[]) => Array.isArray(call[0]) && call[0].length === 1 && call[0][0] === 'authState'
+      );
+      expect(authStateRemovals).toHaveLength(1);
+    });
+
+    it('reconcileSession sweeps credentials that outlived their row', async () => {
+      // The mirror of the original bug. `runTeardown` removes the row first and
+      // can then fail on the credentials, leaving a bearer at rest that nothing
+      // removes: the panel shows the sign-in screen, so no later request reaches
+      // the credential stack to notice. Sweeping the row-with-no-credential
+      // split and not this one is an asymmetry, not a design.
+      // A DEAD orphan, which is the only kind that actually happens: the
+      // teardown runs because the chain was ruled dead, then its credential
+      // half fails. Staging a live one (the first version of this test) asks a
+      // question the real failure never asks.
+      mockBrowserStorage.local.get.mockResolvedValue({
+        // No authState row, and nothing here is refreshable.
+        access_token: 'orphaned',
+        expires_at: Date.now() - 3600000,
+      });
+
+      expect(await authManager.reconcileSession()).toBeNull();
+
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token'])
+      );
+    });
+
+    it('reconcileSession does nothing when nothing is stored at all', async () => {
+      // The ordinary signed-out state must not look like a repair opportunity.
+      mockBrowserStorage.local.get.mockResolvedValue({});
+
+      expect(await authManager.reconcileSession()).toBeNull();
+
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalled();
+    });
+
+    it('reconcileSession leaves a LIVE session alone', async () => {
+      // The negative control: a repair that fires on a healthy session is just
+      // a logout with extra steps.
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: mockAuthState,
+        access_token: mockAuthState.access_token,
+        expires_at: mockAuthState.expires_at,
+        user: mockAuthState.user
+      });
+
+      await authManager.reconcileSession();
+
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalled();
+    });
+
 
     it('keeps an expired authState when TokenManager still has a refreshable token (no spurious logout)', async () => {
       // The composite expiry is the ACCESS-token expiry frozen at login; a valid
@@ -262,9 +385,12 @@ describe('Authentication API', () => {
     });
 
     it('checks authentication status correctly', async () => {
-      // Test authenticated state
+      // Test authenticated state (credential staged too — see the note above)
       mockBrowserStorage.local.get.mockResolvedValue({
-        authState: mockAuthState
+        authState: mockAuthState,
+        access_token: mockAuthState.access_token,
+        expires_at: mockAuthState.expires_at,
+        user: mockAuthState.user
       });
 
       let isAuth = await authManager.isAuthenticated();
@@ -542,7 +668,10 @@ describe('Authentication API', () => {
 
       await logoutAuth();
 
-      // Revoke was sent with the refresh token + RFC 7009 hint before local teardown.
+      // `waitFor`: the revoke is deliberately NOT awaited by logoutAuth — it
+      // waits on the network and would otherwise stall the panel that asked for
+      // the sign-out. It still has to happen.
+      await vi.waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         REVOKE_URL,
         expect.objectContaining({
@@ -554,12 +683,102 @@ describe('Authentication API', () => {
             client_id: 'faultmaven-copilot'
           })
         })
-      );
+      ));
       // Local teardown still runs.
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
         expect.arrayContaining(['access_token', 'refresh_token', 'refresh_expires_at', 'session_id', 'user'])
       );
     });
+
+    it('refreshes a near-expiry session so the sign-out can be confirmed', async () => {
+      // Reading the STORED token alone meant that after a laptop sleep the POST
+      // went out with an expired bearer, 401'd, and the user was told we could
+      // not confirm their other sessions ended — on a sign-out that could have
+      // refreshed first and actually written the account-wide revocation.
+      mockGetAuthConfig.mockResolvedValue({ provider: 'local', features: {} as any });
+      // STATEFUL: a fixed mock would hand the pre-refresh token back on the
+      // re-read after a successful rotation, and the test would be asserting
+      // against a store that never changes.
+      let store: Record<string, any> = {
+        authState: { access_token: 'near-expiry' },
+        access_token: 'near-expiry',
+        expires_at: Date.now() + 60_000, // inside the proactive-refresh window
+        refresh_token: 'refresh-token',
+      };
+      mockBrowserStorage.local.get.mockImplementation(async (keys: string[]) => {
+        const out: Record<string, any> = {};
+        keys.forEach((k) => { if (store[k] !== undefined) out[k] = store[k]; });
+        return out;
+      });
+      mockBrowserStorage.local.set.mockImplementation(async (obj: Record<string, any>) => {
+        store = { ...store, ...obj };
+      });
+      mockBrowserStorage.local.remove.mockImplementation(async (keys: string[]) => {
+        keys.forEach((k) => delete store[k]);
+      });
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (String(url).includes('/auth/refresh')) {
+          return mockFetchResponse({
+            ok: true,
+            json: {
+              access_token: 'fresh-bearer',
+              token_type: 'bearer',
+              expires_in: 900,
+              refresh_token: 'rotated',
+            },
+          });
+        }
+        return mockFetchResponse({ ok: true, json: { all_sessions_ended: true } });
+      });
+
+      const outcome = await logoutAuth();
+
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.faultmaven.ai/api/v1/auth/logout',
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: 'Bearer fresh-bearer' }),
+        })
+      );
+      expect(outcome.allSessionsEnded).toBe(true);
+    });
+
+    it('never lets its own POST tear the session down', async () => {
+      // The other half. `getValidAccessToken` reports a dead chain by throwing,
+      // and the HOST acts on that by clearing storage — which mid-logout would
+      // run inside the try, before the broadcast, and destroy the refresh token
+      // the revoke still needs. logoutAuth asks the credential stack directly
+      // and swallows the verdict, so the only teardown is its own, in the
+      // `finally`.
+      mockGetAuthConfig.mockResolvedValue({ provider: 'local', features: {} as any });
+      mockBrowserStorage.local.get.mockResolvedValue({
+        authState: { access_token: 'doomed' },
+        access_token: 'doomed',
+        expires_at: Date.now() + 60_000,
+        refresh_token: 'revoked-refresh-token',
+      });
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (String(url).includes('/auth/refresh')) {
+          // Definitive rejection: the chain is dead.
+          return mockFetchResponse({ ok: false, status: 400, json: { error: 'invalid_grant' } });
+        }
+        return mockFetchResponse({ ok: true, json: { all_sessions_ended: true } });
+      });
+
+      // Resolves rather than rejecting: the verdict must not escape logoutAuth.
+      await expect(logoutAuth()).resolves.toBeDefined();
+
+      // The POST still went out, with whatever bearer was stored.
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.faultmaven.ai/api/v1/auth/logout',
+        expect.objectContaining({ method: 'POST' })
+      );
+      // And the local teardown still ran.
+      expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(
+        expect.arrayContaining(['access_token', 'refresh_token'])
+      );
+    }, 20_000);
 
     it('OAuth mode: a failing revoke never blocks logout', async () => {
       mockGetAuthConfig.mockResolvedValue({

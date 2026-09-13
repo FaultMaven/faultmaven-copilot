@@ -20,7 +20,8 @@ import { ErrorBoundary } from '@faultmaven/copilot-ui/shared/ui/components/Error
 import { LoadingScreen } from '@faultmaven/copilot-ui/shared/ui/components/LoadingScreen';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { markSessionEnding } from '@faultmaven/copilot-ui/lib/state/session-epoch';
-import { tokenManager } from './auth/token-manager';
+import { readSessionAccessToken } from './host/session-credential';
+
 import { authManager } from './auth/auth-manager';
 import { logoutAuth } from './auth/auth-service';
 import { installExtensionTransport } from './host';
@@ -89,8 +90,17 @@ export function ExtensionApp() {
     let cancelled = false;
     (async () => {
       try {
-        const authenticated = await authManager.isAuthenticated();
-        const user = authenticated ? await authManager.getCurrentUser() : null;
+        // Repair before reading. A stored session with no live credential behind
+        // it reads as signed in to everything that looks, and nothing else
+        // removes it — a pre-fix build left exactly that, and an upgrading user
+        // carries it across. Explicit and once, here, rather than as a side
+        // effect of the getters below: those are asked by a reload detector and
+        // by a name renderer, neither of which should be able to sign anyone out.
+        // ONE pass. Reconcile returns the state it just validated, so the
+        // identity comes from that rather than from further reads of the same
+        // storage.
+        const authState = await authManager.reconcileSession();
+        const user = authManager.userFromAuthState(authState);
         if (!cancelled) setSignedInUser(toHostUser(user));
       } catch (error) {
         log.error('Auth check failed', error);
@@ -133,11 +143,10 @@ export function ExtensionApp() {
       // Throws rather than resolving null: a null would put the panel back in
       // the business of deciding what an absent credential means, which is the
       // decision this boundary exists to keep on the host's side.
-      accessToken: async () => {
-        const token = await tokenManager.getValidAccessToken();
-        if (!token) throw new Error('No valid access token; the session has ended.');
-        return token;
-      },
+      //
+      // The act-site lives in `host/session-credential.ts`: it is a contract two
+      // test harnesses also model, and inline copies of it drifted.
+      accessToken: readSessionAccessToken,
       // The extension owns sign-out because it owns the credential. The panel
       // tears down its own state and asks for this; nothing about the token
       // chain, its storage key or its revocation reaches the panel.

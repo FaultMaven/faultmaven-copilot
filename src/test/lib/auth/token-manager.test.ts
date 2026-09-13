@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TokenManager } from '../../../extension/auth/token-manager';
+import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 
 // Build-time constants only; the refresh endpoint's origin is the host's.
 vi.mock('@faultmaven/copilot-ui/config', () => ({
@@ -123,7 +124,7 @@ describe('TokenManager', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('should clear tokens and return null when refresh token is expired', async () => {
+  it('presents a held refresh token past its window; the backend rules', async () => {
     const expiresAt = Date.now() - 1000; // Expired
     await mockBrowserStorage.local.set({
       access_token: 'expired-access-token',
@@ -133,11 +134,15 @@ describe('TokenManager', () => {
       refresh_expires_at: Date.now() - 1000 // Expired
     });
 
-    const token = await tokenManager.getValidAccessToken();
-    expect(token).toBeNull();
+    // A closed window no longer means "dead" on its own — the backend decides.
+    // Reports rather than tearing down; the host acts (ExtensionApp.accessToken).
+    (global.fetch as any).mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_grant' }),
+    });
 
-    const stored = await mockBrowserStorage.local.get(['access_token']);
-    expect(stored.access_token).toBeUndefined();
+    await expect(tokenManager.getValidAccessToken()).rejects.toThrow(SessionEndedError);
   });
 
   it('should refresh and return a new token when access token is expiring soon', async () => {
@@ -309,7 +314,7 @@ describe('TokenManager', () => {
     expect(stored.refresh_token).toBe('valid-refresh-token');
   }, 10000);
 
-  it('clears tokens and returns null on a DEFINITIVE (400) refresh rejection', async () => {
+  it('reports a dead chain on a DEFINITIVE (400) refresh rejection', async () => {
     const expiresAt = Date.now() + 2 * 60 * 1000;
     await mockBrowserStorage.local.set({
       access_token: 'expiring-access-token',
@@ -339,15 +344,12 @@ describe('TokenManager', () => {
     });
     global.fetch = mockFetch;
 
-    const token = await tokenManager.getValidAccessToken();
+    await expect(tokenManager.getValidAccessToken()).rejects.toThrow(SessionEndedError);
 
-    expect(token).toBeNull();
-    // Definitive → no retry.
+    // Definitive → no retry ladder. A session verdict carries no `.status`, and
+    // isRetryableError defaults to retryable, so this is what pins that it is
+    // excluded explicitly rather than by accident.
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    // Tokens cleared → the user re-authenticates.
-    const stored = await mockBrowserStorage.local.get(['access_token', 'refresh_token']);
-    expect(stored.access_token).toBeUndefined();
-    expect(stored.refresh_token).toBeUndefined();
   });
 
   it('does NOT overwrite stored tokens when a 200 response has an invalid token payload', async () => {

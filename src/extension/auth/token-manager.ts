@@ -16,15 +16,49 @@ import { fetchWithTimeout } from '@faultmaven/copilot-ui/lib/utils/fetch-timeout
 import { retryWithBackoff, isRetryableError } from '@faultmaven/copilot-ui/lib/utils/retry';
 import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
 import { getAuthConfig } from './auth-config';
+import { SessionEndedError } from './session-ended-error';
+import { AUTH_STATE_KEY, CREDENTIAL_KEYS, isUsableTimestamp, timestampOrNull } from './storage-keys';
 
 const log = createLogger('TokenManager');
+
+/**
+ * What the stored credential is good for, decided ONCE.
+ *
+ * Every reader used to answer this for itself from the raw keys, and they
+ * disagreed: an unmeasurable expiry was "present it and let the backend rule"
+ * in one reader and "not valid" in another, and `getAuthState()` escalated the
+ * disagreement into a full teardown of a working credential. A discriminated
+ * union is not decoration here — it is the only way there stops being a second
+ * opinion to have.
+ *
+ * `refreshable` carries `spendableToken` because the question is genuinely
+ * two-dimensional: a refresh can be worth attempting while the access token is
+ * still usable if that attempt fails.
+ */
+export type CredentialState =
+  | { kind: 'absent' }
+  | { kind: 'usable'; accessToken: string }
+  | { kind: 'refreshable'; refreshToken: string; spendableToken: string | null }
+  | { kind: 'dead'; reason: string };
 
 interface StoredTokens {
   access_token: string;
   token_type: string;
-  expires_at: number;
-  refresh_token: string;
-  refresh_expires_at: number;
+  /**
+   * Optional because storage routinely lacks them: the bridge and local login
+   * remove the refresh pair when a response carries none, and `handleStoreAuth`
+   * validates only `access_token` and `user.user_id`, so `expires_at` can be
+   * absent too. Required typing is what let `tokens.refresh_expires_at <= now`
+   * compile. Read them through `timestampOrNull`, never `typeof`.
+   */
+  //
+  // `| null` is not pedantry: Chrome flattens a NaN write to null, and the
+  // docblock above names that as a value this really stores. Typing it away
+  // would let a future `tokens.expires_at ?? 0` compile and reintroduce exactly
+  // the coercion `timestampOrNull` exists to stop.
+  expires_at?: number | null;
+  refresh_token?: string;
+  refresh_expires_at?: number | null;
   session_id: string;
   user: any;
 }
@@ -41,74 +75,198 @@ export class TokenManager {
   private static readonly REFRESH_TIMEOUT_MS = 15_000;
 
   /**
-   * Get a valid access token, auto-refreshing if needed.
-   * This is the main entry point for getting tokens.
+   * How much access-token life makes it worth sending a request at all.
    *
-   * @returns Valid access token or null if not authenticated
+   * A token about to expire is not a usable credential: the request goes out
+   * with an Authorization header, and a 401 that CARRIES one routes to the hard
+   * teardown rather than the transient session path. So near-expiry is worse
+   * than no token, which merely goes out header-less and recovers.
    */
-  async getValidAccessToken(): Promise<string | null> {
-    const tokens = await this.getStoredTokens();
+  private static readonly USABLE_TOKEN_MARGIN_MS = 5_000;
 
-    if (!tokens) {
-      log.debug('No tokens stored');
-      return null;
+  /**
+   * How much life left makes a token worth refreshing proactively.
+   *
+   * One constant: `refreshAccessToken`'s post-lock re-check asks the same
+   * question, and the two disagreeing would leave a token that `assess()` calls
+   * refreshable but the lock calls fresh — a refresh that can never run.
+   */
+  private static readonly REFRESH_WHEN_WITHIN_MS = 5 * 60 * 1000;
+
+  /**
+   * Decide what the stored credential is good for. The ONE place that produces
+   * a VERDICT — applies the margin, rules on a missing expiry, weighs
+   * refreshability. (The post-lock re-check below reads `expires_at` too, but
+   * only to answer "did another context already do this"; it decides nothing.)
+   *
+   * Pure: it never writes and never tears anything down, so every reader can
+   * call it — including the ones whose contract is a question, not an action.
+   */
+  private async assess(): Promise<CredentialState> {
+    const tokens = await this.getStoredTokens();
+    if (!tokens) return { kind: 'absent' };
+
+    const now = Date.now();
+    const expiry = timestampOrNull(tokens.expires_at);
+    const refreshWindow = timestampOrNull(tokens.refresh_expires_at);
+    const windowOpen = !(refreshWindow !== null && refreshWindow <= now);
+    // PROACTIVE refresh only. A closed window is a reason not to spend the
+    // access token's remaining life on a refresh — it is NOT, on its own, a
+    // reason to declare the session dead; see the terminal branch below.
+    const canRefresh = !!tokens.refresh_token && windowOpen;
+
+    // UNMEASURABLE EXPIRY. Refreshability is decided FIRST, because the two
+    // answers here are not the same and getting the order wrong is worse than
+    // the coercion bug this replaced.
+    //
+    //   - With a refresh token: REFRESHABLE. The refresh writes a real
+    //     `expires_at`, so the state heals permanently on the next call. Calling
+    //     it `usable` instead means no refresh is ever attempted: the stale
+    //     token is presented until the backend 401s, and a 401 that carries a
+    //     bearer is the HARD teardown — destroying a valid refresh token that
+    //     would have renewed the session. The writers below now produce this
+    //     shape deliberately (no expiry beats a NaN one), so it must heal.
+    //   - Without one: USABLE. We cannot rule on the token and the backend can;
+    //     presenting it converges, whereas calling it dead destroys a session
+    //     that may be fine.
+    if (expiry === null) {
+      return canRefresh
+        ? {
+            kind: 'refreshable',
+            refreshToken: tokens.refresh_token as string,
+            // NOT spendable as a fallback. We cannot say how old this token is,
+            // so if the refresh fails, going header-less is right: presenting an
+            // unvouchable bearer whose 401 CARRIES a credential routes to the
+            // hard teardown — destroying the refresh token that would have
+            // renewed the session once the outage ended. `usable` below is the
+            // different case: there, header-less is not an option.
+            spendableToken: null,
+          }
+        : { kind: 'usable', accessToken: tokens.access_token };
     }
 
-    // Check if access token is expired or expiring soon (< 5 minutes)
-    const now = Date.now();
-    const timeUntilExpiry = tokens.expires_at - now;
-    const FIVE_MINUTES = 5 * 60 * 1000;
+    if (expiry - now > TokenManager.REFRESH_WHEN_WITHIN_MS) {
+      return { kind: 'usable', accessToken: tokens.access_token };
+    }
 
-    if (timeUntilExpiry > FIVE_MINUTES) {
-      // Token is still valid
-      return tokens.access_token;
+    // Below the margin a token is worth no more than none: the request would go
+    // out carrying a bearer, and a 401 that carries one is a hard teardown
+    // rather than the recoverable path.
+    const spendableToken =
+      expiry - now > TokenManager.USABLE_TOKEN_MARGIN_MS ? tokens.access_token : null;
+
+    if (canRefresh) {
+      return {
+        kind: 'refreshable',
+        refreshToken: tokens.refresh_token as string,
+        spendableToken,
+      };
+    }
+
+    // Nothing to refresh with. Spend what is left first — we get here inside the
+    // proactive-refresh window, not at expiry, so minutes can remain.
+    // Spend what is left before anything else — we get here inside the
+    // proactive-refresh window, not at expiry, so minutes can remain.
+    if (spendableToken) return { kind: 'usable', accessToken: spendableToken };
+
+    // Nothing left to present. A refresh token we HOLD is still worth
+    // presenting, even past the window we recorded for it: the backend is the
+    // authority on its own credential. Declaring death locally here was a hole
+    // — a window that lapses while the backend is merely DOWN made `assess()`
+    // answer `dead` on every later read, so a session deliberately preserved
+    // through the outage was torn down by the very next credential read,
+    // including the one inside that request's own recovery path. Presenting it
+    // costs one doomed request when the window really has closed, after which
+    // `invalid_grant` ends the session for real.
+    if (tokens.refresh_token) {
+      return { kind: 'refreshable', refreshToken: tokens.refresh_token, spendableToken: null };
+    }
+
+    // The only death this side can declare: nothing to present, and nothing to
+    // present it WITH. Every other verdict belongs to the backend.
+    return { kind: 'dead', reason: 'no refresh token and the access token is spent' };
+  }
+
+  /**
+   * Get a valid access token, auto-refreshing if needed.
+   *
+   * THREE outcomes, and the distinction between the last two is the point:
+   *   - a token           — spend it
+   *   - `null`            — nothing usable RIGHT NOW. Transient: the request
+   *                         goes out header-less, its 401 routes to the
+   *                         recoverable session path, a later call retries (#99)
+   *   - SessionEndedError — the chain is definitively dead. The HOST tears down
+   *                         (ExtensionApp.accessToken); this class only reports
+   *
+   * Answering `null` for both of the last two is what once forced the teardown
+   * in here, where it ran inside the refresh lock and inside the refresh verdict.
+   * Note the host's act-site still sits on logout's own authenticated call —
+   * moving the owner does not move the call path; see `logoutAuth`.
+   */
+  async getValidAccessToken(): Promise<string | null> {
+    const state = await this.assess();
+
+    switch (state.kind) {
+      case 'absent':
+        log.debug('No tokens stored');
+        return null;
+      case 'usable':
+        return state.accessToken;
+      case 'dead':
+        throw new SessionEndedError(state.reason);
+      case 'refreshable':
+        break;
     }
 
     log.info('Access token expired or expiring soon, refreshing...');
 
-    // Check if refresh token is expired
-    if (tokens.refresh_expires_at <= now) {
-      log.warn('Refresh token expired, user must re-authenticate');
-      await this.clearTokens();
-      return null;
-    }
 
-    // Refresh the token. Each attempt re-acquires the cross-context lock and does
-    // ONE network call (performRefreshOnce); the backoff sleep between attempts
-    // happens HERE, outside the lock, so a transient backend outage can't pin the
-    // 'faultmaven-token-refresh' mutex and stall every other context for the whole
-    // retry ladder. Only retryable (transient) failures are retried — a definitive
-    // rejection (4xx except 408/429) stops immediately after clearing tokens.
+    // Backoff sleeps happen HERE, outside the cross-context lock, so a backend
+    // outage cannot pin the mutex for the whole ladder.
     try {
       await retryWithBackoff(() => this.refreshAccessToken(), {
         maxAttempts: TokenManager.REFRESH_MAX_ATTEMPTS,
         initialDelay: TokenManager.REFRESH_BACKOFF_MS,
-        shouldRetry: (err) => isRetryableError(err),
+        // A session verdict is never retryable. Saying so explicitly rather than
+        // giving the error a fake `.status`: isRetryableError defaults to TRUE
+        // for anything without one, so a bare throw would spin the ladder on a
+        // revoked credential and then land in the transient arm, preserving the
+        // dead chain — the whole failure being fixed.
+        shouldRetry: (err) => !(err instanceof SessionEndedError) && isRetryableError(err),
       });
-
-      // Get the new token
-      const newTokens = await this.getStoredTokens();
-      return newTokens?.access_token || null;
     } catch (error: any) {
-      if (isRetryableError(error)) {
-        // Refresh failed TRANSIENTLY (network / timeout / 5xx) and tokens were
-        // deliberately PRESERVED. If the current access token still has any life
-        // left, use it — the request can still succeed and the next call retries
-        // the refresh once the backend recovers. This is the fix for spurious
-        // mid-session logouts: a single blip on the periodic refresh of an active
-        // session no longer clears tokens and bounces the user to the login screen.
-        if (timeUntilExpiry > 0) {
-          log.warn('Token refresh temporarily failed; using still-valid access token');
-          return tokens.access_token;
-        }
-        // Access token already hard-expired AND refresh is transiently down:
-        // preserve tokens (do not log out) and let a later call retry.
-        log.warn('Token refresh temporarily failed and access token expired; preserving tokens for retry');
+      if (error instanceof SessionEndedError) throw error;
+      // Non-retryable but not a session verdict (a malformed payload, say) falls
+      // through to the shared exit like every other arm: the access token may
+      // still have minutes on it, and returning null here would send the request
+      // header-less and burn a session round trip for nothing.
+      log[isRetryableError(error) ? 'warn' : 'error']('Token refresh failed', error);
+    }
+
+    // ONE exit for both outcomes, deliberately. Re-assess rather than reasoning
+    // from the pre-flight snapshot: the ladder can burn ~48s, long enough for
+    // the token to expire and for another context to rotate it — and the
+    // early-return paths inside performRefreshOnce (the backstop, the
+    // compare-and-swap decline) resolve without having refreshed anything at
+    // all. Whatever is in storage now gets the same margin as everything else.
+    const after = await this.assess();
+    switch (after.kind) {
+      case 'usable':
+        return after.accessToken;
+      case 'refreshable':
+        // Still refreshable and we just failed: spend the token if it is worth
+        // spending, otherwise go out header-less and let a later call retry.
+        return after.spendableToken;
+      case 'dead':
+        // Reachable only if the credential vanished mid-flight; a transient
+        // failure leaves the refresh token in place, so the re-assessment above
+        // answers `refreshable` and returns its (possibly null) spendable token
+        // rather than ending anything. That is what makes outage protection
+        // DURABLE — an earlier version special-cased it here and the protection
+        // lasted exactly one call, because the next read re-derived `dead`.
+        throw new SessionEndedError(after.reason);
+      case 'absent':
         return null;
-      }
-      // DEFINITIVE failure: performRefreshOnce already cleared tokens; re-auth needed.
-      log.error('Failed to refresh token', error);
-      return null;
     }
   }
 
@@ -126,7 +284,8 @@ export class TokenManager {
         async () => {
           // Re-check: another context may have refreshed while we waited for the lock
           const tokens = await this.getStoredTokens();
-          if (tokens && (tokens.expires_at - Date.now()) > 5 * 60 * 1000) {
+          const lockedExpiry = tokens ? timestampOrNull(tokens.expires_at) : null;
+          if (lockedExpiry !== null && lockedExpiry - Date.now() > TokenManager.REFRESH_WHEN_WITHIN_MS) {
             log.debug('Token already refreshed by another context');
             return;
           }
@@ -154,26 +313,25 @@ export class TokenManager {
    * (getValidAccessToken wraps this in retryWithBackoff), so this method holds
    * the cross-context lock for a single network call at most.
    *
-   * Failure taxonomy — the fix for spurious mid-session logouts:
-   *   DEFINITIVE (4xx except 408/429 — e.g. 401 InvalidGrantError, 400 malformed,
-   *     403 disabled account): the refresh token is genuinely invalid/revoked;
-   *     retrying can't help, so clear tokens → re-auth. The ONLY case that logs
-   *     out. Thrown with `.status` so isRetryableError() classifies it non-retryable.
-   *   TRANSIENT (network error, client timeout, 5xx/429, or a 2xx that isn't a
-   *     well-formed token payload): the refresh token is almost certainly still
-   *     valid. Thrown as-is / with a retryable `.status` and, crucially, WITHOUT
-   *     clearing tokens — the caller retries and, if still failing, keeps the
-   *     current tokens rather than bouncing the user to the login screen.
+   * Failure taxonomy:
+   *   DEFINITIVE (4xx except 408/429): the refresh token is genuinely revoked.
+   *     Throws SessionEndedError — unless the compare-and-swap finds the chain
+   *     has been replaced since this attempt read it, in which case the verdict
+   *     belongs to someone else's session and it returns instead.
+   *   TRANSIENT (network, timeout, 5xx/429, or a 2xx that isn't a well-formed
+   *     token payload): thrown with a retryable `.status` and WITHOUT clearing
+   *     anything, so a blip does not bounce the user to the login screen.
    */
   private async performRefreshOnce(): Promise<void> {
     const tokens = await this.getStoredTokens();
 
     if (!tokens || !tokens.refresh_token) {
-      // Nothing to refresh with — definitive; ensure a clean unauthenticated state.
-      await this.clearTokens();
-      const err: any = new Error('No refresh token available');
-      err.status = 401;
-      throw err;
+      // Backstop, deliberately not a teardown: getValidAccessToken already
+      // handled the ordinary no-refresh-token session, so reaching here means a
+      // sign-in landed while we queued for the lock. Return so the caller
+      // re-reads rather than failing their brand-new session's request.
+      log.info('No refresh token by the time the lock was held; leaving the session alone');
+      return;
     }
 
     const apiUrl = await getHostEndpoints().apiUrl();
@@ -218,11 +376,24 @@ export class TokenManager {
         `Token refresh failed: ${errorBodyText(body) || body.error_description || body.error || response.status}`
       );
       err.status = response.status;
-      // Definitive (4xx except 408/429) → clear tokens so the user re-authenticates.
-      // Transient (5xx/429/408) → keep tokens; the caller will retry.
+      // Definitive (4xx except 408/429) → end the session so the user
+      // re-authenticates. Transient (5xx/429/408) → keep tokens; caller retries.
       if (!isRetryableError(err)) {
-        log.warn(`Token refresh rejected (${response.status}); clearing tokens`);
-        await this.clearTokens();
+        // Compare-and-swap: a sign-in completing mid-flight rotates the
+        // credential, so this rejection is a verdict on a chain that is no
+        // longer ours. Return (not throw) so the caller re-reads and hands back
+        // the new token instead of failing the request.
+        if (!(await this.credentialStillOurs(tokens.refresh_token))) {
+          // RETURN, not throw. Throwing propagates a non-retryable 400 to
+          // getValidAccessToken's DEFINITIVE arm, which answers null — so the
+          // user who just signed in gets a session-expired on this request
+          // while their brand-new credential sits unread in storage. Returning
+          // reports success, and the caller re-reads storage and hands back the
+          // new access token. Declining the teardown is only half the guard.
+          log.info('A newer credential replaced this one mid-refresh; using it instead');
+          return;
+        }
+        throw new SessionEndedError(`refresh rejected with ${response.status}`);
       }
       throw err;
     }
@@ -238,48 +409,64 @@ export class TokenManager {
       !newTokens ||
       typeof newTokens.access_token !== 'string' ||
       typeof newTokens.refresh_token !== 'string' ||
-      typeof newTokens.expires_in !== 'number'
+      !isUsableTimestamp(newTokens.expires_in)
     ) {
       const err: any = new Error('Token refresh returned an invalid token payload');
       err.status = 502; // synthetic, retryable
       throw err;
     }
 
-    // Store new tokens (refresh token is rotated)
+    // Compare-and-swap, for a worse failure than the rejection path's: every
+    // field below comes from the PRE-FLIGHT snapshot — `session_id`, `user`,
+    // `authState.user` — so writing after a different user signed in stamps the
+    // previous identity over storage their sign-in just re-seeded.
+    //
+    // ⚠️ NARROWED, NOT CLOSED. This is check-then-act, and the sign-in side
+    // holds no lock: `handleStoreAuth`, the OAuth exchange and
+    // `LocalAuthClient.storeTokens` all write storage directly. A sign-in
+    // landing between this check and the write below still loses. Everything
+    // that follows is therefore ONE `set()` — the three separate writes it
+    // replaces could interleave with a sign-in and leave the worse split of B's
+    // credentials paired with A's `authState`.
+    if (!(await this.credentialStillOurs(tokens.refresh_token))) {
+      log.info('A newer credential replaced this one mid-refresh; discarding the rotated tokens');
+      return;
+    }
+
     const now = Date.now();
-    await browser.storage.local.set({
+    const expiresAt = now + newTokens.expires_in * 1000;
+    const rotated: Record<string, any> = {
       access_token: newTokens.access_token,
       token_type: newTokens.token_type,
-      expires_at: now + (newTokens.expires_in * 1000),
+      expires_at: expiresAt,
       refresh_token: newTokens.refresh_token,
       // Keep existing session_id and user
       session_id: tokens.session_id,
-      user: tokens.user
-    });
-    if (typeof newTokens.refresh_expires_in === 'number') {
-      await browser.storage.local.set({
-        refresh_expires_at: now + (newTokens.refresh_expires_in * 1000),
-      });
-    } else {
-      // Local mode has no refresh expiry. Drop any stale refresh_expires_at so a
-      // past value can't be read as an expired refresh window on the next check.
-      await browser.storage.local.remove(['refresh_expires_at']);
-    }
-
-    // Keep the composite `authState` in sync with the refresh. The UI auth gate
-    // (authManager.isAuthenticated / getAuthState) and getAuthHeaders' fallback
-    // read authState; if its expires_at stayed frozen at login it would go stale
-    // and (before the getAuthState guard) force a spurious logout. Writing it here
-    // keeps its access_token + expires_at current for an actively-refreshing session.
-    // (Written directly, not via authManager, to avoid an import cycle.)
-    await browser.storage.local.set({
-      authState: {
+      user: tokens.user,
+      // The composite row, kept in sync so authManager's getters do not go
+      // stale. NOT request auth — `fetch-utils.ts` reads only
+      // `transport.accessToken()` and never mentions authState.
+      [AUTH_STATE_KEY]: {
         access_token: newTokens.access_token,
         token_type: newTokens.token_type,
-        expires_at: now + (newTokens.expires_in * 1000),
+        expires_at: expiresAt,
         user: tokens.user,
       },
-    });
+    };
+
+    const hasRefreshWindow = isUsableTimestamp(newTokens.refresh_expires_in);
+    if (hasRefreshWindow) {
+      rotated.refresh_expires_at = now + newTokens.refresh_expires_in * 1000;
+    }
+
+    await browser.storage.local.set(rotated);
+
+    if (!hasRefreshWindow) {
+      // Local mode has no refresh expiry. Drop any stale value so it cannot be
+      // read as a closed window — after the write, so a failure here cannot
+      // leave the new credential unwritten.
+      await browser.storage.local.remove(['refresh_expires_at']);
+    }
 
     log.info('Access token refreshed successfully', { mode: isLocal ? 'local' : 'oauth' });
   }
@@ -306,15 +493,7 @@ export class TokenManager {
    * Manifest V3 Service Worker safe - fetches from storage every time.
    */
   private async getStoredTokens(): Promise<StoredTokens | null> {
-    const storage = await browser.storage.local.get([
-      'access_token',
-      'token_type',
-      'expires_at',
-      'refresh_token',
-      'refresh_expires_at',
-      'session_id',
-      'user'
-    ]);
+    const storage = await browser.storage.local.get([...CREDENTIAL_KEYS]);
 
     if (!storage.access_token) {
       return null;
@@ -324,59 +503,65 @@ export class TokenManager {
   }
 
   /**
-   * Read the stored refresh token, if any.
-   *
-   * Used by logout to best-effort revoke the refresh token server-side
-   * (RFC 7009) BEFORE local teardown destroys the in-browser copy. Unlike
-   * getStoredTokens(), this does not require a present access_token — a session
-   * mid-refresh (or with an expired access token) still holds a revocable
-   * refresh token. Returns null when none is stored.
+   * The one place the refresh token is read from storage on its own. Array
+   * form, like getStoredTokens: a bare string returns `{}` against the storage
+   * adapters used elsewhere, which would silently disable the compare-and-swap.
    */
+  /**
+   * The stored access token AS-IS — no refresh, no verdict, no teardown.
+   *
+   * The FALLBACK for callers that must not let a verdict escape. `logoutAuth`
+   * asks `getValidAccessToken()` first — so a healthy near-expiry session still
+   * refreshes and the sign-out can actually be confirmed — and falls back here
+   * when that answers nothing or reports a dead chain. Sending a possibly-expired
+   * bearer is fine: server-side logout is best-effort and the local teardown
+   * runs regardless.
+   */
+  async peekAccessToken(): Promise<string | null> {
+    const { access_token } = await browser.storage.local.get(['access_token']);
+    return typeof access_token === 'string' ? access_token : null;
+  }
+
   async getRefreshToken(): Promise<string | null> {
-    const { refresh_token } = await browser.storage.local.get('refresh_token');
+    const { refresh_token } = await browser.storage.local.get(['refresh_token']);
     return typeof refresh_token === 'string' ? refresh_token : null;
   }
 
   /**
-   * Clear all tokens from storage.
+   * Does storage still hold the chain this attempt started on?
+   *
+   * Compares against absence too: a bridge sign-in with no refresh material
+   * removes the key, and `null` is a perfectly good "not ours any more".
    */
-  async clearTokens(): Promise<void> {
-    log.info('Clearing all tokens');
-    await browser.storage.local.remove([
-      'access_token',
-      'token_type',
-      'expires_at',
-      'refresh_token',
-      'refresh_expires_at',
-      'session_id',
-      'user'
-    ]);
+  private async credentialStillOurs(presented: string | undefined): Promise<boolean> {
+    const current = await this.getRefreshToken();
+    return current === (presented ?? null);
   }
 
   /**
-   * Check if user is authenticated (has valid tokens).
+   * Remove the credential keys. Exactly that, and nothing else.
+   *
+   * ⚠️ Not a teardown: `authManager.clearAllAuthData()` is, and is built out of
+   * this. Widening it to cover `authState` would put a second, partial
+   * definition beside the real one. See CLAUDE.md, "Auth teardown".
+   */
+  async clearTokens(): Promise<void> {
+    log.info('Clearing credential keys');
+    await browser.storage.local.remove([...CREDENTIAL_KEYS]);
+  }
+
+  /**
+   * Is there a session here at all?
+   *
+   * The same verdict `getValidAccessToken` acts on — which is the point. These
+   * two answering independently is how `{access_token, no expires_at, no
+   * refresh_token}` came to be "present it" for one and "not valid" for the
+   * other, and how `getAuthState()` escalated that into destroying a working
+   * credential.
    */
   async isAuthenticated(): Promise<boolean> {
-    const tokens = await this.getStoredTokens();
-
-    if (!tokens) {
-      return false;
-    }
-
-    // A still-valid access token means authenticated.
-    if (tokens.expires_at > Date.now()) {
-      return true;
-    }
-
-    // Otherwise we're authenticated iff we hold a usable refresh token. Local
-    // sessions have NO refresh_expires_at (no refresh window) — a present
-    // refresh_token is sufficient; the backend is the authority on its validity.
-    // (Without this, local sessions read as unauthenticated and the keep-alive
-    // heartbeat never runs.)
-    if (!tokens.refresh_token) {
-      return false;
-    }
-    return typeof tokens.refresh_expires_at !== 'number' || tokens.refresh_expires_at > Date.now();
+    const state = await this.assess();
+    return state.kind === 'usable' || state.kind === 'refreshable';
   }
 }
 

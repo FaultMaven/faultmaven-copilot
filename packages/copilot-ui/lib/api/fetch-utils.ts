@@ -8,6 +8,7 @@
  * about each one.
  */
 import { getApiTransport } from "./transport";
+import { AuthenticationError } from "../errors/types";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger('FetchUtils');
@@ -21,6 +22,15 @@ const log = createLogger('FetchUtils');
  * the token endpoint from destroying a credential the next request could have
  * used (#99). `accessToken()` throws when the host cannot produce one, so that
  * throw is caught here and turned into exactly that state.
+ *
+ * ⚠️ WITH ONE EXCEPTION, and it is the whole distinction. A host that throws
+ * `AuthenticationError` is not saying "not right now" — it is saying the session
+ * is OVER. Swallowing that produced a header-less request whose 401 took the
+ * recoverable path: a doomed `POST /sessions` and a "session expired, retrying"
+ * where the honest answer is a sign-in prompt. It propagates, so the request is
+ * never sent and the caller gets an error whose recovery is `show_modal`.
+ *
+ * Opt-in: a host that throws anything else keeps the old behaviour exactly.
  */
 export async function getAuthHeaders(): Promise<HeadersInit> {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -32,6 +42,8 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     headers['Authorization'] = `Bearer ${await transport.accessToken()}`;
     hasToken = true;
   } catch (error) {
+    // The session is over — not "no token right now". Do not send the request.
+    if (error instanceof AuthenticationError) throw error;
     // See the note above: header-less is the transient path, not an error to
     // surface here.
     log.warn('No access token available - the request goes out unauthenticated', error);

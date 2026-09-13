@@ -13,10 +13,15 @@
  */
 import { EventBus, type AuthStateChangedEvent } from '../messaging';
 import { extensionStore } from './extension-store';
+import { AUTH_STATE_KEY } from '../auth/storage-keys';
 import type { HostUser } from '@faultmaven/copilot-ui/shared/host';
 
-/** The composite auth row. Its disappearance IS the sign-out. */
-const AUTH_STATE_KEY = 'authState';
+// `AUTH_STATE_KEY` is imported rather than spelled here: the same string is an
+// invariant on every teardown path (auth/storage-keys.ts), and this module is
+// the reader that makes it one. Watching the credential keys instead would be
+// the wrong repair — it reports a sign-out the UI believes while
+// `authManager.isAuthenticated()` still answers true from the row left in
+// storage. Keep the teardown honest rather than widening the watch.
 
 /** The broadcast's user payload, whatever shape the sender used. */
 type BroadcastUser = NonNullable<AuthStateChangedEvent['authState']>['user'];

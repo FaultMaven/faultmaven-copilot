@@ -138,22 +138,26 @@ test.describe('UI Rendering', () => {
     });
 
     test('Rate limited (429) shows retry message', async ({ context, extensionId }) => {
+        // Limit the server BEFORE the first navigation, via `context.request` so
+        // it needs no page. Setting it afterwards let the initial healthy load
+        // populate the case cache; the reload then served cases from that cache
+        // and never reached the rate-limited endpoint, so no banner rendered and
+        // the assertion failed against a perfectly working panel.
+        await context.request.post('http://localhost:8091/__admin/state', {
+            data: { rateLimit: true }
+        });
+
         const page = await context.newPage();
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
-        // Clear case cache so the next page load forces a fresh API call
+        // Drop any cache a PREVIOUS test left behind, then reload so the render
+        // is driven by a live (rate-limited) request rather than stale cases.
         await page.evaluate(() => {
             return new Promise<void>((resolve) => {
                 // @ts-ignore
                 chrome.storage.local.remove(['faultmaven_case_cache'], resolve);
             });
         });
-
-        await page.request.post('http://localhost:8091/__admin/state', {
-            data: { rateLimit: true }
-        });
-
-        // Reload to trigger fresh API calls that will hit the rate-limited server
         await page.reload();
 
         const body = page.locator('body');

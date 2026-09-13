@@ -13,6 +13,8 @@ import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { fetchWithTimeout } from '@faultmaven/copilot-ui/lib/utils/fetch-timeout';
 import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
 import { enforceUserDataScope } from './user-scope';
+import { authManager } from './auth-manager';
+import { AUTH_STATE_KEY, isUsableTimestamp, type CredentialKey } from './storage-keys';
 import { EventBus } from '../messaging';
 import type { AuthTokenResponse, APIError } from '@faultmaven/copilot-ui/lib/api/types';
 
@@ -221,8 +223,10 @@ export class LocalAuthClient {
         log.warn('Logout API call failed (non-critical):', error);
       }
 
-      // Clear tokens from storage
-      await this.clearTokens();
+      // The ONE teardown: authState, the case cache, and the credential keys.
+      // Called directly rather than through a local `clearTokens()` wrapper,
+      // whose name promised a credential-only clear while doing all three.
+      await authManager.clearAllAuthData();
 
       // Broadcast auth state change
       await this.broadcastAuthStateChange();
@@ -252,35 +256,50 @@ export class LocalAuthClient {
    * Also stores composite authState object for authManager compatibility.
    */
   private async storeTokens(tokenResponse: AuthTokenResponse): Promise<void> {
-    const expiresAt = Date.now() + (tokenResponse.expires_in * 1000);
+    // A response without a numeric `expires_in` derives NaN, which Chrome
+    // flattens to null and Firefox stores as-is: an unmeasurable expiry every
+    // liveness read then has to rule on. Store NO expiry rather than a corrupt
+    // one — and no sentinel either, so "unknown" has exactly one encoding
+    // (an absent key) wherever it is read.
+    const expiresAt = isUsableTimestamp(tokenResponse.expires_in)
+      ? Date.now() + tokenResponse.expires_in * 1000
+      : null;
     const refreshToken = (tokenResponse as any).refresh_token;
     const refreshExpiresIn = (tokenResponse as any).refresh_expires_in;
 
-    const data: Record<string, any> = {
+    // Typed against CREDENTIAL_KEYS: a credential field added here but not to
+    // that list would survive a "full" logout at rest. `authState` is not a
+    // credential key, hence the explicit union.
+    const data: Partial<Record<CredentialKey, any>> & { authState?: any } = {
       access_token: tokenResponse.access_token,
       token_type: tokenResponse.token_type,
-      expires_at: expiresAt,
       session_id: tokenResponse.session_id,
       user: tokenResponse.user,
       // Store composite authState for authManager compatibility
-      authState: {
+      [AUTH_STATE_KEY]: {
         access_token: tokenResponse.access_token,
         token_type: tokenResponse.token_type,
-        expires_at: expiresAt,
+        ...(expiresAt !== null ? { expires_at: expiresAt } : {}),
         user: tokenResponse.user
       }
     };
 
     // Persist refresh material ONLY when the response actually carries it. Local
     // login responses have no refresh_expires_in, so NEVER derive
-    // `Date.now() + undefined*1000` (= NaN, which serializes to null on Chrome and
-    // reads as an expired refresh window → TokenManager clears tokens → logout at
-    // first expiry). An absent refresh_expires_at means "refresh until the backend
-    // definitively rejects" — matching TokenManager's mode-aware local refresh.
+    // `Date.now() + undefined*1000` (= NaN, which serializes to null on Chrome).
+    // An absent refresh_expires_at means "refresh until the backend definitively
+    // rejects" — matching TokenManager's mode-aware local refresh.
     const keysToRemove: string[] = [];
+    if (expiresAt !== null) {
+      data.expires_at = expiresAt;
+    } else {
+      // `storage.set` drops an undefined value rather than clearing the key, so
+      // a previous session's expiry would otherwise be inherited by this one.
+      keysToRemove.push('expires_at');
+    }
     if (refreshToken) {
       data.refresh_token = refreshToken;
-      if (typeof refreshExpiresIn === 'number') {
+      if (isUsableTimestamp(refreshExpiresIn)) {
         data.refresh_expires_at = Date.now() + refreshExpiresIn * 1000;
       } else {
         keysToRemove.push('refresh_expires_at');
@@ -306,24 +325,6 @@ export class LocalAuthClient {
   }
 
   /**
-   * Clear all authentication tokens from storage
-   */
-  private async clearTokens(): Promise<void> {
-    await browser.storage.local.remove([
-      'access_token',
-      'token_type',
-      'expires_at',
-      'refresh_token',
-      'refresh_expires_at',
-      'session_id',
-      'user',
-      'authState'
-    ]);
-
-    log.debug('Tokens cleared from chrome.storage.local');
-  }
-
-  /**
    * Broadcast authentication state change to other parts of extension
    */
   private async broadcastAuthStateChange(): Promise<void> {
@@ -333,7 +334,7 @@ export class LocalAuthClient {
       // Match the AuthStateChangedEvent contract: { isAuthenticated, user } | null.
       // Previously this sent the raw `user` object as `authState`, whose
       // `isAuthenticated` is undefined; it was only benign because the sole
-      // caller (signOut) runs after clearTokens removes `user`, so it always
+      // caller (signOut) runs after the teardown removes `user`, so it always
       // sent null. Make it correct regardless of call ordering.
       await EventBus.emit({
         type: 'auth_state_changed',
