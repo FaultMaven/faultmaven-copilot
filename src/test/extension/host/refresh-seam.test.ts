@@ -50,7 +50,7 @@ vi.mock('@faultmaven/copilot-ui/lib/cache/case-cache', () => ({
   caseCacheManager: { invalidateCache: vi.fn().mockResolvedValue(undefined) },
 }));
 
-import { tokenManager } from '../../../extension/auth/token-manager';
+import { readSessionAccessToken } from '../../../extension/host/session-credential';
 import { authManager } from '../../../extension/auth/auth-manager';
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
@@ -91,11 +91,8 @@ const reportedToHost = vi.fn();
 function extensionSession(): HostSession {
   return {
     user: { id: 'u1', username: 'op', roles: ['user'] },
-    accessToken: async () => {
-      const token = await tokenManager.getValidAccessToken();
-      if (!token) throw new Error('No valid access token; the session has ended.');
-      return token;
-    },
+    // The real thing, not a mirror — see host/session-credential.ts.
+    accessToken: readSessionAccessToken,
     signOut: async () => {},
     subscribeAuthState: () => () => {},
     // 'ended': the extension destroys the whole local credential chain, so
@@ -236,6 +233,67 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     // The seam: the shared client cleared nothing itself, and the EXTENSION's
     // real teardown ran — the credential is gone from storage, refresh included,
     // so a stale grant cannot silently re-authenticate.
+    expect(store.authState).toBeUndefined();
+    expect(store.access_token).toBeUndefined();
+    expect(store.refresh_token).toBeUndefined();
+  });
+
+  it('ends the session when the REFRESH is definitively rejected, through the real chain', async () => {
+    // THE ORIGINAL BUG, end to end, with real modules.
+    //
+    // A sign-out on another client writes an account-wide revocation watermark;
+    // this client finds out when its next proactive refresh is refused. The
+    // credential keys were cleared and `authState` was not — and nothing
+    // observes the credential keys, so the panel went on rendering a signed-in
+    // UI over the previous user's conversations, indefinitely.
+    //
+    // The two halves of the fix are pinned separately with mocks (the act-site
+    // calls the teardown; the teardown removes the row). Neither notices if the
+    // halves stop meeting, which is what this covers: TokenManager reports, the
+    // host acts, and the row is gone.
+    Object.assign(store, {
+      access_token: 'expiring-token',
+      token_type: 'bearer',
+      // Inside the proactive-refresh window, so the request path refreshes.
+      expires_at: Date.now() + 60_000,
+      refresh_token: 'revoked-by-the-watermark',
+      refresh_expires_at: Date.now() + 86_400_000,
+      authState: { access_token: 'expiring-token', token_type: 'bearer' },
+    });
+
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/auth/refresh') || String(url).includes('/oauth/token')) {
+        // RFC 6749 §5.2 for a revoked refresh token: definitive, not a blip.
+        return {
+          ok: false,
+          status: 400,
+          headers: new Headers(),
+          json: async () => ({ error: 'invalid_grant' }),
+          text: async () => '{"error":"invalid_grant"}',
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({}),
+        text: async () => '{}',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    // The verdict reaches the CALLER, rather than being swallowed into a
+    // header-less request whose 401 reads as a recoverable session problem.
+    // `SessionEndedError` extends the package's `AuthenticationError`, which is
+    // the vocabulary `getAuthHeaders` branches on.
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
+      AuthenticationError,
+    );
+
+    // And the doomed request was never sent: only the refresh attempt went out.
+    const sent = (global.fetch as any).mock.calls.map(([url]: [string]) => String(url));
+    expect(sent.filter((u: string) => u.includes('/api/v1/whatever'))).toHaveLength(0);
+
+    // The row is what anything observes — its absence IS the sign-out.
     expect(store.authState).toBeUndefined();
     expect(store.access_token).toBeUndefined();
     expect(store.refresh_token).toBeUndefined();

@@ -42,14 +42,21 @@ vi.mock('../../extension/extension-reload', () => ({
   stampRuntimeIdentity: vi.fn().mockResolvedValue(undefined),
   markReloadDetected: vi.fn().mockResolvedValue(undefined),
 }));
+const SIGNED_IN_USER = {
+  user_id: 'u1', username: 'op', email: 'op@example.invalid', roles: ['user'],
+};
 vi.mock('../../extension/auth/auth-service', () => ({ logoutAuth: vi.fn() }));
 vi.mock('../../extension/auth/auth-manager', () => ({
   authManager: {
     isAuthenticated: vi.fn(async () => true),
-    getCurrentUser: vi.fn(async () => ({
-      user_id: 'u1', username: 'op', email: 'op@example.invalid', roles: ['user'],
-    })),
+    getCurrentUser: vi.fn(async () => SIGNED_IN_USER),
     clearAllAuthData: vi.fn().mockResolvedValue(undefined),
+    // Startup's single pass: reconcileSession returns the state it validated and
+    // userFromAuthState maps it. Both answer from the same fixture the other
+    // methods do — stubbing them independently is how the panel would render
+    // signed-out against a signed-in fixture.
+    reconcileSession: vi.fn(async () => ({ user: SIGNED_IN_USER })),
+    userFromAuthState: vi.fn((state: any) => (state ? SIGNED_IN_USER : null)),
   },
 }));
 vi.mock('@faultmaven/copilot-ui/lib/capabilities', () => ({ capabilitiesManager: { fetch: capsFetch } }));

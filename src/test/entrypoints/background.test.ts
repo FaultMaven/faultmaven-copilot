@@ -129,6 +129,14 @@ vi.mock('@faultmaven/copilot-ui/config', () => ({
 }));
 
 // Mock reconcileAuthBridgeRegistration
+// The auth mode the handed-off revoke consults before firing. Mocked so the
+// dispatch test does not depend on a network probe for the provider.
+const { mockGetAuthConfig } = vi.hoisted(() => ({ mockGetAuthConfig: vi.fn() }));
+vi.mock('../../extension/auth/auth-config', async (importActual) => ({
+  ...(await importActual<any>()),
+  getAuthConfig: mockGetAuthConfig,
+}));
+
 vi.mock('../../extension/auth/auth-bridge-registration', () => ({
   reconcileAuthBridgeRegistration: vi.fn()
 }));
@@ -192,6 +200,63 @@ describe('Background Service Worker', () => {
         status: 'error',
         message: 'Unauthorized sender'
       });
+    });
+  });
+
+  describe('the refresh-token revoke handed off by the side panel', () => {
+    it('makes the call the panel deliberately did not make', async () => {
+      // The panel hands this off because an un-awaited fetch belongs to the
+      // document that started it, and the panel can be closed right after a
+      // sign-out. The worker outlives it — so this dispatch is the other half
+      // of that, and without it the hand-off is a way to LOSE the revoke.
+      mockGetAuthConfig.mockResolvedValue({ provider: 'oidc', features: {} });
+      (global.fetch as any).mockResolvedValue({ ok: true, status: 200 });
+      const sendResponse = vi.fn();
+
+      const result = listeners['message'](
+        { action: 'revokeRefreshToken', refreshToken: 'handed-off-token' },
+        { id: 'test-copilot-id' },
+        sendResponse
+      );
+
+      // Answered at once, and NOT awaited: nothing here is waiting on a
+      // network call whose whole point is that nobody has to.
+      expect(result).toBe(false);
+      expect(sendResponse).toHaveBeenCalledWith({ status: 'received' });
+
+      await vi.waitFor(() =>
+        expect(fetch).toHaveBeenCalledWith(
+          expect.stringContaining('/api/v1/auth/oauth/revoke'),
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              token: 'handed-off-token',
+              token_type_hint: 'refresh_token',
+              client_id: 'faultmaven-copilot',
+            }),
+          })
+        )
+      );
+    });
+
+    it('refuses a payload whose token is not a string', async () => {
+      // The gate above proves the sender is one of this extension's own
+      // contexts, not that the body is well-formed.
+      mockGetAuthConfig.mockResolvedValue({ provider: 'oidc', features: {} });
+      const sendResponse = vi.fn();
+
+      listeners['message'](
+        { action: 'revokeRefreshToken', refreshToken: { token: 'nope' } },
+        { id: 'test-copilot-id' },
+        sendResponse
+      );
+
+      expect(sendResponse).toHaveBeenCalledWith({ status: 'received' });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/auth/oauth/revoke'),
+        expect.anything()
+      );
     });
   });
 
@@ -322,8 +387,16 @@ describe('Background Service Worker', () => {
       expect(typeof sentBody.code_verifier).toBe('string');
       expect(sentBody.code_verifier.length).toBeGreaterThan(20);
 
-      // Verify authManager.saveAuthState was called
-      expect(mockAuthSaveState).toHaveBeenCalledWith(
+      // The composite row is written in the SAME `set()` as the credential
+      // keys, not by a follow-up `saveAuthState`. Two writes left a window
+      // where storage said "credentials, no row" — the orphan
+      // `reconcileSession` sweeps — so a panel mounting mid-sign-in wiped the
+      // credential the sign-in had just created.
+      const oauthWrite = (mockStorage.local.set as any).mock.calls
+        .map(([a]: [any]) => a)
+        .find((a: any) => a && a.access_token === 'new-token-abc');
+      expect(oauthWrite).toBeDefined();
+      expect(oauthWrite.authState).toEqual(
         expect.objectContaining({
           access_token: 'new-token-abc',
           user: expect.objectContaining({ user_id: 'user-789' })
@@ -678,7 +751,11 @@ describe('Background Service Worker', () => {
           headers: expect.objectContaining({ Authorization: 'Bearer new-token-abc' })
         })
       );
-      expect(mockAuthSaveState).toHaveBeenCalledWith(
+      const flatWrite = (mockStorage.local.set as any).mock.calls
+        .map(([a]: [any]) => a)
+        .find((a: any) => a && a.access_token === 'new-token-abc');
+      expect(flatWrite).toBeDefined();
+      expect(flatWrite.authState).toEqual(
         expect.objectContaining({
           access_token: 'new-token-abc',
           user: expect.objectContaining({
@@ -799,8 +876,12 @@ describe('Background Service Worker', () => {
       expect(stored.refresh_token).toBe('bridge-refresh');
       expect(stored.token_type).toBe('bearer');
       expect(stored.expires_at).toBe(bridgePayload.expires_at);
-      // Composite authState still saved for the fallback path.
-      expect(mockAuthSaveState).toHaveBeenCalledWith(bridgePayload);
+      // Composite row written ATOMICALLY with the credential keys — same
+      // `set()`, so no reader can observe a half-written sign-in.
+      const bridgeWrite = (mockStorage.local.set as any).mock.calls
+        .map(([a]: [any]) => a)
+        .find((a: any) => a && a.access_token === 'bridge-access');
+      expect(bridgeWrite.authState).toEqual(bridgePayload);
     });
 
     it('derives refresh_expires_at from refresh_expires_in when present', async () => {

@@ -2,9 +2,10 @@ import { browser } from 'wxt/browser';
 import config from "@faultmaven/copilot-ui/config";
 import { getHostEndpoints } from "@faultmaven/copilot-ui/lib/host-endpoints";
 import { authManager } from "./auth-manager";
-import { getAuthConfig } from "./auth-config";
 import { tokenManager } from "./token-manager";
-import { authenticatedFetch, authenticatedFetchWithRetry, prepareBody } from "@faultmaven/copilot-ui/lib/api/client";
+import { authenticatedFetchWithRetry, prepareBody } from "@faultmaven/copilot-ui/lib/api/client";
+import { assembleAuthHeaders } from "@faultmaven/copilot-ui/lib/api/fetch-utils";
+import { requestRefreshTokenRevoke } from "./revoke-refresh-token";
 import { UserProfile } from "@faultmaven/copilot-ui/lib/api/types";
 import type { components } from "@faultmaven/copilot-ui/types/api.generated";
 import { createHttpErrorFromResponse } from "@faultmaven/copilot-ui/lib/errors/http-error";
@@ -14,12 +15,8 @@ import { EventBus } from '../messaging';
 
 const log = createLogger('AuthService');
 
-// OAuth client identity for this extension (matches TokenManager's refresh grant
-// and dashboard-oauth's authorization request).
-const OAUTH_CLIENT_ID = 'faultmaven-copilot';
-
-// Best-effort revoke should never stall logout; bound it well under any UI wait.
-const REVOKE_TIMEOUT_MS = 10_000;
+// The logout POST itself, bounded so a hanging server cannot stall a sign-out.
+const LOGOUT_TIMEOUT_MS = 10_000;
 
 /** What a sign-out actually achieved, as far as this client can verify. */
 export interface LogoutOutcome {
@@ -29,58 +26,6 @@ export interface LogoutOutcome {
    *  client — typically the Dashboard, on its own token chain — may still be
    *  signed in as them. */
   allSessionsEnded: boolean;
-}
-
-/**
- * Best-effort server-side revocation of the refresh token on logout (RFC 7009).
- *
- * `POST /api/v1/auth/logout` revokes only the *access* token. Without this the
- * refresh token stays valid server-side and remains mintable via /oauth/token
- * until its natural expiry (~7 days), even though clearAllAuthData() destroys the
- * in-browser copy. This closes that gap so "logout means logout" server-side too.
- *
- * The OAuth `/oauth/revoke` endpoint is mounted only in OAuth (cloud) mode, so
- * this is scoped to non-local deployments. Every failure path — endpoint absent,
- * network error, 4xx/5xx, missing token — is swallowed: revocation is a
- * hardening nicety and must never block or fail the logout the user requested.
- */
-async function revokeRefreshTokenBestEffort(): Promise<void> {
-  try {
-    // Local/self-hosted mode does not mount /oauth/revoke. getAuthConfig() has a
-    // network → last-known-good → 'local' fallback ladder, so an undeterminable
-    // mode conservatively skips the call rather than firing a doomed request.
-    const authConfig = await getAuthConfig();
-    if (authConfig.provider === 'local') {
-      return;
-    }
-
-    const refreshToken = await tokenManager.getRefreshToken();
-    if (!refreshToken) {
-      return;
-    }
-
-    const response = await fetchWithTimeout(
-      `${await getHostEndpoints().apiUrl()}/api/v1/auth/oauth/revoke`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: refreshToken,
-          token_type_hint: 'refresh_token',
-          client_id: OAUTH_CLIENT_ID,
-        }),
-      },
-      REVOKE_TIMEOUT_MS
-    );
-
-    if (!response.ok) {
-      log.warn('Refresh-token revoke returned non-OK; continuing logout', {
-        status: response.status,
-      });
-    }
-  } catch (error) {
-    log.warn('Refresh-token revoke failed; continuing logout', error);
-  }
 }
 
 /**
@@ -115,15 +60,54 @@ export async function logoutAuth(): Promise<LogoutOutcome> {
   let allSessionsEnded = false;
 
   try {
-    // Revoke the refresh token server-side while the local copy still exists
-    // (the finally block below destroys it). /auth/logout only revokes the
-    // access token; this is best-effort and never throws.
-    await revokeRefreshTokenBestEffort();
+    // Deliberately NOT `authenticatedFetch`, and deliberately NOT the raw token
+    // either — the credential stack is asked directly, and its verdict is
+    // swallowed here.
+    //
+    // Through `getAuthHeaders` the host ACTS on a dead-chain verdict, tearing
+    // the session down mid-logout, inside this try, before the broadcast below;
+    // everything that used to guard against that (capturing the refresh token up
+    // front, re-reading it afterwards, preferring one copy over the other)
+    // existed only because the call path was wrong.
+    //
+    // But reading the STORED token alone was the other extreme: after a laptop
+    // sleep the access token is expired, the POST 401s, and the user is told we
+    // could not confirm their other sessions ended — on a sign-out that could
+    // have refreshed first and actually written the account-wide revocation.
+    // Asking `getValidAccessToken` refreshes a healthy near-expiry session, and
+    // catching its verdict here means a dead one still cannot tear anything
+    // down. Falling back to whatever is stored keeps the request authenticated
+    // where it can be; an expired bearer is no worse than none.
+    const bearer = await tokenManager
+      .getValidAccessToken()
+      .catch(() => null)
+      .then((token) => token ?? tokenManager.peekAccessToken().catch(() => null));
+    // try/catch, not `.catch()`. A storage accessor can throw SYNCHRONOUSLY (an
+    // invalidated MV3 context, a test double), and `.catch()` guards the promise
+    // rather than the call — the throw would escape past the POST below, so the
+    // account-wide revocation would never be written even though the bearer was
+    // already in hand. Read directly, as everything else in `auth/` does.
+    let stored: Record<string, unknown> = {};
+    try {
+      stored = await browser.storage.local.get(['sessionId']);
+    } catch {
+      /* No session id to send; the logout POST is still worth making. */
+    }
+    const sessionId = typeof stored?.sessionId === 'string' ? stored.sessionId : undefined;
 
-    const response = await authenticatedFetch(`${await getHostEndpoints().apiUrl()}/api/v1/auth/logout`, {
-      method: 'POST',
-      credentials: 'include'
-    });
+    const response = await fetchWithTimeout(
+      `${await getHostEndpoints().apiUrl()}/api/v1/auth/logout`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        // The same assembler every other request goes through. Only the
+        // SOURCING differs here — see the note on the bearer above — and
+        // spelling the header names again by hand is how this path would drift
+        // from the one it is deliberately bypassing.
+        headers: assembleAuthHeaders({ bearer, sessionId }),
+      },
+      LOGOUT_TIMEOUT_MS
+    );
 
     if (!response.ok) {
       throw await createHttpErrorFromResponse(response);
@@ -137,16 +121,40 @@ export async function logoutAuth(): Promise<LogoutOutcome> {
       .catch(() => null)) as components['schemas']['LogoutResponse'] | null;
     allSessionsEnded = body?.all_sessions_ended === true;
   } finally {
-    // Clear ALL local auth data (authState + tokens) regardless of response
-    // status. clearAuthState() alone would leave the token keys behind, so the
-    // "logged out" user would keep a live Bearer and silently auto-refresh.
+    // READ the token, TEAR DOWN, BROADCAST, then revoke — in that order.
+    //
+    // Nothing above this can destroy the credential any more (the POST no longer
+    // goes through the credential machinery), so one read is enough.
+    const refreshToken = await tokenManager.getRefreshToken().catch(() => null);
+
+    // Never rejects, so the broadcast below always runs.
     await authManager.clearAllAuthData();
 
-    // Tell the other contexts. Through the typed door: the payload shape is the
-    // contract the panel reads, and spelling it by hand is how a raw token
-    // payload once went out as an auth state whose `isAuthenticated` was
-    // undefined. EventBus.emit already swallows "no listener".
+    // Tell the other contexts BEFORE the best-effort revoke. That revoke
+    // resolves an auth config and then waits on the network — up to ~20s on a
+    // flaky connection — and nothing about it is needed for the sign-out to be
+    // observable. Behind it, the panel's own sign-out handler and every other
+    // context stall for that whole window.
+    //
+    // Through the typed door: the payload shape is the contract the panel reads,
+    // and spelling it by hand is how a raw token payload once went out as an
+    // auth state whose `isAuthenticated` was undefined. EventBus.emit already
+    // swallows "no listener".
     await EventBus.emit({ type: 'auth_state_changed', authState: null });
+
+    // Last, and NOT awaited. It resolves an auth config and then waits on the
+    // network — ~20s worst case — and `logoutAuth` is awaited by
+    // `ExtensionApp.signOut`, whose own `finally` clears the identity and drops
+    // the spinner. Awaiting it here stalled the panel that asked for the
+    // sign-out, which is the very thing moving it after the broadcast was meant
+    // to prevent.
+    //
+    // Which is why it is HANDED OFF rather than started here: an un-awaited
+    // fetch belongs to the document that made it, and this one runs in the side
+    // panel — a user who signs out and closes the panel would take the revoke
+    // with them. The worker outlives the panel and has nobody waiting on it.
+    // Never rejects.
+    void requestRefreshTokenRevoke(refreshToken);
   }
 
   return { allSessionsEnded };

@@ -131,9 +131,19 @@ export interface HostSession {
    * THROWS rather than resolving null when it cannot produce one. The contract
    * is non-null on purpose: a null would hand the shared UI a decision about
    * what an absent credential means, and that decision belongs to whoever owns
-   * the credential. A caller that cannot get a token is looking at a session
-   * that has ended, which is `onUnauthorized`'s business, not a value to branch
-   * on at a request site.
+   * the credential.
+   *
+   * WHICH throw matters, and it is the only thing the shared side branches on:
+   *
+   *   - `AuthenticationError` (or a subclass) — the session is OVER. The request
+   *     is not sent; the caller gets it, and its recovery is `show_modal`.
+   *   - anything else — nothing available RIGHT NOW. The request goes out
+   *     header-less and its 401 takes the recoverable session path, so a blip at
+   *     the token endpoint cannot destroy a credential the next request could
+   *     have used (#99).
+   *
+   * A host that never throws the first keeps the old behaviour exactly; the
+   * distinction is opt-in.
    */
   accessToken(): Promise<string>;
   /**

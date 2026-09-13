@@ -9,7 +9,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
-import { authManager } from '../../extension/auth/auth-manager';
 import type { AuthState } from '@faultmaven/copilot-ui/lib/api/types';
 
 // Mock browser environment
@@ -44,13 +43,15 @@ vi.mock('@faultmaven/copilot-ui/config', () => ({
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { tokenManager } from '../../extension/auth/token-manager';
+import { readSessionAccessToken } from '../../extension/host/session-credential';
 
 const API = 'http://localhost:8000';
 
 /**
- * The chain these tests stage — TokenManager first, AuthManager as fallback —
- * used to live inside `getAuthHeaders`. It is the extension host's now, so it is
- * reproduced here in the host's place. What the tests assert is unchanged and is
+ * The credential lookup used to live inside `getAuthHeaders`. It is the
+ * extension host's now, so it is reproduced here in the host's place — and it
+ * must mirror `ExtensionApp.accessToken` exactly, or this file's assertions are
+ * about a host that does not exist. What the tests assert is unchanged and is
  * the point of the file: whatever bearer the host supplies is what the session
  * request actually carries.
  */
@@ -67,13 +68,8 @@ function installHostChainTransport() {
   });
   setApiTransport({
     baseUrl: async () => API,
-    accessToken: async () => {
-      const fromTokenManager = await tokenManager.getValidAccessToken();
-      if (fromTokenManager) return fromTokenManager;
-      const authState = await authManager.getAuthState();
-      if (authState?.access_token) return authState.access_token;
-      throw new Error('no credential');
-    },
+    // The real thing, not a mirror — see host/session-credential.ts.
+    accessToken: readSessionAccessToken,
     sessionId: async () => {
       const stored = await mockBrowser.storage.local.get(['sessionId']);
       return (stored?.sessionId as string | undefined) ?? null;
@@ -250,8 +246,19 @@ describe('JWT Token in Session Creation', () => {
     );
   });
 
-  it('should fall back to AuthManager when TokenManager returns null', async () => {
-    // 1. Setup: TokenManager returns null, but AuthManager has token
+  it('never authenticates from an orphaned authState row', async () => {
+    // This asserted an "AuthManager fallback": authState used as a credential
+    // when TokenManager had none. That fallback does not exist — neither
+    // `fetch-utils.ts` nor `client.ts` mentions authState, and the real
+    // ExtensionApp transport reads only TokenManager. The comment in
+    // background.ts about a "getAuthHeaders fallback path" is stale.
+    //
+    // What that storage shape actually is, is the ORPHAN: a row saying
+    // "signed in" with no credential behind it — the state a pre-fix build left
+    // behind. getAuthState() now asks the credential stack unconditionally and
+    // reconciles it, which is what removed the need for a repair read on the
+    // per-request hot path.
+    // 1. Setup: an authState row with no credential keys behind it
     const authManagerToken = 'auth-manager-token-456';
 
     mockBrowser.storage.local.get.mockImplementation((keys: string[]) => {
@@ -299,14 +306,15 @@ describe('JWT Token in Session Creation', () => {
     // 2. Act: Create session
     await clientSessionManager.createSession();
 
-    // 3. Assert: Verify AuthManager token was used as fallback
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/sessions',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          'Authorization': 'Bearer auth-manager-token-456'
-        })
-      })
+    // 3. Assert: the orphaned row was NOT used as a credential. The request goes
+    //    out header-less, which routes its 401 to the recoverable session path
+    //    rather than a hard teardown. REMOVING the row is `reconcileSession()`'s
+    //    job, covered in test/api/auth.test.ts — this asserts only that the
+    //    transport never treats the row as a credential.
+    const sessionCall = (global.fetch as any).mock.calls.find(
+      ([url]: [string]) => url === 'http://localhost:8000/api/v1/sessions'
     );
+    expect(sessionCall).toBeDefined();
+    expect(sessionCall[1].headers).not.toHaveProperty('Authorization');
   });
 });

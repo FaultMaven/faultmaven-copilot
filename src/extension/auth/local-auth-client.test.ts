@@ -43,9 +43,17 @@ vi.mock('./user-scope', () => ({
   enforceUserDataScope: vi.fn().mockResolvedValue(false)
 }));
 
+// signOut delegates its teardown to authManager.clearAllAuthData() rather than
+// spelling a key list. Mocked so this stays a LocalAuthClient unit test; the
+// teardown's own behaviour is covered in test/api/auth.test.ts.
+vi.mock('./auth-manager', () => ({
+  authManager: { clearAllAuthData: vi.fn().mockResolvedValue(undefined) }
+}));
+
 // Import mocked browser after mocking
 import { browser } from 'wxt/browser';
 import { enforceUserDataScope } from './user-scope';
+import { authManager } from './auth-manager';
 
 describe('LocalAuthClient', () => {
   let client: LocalAuthClient;
@@ -422,17 +430,12 @@ describe('LocalAuthClient', () => {
         })
       );
 
-      // Verify tokens were cleared (including composite authState)
-      expect(browser.storage.local.remove).toHaveBeenCalledWith([
-        'access_token',
-        'token_type',
-        'expires_at',
-        'refresh_token',
-        'refresh_expires_at',
-        'session_id',
-        'user',
-        'authState'
-      ]);
+      // Routed through the ONE teardown rather than a hand-written key list.
+      // This used to assert the literal eight keys — which passed while the
+      // method was a fourth teardown variant that removed the credentials and
+      // `authState` but never the case cache, the partial teardown CLAUDE.md
+      // warns against. Asserting the delegation is what actually pins the rule.
+      expect(authManager.clearAllAuthData).toHaveBeenCalledTimes(1);
 
       // Verify auth state change was broadcasted
       expect(browser.runtime.sendMessage).toHaveBeenCalled();
@@ -443,8 +446,9 @@ describe('LocalAuthClient', () => {
 
       await client.signOut();
 
-      // Tokens should still be cleared
-      expect(browser.storage.local.remove).toHaveBeenCalled();
+      // The session should still be torn down — the server-side call is
+      // best-effort, the local teardown is not.
+      expect(authManager.clearAllAuthData).toHaveBeenCalledTimes(1);
     });
 
     it('broadcasts a contract-shaped auth_state_changed (never a raw user object)', async () => {
