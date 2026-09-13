@@ -26,6 +26,14 @@ interface EnhancedCaseHeaderProps {
   initialExpanded?: boolean;
   onStatusChangeRequest?: (newStatus: UserCaseState) => void;
   onScrollToTurn?: (turnNumber: number) => void;
+  /**
+   * How to PRINT a turn number that this surface names but does not render
+   * (#251). Given the MESSAGE clock, returns the number to show — the
+   * investigation turn where the conversation holds that row. Anything passed
+   * to `onScrollToTurn` stays the clock: the anchor and the label differ by
+   * design. Defaults to showing the clock.
+   */
+  turnLabel?: (messageTurn: number) => number;
 }
 
 export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
@@ -36,6 +44,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
   initialExpanded = true,
   onStatusChangeRequest,
   onScrollToTurn,
+  turnLabel,
 }) => {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -154,6 +163,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
               expandedSection={expandedSection}
               onToggleSection={handleToggleSection}
               onScrollToTurn={handleScrollToTurn}
+              turnLabel={turnLabel}
             />
           </div>
         )}

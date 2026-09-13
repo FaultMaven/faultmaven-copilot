@@ -23,6 +23,7 @@ vi.mock('@faultmaven/copilot-ui/lib/api/case-service', () => ({
 
 import { ChatWindow } from '@faultmaven/copilot-ui/shared/ui/components/ChatWindow';
 import { ResolutionActionsCard } from '@faultmaven/copilot-ui/shared/ui/components/ResolutionActionsCard';
+import { EvidenceDetailsModal } from '@faultmaven/copilot-ui/shared/ui/components/case-header/EvidenceDetailsModal';
 import type { UserCase } from '@faultmaven/copilot-ui/types/case';
 
 const activeCase = {
@@ -207,5 +208,58 @@ describe('ResolutionActionsCard — how many turns it took', () => {
       />
     );
     expect(container.textContent).toContain('12 turns');
+  });
+});
+
+/**
+ * The evidence surfaces name a turn they do not render. They carry
+ * `uploaded_at_turn`, which is the MESSAGE clock, so without a resolver they
+ * print a different number than the conversation prints for the same
+ * exchange — on the same screen, on any case with an aside.
+ */
+describe('EvidenceDetailsModal — the turn a file arrived on', () => {
+  const evidenceDetails = {
+    filename: 'checkout-pod.log',
+    uploaded_at_turn: 9,
+    derived_evidence: []
+  } as any;
+
+  const renderModal = (props: Record<string, unknown> = {}) =>
+    render(
+      <EvidenceDetailsModal
+        isOpen
+        evidenceDetails={evidenceDetails}
+        evidenceLoading={false}
+        onClose={vi.fn()}
+        {...props}
+      />
+    );
+
+  it('prints the investigation turn the conversation prints', () => {
+    // Turn 9 of the conversation is turn 8 of the investigation.
+    const { container } = renderModal({ turnLabel: (t: number) => (t === 9 ? 8 : t) });
+    expect(container.textContent).toContain('Uploaded at Turn 8');
+    expect(container.textContent).not.toContain('Uploaded at Turn 9');
+  });
+
+  it('jumps by the MESSAGE clock even though it labels by the other one', () => {
+    // The load-bearing half: `scrollToTurn` queries `[data-turn="N"]`, which is
+    // stamped with `turn_number`. Handing it the label would scroll to the
+    // wrong row, or to none.
+    const onScrollToTurn = vi.fn();
+    const { getByTitle } = renderModal({
+      turnLabel: (t: number) => (t === 9 ? 8 : t),
+      onScrollToTurn
+    });
+
+    getByTitle('Jump to turn in conversation').click();
+    expect(onScrollToTurn).toHaveBeenCalledWith(9);
+  });
+
+  it('falls back to the clock when no resolver is supplied', () => {
+    // A surface with no resolver prints what it printed before #251, rather
+    // than nothing.
+    const { container } = renderModal();
+    expect(container.textContent).toContain('Uploaded at Turn 9');
   });
 });

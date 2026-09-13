@@ -572,7 +572,12 @@ Two invariants to keep when touching the mapper:
    `scrollToTurn` stay on it because they are fed `uploaded_at_turn` from
    `EvidenceDetailsModal` and `CaseDetails`; re-basing the anchor to match the
    label breaks jump-to-turn with no error. The same split applies to the case
-   header's `T{n}` and the resolution card's "N turns".
+   header's `T{n}` and the resolution card's "N turns". Those two evidence
+   surfaces NAME a turn they do not render, so they take a `turnLabel`
+   resolver (threaded `ChatWindow` → `EnhancedCaseHeader` → `CaseDetails` →
+   `EvidenceDetailsModal`, backed by `investigationTurnFor`) to print the
+   number the conversation prints — while still handing `onScrollToTurn` the
+   raw `uploaded_at_turn`. Label and anchor differ on purpose.
 
 **Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
 persisted `conversations` map, and `useDataRecovery` discards a cache carrying a

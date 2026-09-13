@@ -166,12 +166,28 @@ const MilestoneMap: React.FC<MilestoneMapProps> = ({
 
 // ==================== Main Component ====================
 
+/**
+ * The default `turnLabel`: show the message clock unchanged. Named rather than
+ * inlined so the two call sites cannot drift, and so the fallback is visible
+ * as a decision — a surface with no resolver prints the clock, which is what
+ * it printed before #251.
+ */
+const identityTurn = (messageTurn: number): number => messageTurn;
+
 interface CaseDetailsProps {
   caseData: CaseUIResponse;
   activeCase: UserCase | null;
   expandedSection: string | null;
   onToggleSection: (section: string) => void;
   onScrollToTurn?: (turnNumber: number) => void;
+  /**
+   * How to PRINT a turn number that this surface names but does not render
+   * (#251). Given the MESSAGE clock, returns the number to show — the
+   * investigation turn where the conversation holds that row. Anything passed
+   * to `onScrollToTurn` stays the clock: the anchor and the label differ by
+   * design. Defaults to showing the clock.
+   */
+  turnLabel?: (messageTurn: number) => number;
 }
 
 export const CaseDetails: React.FC<CaseDetailsProps> = ({
@@ -180,6 +196,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   expandedSection,
   onToggleSection,
   onScrollToTurn,
+  turnLabel,
 }) => {
   // Configured Dashboard URL for deep-links (NOT the backend-reported one,
   // which is localhost on a self-hosted server).
@@ -571,7 +588,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
                           className="text-fm-accent hover:text-fm-accent/80 flex-shrink-0"
                           title="Jump to turn"
                         >
-                          → T{file.uploaded_at_turn}
+                          → T{(turnLabel ?? identityTurn)(file.uploaded_at_turn)}
                         </button>
                       )}
                     </div>
@@ -592,6 +609,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
         evidenceLoading={evidenceLoading}
         onClose={handleCloseEvidence}
         onScrollToTurn={onScrollToTurn}
+        turnLabel={turnLabel}
       />
     </div>
   );

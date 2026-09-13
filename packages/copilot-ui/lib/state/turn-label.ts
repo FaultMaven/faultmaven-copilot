@@ -74,3 +74,35 @@ export function predictedInvestigationTurn(
   }
   return highest >= 0 ? highest + 1 : undefined;
 }
+
+/**
+ * The investigation turn of whichever loaded row sits on `messageTurn`, or
+ * `undefined` when this client holds no such row.
+ *
+ * For surfaces that name a turn they do not themselves render — evidence
+ * "Uploaded at Turn N", the file list's "→ TN". Those carry
+ * `uploaded_at_turn`, which is the MESSAGE clock, so without this they print
+ * a different number than the conversation prints for the same exchange, on
+ * the same screen, on any case with an aside.
+ *
+ * ⚠️ The DISPLAY only. Keep passing `uploaded_at_turn` itself to
+ * `scrollToTurn` — the anchor is the clock, and the two differ here by design.
+ *
+ * `undefined` rather than a guess when the row is not loaded: the persisted
+ * conversation is capped to a recent suffix, so a file uploaded early in a
+ * long case has no local row to read, and the caller falls back to the clock.
+ * Reading other rows is sound here in a way it is not for labelling a row —
+ * this answers "what is that turn called", which is a lookup, not a count.
+ */
+export function investigationTurnFor(
+  messageTurn: number,
+  rows: readonly TurnLabelled[] | undefined
+): number | undefined {
+  if (!Array.isArray(rows)) return undefined;
+  for (const row of rows) {
+    if (row.turn_number === messageTurn && typeof row.investigation_turn === 'number') {
+      return row.investigation_turn;
+    }
+  }
+  return undefined;
+}

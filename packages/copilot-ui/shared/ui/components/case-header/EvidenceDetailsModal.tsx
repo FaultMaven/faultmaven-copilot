@@ -8,12 +8,28 @@
 import React from 'react';
 import type { UploadedFileDetailsResponse, DerivedEvidenceSummary } from '../../../../types/case';
 
+/**
+ * The default `turnLabel`: show the message clock unchanged. Named rather than
+ * inlined so the two call sites cannot drift, and so the fallback is visible
+ * as a decision — a surface with no resolver prints the clock, which is what
+ * it printed before #251.
+ */
+const identityTurn = (messageTurn: number): number => messageTurn;
+
 interface EvidenceDetailsModalProps {
   isOpen: boolean;
   evidenceDetails: UploadedFileDetailsResponse | null;
   evidenceLoading: boolean;
   onClose: () => void;
   onScrollToTurn?: (turnNumber: number) => void;
+  /**
+   * How to PRINT a turn number that this surface names but does not render
+   * (#251). Given the MESSAGE clock, returns the number to show — the
+   * investigation turn where the conversation holds that row. Anything passed
+   * to `onScrollToTurn` stays the clock: the anchor and the label differ by
+   * design. Defaults to showing the clock.
+   */
+  turnLabel?: (messageTurn: number) => number;
 }
 
 export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
@@ -22,6 +38,7 @@ export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
   evidenceLoading,
   onClose,
   onScrollToTurn,
+  turnLabel,
 }) => {
   if (!isOpen) return null;
 
@@ -56,7 +73,7 @@ export const EvidenceDetailsModal: React.FC<EvidenceDetailsModalProps> = ({
                   📄 {evidenceDetails.filename}
                 </div>
                 <div className="text-xs text-fm-text-tertiary">
-                  Uploaded at Turn {evidenceDetails.uploaded_at_turn}
+                  Uploaded at Turn {(turnLabel ?? identityTurn)(evidenceDetails.uploaded_at_turn)}
                   {onScrollToTurn && (
                     <>
                       {' · '}

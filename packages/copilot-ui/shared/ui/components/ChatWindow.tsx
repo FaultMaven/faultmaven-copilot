@@ -24,7 +24,7 @@ import { EnhancedCaseHeader } from "./case-header/EnhancedCaseHeader";
 import { ResolutionActionsCard } from "./ResolutionActionsCard";
 import { caseApi } from "../../../lib/api/case-service";
 import { createLogger } from "../../../lib/utils/logger";
-import { displayedTurn } from "../../../lib/state/turn-label";
+import { displayedTurn, investigationTurnFor } from "../../../lib/state/turn-label";
 import type { CaseUIResponse, UserCase } from "../../../types/case";
 
 const log = createLogger('ChatWindow');
@@ -154,6 +154,19 @@ const ChatWindowComponent = function ChatWindow({
    * is `turn_number`, and `data-turn` on the row below is stamped with the
    * same. Re-basing either to match the label breaks jump-to-turn silently.
    */
+  /**
+   * What to PRINT for a turn named elsewhere — the evidence surfaces, which
+   * carry `uploaded_at_turn` and would otherwise show the message clock beside
+   * a conversation showing the investigation turn. Falls back to the clock
+   * when the row is not loaded (a long case trimmed to a recent suffix).
+   */
+  const turnLabel = useCallback(
+    (messageTurn: number) =>
+      investigationTurnFor(messageTurn, Array.isArray(conversation) ? conversation : undefined)
+      ?? messageTurn,
+    [conversation]
+  );
+
   const scrollToTurn = useCallback((turnNumber: number) => {
     const element = document.querySelector(`[data-turn="${turnNumber}"]`);
     if (element) {
@@ -306,6 +319,7 @@ const ChatWindowComponent = function ChatWindow({
           initialExpanded={false}
           onStatusChangeRequest={handleStatusChangeRequest}
           onScrollToTurn={scrollToTurn}
+          turnLabel={turnLabel}
         />
       )}
 
