@@ -912,8 +912,15 @@ earns a more useful message.
 
 ## API Types
 
-`src/types/api.generated.ts` is **generated** from faultmaven's committed
-`docs/reference/api/openapi.json` — never edit it by hand.
+`packages/copilot-ui/types/api.generated.ts` is **generated** from faultmaven's
+committed `docs/reference/api/openapi.json` — never edit it by hand.
+
+⚠️ It lives in the PACKAGE, not in `src/`. This page said `src/types/...` for
+long enough to outlive the move, and that path does not exist in this
+repository: a repo-wide find returns exactly one `api.generated.ts`, the one
+above. Anyone following these steps literally looks for — or creates — a file
+nothing imports, while the real client goes stale and `api-types-drift` keeps
+diffing the file they did not touch.
 
 ```bash
 pnpm generate:api-types
@@ -971,8 +978,9 @@ the normal way to get ready for a spec change that has not merged yet:
 Preparing and adopting are separate acts, and only the second is a contract
 change. A branch that merely prepares leaves the pin alone, so `api-types-drift`
 stays **green** on it — the job regenerates from the pinned commit, and that has
-not moved. Never edit `src/types/api.generated.ts` by hand to make the gate look
-right in either state.
+not moved. Never edit the generated client by hand to make the gate look
+right in either state (again: the file is
+`packages/copilot-ui/types/api.generated.ts`).
 
 To tell a prepared branch apart from a genuine drift failure, regenerate with
 `--spec` pointed at the core PR's committed spec and diff against the branch's
