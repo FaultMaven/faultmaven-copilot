@@ -121,6 +121,14 @@ function highestInvestigationTurn(
  * a different number than the conversation prints for the same exchange, on
  * the same screen, on any case with an aside.
  *
+ * ⚠️ SUPERSEDED BY THE SERVER, and kept until the callers move. Contract 3.7.0
+ * (faultmaven#1391) puts `investigation_turn` on the evidence and file rows
+ * themselves, so the row now answers directly and this scan is no longer the
+ * only way to get the number — it is also the WORSE way, because it returns
+ * `undefined` whenever the conversation has been trimmed past the row being
+ * labelled, which the served field never does. Callers should read the field;
+ * this stays for rows from a server below 3.7.0.
+ *
  * ⚠️ The DISPLAY only. Keep passing `uploaded_at_turn` itself to
  * `scrollToTurn` — the anchor is the clock, and the two differ here by design.
  *

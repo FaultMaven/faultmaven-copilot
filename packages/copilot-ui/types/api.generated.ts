@@ -857,8 +857,9 @@ export interface paths {
          *
          *     ``global`` is the platform tier, so it is reported only to a
          *     ``platform_admin``: every route that publishes at global scope requires
-         *     that role (``POST /knowledge/documents`` unconditionally; the conversion
-         *     routes for ``scope == "global"``). Reporting it to everyone made the
+         *     that role — upload, convert and manual authoring alike, each for
+         *     ``scope == "global"`` (#1377 removed upload's route-level operator gate,
+         *     which had made uploading a privilege rather than the tier it guarded). Reporting it to everyone made the
          *     dashboard offer a target the backend then refused, which is the drift this
          *     endpoint exists to prevent — its whole point is to reflect the caller's
          *     real capability rather than a hardcoded assumption.
@@ -2603,6 +2604,11 @@ export interface paths {
          *         document_type: Type of document
          *         tags: Comma-separated tags
          *         source_url: Source URL if applicable
+         *         scope: Publishing tier — ``personal`` (default), ``team`` or
+         *             ``global``. ``global`` is the platform corpus every tenant reads
+         *             and requires the platform-admin role; ``team`` requires a
+         *             ``team_id`` naming a team you belong to.
+         *         team_id: Required when ``scope`` is ``team``.
          *
          *     Returns:
          *         Upload job information
@@ -4602,10 +4608,18 @@ export interface components {
             document_type: string;
             /** File */
             file: string;
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "personal" | "team" | "global";
             /** Source Url */
             source_url?: string | null;
             /** Tags */
             tags?: string | null;
+            /** Team Id */
+            team_id?: string | null;
             /** Title */
             title: string;
         };
@@ -5375,6 +5389,11 @@ export interface components {
             collected_at_turn: number;
             /** Evidence Id */
             evidence_id: string;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row sits on (#1387/#1391): the message clock at that turn minus the out-of-band turns at or before it. An aside does not advance it. `collected_at_turn` keeps its meaning as the message clock and is what anchors and jump-to-turn are keyed on, so ADDRESS a turn with that and DISPLAY this one. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /** Primary Purpose */
             primary_purpose?: string | null;
             /** Related Hypothesis Ids */
@@ -5545,6 +5564,11 @@ export interface components {
              * @description Optional verbatim quote backing the summary. NULL when the LLM omitted it (the summary is self-contained).
              */
             extract?: string | null;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row sits on (#1387/#1391): the message clock at that turn minus the out-of-band turns at or before it. An aside does not advance it. `collected_at_turn` keeps its meaning as the message clock and is what anchors and jump-to-turn are keyed on, so ADDRESS a turn with that and DISPLAY this one. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /** Primary Purpose */
             primary_purpose: string;
             /** Related Hypotheses */
@@ -5576,6 +5600,11 @@ export interface components {
              * @description Evidence identifier
              */
             evidence_id: string;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row sits on (#1387/#1391): the message clock at that turn minus the out-of-band turns at or before it. An aside does not advance it. `collected_at_turn` keeps its meaning as the message clock and is what anchors and jump-to-turn are keyed on, so ADDRESS a turn with that and DISPLAY this one. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /**
              * Relevance Score
              * @description Relevance to current investigation (0.0-1.0)
@@ -7094,6 +7123,11 @@ export interface components {
             file_id: string;
             /** Filename */
             filename: string;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row sits on (#1387/#1391): the message clock at that turn minus the out-of-band turns at or before it. An aside does not advance it. `uploaded_at_turn` keeps its meaning as the message clock and is what anchors and jump-to-turn are keyed on, so ADDRESS a turn with that and DISPLAY this one. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /** Uploaded At Turn */
             uploaded_at_turn: number;
         };
@@ -7356,6 +7390,11 @@ export interface components {
             file_id: string;
             /** Filename */
             filename: string;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row sits on (#1387/#1391): the message clock at that turn minus the out-of-band turns at or before it. An aside does not advance it. `uploaded_at_turn` keeps its meaning as the message clock and is what anchors and jump-to-turn are keyed on, so ADDRESS a turn with that and DISPLAY this one. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /** Size Bytes */
             size_bytes: number;
             /** Size Display */
@@ -7398,6 +7437,11 @@ export interface components {
              * @description Original or generated filename
              */
             filename: string;
+            /**
+             * Investigation Turn
+             * @description Which turn OF THE INVESTIGATION this row sits on (#1387/#1391): the message clock at that turn minus the out-of-band turns at or before it. An aside does not advance it. `uploaded_at_turn` keeps its meaning as the message clock and is what anchors and jump-to-turn are keyed on, so ADDRESS a turn with that and DISPLAY this one. Null when the server predates the field.
+             */
+            investigation_turn?: number | null;
             /**
              * Size Bytes
              * @description File size in bytes

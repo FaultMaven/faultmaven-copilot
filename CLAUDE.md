@@ -575,7 +575,7 @@ Two invariants to keep when touching the mapper:
    header's `T{n}` and the resolution card's "N turns". Those two evidence
    surfaces NAME a turn they do not render, so they take a `turnLabel`
    resolver (threaded `ChatWindow` → `EnhancedCaseHeader` → `CaseDetails` →
-   `EvidenceDetailsModal`, backed by `investigationTurnFor`) to print the
+   `EvidenceDetailsModal`, backed by `investigationTurnFor`) — **superseded by contract 3.7.0**, which puts `investigation_turn` on the evidence and file rows themselves (faultmaven#1391): the resolver returns nothing once the conversation is trimmed past the row, where the served field always answers. The threading stays until the surfaces read the field to print the
    number the conversation prints — while still handing `onScrollToTurn` the
    raw `uploaded_at_turn`. Label and anchor differ on purpose. That resolver
    returns `undefined` when the conversation does not hold the row, and those

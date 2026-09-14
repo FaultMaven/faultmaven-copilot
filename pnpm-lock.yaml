@@ -149,7 +149,7 @@ importers:
         specifier: ^16.2.7
         version: 16.2.7
       openapi-typescript:
-        specifier: ^7.10.1
+        specifier: 7.10.1
         version: 7.10.1(typescript@5.8.3)
       playwright:
         specifier: ^1.58.2
@@ -8675,7 +8675,7 @@ snapshots:
 
   parse-json@8.3.0:
     dependencies:
-      '@babel/code-frame': 7.28.6
+      '@babel/code-frame': 7.29.7
       index-to-position: 1.2.0
       type-fest: 4.41.0
 
