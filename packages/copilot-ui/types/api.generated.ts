@@ -1313,6 +1313,21 @@ export interface paths {
          *     - INCLUDES closed/resolved cases (frontend categorizes by status)
          *     - Use include_empty=false to hide cases with no conversation yet
          *     - Use status filter to further refine results
+         *
+         *     Creation-date bounds:
+         *     - The window is HALF-OPEN, `[created_after, created_before)`, and lives in
+         *       the same WHERE clause as every other filter, so `total_count` describes
+         *       the same set as the page.
+         *     - Half-open because an inclusive upper bound is not expressible by a client
+         *       whose clock stops at milliseconds — which is every browser — while
+         *       `created_at` keeps microseconds. A day bounded at 23:59:59.999 silently
+         *       drops a case created at 23:59:59.9997.
+         *     - They are INSTANTS, not calendar days. To select one day, send that day's
+         *       first instant and the FOLLOWING day's first instant, both resolved in the
+         *       CLIENT's timezone: only the client knows which day the user meant.
+         *     - Send an offset. A bare naive value is read as UTC, and any offset is
+         *       normalized to UTC before it reaches the query, so two spellings of one
+         *       instant always answer alike.
          */
         get: operations["list_cases_api_v1_cases_get"];
         put?: never;
@@ -9111,6 +9126,10 @@ export interface operations {
                 source?: ("copilot" | "slack" | "api") | null;
                 /** @description Filter to cases shared with this Team (ADR-013 §D4). Only Teams the caller belongs to yield results; ignored in standalone (no teams). */
                 team_id?: string | null;
+                /** @description Only cases created at or after this instant — INCLUSIVE. ISO-8601 with an offset; a value without one is read as UTC. */
+                created_after?: string | null;
+                /** @description Only cases created strictly before this instant — EXCLUSIVE. ISO-8601 with an offset; a value without one is read as UTC. To select a calendar day, pass that day's first instant as created_after and the FOLLOWING day's first instant here. */
+                created_before?: string | null;
                 /** @description Items per page */
                 limit?: number;
                 /** @description Number of items to skip */
