@@ -133,6 +133,30 @@ jobs:
             exit 1
           fi
 
+      # ADVISORY, and the gap it closes is real: the check above is satisfied by
+      # a hop of ANY size, because it only asserts the pinned contractVersion
+      # equals the version the pinned ref serves. A 3.5.0 -> 3.7.0 bump passes
+      # exactly as 3.5.0 -> 3.6.0 does, so a pull request described as adopting
+      # one contract can carry several — and one of those carried an
+      # authorization change that no gate and no description mentioned (#267).
+      #
+      # This prints every contract entry the bump crossed into the job summary.
+      # It never fails: how many contracts a bump may cross is a judgement, and
+      # a script answering it would make the agreement on the reviewer's behalf
+      # — the same reason the API's own breaking-change differ is advisory.
+      - name: Report what the pin bump crossed
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          else
+            BASE="HEAD^"
+          fi
+          node scripts/report-contract-hop.mjs "${BASE}" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Regenerate and compare
         env:
           FM_OPENAPI_SPEC: /tmp/openapi.json
