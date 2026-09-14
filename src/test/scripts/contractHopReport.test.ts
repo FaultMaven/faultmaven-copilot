@@ -72,7 +72,7 @@ vitestDescribe('the contract-hop disclosure', () => {
     expect(out).not.toContain('API_CONTRACT_VERSION');
   });
 
-  it('reports every entry a multi-contract hop actually crossed', () => {
+  it('reports every entry a multi-contract hop actually crossed, AND says it is several', () => {
     // The disclosure's whole purpose: a bump described as adopting one contract
     // can carry several, and the reviewer is consenting to all of them.
     const out = describeHop({
@@ -85,6 +85,28 @@ vitestDescribe('the contract-hop disclosure', () => {
     expect(out).toContain('The entry before it.');
     // ...but still not one from below the range.
     expect(out).not.toContain('An old entry, deliberately out of order.');
+
+    // THE HEADING, not just the entry text. Asserting only that both texts
+    // appear leaves the branch itself untested: collapse the multi arm into the
+    // single arm and a two-contract bump renders under "One contract adopted"
+    // with every other assertion here still green — the disclosure defeated in
+    // exactly the way this file exists to prevent, one branch over.
+    expect(out).toMatch(/2 contracts adopted, not one/);
+    expect(out).not.toContain('One contract adopted');
+  });
+
+  it('warns rather than goes quiet when the pin moved but no entry matched', () => {
+    // Silence and confidence are the two outputs this must never produce by
+    // accident, and a version with no note in the file is the way to get the
+    // first one: the bump is real, and the reader learns nothing about it.
+    const out = describeHop({
+      before: pin('3.8.0'),
+      after: pin('9.9.9'),
+      notes: NOTES,
+    });
+
+    expect(out).not.toBe('');
+    expect(out).toMatch(/9\.9\.9/);
   });
 
   it('says nothing when the pin did not move', () => {

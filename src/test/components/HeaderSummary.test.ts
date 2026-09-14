@@ -8,7 +8,7 @@
  * (both dropdown and natural language) either asks for missing info
  * or pivots to the other disposition, so a clickable menu entry for
  * those verdicts would be a dead-end. See HeaderSummary JSDoc and
- * the docstring on ``DispositionEligibility`` in src/types/case.ts.
+ * the docstring on ``DispositionEligibility`` in packages/copilot-ui/types/case.ts.
  *
  * Matrix coverage (backend emits per derive_disposition_eligibility):
  *

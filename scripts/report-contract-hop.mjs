@@ -72,42 +72,33 @@ const compare = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
  * and BOTH halves are load-bearing — each one alone has already shipped a bug.
  *
  * Without the not-a-comment half: the notes are not in version order (3.6.0
- * sits below 2.0.0, because "#1388 took 3.6.0 while this sat in review"), so the
+ * sits below 2.0.0, because "#1389 took 3.5.0 while this sat in review"), so the
  * last entry in the file has no header after it, a next-header-only rule runs it
- * to EOF, and `API_CONTRACT_VERSION = "3.7.0"` lands in the prose. That is what
- * the first version of this script printed.
+ * to EOF, and `API_CONTRACT_VERSION` lands in the prose. That is what the first
+ * version of this script printed.
  *
  * Without the next-header half: every subsequent header is itself a `#` line, so
  * the walk passes through all of them and the newest entry absorbs the whole
- * file below it. That is what the SECOND version printed — 528 lines for a
- * single-contract hop, under a heading that said "One contract adopted".
+ * file below it — 528 lines for a single-contract hop, under a heading that said
+ * "One contract adopted". That is what the second version printed.
  */
 function entriesBetween(source, from, to) {
-  const lines = source.split('\n');
+  const lines = source.split(/\r?\n/);
   const headers = [];
   lines.forEach((line, i) => {
     const match = /^#\s+(\d+\.\d+\.\d+)\s+[—-]\s/.exec(line);
     if (match) headers.push({ index: i, version: parseVersion(match[1]) });
   });
 
-  // The header lines themselves, so the walk below can STOP at one. Without
-  // this the rule in the docstring was only half implemented: every subsequent
-  // header is itself a `#` line, so `end` walked straight through all of them
-  // and the newest entry swallowed the entire history beneath it. Measured on
-  // the 3.7.0 -> 3.8.0 bump: 528 lines captured instead of 37, rendered in one
-  // fence under the heading "One contract adopted". The disclosure this script
-  // exists to produce was defeated on its first real use.
-  const headerLines = new Set(headers.map((h) => h.index));
-
   const found = [];
-  for (const { index, version } of headers) {
+  for (const [k, { index, version }] of headers.entries()) {
     if (!version || compare(version, from) <= 0 || compare(version, to) > 0) continue;
+    // Both halves of the boundary, in one expression each: `limit` is the next
+    // header (the ordering `headers` already has, so no lookup is needed), and
+    // the loop condition is the not-a-comment half.
+    const limit = headers[k + 1]?.index ?? lines.length;
     let end = index + 1;
-    while (
-      end < lines.length
-      && !headerLines.has(end)
-      && (lines[end].startsWith('#') || lines[end].trim() === '')
-    ) {
+    while (end < limit && (lines[end].startsWith('#') || lines[end].trim() === '')) {
       end += 1;
     }
     found.push(
