@@ -91,6 +91,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          # Two commits, so `HEAD^` exists on a push. At the default depth
+          # of 1 the hop report's push arm could never resolve a base and
+          # was permanently silent — losing the post-merge record of what a
+          # pin bump crossed, which is the durable half of the disclosure.
+          fetch-depth: 2
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v5
@@ -144,14 +150,21 @@ jobs:
       # It never fails: how many contracts a bump may cross is a judgement, and
       # a script answering it would make the agreement on the reviewer's behalf
       # — the same reason the API's own breaking-change differ is advisory.
+      # `success()`, NOT `always()`: the step above exits 1 when the pin's
+      # contractVersion disagrees with what its ref serves — the pin is
+      # known-wrong — and reporting anyway hands a reviewer a confident
+      # disclosure derived from a pin CI had just refused.
       - name: Report what the pin bump crossed
-        if: always()
+        if: success()
         continue-on-error: true
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.base_ref }}"
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            # THE MERGE BASE, not the base branch tip. A stacked pull request
+            # whose parent already merged sees an identical pin on the tip and
+            # reports nothing — the same silence a PR that moved no pin gives.
+            git fetch --no-tags --depth=50 origin "${{ github.base_ref }}"
+            BASE=$(git merge-base "origin/${{ github.base_ref }}" HEAD || echo "origin/${{ github.base_ref }}")
           else
             BASE="HEAD^"
           fi
