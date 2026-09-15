@@ -25,7 +25,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "9aa4967afdc07fef9628f39504dbc6c2dcc405c11a4999df3169dd5408e9d7a0"
+    "sha256": "e5fddeabe0d84dc88cdb2ae338a30d47044e3e511dae0bc65e09d200917bdb14"
   },
   "iconSources": {
     "fileCount": 8,
@@ -118,7 +118,7 @@
     "assets/jetbrains-mono-vietnamese-500-normal-DNRqzVM1.woff": "6b14186bc983291a126aa8d6d9c3044415c968262279eecbb9bb194f1daf7800",
     "assets/jetbrains-mono-vietnamese-600-normal-OWROknRo.woff": "1e3421e0f17174374ea4b6103d2f0118cf914c36004ca10cd4b092b8390ee6ed",
     "assets/sidepanel_manual-DY09GgKC.css": "a2289e0121955cab64788c75782a59832df2c2f58e5d33143a1777e657477b03",
-    "background.js": "e69e82bf35dae8b1c0d15018dc23b556e033b53807824b51dc1ae90d232527af",
+    "background.js": "936adcc955d85c0385a16376757aba728f4814299ea3d543f23fa37e621c141f",
     "chunks/abnfDiagram-N423BO3Z-Db4E1xsv.js": "6db47b75aa070184461fb7e1ef67593b839273114a0a278027ea10cda0860e0a",
     "chunks/arc-upkgWTaN.js": "901517fa263b315253035fb1eedad6b7f2a405335358cb8d6ae5c68c2c89ddbc",
     "chunks/architectureDiagram-T3A2C74G-CxMgXDki.js": "5be4691f5d1254ad8c4791170e41c28bd6f5412d9ecdf82b58b9d54978e38d1e",
@@ -175,7 +175,7 @@
     "chunks/requirementDiagram-LRYGKXZP-DXgmwZNI.js": "783cfa2033c9701a6672cde0c5802065825dcb2f9a90eef775a2246964e1484a",
     "chunks/sankeyDiagram-W5VNT64P-P432XeT5.js": "6399ef9ef9145ca5f7902519ecb932cb14aad96881607a82c58968930d80fa45",
     "chunks/sequenceDiagram-SI44F4Z6-q8VzLNMy.js": "5af9fb39fbf36783456e1eda0472edc31b54e7b90f9b85da6cce211503fbbc1e",
-    "chunks/sidepanel_manual-DzhIOYzk.js": "c709a953251f8a420166cdbe652f2b9d218e4d48c70ffd0cf1568dad1706d402",
+    "chunks/sidepanel_manual-Bm52-foH.js": "92a19881c37e06e76fc16c2ff8def915c68868387af3fb525371cbcca3e48120",
     "chunks/sizeCapture-X5ZJPWSS-DPoADyYk.js": "3d8022eb07c362d8aa5a1f9238e45d599e94e7a3b641757eaec0b8c4cffa5bef",
     "chunks/stateDiagram-OKZ733FA-BE3P8M6Q.js": "7685f9f8e3cb744554c339234a90a19a9cda9a1d100a8318202b3d21b3ebebf7",
     "chunks/stateDiagram-v2-UEYNNEHI-BSwwOwLm.js": "4398a6c3e6d6f2b256442bdc85434e9d1ca1e304eba3ab436cd5a5d0e30cc20f",
@@ -198,6 +198,6 @@
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "1c5448ab1150a21287a6c85f0c1f0521c387983f4a3b4a9defe42614383b0028",
     "options.html": "385f5f38427df02b57ad8a62241fcfbbb5995ee6312035d22fb657ee6f13a1b7",
-    "sidepanel_manual.html": "afb5463969e92c48fe4d7fc2a7d2418ba06773a8b868b82bb4b0103257462095"
+    "sidepanel_manual.html": "6b60a87f37c602651b7045cab2a46e4992c3d2f79d45b1452a863aa721ed93e5"
   }
 }

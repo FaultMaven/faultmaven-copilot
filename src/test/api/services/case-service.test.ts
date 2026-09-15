@@ -204,6 +204,161 @@ describe('Case Service', () => {
       expect(result[1].owner_id).toEqual('user-2');
     });
 
+    // #271. The filter is forwarded to the query string verbatim, so what
+    // reaches the transport IS the contract. Every assertion below reads the URL
+    // the code actually handed to `authenticatedFetchWithRetry`, never a
+    // rebuilt one — a reconstruction agrees with a broken serializer by
+    // construction.
+    describe('filter serialization', () => {
+      const requestedQuery = () => {
+        const calls = vi.mocked(client.authenticatedFetchWithRetry).mock.calls;
+        expect(calls).toHaveLength(1);
+        return new URL(calls[0][0]).searchParams;
+      };
+
+      beforeEach(() => {
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
+          mockResponse({ cases: [] }) as unknown as Response
+        );
+      });
+
+      it('sends every parameter the route declares, under its own name', async () => {
+        await caseService.getUserCases({
+          state: 'investigating',
+          source: 'copilot',
+          team_id: 'team-7',
+          created_after: '2026-09-14T00:00:00-07:00',
+          created_before: '2026-09-15T00:00:00-07:00',
+          include_empty: true,
+          include_archived: false,
+          limit: 25,
+          offset: 50,
+        });
+
+        const query = requestedQuery();
+        expect(query.get('state')).toBe('investigating');
+        expect(query.get('source')).toBe('copilot');
+        expect(query.get('team_id')).toBe('team-7');
+        expect(query.get('created_after')).toBe('2026-09-14T00:00:00-07:00');
+        expect(query.get('created_before')).toBe('2026-09-15T00:00:00-07:00');
+        expect(query.get('include_empty')).toBe('true');
+        expect(query.get('include_archived')).toBe('false');
+        expect(query.get('limit')).toBe('25');
+        expect(query.get('offset')).toBe('50');
+      });
+
+      // The defect: `!== undefined` let null through to `String(null)`, so "no
+      // lower bound" went out as `created_after=null` — and FastAPI, which
+      // parses that parameter as a datetime, answers 422.
+      it('omits a null value entirely rather than sending the string "null"', async () => {
+        await caseService.getUserCases({
+          state: null,
+          team_id: null,
+          created_after: null,
+          created_before: null,
+          limit: 25,
+        });
+
+        const query = requestedQuery();
+        expect([...query.keys()]).toEqual(['limit']);
+        expect(query.has('created_after')).toBe(false);
+        expect(query.get('created_after')).not.toBe('null');
+      });
+
+      it('omits an undefined value', async () => {
+        await caseService.getUserCases({ state: undefined, limit: 25, offset: undefined });
+
+        expect([...requestedQuery().keys()]).toEqual(['limit']);
+      });
+
+      // The boundary takes ISO-8601 strings, so a `Date` is a COMPILE error and
+      // the cast below is what an untyped JavaScript caller does. The runtime
+      // conversion is the net under that: `String(date)` produced
+      // "Mon Sep 14 2026 00:00:00 GMT-0700 (…)", which the server cannot parse.
+      it('serializes a Date an untyped caller passes to ISO-8601, not to the JS toString form', async () => {
+        const from = new Date(Date.UTC(2026, 8, 14, 7, 0, 0));
+
+        await caseService.getUserCases(
+          { created_after: from } as unknown as caseService.CaseListFilters
+        );
+
+        const serialized = requestedQuery().get('created_after');
+        expect(serialized).toBe('2026-09-14T07:00:00.000Z');
+        expect(serialized).not.toBe(String(from));
+      });
+
+      // `toISOString()` throws `RangeError` on an invalid date. The conversion is
+      // a NET under untyped callers, and a net that turns a handled failure into
+      // an unhandled one is not a net: `new Date(userInput)` on unparseable input
+      // used to produce `created_after=Invalid+Date` and a server 422 the
+      // caller's error path already handles — it must not become a synchronous
+      // throw out of the serializer, before any fetch is made.
+      it('degrades an invalid Date rather than throwing out of the serializer', async () => {
+        const unparseable = new Date('not a date');
+
+        await expect(
+          caseService.getUserCases(
+            { created_after: unparseable } as unknown as caseService.CaseListFilters
+          )
+        ).resolves.toEqual([]);
+
+        expect(requestedQuery().get('created_after')).toBe('Invalid Date');
+      });
+
+      // The compile gate closes FRESH LITERALS and nothing else, which is not the
+      // shape a filter takes in practice. Measured against this repo's own
+      // `tsc --noEmit --strict`:
+      //
+      //   getUserCases({ status: 'resolved', limit: 25 })                TS2353
+      //   const g = { status: 'resolved' };        getUserCases(g)       TS2559
+      //   const f = { status: 'resolved', limit: 25 }; getUserCases(f)   NO ERROR
+      //
+      // Excess-property checking does not apply through a variable, and the one
+      // shared key defeats the weak-type check that would otherwise catch an
+      // all-optional target. There is deliberately NO CAST below — the call
+      // compiles, which is precisely the problem, and a compile-time-only gate
+      // cannot prove anything here. The runtime allowlist is what closes it.
+      it('drops an undeclared key that arrives through a variable, where the compiler cannot see it', async () => {
+        const builtUp = { status: 'resolved', limit: 25 };
+
+        await caseService.getUserCases(builtUp);
+
+        const query = requestedQuery();
+        expect([...query.keys()]).toEqual(['limit']);
+        expect(query.has('status')).toBe(false);
+      });
+
+      // A TYPE-LEVEL gate, and the only kind that can close this hole: the
+      // defect was that TypeScript ACCEPTED these. If either key ever stops
+      // being an error the directive above it goes unused and `pnpm compile`
+      // fails, so the assertion cannot rot into a no-op.
+      it('rejects a key the route does not declare', async () => {
+        await caseService.getUserCases({
+          // @ts-expect-error `status` is not a parameter of GET /api/v1/cases. The
+          // route declares `state` (renamed in faultmaven#405), and an unknown key
+          // is forwarded verbatim, dropped by FastAPI, and answered 200 with the
+          // UNFILTERED list.
+          status: 'resolved',
+        });
+        await caseService.getUserCases({
+          // @ts-expect-error `priority` has never been a parameter of this route
+          // either — it is a field on a case, not a filter on the list.
+          priority: 'high',
+        });
+        await caseService.getUserCases({
+          // @ts-expect-error a literal that also carries a DECLARED key is still
+          // caught, by excess-property checking rather than by the weak-type
+          // rule the two above trip. Pinned separately because it is the only
+          // one of the three literal forms a variable does not also reach — see
+          // the runtime test above for the form that compiles clean.
+          status: 'resolved',
+          limit: 25,
+        });
+
+        expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(3);
+      });
+    });
+
     // L2: the single-slot cache is only valid for the canonical default page
     // (offset 0, DEFAULT_CASE_LIST_LIMIT). A differently-paged fetch must neither
     // read nor write it, or a limit:50 fetch would shrink the list a limit:100
@@ -253,6 +408,91 @@ describe('Case Service', () => {
 
         expect(getSpy).toHaveBeenCalled();
         expect(setSpy).toHaveBeenCalledTimes(1);
+      });
+
+      // Eligibility is a question about the page this call REQUESTS, and a key
+      // whose value is null contributes no query parameter — so this is the
+      // canonical page and must hit the same slot. Keying on the key alone would
+      // answer from the call site's spelling and stop caching the default list
+      // for any caller that spells "no filter" out.
+      it('treats the canonical page as default when a filter is explicitly null', async () => {
+        getSpy.mockResolvedValue(null);
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
+          mockResponse({ cases: [fresh] }) as unknown as Response
+        );
+
+        await caseService.getUserCases({
+          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, state: null
+        });
+
+        expect(getSpy).toHaveBeenCalled();
+        expect(setSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not read or write the cache when a real filter narrows the page', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' }]);
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
+          mockResponse({ cases: [fresh] }) as unknown as Response
+        );
+
+        const result = await caseService.getUserCases({
+          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, state: 'resolved'
+        });
+
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+        expect(result[0].case_id).toBe('fresh');
+      });
+
+      // Eligibility reads the URL the serializer just built, so these two
+      // assertions are ONE fact rather than two that happen to agree. An empty
+      // string is a legal `team_id` and IS serialized, so this call issues a
+      // NARROWED query and must not touch the canonical slot. Teach the
+      // serializer to skip `''` and the query assertion fails loudly, instead of
+      // the caching quietly changing under a predicate that re-derived the rule.
+      it('decides eligibility from the query it issues, not the filter it was spelled with', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' }]);
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
+          mockResponse({ cases: [fresh] }) as unknown as Response
+        );
+
+        const result = await caseService.getUserCases({
+          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, team_id: ''
+        });
+
+        // Cache behaviour first, so a predicate that drifts back to re-deriving
+        // the rule fails by NAME here rather than as an opaque undefined-read on
+        // a fetch that a served cache hit meant never happened.
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+        const issued = new URL(
+          vi.mocked(client.authenticatedFetchWithRetry).mock.calls[0][0]
+        ).searchParams;
+        expect([...issued.keys()].sort()).toEqual(['limit', 'offset', 'team_id']);
+        expect(result[0].case_id).toBe('fresh');
+      });
+
+      // `response.ok` with a body that will not parse — a proxy error page, or a
+      // Content-Length: 0 under a 200. That is not an empty list, and caching one
+      // is worse than rendering one: `[]` is TRUTHY, so `if (cached) return
+      // cached` short-circuits every later fetch and the sidebar reads empty and
+      // stays empty until the TTL expires. The sidebar's own fetch is the
+      // canonical default page, so this slot is exactly the one it would poison.
+      it('does not cache an empty list built from a 200 whose body will not parse', async () => {
+        getSpy.mockResolvedValue(null);
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected end of JSON input')),
+          headers: { get: vi.fn() },
+        } as unknown as Response);
+
+        const result = await caseService.getUserCases({
+          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0
+        });
+
+        expect(result).toEqual([]);
+        expect(setSpy).not.toHaveBeenCalled();
       });
     });
   });

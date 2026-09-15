@@ -1,5 +1,5 @@
 import { getApiTransport } from '../transport';
-import type { components } from "../../../types/api.generated";
+import type { components, operations } from "../../../types/api.generated";
 import { Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
@@ -347,30 +347,132 @@ export async function getCase(caseId: string): Promise<UserCase> {
   return toUserCase(caseData);
 }
 
-export async function getUserCases(filters?: {
-  status?: string;
-  priority?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<UserCase[]> {
-  const url = new URL(`${await getApiTransport().baseUrl()}/api/v1/cases`);
-  if (filters) {
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v !== undefined) url.searchParams.append(k, String(v));
-    });
+/**
+ * The filter `GET /api/v1/cases` actually accepts — DERIVED from the generated
+ * operation, never hand-written.
+ *
+ * Keys are forwarded to the query string verbatim, with no renaming, so any key
+ * this type admits that the route does not declare is dropped by FastAPI
+ * without a word and answered with **200 and the unfiltered list** (#271; the
+ * same shape as faultmaven-dashboard#51). It used to advertise `status` and
+ * `priority`, neither of which this route has ever declared — `status` being the
+ * inviting one, because the real parameter is `state`, renamed in faultmaven#405.
+ *
+ * Deriving it makes the compiler the gate: `{ status: 'resolved' }` is a compile
+ * error, and the accepted set stays correct when the contract moves without
+ * anyone remembering to re-copy it. It is also the only way the real parameters
+ * — `state`, `source`, `team_id`, the creation-date window, `include_empty`,
+ * `include_archived` — become expressible at all.
+ */
+export type CaseListFilters = NonNullable<
+  operations['list_cases_api_v1_cases_get']['parameters']['query']
+>;
+
+/**
+ * The same set again, as a RUNTIME table — because the compile gate above closes
+ * only half the hole.
+ *
+ * TypeScript's excess-property check fires on a FRESH OBJECT LITERAL and nowhere
+ * else. Through a variable it does not, and the weak-type check that would
+ * otherwise catch an all-optional target is defeated by a single shared key.
+ * Measured against this repo's own `tsc --noEmit --strict`:
+ *
+ *     getUserCases({ status: 'resolved', limit: 100 })                  TS2353
+ *     const g = { status: 'resolved' };        getUserCases(g)          TS2559
+ *     const f = { status: 'resolved', limit: 100 }; getUserCases(f)     NO ERROR
+ *
+ * That third line is the shape a filter actually takes — built up conditionally,
+ * then passed along — so a compile-time-only gate would leave #271 reachable by
+ * the most realistic route to it. The forwarder is where it has to close.
+ *
+ * Typed `Record<keyof CaseListFilters, true>`, so the compiler checks this table
+ * against the generated operation in BOTH directions: a parameter the contract
+ * adds and this omits is a missing-property error, and a key the route does not
+ * declare is an excess-property error. One source of truth, two gates — which is
+ * the whole claim, and a hand-kept second list would not be.
+ */
+const CASE_LIST_QUERY_PARAMS: Record<keyof CaseListFilters, true> = {
+  state: true,
+  source: true,
+  team_id: true,
+  created_after: true,
+  created_before: true,
+  limit: true,
+  offset: true,
+  include_empty: true,
+  include_archived: true,
+};
+
+/**
+ * Serialize a case-list filter into `url`'s query string.
+ *
+ * An UNDECLARED key is dropped, and loudly. Forwarding it verbatim is #271
+ * itself: FastAPI drops the unknown parameter without a word and answers 200
+ * with the UNFILTERED list, so the caller believes it filtered and did not.
+ * Dropping it here does not make that call correct — it makes it visible, and
+ * leaves the request no worse than the silent one it replaces.
+ *
+ * The null guard is LOOSE (`!= null`), and that is a fix rather than a style
+ * choice. The contract types every filter as `T | null` — `created_after` and
+ * `created_before` since 3.8.0, `state` / `source` / `team_id` before them — so
+ * `null` is how a caller says "no bound". Under the old `!== undefined` it
+ * reached `String(null)` and appended the literal `created_after=null`, which
+ * FastAPI parses as a datetime and refuses with a 422.
+ *
+ * Dates: the boundary takes ISO-8601 STRINGS, because that is what the contract
+ * declares and because turning a picked day into an instant needs a timezone
+ * decision only the caller can make (cf. the Dashboard's `lib/cases/dateRange.ts`,
+ * where that conversion happens exactly once, in the viewer's own zone).
+ * `CaseListFilters` therefore makes a `Date` a compile error. It is still
+ * converted here, as a net for callers that reach this from untyped JavaScript:
+ * `String(new Date())` yields "Mon Sep 14 2026 00:00:00 GMT-0700 (…)", which the
+ * server cannot parse at all. An INVALID date falls back to `String()` rather
+ * than `toISOString()`, which throws `RangeError` on one: that would turn a
+ * server 422 the caller's error path already handles into a synchronous throw
+ * out of a function nobody expects to throw, before any fetch is made. A net
+ * that converts a handled failure into an unhandled one is not a net.
+ */
+function appendCaseListQuery(url: URL, filters: CaseListFilters): void {
+  for (const [key, value] of Object.entries(filters as Record<string, unknown>)) {
+    if (!Object.prototype.hasOwnProperty.call(CASE_LIST_QUERY_PARAMS, key)) {
+      log.warn('Dropping a filter GET /api/v1/cases does not declare', { key });
+      continue;
+    }
+    if (value == null) continue;
+    const serialized =
+      value instanceof Date && !Number.isNaN(value.getTime())
+        ? value.toISOString()
+        : String(value);
+    url.searchParams.append(key, serialized);
   }
+}
+
+export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[]> {
+  const url = new URL(`${await getApiTransport().baseUrl()}/api/v1/cases`);
+  if (filters) appendCaseListQuery(url, filters);
 
   // OPTIMIZATION: Check cache first for the canonical default listing only.
   // The cache is a single slot keyed by nothing, so it may only represent exactly
-  // one page shape: no status/priority filter, offset 0, and the explicit default
-  // page size. Any other request — a different limit/offset, OR a no-arg/`{}` call
+  // one page shape: no other filter, offset 0, and the explicit default page
+  // size. Any other request — a different limit/offset, OR a no-arg/`{}` call
   // that returns the backend-default slice (not guaranteed to equal our page size)
   // — targets a different slice and must neither read nor write this cache, else
   // e.g. a limit:50 fetch would shrink the list a limit:100 caller then reads back.
-  const isDefaultList = !!filters &&
-    Object.keys(filters).every(k => k === 'limit' || k === 'offset') &&
-    filters.limit === DEFAULT_CASE_LIST_LIMIT &&
-    (filters.offset === undefined || filters.offset === 0);
+  //
+  // The predicate reads the QUERY STRING this call is about to issue — `url` is
+  // fully built two lines above — rather than the filter it was spelled with. It
+  // therefore cannot drift from the serializer, because it reads the
+  // serializer's OUTPUT. Re-deriving the skip rule here (a second `v == null`)
+  // agreed with `appendCaseListQuery` only by coincidence of being written
+  // twice: teach the serializer one more skip and the canonical query would stop
+  // being recognised as the default page, so the sidebar's list would silently
+  // stop being cached; change it the other way and a cached canonical page would
+  // be served to a call that issued a NARROWED query.
+  const query = url.searchParams;
+  const isDefaultList =
+    [...query.keys()].every(k => k === 'limit' || k === 'offset') &&
+    query.get('limit') === String(DEFAULT_CASE_LIST_LIMIT) &&
+    (!query.has('offset') || query.get('offset') === '0');
 
   if (isDefaultList) {
     const cached = await caseCacheManager.getCachedCases();
@@ -385,7 +487,15 @@ export async function getUserCases(filters?: {
     const errorData: APIError = await response.json().catch(() => ({}));
     throw new Error(errorBodyText(errorData) || `Failed to get cases: ${response.status}`);
   }
-  const data = await response.json().catch(() => ({ cases: [] }));
+  // A 200 whose body will not parse is NOT an empty list. Substituting
+  // `{ cases: [] }` here made it one, and it passed the shape guards below and
+  // reached `setCachedCases([])` — because the sidebar's own fetch IS the
+  // canonical default page. `[]` is truthy, so `if (cached) return cached` then
+  // short-circuited every later fetch and the user's case list read empty and
+  // STAYED empty until the TTL expired. `null` falls through to the guards,
+  // which return [] without writing the cache. Reachable in practice: a proxy
+  // error page or a `Content-Length: 0` body under an `ok` status.
+  const data = await response.json().catch(() => null);
 
   if (!data || typeof data !== 'object') {
     return [];
