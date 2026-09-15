@@ -287,6 +287,47 @@ describe('Case Service', () => {
         expect(serialized).not.toBe(String(from));
       });
 
+      // `toISOString()` throws `RangeError` on an invalid date. The conversion is
+      // a NET under untyped callers, and a net that turns a handled failure into
+      // an unhandled one is not a net: `new Date(userInput)` on unparseable input
+      // used to produce `created_after=Invalid+Date` and a server 422 the
+      // caller's error path already handles — it must not become a synchronous
+      // throw out of the serializer, before any fetch is made.
+      it('degrades an invalid Date rather than throwing out of the serializer', async () => {
+        const unparseable = new Date('not a date');
+
+        await expect(
+          caseService.getUserCases(
+            { created_after: unparseable } as unknown as caseService.CaseListFilters
+          )
+        ).resolves.toEqual([]);
+
+        expect(requestedQuery().get('created_after')).toBe('Invalid Date');
+      });
+
+      // The compile gate closes FRESH LITERALS and nothing else, which is not the
+      // shape a filter takes in practice. Measured against this repo's own
+      // `tsc --noEmit --strict`:
+      //
+      //   getUserCases({ status: 'resolved', limit: 25 })                TS2353
+      //   const g = { status: 'resolved' };        getUserCases(g)       TS2559
+      //   const f = { status: 'resolved', limit: 25 }; getUserCases(f)   NO ERROR
+      //
+      // Excess-property checking does not apply through a variable, and the one
+      // shared key defeats the weak-type check that would otherwise catch an
+      // all-optional target. There is deliberately NO CAST below — the call
+      // compiles, which is precisely the problem, and a compile-time-only gate
+      // cannot prove anything here. The runtime allowlist is what closes it.
+      it('drops an undeclared key that arrives through a variable, where the compiler cannot see it', async () => {
+        const builtUp = { status: 'resolved', limit: 25 };
+
+        await caseService.getUserCases(builtUp);
+
+        const query = requestedQuery();
+        expect([...query.keys()]).toEqual(['limit']);
+        expect(query.has('status')).toBe(false);
+      });
+
       // A TYPE-LEVEL gate, and the only kind that can close this hole: the
       // defect was that TypeScript ACCEPTED these. If either key ever stops
       // being an error the directive above it goes unused and `pnpm compile`
@@ -304,8 +345,17 @@ describe('Case Service', () => {
           // either — it is a field on a case, not a filter on the list.
           priority: 'high',
         });
+        await caseService.getUserCases({
+          // @ts-expect-error a literal that also carries a DECLARED key is still
+          // caught, by excess-property checking rather than by the weak-type
+          // rule the two above trip. Pinned separately because it is the only
+          // one of the three literal forms a variable does not also reach — see
+          // the runtime test above for the form that compiles clean.
+          status: 'resolved',
+          limit: 25,
+        });
 
-        expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
+        expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(3);
       });
     });
 
@@ -392,6 +442,57 @@ describe('Case Service', () => {
         expect(getSpy).not.toHaveBeenCalled();
         expect(setSpy).not.toHaveBeenCalled();
         expect(result[0].case_id).toBe('fresh');
+      });
+
+      // Eligibility reads the URL the serializer just built, so these two
+      // assertions are ONE fact rather than two that happen to agree. An empty
+      // string is a legal `team_id` and IS serialized, so this call issues a
+      // NARROWED query and must not touch the canonical slot. Teach the
+      // serializer to skip `''` and the query assertion fails loudly, instead of
+      // the caching quietly changing under a predicate that re-derived the rule.
+      it('decides eligibility from the query it issues, not the filter it was spelled with', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' }]);
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
+          mockResponse({ cases: [fresh] }) as unknown as Response
+        );
+
+        const result = await caseService.getUserCases({
+          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, team_id: ''
+        });
+
+        // Cache behaviour first, so a predicate that drifts back to re-deriving
+        // the rule fails by NAME here rather than as an opaque undefined-read on
+        // a fetch that a served cache hit meant never happened.
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+        const issued = new URL(
+          vi.mocked(client.authenticatedFetchWithRetry).mock.calls[0][0]
+        ).searchParams;
+        expect([...issued.keys()].sort()).toEqual(['limit', 'offset', 'team_id']);
+        expect(result[0].case_id).toBe('fresh');
+      });
+
+      // `response.ok` with a body that will not parse — a proxy error page, or a
+      // Content-Length: 0 under a 200. That is not an empty list, and caching one
+      // is worse than rendering one: `[]` is TRUTHY, so `if (cached) return
+      // cached` short-circuits every later fetch and the sidebar reads empty and
+      // stays empty until the TTL expires. The sidebar's own fetch is the
+      // canonical default page, so this slot is exactly the one it would poison.
+      it('does not cache an empty list built from a 200 whose body will not parse', async () => {
+        getSpy.mockResolvedValue(null);
+        vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected end of JSON input')),
+          headers: { get: vi.fn() },
+        } as unknown as Response);
+
+        const result = await caseService.getUserCases({
+          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0
+        });
+
+        expect(result).toEqual([]);
+        expect(setSpy).not.toHaveBeenCalled();
       });
     });
   });
