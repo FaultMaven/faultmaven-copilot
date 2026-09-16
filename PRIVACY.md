@@ -1,6 +1,6 @@
 # FaultMaven Copilot — Privacy Policy
 
-**Effective date:** 2026-06-15
+**Effective date:** 2026-09-16
 **Applies to:** FaultMaven Copilot browser extension (Chrome / Edge / Firefox)
 
 FaultMaven Copilot ("the extension") is the browser interface for FaultMaven, an
