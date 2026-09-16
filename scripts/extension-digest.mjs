@@ -135,6 +135,13 @@ function computeDigest() {
       // the leak names itself.
       key: manifest.key ?? null,
       permissions: manifest.permissions ?? [],
+      // Optional permissions are part of the reviewed surface too: the store
+      // asks for a justification per permission whether it is granted at install
+      // or later, and moving an entry BETWEEN the two lists changes what users
+      // are told at install without changing what the extension can do. Tracked
+      // since `tabs` became optional — a silent move back would restore the
+      // "Read your browsing history" line with nothing else failing.
+      optional_permissions: manifest.optional_permissions ?? [],
       host_permissions: manifest.host_permissions ?? [],
       optional_host_permissions: manifest.optional_host_permissions ?? [],
       content_security_policy: manifest.content_security_policy ?? {},

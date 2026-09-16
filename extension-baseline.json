@@ -1,13 +1,15 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "manifestSurface": {
     "key": null,
     "permissions": [
       "storage",
       "sidePanel",
-      "tabs",
       "scripting",
       "identity"
+    ],
+    "optional_permissions": [
+      "tabs"
     ],
     "host_permissions": [
       "https://app.faultmaven.ai/*",
@@ -25,7 +27,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "e5fddeabe0d84dc88cdb2ae338a30d47044e3e511dae0bc65e09d200917bdb14"
+    "sha256": "74eefc0e4efc95605c454bfe056f87bd8a7a97234fdf2f385593e4fbf2b63d33"
   },
   "iconSources": {
     "fileCount": 8,
@@ -175,7 +177,7 @@
     "chunks/requirementDiagram-LRYGKXZP-DXgmwZNI.js": "783cfa2033c9701a6672cde0c5802065825dcb2f9a90eef775a2246964e1484a",
     "chunks/sankeyDiagram-W5VNT64P-P432XeT5.js": "6399ef9ef9145ca5f7902519ecb932cb14aad96881607a82c58968930d80fa45",
     "chunks/sequenceDiagram-SI44F4Z6-q8VzLNMy.js": "5af9fb39fbf36783456e1eda0472edc31b54e7b90f9b85da6cce211503fbbc1e",
-    "chunks/sidepanel_manual-Bm52-foH.js": "92a19881c37e06e76fc16c2ff8def915c68868387af3fb525371cbcca3e48120",
+    "chunks/sidepanel_manual-jQys_K5E.js": "ad36bf4fd1f616b240b3d30786cb0e06c3f218d0b8f4818952f81c5357d607a0",
     "chunks/sizeCapture-X5ZJPWSS-DPoADyYk.js": "3d8022eb07c362d8aa5a1f9238e45d599e94e7a3b641757eaec0b8c4cffa5bef",
     "chunks/stateDiagram-OKZ733FA-BE3P8M6Q.js": "7685f9f8e3cb744554c339234a90a19a9cda9a1d100a8318202b3d21b3ebebf7",
     "chunks/stateDiagram-v2-UEYNNEHI-BSwwOwLm.js": "4398a6c3e6d6f2b256442bdc85434e9d1ca1e304eba3ab436cd5a5d0e30cc20f",
@@ -196,8 +198,8 @@
     "icon/square-dark.svg": "ebf5f47118d88a07f4e30db80d58224b4868c53b5cb32bf7b98645ad705e4710",
     "icon/square-light.svg": "055b776191c81d19c72c87914ec2bacca30e75e57aa3aa54986af06648034a06",
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
-    "manifest.json": "1c5448ab1150a21287a6c85f0c1f0521c387983f4a3b4a9defe42614383b0028",
+    "manifest.json": "bbb160b36a2f4178afaf6e18da4b66a7b5c77154d5c46e049ee89c95f0e521a7",
     "options.html": "385f5f38427df02b57ad8a62241fcfbbb5995ee6312035d22fb657ee6f13a1b7",
-    "sidepanel_manual.html": "6b60a87f37c602651b7045cab2a46e4992c3d2f79d45b1452a863aa721ed93e5"
+    "sidepanel_manual.html": "1a0c7f14175ab7acd5c10f17f997946a8e200e67a7c80a0a2d234ee06063349f"
   }
 }
