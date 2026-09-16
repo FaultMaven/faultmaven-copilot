@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+import { loadManifest } from '../support/manifest';
 
-// Stub `wxt` rather than loading it: importing the real package pulls in
-// esbuild, which asserts `new TextEncoder().encode("") instanceof Uint8Array` —
-// false under jsdom, whose TextEncoder comes from another realm.
+// See `loadManifest` for why the real `wxt` cannot be imported here, and why the
+// stub has to be registered in this file rather than inside the helper.
 vi.mock('wxt', () => ({ defineConfig: (config: unknown) => config }));
 
 /**
@@ -11,29 +11,24 @@ vi.mock('wxt', () => ({ defineConfig: (config: unknown) => config }));
  *
  * Chrome builds that dialog from REQUIRED permissions alone, and the rule
  * `{IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, {APIPermissionID::kTab}}` means a
- * required `tabs` puts that sentence in front of every install — the single most
- * alarming thing a new user is told about this extension, for the sake of one
- * field (`tab.url`) read at capture time.
+ * required `tabs` puts that sentence in front of every install — the most
+ * alarming thing a prospective user is told about this extension, for the sake
+ * of one field (`tab.url`) read at capture time.
  *
- * Moving it back to `permissions` would be silent: nothing else fails, no test
- * about capture breaks, and the cost lands entirely on people deciding whether
- * to install. This is the check that makes that move loud.
+ * Moving it back to `permissions` would be silent: nothing else fails, no
+ * capture test breaks, and the cost lands entirely on people deciding whether to
+ * install. This is the check that makes that move loud.
+ *
+ * No per-browser case: `optional_permissions` is not gated on `browser` the way
+ * `key` and `minimum_chrome_version` are, so asserting it for firefox as well
+ * would restate the chrome assertion and could only fail alongside it. The
+ * Firefox question that IS real — whether AMO accepts `tabs` as optional in the
+ * MV2 zip `release.yml` publishes — cannot be answered at this level, and does
+ * not arise today: that build is not published to AMO.
  */
-async function manifestFor(browser: string): Promise<Record<string, unknown>> {
-  vi.resetModules();
-  const config = (await import('../../../wxt.config')).default;
-  const factory = config.manifest as (env: {
-    browser: string;
-    command: 'build' | 'serve';
-    manifestVersion: 2 | 3;
-    mode: string;
-  }) => Record<string, unknown>;
-  return factory({ browser, command: 'build', manifestVersion: 3, mode: 'production' });
-}
-
 describe('the tabs permission is optional', () => {
   it('is absent from the required permissions, so the install dialog stays quiet', async () => {
-    const manifest = await manifestFor('chrome');
+    const manifest = await loadManifest();
     expect(manifest.permissions).not.toContain('tabs');
   });
 
@@ -42,20 +37,14 @@ describe('the tabs permission is optional', () => {
     // capture on every origin the extension does not already hold, with no way
     // to recover, since `permissions.request` refuses anything the manifest does
     // not declare.
-    const manifest = await manifestFor('chrome');
+    const manifest = await loadManifest();
     expect(manifest.optional_permissions).toContain('tabs');
   });
 
   it('keeps the permissions the extension cannot work without', async () => {
-    const manifest = await manifestFor('chrome');
+    const manifest = await loadManifest();
     expect(manifest.permissions).toEqual(
       expect.arrayContaining(['storage', 'sidePanel', 'scripting', 'identity']),
     );
-  });
-
-  it('holds on Firefox too, where the same dialog is shown at install', async () => {
-    const manifest = await manifestFor('firefox');
-    expect(manifest.permissions).not.toContain('tabs');
-    expect(manifest.optional_permissions).toContain('tabs');
   });
 });

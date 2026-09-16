@@ -42,6 +42,15 @@ const navigation: HostCapabilities['navigation'] = {
     const baseUrl = (await getDashboardUrl()).replace(/\/+$/, '');
     const targetUrl = `${baseUrl}${path}`;
     try {
+      // Answered for tabs this extension can see: Chromium un-scrubs a tab's
+      // url for `HasExplicitAccessToOrigin` (GetScrubTabBehaviorImpl), so the
+      // Cloud Dashboard — in host_permissions — matches without the optional
+      // `tabs` permission. A SELF-HOSTED Dashboard origin that has never been
+      // granted does not, and this then falls to `tabs.create`: a new tab
+      // instead of focusing the open one. Before `tabs` became optional the
+      // required permission masked that; it is a degradation of convenience
+      // only, and granting the origin (which sign-in already asks for) restores
+      // it.
       const tabs = await browser.tabs.query({ url: `${baseUrl}/*` });
       if (tabs.length > 0 && tabs[0].id != null) {
         const currentUrl = tabs[0].url ?? '';

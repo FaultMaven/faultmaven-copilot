@@ -166,36 +166,62 @@ describe('capturePage — schemes the browser will not inject into', () => {
 describe('capturePage — the tabs permission is asked for, not assumed', () => {
   // `tabs` is optional (it is what puts "Read your browsing history" on the
   // install dialog), so the browser withholds `tab.url` until it is granted.
-  // Capture is the one place that needs the address, and these hold the bargain:
-  // ask exactly when the address is missing, explain a refusal, and never prompt
-  // a user who has already granted it.
+  //
+  // `contains` is answered PER ARGUMENT here, because the production code asks
+  // it two different questions — "do I hold `tabs`?" and "do I hold this
+  // origin?" — and a single blanket answer makes the gate untestable: with
+  // `contains` always true the tabs branch is unreachable, which is how the
+  // first version of these tests stayed green with the gate removed.
+  const holds = { tabs: false, origin: true };
+
   beforeEach(() => {
     vi.clearAllMocks();
     executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
-    (browser.permissions.contains as any).mockResolvedValue(true);
+    holds.tabs = false;
+    holds.origin = true;
+    (browser.permissions.contains as any).mockImplementation(async (q: any) =>
+      q?.permissions?.includes('tabs') ? holds.tabs : holds.origin,
+    );
     (browser.permissions.request as any).mockResolvedValue(true);
   });
 
-  it('asks for `tabs` when the address is hidden, then captures with the real URL', async () => {
-    (browser.permissions.contains as any).mockResolvedValue(false);
-    (browser.tabs.query as any)
-      .mockResolvedValueOnce([{ id: 1 }])                                        // pre-grant: no url
-      .mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]);  // post-grant
+  const tabsRequests = () =>
+    (browser.permissions.request as any).mock.calls.filter(
+      ([q]: any[]) => q?.permissions?.includes('tabs'),
+    );
 
-    const { url } = await capturePage();
+  it('asks for `tabs` when the address is hidden, and then STOPS', async () => {
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
 
-    expect(browser.permissions.request).toHaveBeenCalledWith({ permissions: ['tabs'] });
-    // Re-queried after the grant: the first tab object cannot gain a url
-    // retroactively, and capturing without one would name the wrong page.
-    expect(url).toBe('https://grafana.example/dashboard');
-    expect(executeScript).toHaveBeenCalled();
+    await expect(capturePage()).rejects.toThrow(/Click capture again/);
+
+    expect(tabsRequests()).toHaveLength(1);
+    // The heart of it: exactly ONE prompt in this gesture. Continuing on to the
+    // origin request would hit `kUserGestureRequiredError` — transient
+    // activation does not survive the dialog the user just read — and would
+    // surface as "Cannot inject script: This function must be called during a
+    // user gesture" on the first capture of a fresh install.
+    expect((browser.permissions.request as any).mock.calls).toHaveLength(1);
+    // And nothing is captured from a tab whose address we still have not read.
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('never re-reads the active tab after a prompt', async () => {
+    // Re-querying would silently re-target capture at whatever tab is active
+    // when the user clicks Allow — they can switch windows while the dialog is
+    // open, and the page they never asked for would land in case evidence. One
+    // query per call is the invariant.
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/Click capture again/);
+
+    expect((browser.tabs.query as any).mock.calls).toHaveLength(1);
   });
 
   it('explains a refusal instead of blaming the page', async () => {
     // Before this path existed, a missing url fell through to "Page capture
-    // works on http:// and https:// pages only" — an explanation that is both
-    // wrong and unactionable, on what would have become the common failure.
-    (browser.permissions.contains as any).mockResolvedValue(false);
+    // works on http:// and https:// pages only" — both wrong and unactionable,
+    // on what would have become the common failure.
     (browser.permissions.request as any).mockResolvedValue(false);
     (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
 
@@ -203,24 +229,28 @@ describe('capturePage — the tabs permission is asked for, not assumed', () => 
     expect(executeScript).not.toHaveBeenCalled();
   });
 
-  it('never prompts when the address is already visible', async () => {
-    // The steady state for everyone who has granted it once, and for any origin
-    // in host_permissions, which never needed `tabs` at all.
-    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]);
+  it('never prompts for `tabs` when the address is visible without it', async () => {
+    // The case the gate exists for, and the one the earlier version of this test
+    // could not see: `tabs` is NOT held, yet the origin is in host_permissions
+    // so the browser reports its url anyway. Asking would be a prompt for
+    // nothing — and removing the gate makes exactly this capture prompt.
+    holds.tabs = false;
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url: 'https://app.faultmaven.ai/cases' }]);
 
     await capturePage();
 
-    expect(browser.permissions.request).not.toHaveBeenCalledWith({ permissions: ['tabs'] });
+    expect(tabsRequests()).toHaveLength(0);
+    expect(executeScript).toHaveBeenCalled();
   });
 
   it('does not prompt for a tab that has no address to report', async () => {
     // `tabs` already granted and still no url: the permission is not the
-    // problem, so asking for it again would be noise. Fall through to the
-    // scheme explanation.
-    (browser.permissions.contains as any).mockResolvedValue(true);
+    // problem, so asking again would be noise. Fall through to the scheme
+    // explanation.
+    holds.tabs = true;
     (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
 
     await expect(capturePage()).rejects.toThrow(/http:\/\/ and https:\/\/ pages only/);
-    expect(browser.permissions.request).not.toHaveBeenCalledWith({ permissions: ['tabs'] });
+    expect(tabsRequests()).toHaveLength(0);
   });
 });

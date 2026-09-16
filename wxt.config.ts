@@ -157,11 +157,12 @@ export default defineConfig({
     // anywhere is `tab.url`, and only for the tab the user just asked to
     // capture.
     //
-    // Optional moves the same prompt to the moment capture needs the address,
-    // where it has context, and leaves the install dialog naming just the two
-    // FaultMaven hosts. Nothing is given up: it is the same permission, granted
-    // later. `tabs` carries no `kFlagCannotBeOptional` in
-    // chrome_api_permissions.cc, so this is a legal home for it.
+    // Optional leaves the install dialog naming just the two FaultMaven hosts,
+    // and moves the same sentence to the moment the user has clicked capture.
+    // ⚠️ It is the SAME Chrome dialog, with no text of ours in it — what changes
+    // is when it is shown, not how it reads. Nothing is given up either: the
+    // same permission, granted later. `tabs` carries no `kFlagCannotBeOptional`
+    // in chrome_api_permissions.cc, so this is a legal home for it.
     //
     // ‼ It follows that `tab.url` is UNDEFINED until the grant, for every origin
     // outside `host_permissions`. Code that reads it must say so rather than

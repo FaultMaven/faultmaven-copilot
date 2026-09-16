@@ -883,7 +883,24 @@ rather than checking a build-target list, so the MV2 build registers nothing.
 Key permissions (Manifest v3):
 - `storage` - Local data persistence
 - `sidePanel` - Side panel UI
-- `tabs` - Reading the active tab's URL for content capture, and opening/focusing the Dashboard tab. (No `activeTab`: it only activates on a toolbar-icon click, which here just opens the side panel — capture runs from a side-panel button and uses per-origin optional host permissions instead.)
+- `tabs` - **OPTIONAL, not required** (`optional_permissions`), because a required
+  `tabs` is what put "Read your browsing history" on the install dialog: Chrome
+  builds that dialog from the required set, and the rule
+  `{IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, {APIPermissionID::kTab}}` is keyed
+  to this permission alone. Requested at capture time instead, and granting ENDS
+  that call — the user clicks capture again. One `permissions.request` per user
+  gesture (`permissions_api.cc` refuses without a live gesture, and transient
+  activation does not survive a dialog), and no re-reading of the active tab
+  after a prompt the user could have switched tabs behind.
+  (No `activeTab`: it only activates on a toolbar-icon click, which here just
+  opens the side panel — capture runs from a side-panel button and uses
+  per-origin optional host permissions instead.)
+  ‼ What still works WITHOUT it: reading the url of any tab whose origin is in
+  `host_permissions`. Chromium un-scrubs those (`GetScrubTabBehaviorImpl` →
+  `HasExplicitAccessToOrigin`), so Dashboard-tab focusing and the side-panel
+  yield still see Cloud Dashboard tabs. A self-hosted Dashboard origin that has
+  never been granted is the exception: its tabs report no url, so a Dashboard
+  link opens a new tab instead of focusing the existing one.
 - `scripting` - Content script injection
 - `identity` - Sign-in only, via a single `identity.launchWebAuthFlow` call. Never
   `identity.getProfileUserInfo`: the extension does not read the browser account
