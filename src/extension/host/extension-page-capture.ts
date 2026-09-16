@@ -21,10 +21,42 @@ export async function capturePage(): Promise<{ content: string; url: string }> {
   try {
     // tabs.query can resolve to [] (window closing, no qualifying active
     // tab) — guard the destructured element, not just its fields.
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    let [tab] = await browser.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id) {
       throw new Error("No active tab found");
+    }
+
+    // `tabs` is an OPTIONAL permission (see wxt.config.ts for why), so the
+    // browser withholds `tab.url` for every origin outside `host_permissions`
+    // until it is granted. That absence is NOT "a page we cannot capture": it is
+    // the one thing standing between us and knowing which origin to ask for.
+    // Ask here — the user has just clicked capture, so the prompt arrives with a
+    // reason attached, which is the whole point of moving it off the install
+    // dialog.
+    //
+    // Gated on the url actually being missing, so a user who has already granted
+    // `tabs` sees nothing, and the refusals below (file://, the extension
+    // gallery) still reach their own explanations without a permission prompt
+    // first. The `contains` check keeps a pointless prompt away from a tab that
+    // has no address to report even with the permission held.
+    if (!tab.url) {
+      const alreadyGranted = await browser.permissions.contains({ permissions: ['tabs'] });
+      if (!alreadyGranted) {
+        log.info('Requesting the tabs permission to read the active tab address');
+        const granted = await browser.permissions.request({ permissions: ['tabs'] });
+        if (!granted) {
+          throw new Error(
+            "To capture a page, FaultMaven needs permission to read the current tab's address — it is how it knows which site to ask access for. Click capture again to allow it."
+          );
+        }
+        // Re-read: the tab object was built under the old permissions and its
+        // `url` will not appear retroactively.
+        [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) {
+          throw new Error("No active tab found");
+        }
+      }
     }
 
     // What the capture path can actually enter is http/https, and the checks

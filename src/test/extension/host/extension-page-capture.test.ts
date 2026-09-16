@@ -162,3 +162,65 @@ describe('capturePage — schemes the browser will not inject into', () => {
     expect(content).toContain('[captured_at:');
   });
 });
+
+describe('capturePage — the tabs permission is asked for, not assumed', () => {
+  // `tabs` is optional (it is what puts "Read your browsing history" on the
+  // install dialog), so the browser withholds `tab.url` until it is granted.
+  // Capture is the one place that needs the address, and these hold the bargain:
+  // ask exactly when the address is missing, explain a refusal, and never prompt
+  // a user who has already granted it.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
+    (browser.permissions.contains as any).mockResolvedValue(true);
+    (browser.permissions.request as any).mockResolvedValue(true);
+  });
+
+  it('asks for `tabs` when the address is hidden, then captures with the real URL', async () => {
+    (browser.permissions.contains as any).mockResolvedValue(false);
+    (browser.tabs.query as any)
+      .mockResolvedValueOnce([{ id: 1 }])                                        // pre-grant: no url
+      .mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]);  // post-grant
+
+    const { url } = await capturePage();
+
+    expect(browser.permissions.request).toHaveBeenCalledWith({ permissions: ['tabs'] });
+    // Re-queried after the grant: the first tab object cannot gain a url
+    // retroactively, and capturing without one would name the wrong page.
+    expect(url).toBe('https://grafana.example/dashboard');
+    expect(executeScript).toHaveBeenCalled();
+  });
+
+  it('explains a refusal instead of blaming the page', async () => {
+    // Before this path existed, a missing url fell through to "Page capture
+    // works on http:// and https:// pages only" — an explanation that is both
+    // wrong and unactionable, on what would have become the common failure.
+    (browser.permissions.contains as any).mockResolvedValue(false);
+    (browser.permissions.request as any).mockResolvedValue(false);
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/needs permission to read the current tab's address/);
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('never prompts when the address is already visible', async () => {
+    // The steady state for everyone who has granted it once, and for any origin
+    // in host_permissions, which never needed `tabs` at all.
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url: 'https://grafana.example/dashboard' }]);
+
+    await capturePage();
+
+    expect(browser.permissions.request).not.toHaveBeenCalledWith({ permissions: ['tabs'] });
+  });
+
+  it('does not prompt for a tab that has no address to report', async () => {
+    // `tabs` already granted and still no url: the permission is not the
+    // problem, so asking for it again would be noise. Fall through to the
+    // scheme explanation.
+    (browser.permissions.contains as any).mockResolvedValue(true);
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/http:\/\/ and https:\/\/ pages only/);
+    expect(browser.permissions.request).not.toHaveBeenCalledWith({ permissions: ['tabs'] });
+  });
+});
