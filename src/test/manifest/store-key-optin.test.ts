@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { loadManifest, type ManifestEnv } from '../support/manifest';
 
 // Stub `wxt` rather than loading it. `defineConfig` is an identity helper, but
 // importing the real package pulls in esbuild, which asserts
@@ -27,24 +28,12 @@ vi.mock('wxt', () => ({ defineConfig: (config: unknown) => config }));
  * the answer depend on the source alone.
  */
 
-/** What WXT actually passes the manifest factory, so a future gate on any of it
- *  is reachable from here rather than blocked by a too-narrow cast. */
-interface ManifestEnv {
-  browser: string;
-  command: 'build' | 'serve';
-  manifestVersion: 2 | 3;
-  mode: string;
-}
-
 async function manifestWith(
   storeKey: string | undefined,
   env: Partial<ManifestEnv> = {},
 ): Promise<Record<string, unknown>> {
-  vi.resetModules();
   vi.stubEnv('FM_STORE_KEY', storeKey);
-  const config = (await import('../../../wxt.config')).default;
-  const factory = config.manifest as (env: ManifestEnv) => Record<string, unknown>;
-  return factory({ browser: 'chrome', command: 'build', manifestVersion: 3, mode: 'production', ...env });
+  return loadManifest(env);
 }
 
 const hasKey = (manifest: Record<string, unknown>) =>

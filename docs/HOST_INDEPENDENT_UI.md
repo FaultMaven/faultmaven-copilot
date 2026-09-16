@@ -265,9 +265,11 @@ Two signals, deliberately separate:
 - **`manifestSurface`** — permissions, hosts, CSP. Store review compares these
   against the listing's justification text, so a change here needs the listing
   updated too. **Nothing in this architecture touches it.** No permission is
-  added or removed; page capture uses `tabs` + `scripting` +
-  `optional_host_permissions` exactly as before, and the web host adds no
-  manifest surface because it is not an extension.
+  added or removed by THIS architecture; page capture uses `tabs` + `scripting` +
+  `optional_host_permissions`, and the web host adds no manifest surface because
+  it is not an extension. (Since 1.0.5 `tabs` is declared in
+  `optional_permissions` and requested at capture time — a separate change, for
+  the install dialog's wording; the capture path uses it the same way.)
 
 ## Open questions
 

@@ -1,6 +1,6 @@
 # FaultMaven Copilot — Privacy Policy
 
-**Effective date:** 2026-06-15
+**Effective date:** 2026-09-16
 **Applies to:** FaultMaven Copilot browser extension (Chrome / Edge / Firefox)
 
 FaultMaven Copilot ("the extension") is the browser interface for FaultMaven, an
@@ -118,9 +118,9 @@ submitting data you are not authorized to share.
 | `storage` | Store auth tokens, session, and settings locally |
 | `sidePanel` | Render the copilot in the browser side panel |
 | `scripting` | Inject the page-content extractor **only** when you initiate a capture, and register the sign-in bridge on your configured Dashboard origin only |
-| `tabs` | Read the active tab's URL when you capture a page, and find or open your FaultMaven Dashboard tab when you click a Dashboard link |
+| `tabs` *(optional)* | Requested **only when you capture a page**, never at install. The extension reads the address of the tab you are capturing, so it knows which site to ask your permission for and can tell you when a page cannot be captured at all (browser pages, the extension gallery, local files). Once granted, the permission also lets it read the addresses of your other open tabs; it uses that only to find your Dashboard tab and to decide which tabs should show the copilot panel, and it never records or transmits them. Decline it and page capture is unavailable; everything else keeps working |
 | `identity` | Open the browser-managed sign-in window for OAuth login (`launchWebAuthFlow`). The extension never reads your browser profile identity |
-| Host access to your FaultMaven backend | Communicate with the API you authenticate against |
+| Host access to your FaultMaven backend | Communicate with the API you authenticate against, and find or open your FaultMaven Dashboard tab when you click a Dashboard link |
 | Optional host access to other sites | Granted on demand, per site, the first time you capture that site |
 
 ---

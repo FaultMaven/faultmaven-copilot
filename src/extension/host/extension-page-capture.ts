@@ -27,6 +27,49 @@ export async function capturePage(): Promise<{ content: string; url: string }> {
       throw new Error("No active tab found");
     }
 
+    // `tabs` is an OPTIONAL permission (see wxt.config.ts for why), so the
+    // browser withholds `tab.url` for every origin outside `host_permissions`
+    // until it is granted. That absence is NOT "a page we cannot capture": it is
+    // the one thing standing between us and knowing which origin to ask for.
+    //
+    // ‼ GRANTING ENDS THIS CALL. It does not fall through to the capture, and
+    // the reasons are worth keeping:
+    //
+    //  1. ONE PROMPT PER GESTURE. `permissions.request` is refused outright
+    //     without a live user gesture (`permissions_api.cc`: `if (!user_gesture()
+    //     … ) return RespondNow(Error(kUserGestureRequiredError))`), and
+    //     transient activation does not survive a dialog the user spent a few
+    //     seconds reading. Continuing on to request the page's ORIGIN would
+    //     therefore throw on the very first capture of a fresh install, and
+    //     surface as "Cannot inject script: This function must be called during
+    //     a user gesture".
+    //  2. THE TAB CAN MOVE. Re-reading the active tab after a prompt is the
+    //     hazard the comment further down names: the user can switch tabs while
+    //     the dialog is open, and we would then capture a page they never asked
+    //     for. The tab object we already hold cannot gain a `url` retroactively,
+    //     so there is no third option — either re-query (unsafe) or stop.
+    //
+    // ⚠️ This gate does NOT spare the refusals below. A file://, chrome:// or
+    // extension-gallery tab is scrubbed just the same while `tabs` is ungranted,
+    // so those users are asked once, and only then told the page cannot be
+    // captured. Unavoidable: the scheme is exactly what we cannot see. The
+    // message says "try again" rather than promising success for that reason.
+    if (!tab.url) {
+      const alreadyGranted = await browser.permissions.contains({ permissions: ['tabs'] });
+      if (alreadyGranted) {
+        // Permission held and still no address: the tab genuinely has none to
+        // report. Fall through to the scheme explanation below.
+      } else {
+        log.info('Requesting the tabs permission to read the active tab address');
+        const granted = await browser.permissions.request({ permissions: ['tabs'] });
+        throw new Error(
+          granted
+            ? "Access granted. Click capture again to capture this page."
+            : "To capture a page, FaultMaven needs permission to read the current tab's address — it is how it knows which site to ask access for. Click capture again if you want to allow it."
+        );
+      }
+    }
+
     // What the capture path can actually enter is http/https, and the checks
     // below are an ALLOWLIST for that reason: every other scheme reaches the
     // same dead end. `new URL(...).host` is empty or meaningless for them, so

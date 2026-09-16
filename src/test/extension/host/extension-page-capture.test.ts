@@ -162,3 +162,95 @@ describe('capturePage — schemes the browser will not inject into', () => {
     expect(content).toContain('[captured_at:');
   });
 });
+
+describe('capturePage — the tabs permission is asked for, not assumed', () => {
+  // `tabs` is optional (it is what puts "Read your browsing history" on the
+  // install dialog), so the browser withholds `tab.url` until it is granted.
+  //
+  // `contains` is answered PER ARGUMENT here, because the production code asks
+  // it two different questions — "do I hold `tabs`?" and "do I hold this
+  // origin?" — and a single blanket answer makes the gate untestable: with
+  // `contains` always true the tabs branch is unreachable, which is how the
+  // first version of these tests stayed green with the gate removed.
+  const holds = { tabs: false, origin: true };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    executeScript.mockImplementation(({ func }: any) => [{ result: func() }]);
+    holds.tabs = false;
+    holds.origin = true;
+    (browser.permissions.contains as any).mockImplementation(async (q: any) =>
+      q?.permissions?.includes('tabs') ? holds.tabs : holds.origin,
+    );
+    (browser.permissions.request as any).mockResolvedValue(true);
+  });
+
+  const tabsRequests = () =>
+    (browser.permissions.request as any).mock.calls.filter(
+      ([q]: any[]) => q?.permissions?.includes('tabs'),
+    );
+
+  it('asks for `tabs` when the address is hidden, and then STOPS', async () => {
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/Click capture again/);
+
+    expect(tabsRequests()).toHaveLength(1);
+    // The heart of it: exactly ONE prompt in this gesture. Continuing on to the
+    // origin request would hit `kUserGestureRequiredError` — transient
+    // activation does not survive the dialog the user just read — and would
+    // surface as "Cannot inject script: This function must be called during a
+    // user gesture" on the first capture of a fresh install.
+    expect((browser.permissions.request as any).mock.calls).toHaveLength(1);
+    // And nothing is captured from a tab whose address we still have not read.
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('never re-reads the active tab after a prompt', async () => {
+    // Re-querying would silently re-target capture at whatever tab is active
+    // when the user clicks Allow — they can switch windows while the dialog is
+    // open, and the page they never asked for would land in case evidence. One
+    // query per call is the invariant.
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/Click capture again/);
+
+    expect((browser.tabs.query as any).mock.calls).toHaveLength(1);
+  });
+
+  it('explains a refusal instead of blaming the page', async () => {
+    // Before this path existed, a missing url fell through to "Page capture
+    // works on http:// and https:// pages only" — both wrong and unactionable,
+    // on what would have become the common failure.
+    (browser.permissions.request as any).mockResolvedValue(false);
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/needs permission to read the current tab's address/);
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it('never prompts for `tabs` when the address is visible without it', async () => {
+    // The case the gate exists for, and the one the earlier version of this test
+    // could not see: `tabs` is NOT held, yet the origin is in host_permissions
+    // so the browser reports its url anyway. Asking would be a prompt for
+    // nothing — and removing the gate makes exactly this capture prompt.
+    holds.tabs = false;
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1, url: 'https://app.faultmaven.ai/cases' }]);
+
+    await capturePage();
+
+    expect(tabsRequests()).toHaveLength(0);
+    expect(executeScript).toHaveBeenCalled();
+  });
+
+  it('does not prompt for a tab that has no address to report', async () => {
+    // `tabs` already granted and still no url: the permission is not the
+    // problem, so asking again would be noise. Fall through to the scheme
+    // explanation.
+    holds.tabs = true;
+    (browser.tabs.query as any).mockResolvedValue([{ id: 1 }]);
+
+    await expect(capturePage()).rejects.toThrow(/http:\/\/ and https:\/\/ pages only/);
+    expect(tabsRequests()).toHaveLength(0);
+  });
+});

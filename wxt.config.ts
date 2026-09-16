@@ -144,8 +144,33 @@ export default defineConfig({
     // requests per-origin host permission instead (usePageContent.ts). A
     // declared-but-unused permission is a CWS rejection trigger.
     permissions: [
-      "storage", "sidePanel", "tabs", "scripting", "identity"
+      "storage", "sidePanel", "scripting", "identity"
     ],
+    // `tabs` is OPTIONAL, and the reason is the install dialog.
+    //
+    // Chrome composes that dialog from the REQUIRED permissions alone, and the
+    // rule `{IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, {APIPermissionID::kTab}}`
+    // (chrome_permission_message_rules.cc) means a required `tabs` puts "Read
+    // your browsing history" in front of every install. That sentence describes
+    // the permission honestly — `tabs` exposes the URL and title of every open
+    // tab — but it describes this extension badly: the only tabs-only field read
+    // anywhere is `tab.url`, and only for the tab the user just asked to
+    // capture.
+    //
+    // Optional leaves the install dialog naming just the two FaultMaven hosts,
+    // and moves the same sentence to the moment the user has clicked capture.
+    // ⚠️ It is the SAME Chrome dialog, with no text of ours in it — what changes
+    // is when it is shown, not how it reads. Nothing is given up either: the
+    // same permission, granted later. `tabs` carries no `kFlagCannotBeOptional`
+    // in chrome_api_permissions.cc, so this is a legal home for it.
+    //
+    // ‼ It follows that `tab.url` is UNDEFINED until the grant, for every origin
+    // outside `host_permissions`. Code that reads it must say so rather than
+    // mistake the absence for a tab it cannot capture — see `capturePage`.
+    // Reading the url of an origin we DO hold (the Cloud dashboard) never needed
+    // `tabs` and still does not, which is why side-panel reconciliation is
+    // unaffected.
+    optional_permissions: ["tabs"],
     host_permissions: [
       "https://app.faultmaven.ai/*",
       "https://api.faultmaven.ai/*"
