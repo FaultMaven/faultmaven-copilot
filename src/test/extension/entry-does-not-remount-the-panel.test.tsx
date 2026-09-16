@@ -81,7 +81,7 @@ const MOUNT_CAP = 5;
 // The panel, reduced to the single behaviour this is about: it bootstraps on
 // mount, exactly as the real one does, and records each mount.
 vi.mock('@faultmaven/copilot-ui/shared/ui/CopilotPanel', () => ({
-  default: () => {
+  default: function MockCopilotPanel() {
     const initializeApp = useAppStore((s) => s.initializeApp);
     React.useEffect(() => {
       mounts.count += 1;

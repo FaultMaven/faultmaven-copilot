@@ -30,9 +30,9 @@ vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
 }));
 
 const DATA_OWNER_KEY = 'faultmaven_data_owner_id';
-const get = browser.storage.local.get as unknown as ReturnType<typeof vi.fn>;
-const set = browser.storage.local.set as unknown as ReturnType<typeof vi.fn>;
-const remove = browser.storage.local.remove as unknown as ReturnType<typeof vi.fn>;
+const get = browser.storage.local.get as any;
+const set = browser.storage.local.set as any;
+const remove = browser.storage.local.remove as any;
 const clearAll = PersistenceManager.clearAllPersistenceData as unknown as ReturnType<typeof vi.fn>;
 const clearClientId = clientSessionManager.clearClientId as unknown as ReturnType<typeof vi.fn>;
 

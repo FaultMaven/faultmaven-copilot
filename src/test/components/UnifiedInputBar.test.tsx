@@ -30,8 +30,8 @@ import { UnifiedInputBar } from '@faultmaven/copilot-ui/shared/ui/components/Uni
 describe('UnifiedInputBar — auto-promotion at line threshold', () => {
   const threshold = INPUT_LIMITS.DATA_MODE_LINE_THRESHOLD;
 
-  let mockQuerySubmit: ReturnType<typeof vi.fn>;
-  let mockTurnSubmit: ReturnType<typeof vi.fn>;
+  let mockQuerySubmit: any;
+  let mockTurnSubmit: any;
 
   beforeEach(() => {
     mockQuerySubmit = vi.fn();

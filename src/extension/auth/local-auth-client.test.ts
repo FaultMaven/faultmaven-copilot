@@ -67,7 +67,7 @@ describe('LocalAuthClient', () => {
 
     // Mock fetch
     mockFetch = vi.fn();
-    global.fetch = mockFetch;
+    global.fetch = mockFetch as any;
 
     // Mock chrome.storage.local responses
     (browser.storage.local.set as any).mockResolvedValue(undefined);

@@ -37,7 +37,7 @@ const deliverStorageChange = (changes: Record<string, { newValue?: unknown }>) =
   mockBrowser.storage.onChanged.addListener.mock.calls.at(-1)![0](changes, 'local');
 
 describe('the extension reports auth-state changes', () => {
-  let onChange: ReturnType<typeof vi.fn>;
+  let onChange: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
