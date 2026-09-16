@@ -44,6 +44,8 @@ This extension connects to your FaultMaven backend (self-hosted or Cloud) to pro
 
 That is the whole install, **whichever backend you use.** The store build ships the host permissions and presets for all of them: it defaults to FaultMaven Cloud so you can sign in immediately, and **Settings** switches it to a FaultMaven server you self-host — on this machine or anywhere on your network. Self-hosting is about where the *backend* runs; it does not require a different extension. See [Connection](#connection).
 
+**No backend yet?** Cloud beta is open — sign up at [app.faultmaven.ai](https://app.faultmaven.ai/) with your email and the extension will connect to it out of the box. Free while it is in beta. Or [self-host the engine](https://github.com/FaultMaven/faultmaven#quick-start) for free and point Settings at it.
+
 <details>
 <summary><strong>Running an unpacked build</strong></summary>
 
