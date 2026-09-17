@@ -230,7 +230,6 @@ describe('Case Service', () => {
           created_after: '2026-09-14T00:00:00-07:00',
           created_before: '2026-09-15T00:00:00-07:00',
           include_empty: true,
-          include_archived: false,
           limit: 25,
           offset: 50,
         });
@@ -242,7 +241,6 @@ describe('Case Service', () => {
         expect(query.get('created_after')).toBe('2026-09-14T00:00:00-07:00');
         expect(query.get('created_before')).toBe('2026-09-15T00:00:00-07:00');
         expect(query.get('include_empty')).toBe('true');
-        expect(query.get('include_archived')).toBe('false');
         expect(query.get('limit')).toBe('25');
         expect(query.get('offset')).toBe('50');
       });

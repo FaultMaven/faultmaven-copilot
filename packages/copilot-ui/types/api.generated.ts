@@ -672,6 +672,17 @@ export interface paths {
          *     `hosted_login_url` is the human sign-in entry point (hosted SSO login,
          *     ADR-015). It is null unless SSO is configured; `authorize_url` remains the
          *     copilot OAuth-PKCE machine flow.
+         *
+         *     `supports_screen_hint` says whether that URL honours `?screen_hint=`
+         *     (contract 6.2.0 — the parameter itself arrived in 6.1.0, the way to detect
+         *     it did not, which is exactly why a client must not infer this from a
+         *     version). An older API accepts the parameter, drops it, and serves the
+         *     sign-in screen.
+         *
+         *     `self_service_signup_enabled` says whether a person with no account can
+         *     finish. Gate a sign-up control on **both**: forwarding the hint without
+         *     self-service sign-up sends someone through the sign-up form to an
+         *     `sso_org_unmapped` error at the callback.
          */
         get: operations["get_auth_config_api_v1_auth_config_get"];
         put?: never;
@@ -1173,6 +1184,22 @@ export interface paths {
         /**
          * Sso Login
          * @description Start the hosted-login flow: mint state, redirect to the IdP.
+         *
+         *     ``screen_hint`` is a ``Literal`` rather than a ``str``, and the reason is
+         *     not injection: the shipped adapter passes the value through ``urlencode``
+         *     (``workos._base_client.build_url``), so a free string could not append
+         *     query material to the authorization URL.
+         *
+         *     It is closed because only two values mean anything to the IdP and a third
+         *     is the caller's bug. Accepted as a free string it would be forwarded,
+         *     ignored by the provider, and surface as "the hint does not work" — a 422
+         *     names the mistake where it was made. And because the parameter is
+         *     published, the closed set *is* the contract: a client reads what is
+         *     accepted instead of discovering it.
+         *
+         *     So the encoding is what makes the value safe, and this constraint is
+         *     defence in depth behind it. A provider that built the URL by concatenation
+         *     would make it load-bearing — which is the reason to keep it closed.
          */
         get: operations["sso_login_api_v1_auth_sso_login_get"];
         put?: never;
@@ -1310,9 +1337,9 @@ export interface paths {
          *
          *     Default Filtering Behavior:
          *     - INCLUDES empty cases (current_turn == 0) - newly created cases are visible
-         *     - INCLUDES closed/resolved cases (frontend categorizes by status)
+         *     - INCLUDES closed/resolved cases (the client categorizes by state)
          *     - Use include_empty=false to hide cases with no conversation yet
-         *     - Use status filter to further refine results
+         *     - Use the `state` filter to further refine results
          *
          *     Creation-date bounds:
          *     - The window is HALF-OPEN, `[created_after, created_before)`, and lives in
@@ -1387,33 +1414,6 @@ export interface paths {
          *     for the specified query terms.
          */
         post: operations["search_cases_api_v1_cases_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cases/sessions/{session_id}/case": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Case For Session
-         * @description Create or get case for a session
-         *
-         *     Associates a case with the given session. If no case exists, creates a new one.
-         *     If force_new is true, always creates a new case.
-         *
-         *     **Title Auto-Generation**: If title is not provided or empty, the backend
-         *     automatically generates a unique title in the format: Case-YYMMDD-N
-         *     (e.g., Case-261028-1, Case-261028-2). The sequence counter resets daily.
-         */
-        post: operations["create_case_for_session_api_v1_cases_sessions__session_id__case_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3387,9 +3387,12 @@ export interface paths {
          *     - If `client_id` is new or not provided, creates fresh session
          *
          *     **User ID Resolution:**
-         *     - Priority 1: `user_id` query parameter (explicit override)
-         *     - Priority 2: Authenticated user from JWT token (prevents anonymous session creation)
-         *     - Priority 3: Auto-generated anonymous user (development/unauthenticated only)
+         *     - Authenticated user from the JWT token, when one is presented
+         *     - Auto-generated anonymous user otherwise (development/unauthenticated only)
+         *
+         *     The identity minted is the server's answer, never the caller's. A request
+         *     cannot name the user its session is bound to; see the note on the
+         *     resolution below.
          *
          *     **Session Timeout:**
          *     - Sessions automatically expire after `timeout_minutes` of inactivity
@@ -3403,39 +3406,12 @@ export interface paths {
          *
          *     Args:
          *         request: Session creation parameters including optional client_id and timeout
-         *         user_id: Optional user identifier (query param)
          *         current_user: Optional authenticated user from JWT token
          *
          *     Returns:
          *         Session creation/resumption response with expiration information
          */
         post: operations["create_session_api_v1_sessions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cleanup Expired Sessions
-         * @description Clean up expired sessions (admin/testing endpoint).
-         *
-         *     This endpoint triggers immediate cleanup of expired sessions.
-         *     In production, this runs automatically every 30 minutes.
-         *
-         *     Returns:
-         *         Number of sessions cleaned up
-         */
-        post: operations["cleanup_expired_sessions_v2"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3570,36 +3546,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/sessions/{session_id}/cases": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Session Cases
-         * @description List all cases associated with a session.
-         *
-         *     CRITICAL: Must return 200 [] for empty results, NOT 404
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *         limit: Maximum number of cases to return (1-100)
-         *         offset: Number of cases to skip for pagination
-         *
-         *     Returns:
-         *         List of cases (empty list if no cases found)
-         */
-        get: operations["list_session_cases_api_v1_sessions__session_id__cases_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/sessions/{session_id}/heartbeat": {
         parameters: {
             query?: never;
@@ -3620,85 +3566,6 @@ export interface paths {
          *         Heartbeat confirmation
          */
         post: operations["session_heartbeat_api_v1_sessions__session_id__heartbeat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/recovery-info": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session Recovery Info
-         * @description Get session recovery information for restoring lost sessions.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Recovery information
-         */
-        get: operations["get_session_recovery_info_api_v1_sessions__session_id__recovery_info_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Restore Session
-         * @description Restore a session from backup or recovery state.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *         restore_request: Restoration parameters
-         *
-         *     Returns:
-         *         Restoration confirmation
-         */
-        post: operations["restore_session_api_v1_sessions__session_id__restore_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sessions/{session_id}/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session Stats
-         * @description Get session statistics and activity summary.
-         *
-         *     Args:
-         *         session_id: Session identifier
-         *
-         *     Returns:
-         *         Session statistics
-         */
-        get: operations["get_session_stats_api_v1_sessions__session_id__stats_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4752,7 +4619,7 @@ export interface components {
             initial_message?: string | null;
             /**
              * Session Id
-             * @description Session ID for authentication and case association (restored from old implementation)
+             * @description The caller's OWN session, to associate the new case with. It is NOT how this request is authenticated — the bearer token is, and a session id naming a session that is not the bearer's is refused (401 SESSION_EXPIRED, the same answer as an expired one, so the two cannot be told apart). The description said 'for authentication' until contract 6.0.0, which is the confusion that PR removed.
              */
             session_id?: string | null;
             /**
@@ -4985,6 +4852,26 @@ export interface components {
         /**
          * CaseSearchRequest
          * @description Request to search cases.
+         *
+         *     ``user_id`` and ``organization_id`` used to be declared here, were published
+         *     in ``docs/reference/api/openapi.json``, and were read by nothing. They were
+         *     removed rather than implemented (#1416): this endpoint is scoped to the
+         *     AUTHENTICATED caller, so a request-supplied user id is either redundant or a
+         *     cross-tenant read, and under ADR-017 the organization bills and is never a
+         *     visibility predicate.
+         *
+         *     Every remaining field does reach the repository query — and that is stated
+         *     HERE as history rather than as a promise, on purpose. This text is published
+         *     verbatim as the schema's description, and a description is the one part of
+         *     the contract nothing checks: ``scripts/check_contract_version.py`` strips
+         *     prose before comparing, precisely because no client breaks on a reworded
+         *     sentence. So a blanket guarantee written here could go stale the next time
+         *     someone adds a field and forgets to wire it, with every gate still green and
+         *     the published contract now asserting the very thing #1416 was. The
+         *     guarantee lives where it can fail:
+         *     ``tests/unit/modules/case/test_declared_filters_reach_the_query.py``
+         *     classifies every field on this model and goes red on one that reaches no
+         *     query.
          */
         CaseSearchRequest: {
             /**
@@ -4994,27 +4881,17 @@ export interface components {
              */
             limit: number;
             /**
-             * Organization Id
-             * @description Limit to organization's cases
-             */
-            organization_id?: string | null;
-            /**
              * Query
              * @description Search query
              */
             query: string;
-            /** @description Filter by state */
+            /** @description Narrow the results to one lifecycle state. Applied in the same query as the text search, so it constrains what the `limit` returns rather than thinning an already-limited page. */
             state?: components["schemas"]["CaseState"] | null;
             /**
              * Team Id
              * @description Filter to cases shared with this Team (ADR-013 §D4). Only Teams the caller belongs to yield results; ignored in standalone (no teams).
              */
             team_id?: string | null;
-            /**
-             * User Id
-             * @description Limit to user's cases
-             */
-            user_id?: string | null;
         };
         /**
          * CaseState
@@ -6318,6 +6195,16 @@ export interface components {
             hosted_login_url?: string | null;
             /** Scopes */
             scopes: string[];
+            /**
+             * Self Service Signup Enabled
+             * @default false
+             */
+            self_service_signup_enabled: boolean;
+            /**
+             * Supports Screen Hint
+             * @default false
+             */
+            supports_screen_hint: boolean;
             /** Token Url */
             token_url: string;
         };
@@ -7026,24 +6913,6 @@ export interface components {
             status: components["schemas"]["AuthSessionStatus"];
             /** User Id */
             user_id?: string | null;
-        };
-        /**
-         * SessionRestoreRequest
-         * @description Request model for session restoration.
-         */
-        SessionRestoreRequest: {
-            /**
-             * Include Data
-             * @default true
-             */
-            include_data: boolean;
-            /** Restore Point */
-            restore_point: string;
-            /**
-             * Type
-             * @default full
-             */
-            type: string | null;
         };
         /**
          * SessionState
@@ -9006,6 +8875,8 @@ export interface operations {
             query?: {
                 /** @description Dashboard path to return to after login (same-origin path only) */
                 return_to?: string | null;
+                /** @description Which screen the hosted login opens on. Omit for the provider's default, which is sign-in. 'sign-up' is what a first-time visitor arriving from the marketing site needs; it selects a screen and grants nothing. */
+                screen_hint?: ("sign-in" | "sign-up") | null;
             };
             header?: never;
             path?: never;
@@ -9136,8 +9007,6 @@ export interface operations {
                 offset?: number;
                 /** @description Include cases with current_turn == 0 (newly created) */
                 include_empty?: boolean;
-                /** @description Include archived/closed cases */
-                include_archived?: boolean;
             };
             header?: never;
             path?: never;
@@ -9240,44 +9109,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseSummary"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_case_for_session_api_v1_cases_sessions__session_id__case_post: {
-        parameters: {
-            query?: {
-                /** @description Case title (optional, auto-generated if not provided) */
-                title?: string | null;
-                /** @description Force creation of new case */
-                force_new?: boolean;
-            };
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
@@ -11819,9 +11650,7 @@ export interface operations {
     };
     create_session_api_v1_sessions_post: {
         parameters: {
-            query?: {
-                user_id?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -11861,26 +11690,6 @@ export interface operations {
             };
             /** @description Validation error (invalid timeout_minutes) */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    cleanup_expired_sessions_v2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12053,144 +11862,7 @@ export interface operations {
             };
         };
     };
-    list_session_cases_api_v1_sessions__session_id__cases_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-                /** @description Include cases with message_count == 0 */
-                include_empty?: boolean;
-                /** @description Include terminal state cases (resolved/closed) */
-                include_terminal?: boolean;
-                /** @description Include deleted cases (admin only) */
-                include_deleted?: boolean;
-            };
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     session_heartbeat_api_v1_sessions__session_id__heartbeat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_recovery_info_api_v1_sessions__session_id__recovery_info_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    restore_session_api_v1_sessions__session_id__restore_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SessionRestoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_stats_api_v1_sessions__session_id__stats_get: {
         parameters: {
             query?: never;
             header?: never;

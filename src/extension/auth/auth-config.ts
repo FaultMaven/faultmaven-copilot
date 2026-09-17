@@ -5,6 +5,7 @@
  * Enables deployment-neutral authentication (local vs OIDC/SAML).
  */
 
+import type { components } from '@faultmaven/copilot-ui/types/api.generated';
 import { getHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { fetchWithTimeout } from '@faultmaven/copilot-ui/lib/utils/fetch-timeout';
@@ -17,21 +18,30 @@ const log = createLogger('AuthConfig');
 // caller falls back to the last-known-good cached config.
 const AUTH_CONFIG_TIMEOUT_MS = 10_000;
 
+type AuthConfigSchema = components['schemas']['AuthConfigResponse'];
+
 /**
- * Backend auth config response (from /api/v1/auth/config)
+ * `GET /api/v1/auth/config` as it arrives on the wire.
+ *
+ * Derived from the generated contract, not hand-written. It was hand-written,
+ * and that is the blind spot faultmaven-dashboard#163 was filed about: a field
+ * renamed or removed upstream compiles clean here, because `api-types-drift`
+ * only diffs the generated file and this module never imported it. Concretely,
+ * a rename of `auth_mode` or of the `oauth` block would leave
+ * `backendConfig.auth_mode === 'local' ? 'local' : 'oidc'` silently answering
+ * `oidc`, and `TokenManager` would pick the wrong refresh endpoint — the #110
+ * failure, with nothing red.
+ *
+ * Every field OPTIONAL, because this is an unvalidated body from a server of
+ * unknown version: `openapi-typescript` renders a defaulted field as required,
+ * which is a promise about a conformant server rather than about this
+ * response. And `oauth` is bound by INDEXED ACCESS — `Omit<T, 'oauth'>`
+ * no-ops once the key is gone, so an independently-named arm would supply it
+ * back and the rename would compile.
  */
-interface BackendAuthConfig {
-  auth_mode: 'local' | 'oauth';
-  login_endpoint?: string;
-  register_endpoint?: string;
-  supports_registration: boolean;
-  oauth?: {
-    authorize_url: string;
-    token_url: string;
-    client_id: string;
-    scopes: string[];
-  } | null;
-}
+type BackendAuthConfig = Partial<Omit<AuthConfigSchema, 'oauth'>> & {
+  oauth?: Partial<NonNullable<AuthConfigSchema['oauth']>> | null;
+};
 
 /**
  * Auth provider configuration (internal format)
@@ -111,9 +121,17 @@ export async function getAuthConfig(): Promise<AuthConfig> {
     // Transform backend response to AuthConfig format
     const config: AuthConfig = {
       provider: backendConfig.auth_mode === 'local' ? 'local' : 'oidc',
-      login_url: backendConfig.login_endpoint,
+      // `?? undefined`: the contract types this `string | null`, and the
+      // internal shape wants `string | undefined`. The hand-written type used
+      // to claim it was never null, so this coercion was invisible — binding
+      // to the contract is what surfaced it.
+      login_url: backendConfig.login_endpoint ?? undefined,
       features: {
-        supports_registration: backendConfig.supports_registration,
+        // Absent reads as NO. An older or partial response that omits the
+        // field must not be read as "registration is supported"; the
+        // hand-written type declared it required, so this could not be
+        // considered before.
+        supports_registration: backendConfig.supports_registration === true,
         supports_password_reset: false,  // Not supported yet
         supports_email_verification: false,  // Not supported yet
         requires_redirect: backendConfig.auth_mode === 'oauth'  // OAuth requires redirect to Dashboard

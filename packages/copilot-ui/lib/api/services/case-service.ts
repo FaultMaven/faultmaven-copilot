@@ -361,8 +361,8 @@ export async function getCase(caseId: string): Promise<UserCase> {
  * Deriving it makes the compiler the gate: `{ status: 'resolved' }` is a compile
  * error, and the accepted set stays correct when the contract moves without
  * anyone remembering to re-copy it. It is also the only way the real parameters
- * — `state`, `source`, `team_id`, the creation-date window, `include_empty`,
- * `include_archived` — become expressible at all.
+ * — `state`, `source`, `team_id`, the creation-date window, `include_empty` —
+ * become expressible at all.
  */
 export type CaseListFilters = NonNullable<
   operations['list_cases_api_v1_cases_get']['parameters']['query']
@@ -400,7 +400,6 @@ const CASE_LIST_QUERY_PARAMS: Record<keyof CaseListFilters, true> = {
   limit: true,
   offset: true,
   include_empty: true,
-  include_archived: true,
 };
 
 /**
