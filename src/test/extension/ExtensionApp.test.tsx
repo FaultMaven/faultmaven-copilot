@@ -7,7 +7,7 @@
  * being reached, are both behaviours that were preserved by hand across the
  * split — and both survived a mutation that removed them.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -22,8 +22,30 @@ const {
   capturedSignOut,
   getAuthConfig,
   localSignIn,
-} =
-  vi.hoisted(() => ({
+  localRegister,
+  SSO_CONFIG,
+  LOCAL_CONFIG,
+} = vi.hoisted(() => {
+  // The real `AuthConfig['features']` (auth-config.ts): four fields, and
+  // `supports_mfa` is not one of them. The mock is untyped, so tsc cannot say
+  // so — and a fixture that invents a field while dropping `requires_redirect`
+  // hands any test that reads the one that decides the OIDC/SAML branch an
+  // `undefined` it will not notice.
+  const FEATURES = {
+    supports_registration: false,
+    supports_password_reset: false,
+    supports_email_verification: false,
+    requires_redirect: true, // true for OIDC/SAML
+  };
+  const SSO_CONFIG = { provider: 'oidc', features: FEATURES };
+  const LOCAL_CONFIG = {
+    provider: 'local',
+    features: { ...FEATURES, requires_redirect: false },
+  };
+
+  return {
+    SSO_CONFIG,
+    LOCAL_CONFIG,
     mockPM: {
       isRecoveryInProgress: vi.fn().mockResolvedValue(false),
       recoverConversationsFromBackend: vi.fn(),
@@ -36,9 +58,16 @@ const {
     logoutAuth: vi.fn(),
     messageListeners: [] as ((msg: any) => void)[],
     capturedSignOut: { current: (_fn: (() => Promise<void>) | null) => {} },
-    getAuthConfig: vi.fn(),
+    // Self-defaulting: `vi.clearAllMocks()` clears calls, not implementations,
+    // so a describe that never stages a config still gets one. A bare `vi.fn()`
+    // resolves undefined, which AuthScreen renders as its full-screen
+    // "Authentication Error" — a failure with no visible cause in the test
+    // that hits it.
+    getAuthConfig: vi.fn().mockResolvedValue(SSO_CONFIG),
     localSignIn: vi.fn(),
-  }));
+    localRegister: vi.fn(),
+  };
+});
 
 vi.mock('@faultmaven/copilot-ui/lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
 vi.mock('../../extension/extension-reload', () => ({
@@ -78,6 +107,11 @@ vi.mock('../../extension/auth/auth-config', () => ({ getAuthConfig }));
 vi.mock('../../extension/auth/local-auth-client', () => ({
   LocalAuthClient: class {
     signIn = localSignIn;
+    // Stubbed although no test registers today: `LocalLoginForm` calls it
+    // whenever `supports_registration` is set, and a missing method there
+    // surfaces through the form's own catch as a generic error — which reads
+    // as a product bug rather than a missing stub.
+    register = localRegister;
   },
 }));
 // A probe, not the panel. What this file tests is what the ENTRY builds and
@@ -91,6 +125,10 @@ vi.mock('@faultmaven/copilot-ui/shared/ui/CopilotPanel', () => ({
 }));
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import {
+  clearSessionEnding,
+  isSessionEnding,
+} from '@faultmaven/copilot-ui/lib/state/session-epoch';
 
 const b = (global as any).browser;
 
@@ -111,13 +149,28 @@ async function captureHostSignOut(): Promise<() => Promise<void>> {
   return signOut;
 }
 
-const FEATURES = {
-  supports_registration: false,
-  supports_password_reset: false,
-  supports_mfa: false,
+/**
+ * Stub `window.location` for one test, keeping what `src/test/setup.ts` put
+ * there.
+ *
+ * setup.ts installs `{ href }` and nothing else. Replacing the object wholesale
+ * with `{ reload }` therefore takes `href` away from every test that runs after
+ * it in this file, and the test that trips over it fails for a reason nothing
+ * in its own body shows. Spread what is there, and restore on teardown.
+ */
+const ORIGINAL_LOCATION = window.location;
+const withStubbedLocation = (extra: Record<string, unknown>) => {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { ...ORIGINAL_LOCATION, ...extra },
+  });
 };
-const SSO_CONFIG = { provider: 'oidc', features: FEATURES };
-const LOCAL_CONFIG = { provider: 'local', features: FEATURES };
+afterEach(() => {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: ORIGINAL_LOCATION,
+  });
+});
 
 const renderApp = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -238,7 +291,7 @@ describe('ExtensionApp — the gate above the shared panel', () => {
     b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
     capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
     const reload = vi.fn();
-    Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
+    withStubbedLocation({ reload });
 
     renderApp();
     await screen.findByText(/Sign in with/i);
@@ -277,18 +330,30 @@ describe('ExtensionApp — the gate above the shared panel', () => {
     b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
     capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
     localSignIn.mockResolvedValue({ success: true, user: HOST_USER });
-    const reload = vi.fn();
-    Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
+    // The flag AT THE MOMENT OF THE RELOAD, not afterwards: #164 is an ordering
+    // claim, and reading it after the fact passes just as happily when
+    // `markSessionEnding()` has been moved BELOW the reload it must precede.
+    const endingWhenReloaded: boolean[] = [];
+    const reload = vi.fn(() => endingWhenReloaded.push(isSessionEnding()));
+    withStubbedLocation({ reload });
 
     const view = renderApp();
 
     fireEvent.change(await screen.findByLabelText(/Username/i), { target: { value: 'op' } });
+    // Cleared HERE, not at the top of the test: startup resolves nobody signed
+    // in, and `setSignedInUser(null)` runs the slice's own teardown, which
+    // marks it. Clearing before the render leaves the flag already true by the
+    // time the sign-in reloads, and the probe below asserts nothing.
+    clearSessionEnding();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
     });
 
-    // Microtasks only — no timer has been given a chance to fire.
+    // Microtasks only — no timer has been given a chance to fire, so this fails
+    // for a reintroduced wait of ANY length, not just one shorter than the
+    // sleep below.
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(endingWhenReloaded).toEqual([true]);
 
     view.unmount();
     await act(async () => {
@@ -296,6 +361,40 @@ describe('ExtensionApp — the gate above the shared panel', () => {
     });
 
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A reload that fails is not a sign-in that failed.
+   *
+   * `LocalLoginForm.handleLogin` calls `onAuthSuccess()` INSIDE its own `try`,
+   * whose catch runs `setError(err.message)`. Now that the handler is
+   * synchronous, a throw from the reload would reach that catch and tell the
+   * user their login failed — over a session that is live, with the credential
+   * written and the prior user's data already purged.
+   *
+   * The seam is narrow (reloading a same-origin extension page does not throw)
+   * but it is reachable from a test harness: `src/test/setup.ts` installs a
+   * `location` with no `reload` at all.
+   */
+  it('does not report a successful sign-in as failed when the reload throws', async () => {
+    getAuthConfig.mockResolvedValue(LOCAL_CONFIG);
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    localSignIn.mockResolvedValue({ success: true, user: HOST_USER });
+    const reload = vi.fn(() => {
+      throw new TypeError('location.reload is not a function');
+    });
+    withStubbedLocation({ reload });
+
+    renderApp();
+
+    fireEvent.change(await screen.findByLabelText(/Username/i), { target: { value: 'op' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+    });
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/is not a function/i)).toBeNull();
   });
 });
 
@@ -327,7 +426,7 @@ describe('the extension session signs out', () => {
     b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
     capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
     useAppStore.setState({ currentUser: null });
-    Object.defineProperty(window, 'location', { configurable: true, value: { reload: vi.fn() } });
+    withStubbedLocation({ reload: vi.fn() });
 
     // Reach the session the entry hands the panel, without rendering the panel:
     // CopilotPanel is not what is under test here, and mounting it drags every

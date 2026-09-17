@@ -253,13 +253,28 @@ export function ExtensionApp() {
    * closes it, because there is no longer a post-await point to reach.
    */
   const handleAuthSuccess = useCallback(() => {
-    log.info('Authentication successful, checking auth state');
+    log.info('Authentication successful, reloading the panel');
     // Mark teardown BEFORE reloading so the store's beforeunload handler cancels
     // the pending debounced persist instead of flushing a prior user's
     // just-purged residue back to storage (#164). Same discipline as the
     // reload path in the auth slice.
     markSessionEnding();
-    window.location.reload();
+    try {
+      window.location.reload();
+    } catch (error) {
+      // A failed reload is NOT a failed sign-in, and both ways of letting it
+      // say so are wrong. `LocalLoginForm` calls us inside its own `try`, whose
+      // catch renders `setError(...)` — so a throw here reports "Login failed"
+      // over a session that is live, with the credential written and the prior
+      // user's data already purged. Moving the call outside that `try` only
+      // swaps it for an unhandled rejection off an un-awaited async handler,
+      // which is the shape #277 was.
+      //
+      // Reloading a same-origin extension page does not throw, so this is a
+      // seam rather than a path. Logged, never swallowed silently, and the
+      // session is left alone.
+      log.error('Panel reload failed after a successful sign-in', error);
+    }
   }, []);
 
   // The capabilities gate is ONE-WAY: it covers startup, then stands down.
