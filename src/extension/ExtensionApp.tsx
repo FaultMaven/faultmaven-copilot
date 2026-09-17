@@ -19,13 +19,16 @@ import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
 import { ErrorBoundary } from '@faultmaven/copilot-ui/shared/ui/components/ErrorBoundary';
 import { LoadingScreen } from '@faultmaven/copilot-ui/shared/ui/components/LoadingScreen';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { markSessionEnding } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import {
+  clearSessionEnding,
+  markSessionEnding,
+} from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { readSessionAccessToken } from './host/session-credential';
 
 import { authManager } from './auth/auth-manager';
 import { logoutAuth } from './auth/auth-service';
 import { installExtensionTransport } from './host';
-import { EventBus, type AuthStateChangedEvent } from './messaging';
+import { EventBus, isSignedInBroadcast, type AuthStateChangedEvent } from './messaging';
 import { subscribeExtensionAuthState } from './host/auth-state';
 import { useExtensionReloadRecovery } from './useExtensionReloadRecovery';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -122,7 +125,7 @@ export function ExtensionApp() {
   useEffect(() => {
     if (currentUser) return;
     return EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
-      applyHostAuthState(event.authState?.isAuthenticated ? toHostUser(event.authState.user) : null);
+      applyHostAuthState(isSignedInBroadcast(event) ? toHostUser(event.authState?.user) : null);
     });
   }, [currentUser, applyHostAuthState]);
 
@@ -274,6 +277,14 @@ export function ExtensionApp() {
       // seam rather than a path. Logged, never swallowed silently, and the
       // session is left alone.
       log.error('Panel reload failed after a successful sign-in', error);
+      // And TAKE THE MARK BACK. `markSessionEnding()` is a promise that this
+      // document is going away; the catch is proof that it is not. The flag
+      // gates the whole debounced persist, not just the beforeunload flush, and
+      // the only two places that clear it are store writes the local sign-in
+      // path never performs — it broadcasts nothing, so the reload IS the
+      // hand-off. Left set, the panel stays up with persistence dead for the
+      // life of the document.
+      clearSessionEnding();
     }
   }, []);
 

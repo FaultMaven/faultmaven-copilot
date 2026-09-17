@@ -14,7 +14,7 @@ import { browser } from 'wxt/browser';
 import { getAuthConfig, AuthConfig } from '../auth/auth-config';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { LocalLoginForm } from './LocalLoginForm';
-import { EventBus, type AuthStateChangedEvent } from '../messaging';
+import { EventBus, isSignedInBroadcast, type AuthStateChangedEvent } from '../messaging';
 
 const log = createLogger('AuthScreen');
 
@@ -106,25 +106,33 @@ export function AuthScreen({
   // A sign-in completed somewhere else — the background's OAuth callback, or
   // the dashboard bridge.
   //
-  // Gated on `isAuthenticated`, NOT on `authState` being present. The contract
-  // is `{ isAuthenticated, user? } | null` (messaging.ts), so `{ isAuthenticated:
-  // false }` is a truthy object: read as presence, a sign-OUT broadcast calls
-  // `onAuthSuccess` — which marks the session ending and reloads the panel, on a
-  // user who has just been signed out. Every emitter happens to send
-  // `authState: null` for that today, which is the only reason the presence test
-  // has held; it is one emitter away from being wrong, and this file's sibling
-  // listener in `ExtensionApp` already reads the same event by the same field.
+  // Through `isSignedInBroadcast`, NOT a presence test on `authState`. The
+  // payload is an object when signed in and `null` when not, so presence reads
+  // a malformed `{ isAuthenticated: false }` as a sign-in — and this callback
+  // marks the session ending and reloads the panel, on a user who has just been
+  // signed out.
   //
-  // A missing `user` is deliberately NOT part of the gate. The fact this screen
-  // acts on is "there is a session now"; who it belongs to is re-read from
-  // storage after the reload, and refusing to leave the sign-in screen over an
-  // absent optional field would strand a user who is genuinely signed in.
+  // A missing `user` is deliberately NOT part of the gate, and that is the one
+  // payload where this screen and the entry's listener answer differently: the
+  // entry maps it to `null` and purges, this reloads. Erring towards the reload
+  // is the recovery — storage is written before any broadcast, so the identity
+  // is there to be re-read even when the message omitted it, and refusing to
+  // leave the sign-in screen over an absent optional field would strand a user
+  // who is signed in. No emitter produces that payload; if one ever does, the
+  // disagreement is the entry's to settle, not a reason to widen this gate.
   useEffect(() => {
     return EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
-      if (event.authState?.isAuthenticated) {
-        log.info('Auth state changed, triggering success');
-        onAuthSuccess();
+      if (!isSignedInBroadcast(event)) {
+        // Rejected arm logged rather than dropped: the user simply stays on
+        // this screen, so without a line here a broadcast that arrived and was
+        // refused is indistinguishable from one that never arrived.
+        log.debug('Ignoring an auth broadcast that is not a sign-in', {
+          isAuthenticated: event.authState?.isAuthenticated ?? null,
+        });
+        return;
       }
+      log.info('Auth state changed, triggering success');
+      onAuthSuccess();
     });
   }, [onAuthSuccess]);
 

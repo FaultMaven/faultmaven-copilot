@@ -11,7 +11,7 @@
  * Both are the extension's own transports, so both are answered here and what
  * crosses the boundary is a `HostUser` or `null`.
  */
-import { EventBus, type AuthStateChangedEvent } from '../messaging';
+import { EventBus, isSignedInBroadcast, type AuthStateChangedEvent } from '../messaging';
 import { extensionStore } from './extension-store';
 import { AUTH_STATE_KEY } from '../auth/storage-keys';
 import type { HostUser } from '@faultmaven/copilot-ui/shared/host';
@@ -31,7 +31,7 @@ export function subscribeExtensionAuthState(
   onChange: (user: HostUser | null) => void,
 ): () => void {
   const unsubscribeBroadcast = EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
-    onChange(event.authState?.isAuthenticated ? toHostUser(event.authState.user) : null);
+    onChange(isSignedInBroadcast(event) ? toHostUser(event.authState?.user) : null);
   });
 
   // Presence-and-falsy: a change notification only fires for a key that ACTUALLY
