@@ -8,7 +8,7 @@
  * split — and both survived a mutation that removed them.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -20,6 +20,8 @@ const {
   logoutAuth,
   messageListeners,
   capturedSignOut,
+  getAuthConfig,
+  localSignIn,
 } =
   vi.hoisted(() => ({
     mockPM: {
@@ -34,6 +36,8 @@ const {
     logoutAuth: vi.fn(),
     messageListeners: [] as ((msg: any) => void)[],
     capturedSignOut: { current: (_fn: (() => Promise<void>) | null) => {} },
+    getAuthConfig: vi.fn(),
+    localSignIn: vi.fn(),
   }));
 
 vi.mock('@faultmaven/copilot-ui/lib/utils/persistence-manager', () => ({ PersistenceManager: mockPM }));
@@ -68,11 +72,13 @@ vi.mock('../../extension/auth/auth-manager', () => ({
   },
 }));
 vi.mock('@faultmaven/copilot-ui/lib/capabilities', () => ({ capabilitiesManager: { fetch: capsFetch } }));
-vi.mock('../../extension/auth/auth-config', () => ({
-  getAuthConfig: vi.fn().mockResolvedValue({
-    provider: 'oidc',
-    features: { supports_registration: false, supports_password_reset: false, supports_mfa: false },
-  }),
+vi.mock('../../extension/auth/auth-config', () => ({ getAuthConfig }));
+// Only the sign-in screen's local branch reaches this; every other test in the
+// file renders the SSO branch, which never constructs one.
+vi.mock('../../extension/auth/local-auth-client', () => ({
+  LocalAuthClient: class {
+    signIn = localSignIn;
+  },
 }));
 // A probe, not the panel. What this file tests is what the ENTRY builds and
 // hands over; rendering the real panel would pull every hook it owns into a
@@ -105,6 +111,14 @@ async function captureHostSignOut(): Promise<() => Promise<void>> {
   return signOut;
 }
 
+const FEATURES = {
+  supports_registration: false,
+  supports_password_reset: false,
+  supports_mfa: false,
+};
+const SSO_CONFIG = { provider: 'oidc', features: FEATURES };
+const LOCAL_CONFIG = { provider: 'local', features: FEATURES };
+
 const renderApp = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -118,6 +132,7 @@ describe('ExtensionApp — the gate above the shared panel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authState.isAuthenticated = false;
+    getAuthConfig.mockResolvedValue(SSO_CONFIG);
     // AuthScreen subscribes to runtime messages and unsubscribes on unmount;
     // the shared global mock has no removeListener.
     messageListeners.length = 0;
@@ -236,6 +251,52 @@ describe('ExtensionApp — the gate above the shared panel', () => {
 
     expect(reload).toHaveBeenCalled();
   });
+
+  /**
+   * The sign-in reload happens INSIDE the turn that reported the sign-in, and
+   * leaves nothing scheduled behind it.
+   *
+   * `handleAuthSuccess` used to `await` a 100ms sleep before touching the DOM,
+   * and nothing awaits `handleAuthSuccess` — so the reload landed after its
+   * caller was gone. In CI that meant after Vitest had disposed the jsdom
+   * environment: every test file passed and the run failed on an unhandled
+   * `ReferenceError: window is not defined` from that line (#277). In the
+   * browser it is the same shape, reloading a document already being replaced.
+   *
+   * The local sign-in form is the path that isolates it. It broadcasts nothing,
+   * so `applyHostAuthState` — the OTHER reload in this tree, which fires on the
+   * SSO/bridge broadcast and is what the test above asserts — is not in play,
+   * and the only reload that can happen here is this one.
+   *
+   * Both halves matter. Asserting the reload with NO timer advanced is what
+   * fails if a wait comes back; asserting the count is unchanged after unmount
+   * is what fails if the reload merely moves behind some other continuation.
+   */
+  it('reloads within the sign-in turn, scheduling nothing past it', async () => {
+    getAuthConfig.mockResolvedValue(LOCAL_CONFIG);
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    localSignIn.mockResolvedValue({ success: true, user: HOST_USER });
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
+
+    const view = renderApp();
+
+    fireEvent.change(await screen.findByLabelText(/Username/i), { target: { value: 'op' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+    });
+
+    // Microtasks only — no timer has been given a chance to fire.
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
 });
 
 /**
@@ -252,6 +313,7 @@ describe('the extension session signs out', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    getAuthConfig.mockResolvedValue(SSO_CONFIG);
     authState.isAuthenticated = true;
     messageListeners.length = 0;
     b.runtime = {

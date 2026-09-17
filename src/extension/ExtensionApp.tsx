@@ -229,9 +229,31 @@ export function ExtensionApp() {
   // reads it, and racing them would hydrate the pre-recovery state.
   const isRecovering = useExtensionReloadRecovery(Boolean(session));
 
-  const handleAuthSuccess = useCallback(async () => {
+  /**
+   * Somebody is now signed in — re-enter the panel against the new identity.
+   *
+   * SYNCHRONOUS, and that is the point. This used to sleep 100ms first ("small
+   * delay to ensure storage sync completes", af53ba3), which guarded nothing:
+   * every path that reaches here has already AWAITED the credential write.
+   * `LocalAuthClient.signIn/register` await `storeTokens` — the `storage.set`,
+   * the key removals and `enforceUserDataScope` — before returning to
+   * `LocalLoginForm`; the OAuth callback and the dashboard bridge both await the
+   * same work in the background worker before emitting the broadcast this screen
+   * listens for. The sleep bought no ordering that the awaits had not already
+   * bought.
+   *
+   * What it did buy was a continuation that outlived its caller. Nothing awaits
+   * `onAuthSuccess`, so the DOM call landed 100ms later with no guarantee the
+   * component — or, under Vitest, the jsdom environment — was still there: CI
+   * failed on `ReferenceError: window is not defined` from this line, after all
+   * 114 test files had passed (#277). Reloading a document that is already being
+   * replaced is the same shape in production.
+   *
+   * A mounted-ref guard would have narrowed that window; removing the wait
+   * closes it, because there is no longer a post-await point to reach.
+   */
+  const handleAuthSuccess = useCallback(() => {
     log.info('Authentication successful, checking auth state');
-    await new Promise((resolve) => setTimeout(resolve, 100));
     // Mark teardown BEFORE reloading so the store's beforeunload handler cancels
     // the pending debounced persist instead of flushing a prior user's
     // just-purged residue back to storage (#164). Same discipline as the
