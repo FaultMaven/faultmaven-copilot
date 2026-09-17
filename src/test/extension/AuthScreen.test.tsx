@@ -99,6 +99,43 @@ describe('AuthScreen — SSO wait', () => {
     expect(onAuthSuccess).toHaveBeenCalled();
   });
 
+  /**
+   * A sign-OUT broadcast is not a sign-in.
+   *
+   * `AuthStateChangedEvent.authState` is `{ isAuthenticated, user? } | null`, so
+   * `{ isAuthenticated: false }` is a truthy object. The listener used to test
+   * it for presence, which meant a sign-out reached `onAuthSuccess` — and that
+   * handler marks the session ending and reloads the panel, on a user who has
+   * just been signed out. Latent only because every emitter sends
+   * `authState: null` for a sign-out today.
+   */
+  it('ignores a sign-out broadcast that spells itself out rather than sending null', async () => {
+    const onAuthSuccess = vi.fn();
+    render(<AuthScreen onAuthSuccess={onAuthSuccess} />);
+    await screen.findByRole('button', { name: /sign in/i });
+
+    await act(async () => {
+      listeners.forEach((fn) =>
+        fn({ type: 'auth_state_changed', authState: { isAuthenticated: false } }),
+      );
+    });
+
+    expect(onAuthSuccess).not.toHaveBeenCalled();
+  });
+
+  // The other spelling of a sign-out, and the one every emitter uses today.
+  it('ignores a null auth state', async () => {
+    const onAuthSuccess = vi.fn();
+    render(<AuthScreen onAuthSuccess={onAuthSuccess} />);
+    await screen.findByRole('button', { name: /sign in/i });
+
+    await act(async () => {
+      listeners.forEach((fn) => fn({ type: 'auth_state_changed', authState: null }));
+    });
+
+    expect(onAuthSuccess).not.toHaveBeenCalled();
+  });
+
   it('does not warn before the timeout elapses', async () => {
     await startSignIn();
 

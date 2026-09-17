@@ -103,10 +103,25 @@ export function AuthScreen({
     return () => clearTimeout(timer);
   }, [isAuthenticating]);
 
-  // Listen for auth state changes
+  // A sign-in completed somewhere else — the background's OAuth callback, or
+  // the dashboard bridge.
+  //
+  // Gated on `isAuthenticated`, NOT on `authState` being present. The contract
+  // is `{ isAuthenticated, user? } | null` (messaging.ts), so `{ isAuthenticated:
+  // false }` is a truthy object: read as presence, a sign-OUT broadcast calls
+  // `onAuthSuccess` — which marks the session ending and reloads the panel, on a
+  // user who has just been signed out. Every emitter happens to send
+  // `authState: null` for that today, which is the only reason the presence test
+  // has held; it is one emitter away from being wrong, and this file's sibling
+  // listener in `ExtensionApp` already reads the same event by the same field.
+  //
+  // A missing `user` is deliberately NOT part of the gate. The fact this screen
+  // acts on is "there is a session now"; who it belongs to is re-read from
+  // storage after the reload, and refusing to leave the sign-in screen over an
+  // absent optional field would strand a user who is genuinely signed in.
   useEffect(() => {
     return EventBus.on<AuthStateChangedEvent>('auth_state_changed', (event) => {
-      if (event.authState) {
+      if (event.authState?.isAuthenticated) {
         log.info('Auth state changed, triggering success');
         onAuthSuccess();
       }
