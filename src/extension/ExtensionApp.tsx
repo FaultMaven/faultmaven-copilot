@@ -229,15 +229,52 @@ export function ExtensionApp() {
   // reads it, and racing them would hydrate the pre-recovery state.
   const isRecovering = useExtensionReloadRecovery(Boolean(session));
 
-  const handleAuthSuccess = useCallback(async () => {
-    log.info('Authentication successful, checking auth state');
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  /**
+   * Somebody is now signed in — re-enter the panel against the new identity.
+   *
+   * SYNCHRONOUS, and that is the point. This used to sleep 100ms first ("small
+   * delay to ensure storage sync completes", af53ba3), which guarded nothing:
+   * every path that reaches here has already AWAITED the credential write.
+   * `LocalAuthClient.signIn/register` await `storeTokens` — the `storage.set`,
+   * the key removals and `enforceUserDataScope` — before returning to
+   * `LocalLoginForm`; the OAuth callback and the dashboard bridge both await the
+   * same work in the background worker before emitting the broadcast this screen
+   * listens for. The sleep bought no ordering that the awaits had not already
+   * bought.
+   *
+   * What it did buy was a continuation that outlived its caller. Nothing awaits
+   * `onAuthSuccess`, so the DOM call landed 100ms later with no guarantee the
+   * component — or, under Vitest, the jsdom environment — was still there: CI
+   * failed on `ReferenceError: window is not defined` from this line, after all
+   * 114 test files had passed (#277). Reloading a document that is already being
+   * replaced is the same shape in production.
+   *
+   * A mounted-ref guard would have narrowed that window; removing the wait
+   * closes it, because there is no longer a post-await point to reach.
+   */
+  const handleAuthSuccess = useCallback(() => {
+    log.info('Authentication successful, reloading the panel');
     // Mark teardown BEFORE reloading so the store's beforeunload handler cancels
     // the pending debounced persist instead of flushing a prior user's
     // just-purged residue back to storage (#164). Same discipline as the
     // reload path in the auth slice.
     markSessionEnding();
-    window.location.reload();
+    try {
+      window.location.reload();
+    } catch (error) {
+      // A failed reload is NOT a failed sign-in, and both ways of letting it
+      // say so are wrong. `LocalLoginForm` calls us inside its own `try`, whose
+      // catch renders `setError(...)` — so a throw here reports "Login failed"
+      // over a session that is live, with the credential written and the prior
+      // user's data already purged. Moving the call outside that `try` only
+      // swaps it for an unhandled rejection off an un-awaited async handler,
+      // which is the shape #277 was.
+      //
+      // Reloading a same-origin extension page does not throw, so this is a
+      // seam rather than a path. Logged, never swallowed silently, and the
+      // session is left alone.
+      log.error('Panel reload failed after a successful sign-in', error);
+    }
   }, []);
 
   // The capabilities gate is ONE-WAY: it covers startup, then stands down.
