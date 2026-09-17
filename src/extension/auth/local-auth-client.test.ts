@@ -465,21 +465,31 @@ describe('LocalAuthClient', () => {
     });
   });
 
-  describe('broadcastAuthStateChange (shape)', () => {
-    it('wraps a present user in the { isAuthenticated, user } contract shape', async () => {
-      const user = { user_id: 'u1', username: 'alice' };
-      (browser.storage.local.get as any).mockResolvedValueOnce({ user });
+  describe('broadcastSignedOut', () => {
+    /**
+     * The announcement states what HAPPENED, not what is at rest.
+     *
+     * It used to derive the payload from storage, so a teardown that failed to
+     * remove `user` — and `clearAllAuthData()` swallows exactly that failure —
+     * announced the sign-out as `{ isAuthenticated: true, user }`. Every reader
+     * would then re-establish the identity of a user whose credential had just
+     * been destroyed, and the sign-in screen would reload the panel as if
+     * somebody had just signed in.
+     */
+    it('announces null even when the teardown left `user` behind in storage', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+      // The teardown ran and did not manage to remove the key.
+      (browser.storage.local.get as any).mockResolvedValue({
+        user: { user_id: 'u1', username: 'alice' },
+      });
 
-      await (client as any).broadcastAuthStateChange();
+      await client.signOut();
 
-      // objectContaining: the broadcast goes through EventBus, which stamps a
-      // timestamp. The CONTRACT is the type and the authState shape.
-      expect(browser.runtime.sendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'auth_state_changed',
-          authState: { isAuthenticated: true, user }
-        })
-      );
+      const call = (browser.runtime.sendMessage as any).mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m?.type === 'auth_state_changed');
+      expect(call).toBeDefined();
+      expect(call.authState).toBeNull();
     });
   });
 

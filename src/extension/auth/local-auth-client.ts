@@ -228,8 +228,8 @@ export class LocalAuthClient {
       // whose name promised a credential-only clear while doing all three.
       await authManager.clearAllAuthData();
 
-      // Broadcast auth state change
-      await this.broadcastAuthStateChange();
+      // Announce it. Unconditionally null — see broadcastSignedOut.
+      await this.broadcastSignedOut();
 
       log.info('Sign out complete');
 
@@ -325,23 +325,26 @@ export class LocalAuthClient {
   }
 
   /**
-   * Broadcast authentication state change to other parts of extension
+   * Announce the sign-out: `authState: null`, the contract's only spelling of it.
+   *
+   * It used to DERIVE this from storage — `storage.user ? { isAuthenticated:
+   * true, … } : null` — which made a teardown's announcement depend on the
+   * teardown having succeeded. `clearAllAuthData()` deliberately swallows a
+   * failing `storage.remove`, so a single failed removal turned this into a
+   * "signed in" broadcast: every reader would re-establish the identity of a
+   * user whose credential had just been destroyed, and the sign-in screen would
+   * reload the panel as if somebody had just signed in.
+   *
+   * A broadcast states WHAT HAPPENED, which the caller knows, not what is
+   * currently at rest, which is what the teardown was trying to change. The
+   * signed-in arm is gone rather than guarded: local sign-in deliberately does
+   * not broadcast (see `signIn`), so nothing legitimately reached it.
    */
-  private async broadcastAuthStateChange(): Promise<void> {
+  private async broadcastSignedOut(): Promise<void> {
     try {
-      const storage = await browser.storage.local.get(['user']);
+      await EventBus.emit({ type: 'auth_state_changed', authState: null });
 
-      // Match the AuthStateChangedEvent contract: { isAuthenticated, user } | null.
-      // Previously this sent the raw `user` object as `authState`, whose
-      // `isAuthenticated` is undefined; it was only benign because the sole
-      // caller (signOut) runs after the teardown removes `user`, so it always
-      // sent null. Make it correct regardless of call ordering.
-      await EventBus.emit({
-        type: 'auth_state_changed',
-        authState: storage.user ? { isAuthenticated: true, user: storage.user } : null
-      });
-
-      log.debug('Auth state change broadcasted');
+      log.debug('Sign-out broadcasted');
     } catch (error) {
       // Ignore messaging errors - not critical
       log.warn('Failed to broadcast auth state change:', error);

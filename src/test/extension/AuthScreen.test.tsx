@@ -110,3 +110,48 @@ describe('AuthScreen — SSO wait', () => {
     expect(screen.getByText(/Authenticating/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * Which broadcasts this screen treats as a sign-in.
+ *
+ * `AuthStateChangedEvent.authState` is an object when signed in and `null` when
+ * not, so a presence test reads anything an ill-formed sender puts there — a
+ * `{ isAuthenticated: false }`, a raw token payload whose flag is `undefined` —
+ * as a sign-in. `onAuthSuccess` marks the session ending and reloads the panel,
+ * so that is a signed-out user's panel reloading itself with persistence
+ * fenced off.
+ */
+describe('AuthScreen — classifying an auth broadcast', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listeners.length = 0;
+    mockSendMessage.mockResolvedValue({ status: 'success' });
+  });
+
+  const broadcast = async (authState: unknown) => {
+    const onAuthSuccess = vi.fn();
+    render(<AuthScreen onAuthSuccess={onAuthSuccess} />);
+    await screen.findByRole('button', { name: /sign in/i });
+    await act(async () => {
+      listeners.forEach((fn) => fn({ type: 'auth_state_changed', authState }));
+    });
+    return onAuthSuccess;
+  };
+
+  it.each([
+    ['the flag spelled false', { isAuthenticated: false }],
+    ['a null auth state — the spelling every emitter uses', null],
+    ['a raw user payload, whose flag is undefined', { user_id: 'u1', username: 'op' }],
+  ])('does not treat %s as a sign-in', async (_label, authState) => {
+    expect(await broadcast(authState)).not.toHaveBeenCalled();
+  });
+
+  // The accepted shape, and the one WITHOUT a user: storage is written before
+  // any broadcast, so the identity is there to be re-read after the reload.
+  it.each([
+    ['with a user', { isAuthenticated: true, user: { user_id: 'u1', username: 'op' } }],
+    ['without one', { isAuthenticated: true }],
+  ])('treats an authenticated broadcast %s as a sign-in', async (_label, authState) => {
+    expect(await broadcast(authState)).toHaveBeenCalled();
+  });
+});

@@ -35,7 +35,16 @@ export interface BaseEvent {
 export interface AuthStateChangedEvent extends BaseEvent {
   type: 'auth_state_changed';
   authState: {
-    isAuthenticated: boolean;
+    /**
+     * `true`, always — a sign-out is `authState: null`, not a flag set false.
+     *
+     * Declared as the literal rather than `boolean` so the second spelling is
+     * unrepresentable at the emitters. With `boolean` there were two ways to
+     * say "signed out", one of which is a TRUTHY object, and a reader that
+     * tested `authState` for presence read it as a sign-in. Every emitter
+     * already conformed; this is what stops the next one not conforming.
+     */
+    isAuthenticated: true;
     user?: {
       user_id: string;
       username: string;
@@ -44,6 +53,22 @@ export interface AuthStateChangedEvent extends BaseEvent {
       roles?: string[];
     };
   } | null;
+}
+
+/**
+ * Does this broadcast say somebody is signed in?
+ *
+ * The one place that decides, because three readers decide it — the sign-in
+ * screen, the entry's startup listener and `subscribeExtensionAuthState` — and
+ * they were keeping three hand-written copies of the answer in agreement.
+ *
+ * It re-checks a field the type above already constrains, and that is the
+ * point: what arrives here came off `runtime.onMessage` and is only as
+ * well-formed as the sender was. The type governs what THIS extension writes;
+ * this governs what a reader believes.
+ */
+export function isSignedInBroadcast(event: AuthStateChangedEvent): boolean {
+  return event.authState?.isAuthenticated === true;
 }
 
 export type AppEvent = AuthStateChangedEvent;

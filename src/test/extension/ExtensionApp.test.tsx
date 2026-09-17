@@ -306,6 +306,35 @@ describe('ExtensionApp — the gate above the shared panel', () => {
   });
 
   /**
+   * ...and that listener earns its place in the window where the sign-in screen
+   * is NOT mounted.
+   *
+   * The test above broadcasts with the sign-in screen up, where AuthScreen has a
+   * listener of its own — so both fire and the reload cannot be attributed.
+   * Delete the entry's listener and it stays green. This one holds capabilities
+   * unsettled, so the panel is on the loading screen with no AuthScreen in the
+   * tree, which is exactly the startup window the entry's listener exists for.
+   */
+  it('reloads from the loading screen, where the sign-in screen is not mounted', async () => {
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockImplementation(() => new Promise(() => {})); // never settles
+    const reload = vi.fn();
+    withStubbedLocation({ reload });
+
+    renderApp();
+    await screen.findByText(/Connecting to FaultMaven/i);
+    expect(screen.queryByText(/Sign in with/i)).toBeNull();
+
+    await act(async () => {
+      messageListeners.forEach((l) =>
+        l({ type: 'auth_state_changed', authState: { isAuthenticated: true, user: HOST_USER } }),
+      );
+    });
+
+    expect(reload).toHaveBeenCalled();
+  });
+
+  /**
    * The sign-in reload happens INSIDE the turn that reported the sign-in, and
    * leaves nothing scheduled behind it.
    *
@@ -395,6 +424,38 @@ describe('ExtensionApp — the gate above the shared panel', () => {
 
     expect(reload).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/is not a function/i)).toBeNull();
+  });
+
+  /**
+   * ...and it takes the teardown mark back.
+   *
+   * `markSessionEnding()` is a promise that this document is going away, and it
+   * gates the WHOLE debounced persist (`store.ts`), not just the beforeunload
+   * flush. The only two places that clear it are store writes the local sign-in
+   * path never performs — it broadcasts nothing, so the reload is the entire
+   * hand-off. Left set by a reload that did not happen, the panel stays up with
+   * nothing written to storage for the life of the document.
+   */
+  it('does not leave the session fenced when the reload throws', async () => {
+    getAuthConfig.mockResolvedValue(LOCAL_CONFIG);
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    localSignIn.mockResolvedValue({ success: true, user: HOST_USER });
+    withStubbedLocation({
+      reload: vi.fn(() => {
+        throw new TypeError('location.reload is not a function');
+      }),
+    });
+
+    renderApp();
+
+    fireEvent.change(await screen.findByLabelText(/Username/i), { target: { value: 'op' } });
+    clearSessionEnding();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+    });
+
+    expect(isSessionEnding()).toBe(false);
   });
 });
 
