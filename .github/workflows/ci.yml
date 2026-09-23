@@ -83,8 +83,10 @@ jobs:
     name: API Types Drift Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Checks out this repository; the pinned contract is fetched over
-    # unauthenticated raw.githubusercontent.com, not with GITHUB_TOKEN.
+    # Checks out this repository. The pinned contract is fetched over
+    # unauthenticated raw.githubusercontent.com; the hop report below does
+    # send GITHUB_TOKEN, for the rate limit only — `contents: read` on this
+    # repository is all it ever grants, and the files it reads are public.
     permissions:
       contents: read
 
@@ -157,6 +159,15 @@ jobs:
       - name: Report what the pin bump crossed
         if: success()
         continue-on-error: true
+        # Raises the raw.githubusercontent rate limit off the shared runner IP,
+        # the same reason and the same token the pin-check job uses. A valid
+        # workflow token reads another PUBLIC repository's raw files fine —
+        # verified from the dashboard's own copilot-ui-pin job, which reads
+        # both FaultMaven/faultmaven-copilot and FaultMaven/faultmaven this
+        # way. Without it the disclosure degrades to "unlisted" on precisely
+        # the large hops that need it.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then

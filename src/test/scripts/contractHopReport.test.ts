@@ -229,6 +229,43 @@ vitestDescribe('the contract-hop disclosure', () => {
       vi.unstubAllGlobals();
     });
 
+    it('sends the workflow token when one is in the environment', async () => {
+      // The rate limit is the whole reason: raw.githubusercontent meters
+      // anonymous reads per IP and CI shares a pool. A VALID token reads a
+      // public file in another repository fine — faultmaven-dashboard's
+      // copilot-ui-pin job does exactly that and prints what it read.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, text: async () => '# 9.0.0 — MAJOR. Ok.' });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubEnv('GITHUB_TOKEN', 'ghs_example');
+
+      await fetchNotes(PIN);
+
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer ghs_example');
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    it('sends NO Authorization header when the environment has no token', async () => {
+      // Never invent one. An unusable bearer 404s instead of falling back to
+      // anonymous — measured against the real URL — and the status rule above
+      // takes a 404 as an answer, so the hop would degrade to "unlisted"
+      // behind `continue-on-error`. Absent means absent.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, text: async () => '# 9.0.0 — MAJOR. Ok.' });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubEnv('GITHUB_TOKEN', '');
+      vi.stubEnv('GH_TOKEN', '');
+
+      await fetchNotes(PIN);
+
+      expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
     it('does NOT retry a 404 — a missing ref is an answer', async () => {
       const fetchMock = vi
         .fn()

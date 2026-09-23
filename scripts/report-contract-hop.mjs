@@ -184,16 +184,32 @@ export function describe({ before, after, notes }) {
   );
 }
 
-// Retried and DRAINED. Deliberately NOT authenticated — see below.
+// Retried AND authenticated AND drained, because three different things can
+// silence this disclosure and only one of them is a blip.
 //
-//  - NO Authorization HEADER. An earlier version of this added one, reasoning
-//    from rate limits. Probed against the real pinned URL: the file answers
-//    200 unauthenticated and 404 with an unusable bearer. A workflow token is
-//    scoped to ITS repository while this read targets FaultMaven/faultmaven,
-//    so a declined token turns a working public read into a 404 — which the
-//    status rule below would take as a definitive answer, return '' without
-//    retrying, and degrade every hop report to "unlisted" permanently, hidden
-//    behind `continue-on-error`. The header could only ever break this read.
+//  - AUTHENTICATED, and the reasoning here was wrong once in each direction.
+//    First a token was added on rate-limit grounds alone; then it was removed
+//    on the grounds that a repo-scoped workflow token cannot read another
+//    repository's raw file — probed, and the probe answered 200
+//    unauthenticated, 404 with an unusable bearer, which says only what a
+//    BROKEN bearer does. What a VALID cross-repo one does is settled by the
+//    `copilot-ui-pin` job in faultmaven-dashboard's ci.yml: it sends that
+//    repository's own workflow token to
+//    raw.githubusercontent.com/FaultMaven/faultmaven-copilot AND to
+//    .../FaultMaven/faultmaven, and prints the contract it read from both. A
+//    public raw read accepts any valid token; it is the INVALID one that 404s
+//    instead of falling back to anonymous.
+//
+//    So the header is worth having — `check-copilot-ui-pin.mjs` one file over
+//    says why: "raw.githubusercontent is rate-limited per IP and CI shares a
+//    pool, so an unauthenticated read is a coin flip", and a 429 resets on an
+//    hourly window that retrying at t+0/2/4s cannot outwait.
+//
+//    ‼ It is set ONLY from the environment, and only when present. A token
+//    that is set but unusable fails CLOSED — 404, taken as an answer, and the
+//    hop degrades to "unlisted" behind `continue-on-error`. That is the one
+//    real hazard, it is why nothing here invents a token, and it is the same
+//    exposure the sibling gate already carries.
 //  - DRAINING. An un-consumed response body keeps the socket alive and the
 //    process never exits — measured: three un-drained 503s hang `node` until
 //    killed. `continue-on-error` does not rescue a hang; it only forgives a
@@ -211,10 +227,13 @@ const NOTES_RETRY_STATUSES = new Set([403, 429]);
 
 export async function fetchNotes(pin) {
   const url = `https://raw.githubusercontent.com/${pin.repository}/${pin.ref}/faultmaven/api/contract_version.py`;
+  const headers = { 'User-Agent': 'faultmaven-contract-hop' };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
   for (let attempt = 1; attempt <= NOTES_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'faultmaven-contract-hop' },
+        headers,
         signal: AbortSignal.timeout(NOTES_TIMEOUT_MS),
       });
       if (response.ok) return await response.text();
