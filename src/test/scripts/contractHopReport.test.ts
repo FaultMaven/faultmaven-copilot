@@ -1,10 +1,10 @@
-import { describe as vitestDescribe, it, expect } from 'vitest';
+import { describe as vitestDescribe, it, expect, vi } from 'vitest';
 
 // The module under test is a plain ESM script with no dependencies, which is
 // why #268 factored `describe` out of the fetching — "so it is testable". It
 // then shipped with no test, and was wrong on its first real bump.
 // @ts-expect-error — a .mjs script with no type declarations.
-import { describe as describeHop } from '../../../scripts/report-contract-hop.mjs';
+import { describe as describeHop, fetchNotes } from '../../../scripts/report-contract-hop.mjs';
 
 /**
  * A miniature `contract_version.py`, in the shape the real one has.
@@ -95,6 +95,80 @@ vitestDescribe('the contract-hop disclosure', () => {
     expect(out).not.toContain('One contract adopted');
   });
 
+  it('prints the NEWEST entry first, not file order and not oldest first', () => {
+    // The notes are deliberately out of order (see NOTES above), so walking
+    // the file emits them that way. Measured on the real 6.2.0 -> 9.0.0 hop:
+    // 8.0.0, 7.2.0, 7.1.0, 7.0.0, 9.0.0 — the newest MAJOR last, behind a
+    // 16,241-character entry.
+    //
+    // ‼ ASCENDING does not fix that, and was the first attempt: it left the
+    // newest entry last anyway and moved the 16k one to the FRONT. The
+    // property is "newest first", so that is what this asserts.
+    //
+    // ‼ The oracle is EXPLICIT, not `[...order].sort()`. Array sort is
+    // LEXICAL and the code compares NUMERICALLY — the distinction
+    // `parseVersion` exists for — so a self-comparing oracle cannot tell the
+    // two apart, and would demand '10.0.0' before '9.0.0'.
+    // ‼ The fixture's FILE order must not already be newest-first, or "no
+    // sort at all" passes this test — which is what happened on the first
+    // attempt: NOTES is written 3.8.0, 3.7.0, 2.0.0, so deleting the sort
+    // entirely stayed green. This one puts the newest LAST in the file.
+    const OUT_OF_ORDER = [
+      '# 2.0.0 — MAJOR. The oldest, written first.',
+      '# Its second line.',
+      '',
+      '# 3.8.0 — MINOR. The newest, written last.',
+      '# Its second line.',
+      '',
+      'API_CONTRACT_VERSION = "3.8.0"',
+    ].join('\n');
+
+    const out = describeHop({
+      before: pin('1.0.0'),
+      after: pin('3.8.0'),
+      notes: OUT_OF_ORDER,
+    });
+    const order = [...out.matchAll(/(\d+\.\d+\.\d+) — /g)].map((m) => m[1]);
+    expect(order).toEqual(['3.8.0', '2.0.0']);
+  });
+
+  it('orders NUMERICALLY, not lexically', () => {
+    // The real contract is at 9.0.0 today, so 10.x is the next hop that can
+    // exist — and it is the one a lexical comparison gets wrong, placing
+    // '10.0.0' before '9.0.0'. Pinned before it can happen rather than after.
+    const TWO_DIGIT = [
+      '# 10.0.0 — MAJOR. The one after nine.',
+      '# Its second line.',
+      '',
+      '# 9.0.0 — MAJOR. Nine.',
+      '# Its second line.',
+      '',
+      'API_CONTRACT_VERSION = "10.0.0"',
+    ].join('\n');
+
+    const out = describeHop({
+      before: pin('8.0.0'),
+      after: pin('10.0.0'),
+      notes: TWO_DIGIT,
+    });
+    const order = [...out.matchAll(/(\d+\.\d+\.\d+) — /g)].map((m) => m[1]);
+    expect(order).toEqual(['10.0.0', '9.0.0']);
+  });
+
+  it('reads CRLF notes as cleanly as LF', () => {
+    // `contract_version.py` is read over the network; a CRLF checkout or a
+    // proxy rewriting line endings would otherwise leave a carriage return on
+    // every emitted line. Every other fixture here joins with '\n', so nothing
+    // else in this file can tell the two apart.
+    const out = describeHop({
+      before: pin('3.7.0'),
+      after: pin('3.8.0'),
+      notes: NOTES.replace(/\n/g, '\r\n'),
+    });
+    expect(out).toContain('3.8.0 — MINOR. The newest entry.');
+    expect(out).not.toContain('\r');
+  });
+
   it('warns rather than goes quiet when the pin moved but no entry matched', () => {
     // Silence and confidence are the two outputs this must never produce by
     // accident, and a version with no note in the file is the way to get the
@@ -116,5 +190,91 @@ vitestDescribe('the contract-hop disclosure', () => {
   it('says nothing when there is no pin to compare', () => {
     expect(describeHop({ before: null, after: pin('3.8.0'), notes: NOTES })).toBe('');
     expect(describeHop({ before: pin('3.7.0'), after: null, notes: NOTES })).toBe('');
+  });
+
+  vitestDescribe('fetching the notes', () => {
+    const PIN = {
+      repository: 'FaultMaven/faultmaven',
+      ref: 'a'.repeat(40),
+      contractVersion: '9.0.0',
+    };
+
+    it('DRAINS a non-ok body, or the process never exits', async () => {
+      // Measured: three un-drained 503s hang `node` until killed, because an
+      // un-consumed body keeps the socket alive. `continue-on-error` forgives
+      // a non-zero exit, not a hang.
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: false, status: 503, body: { cancel } });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await fetchNotes(PIN);
+
+      expect(cancel).toHaveBeenCalledTimes(fetchMock.mock.calls.length);
+      vi.unstubAllGlobals();
+    });
+
+    it('RETRIES a 403, which is one of GitHub\'s rate-limit statuses', async () => {
+      // Treating every non-429 4xx as an answer drops the retry in precisely
+      // the case a retry is for.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 403, body: null })
+        .mockResolvedValueOnce({ ok: true, text: async () => '# 9.0.0 — MAJOR. Ok.' });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(fetchNotes(PIN)).resolves.toContain('9.0.0');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      vi.unstubAllGlobals();
+    });
+
+    it('sends the workflow token when one is in the environment', async () => {
+      // The rate limit is the whole reason: raw.githubusercontent meters
+      // anonymous reads per IP and CI shares a pool. A VALID token reads a
+      // public file in another repository fine — faultmaven-dashboard's
+      // copilot-ui-pin job does exactly that and prints what it read.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, text: async () => '# 9.0.0 — MAJOR. Ok.' });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubEnv('GITHUB_TOKEN', 'ghs_example');
+
+      await fetchNotes(PIN);
+
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer ghs_example');
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    it('sends NO Authorization header when the environment has no token', async () => {
+      // Never invent one. An unusable bearer 404s instead of falling back to
+      // anonymous — measured against the real URL — and the status rule above
+      // takes a 404 as an answer, so the hop would degrade to "unlisted"
+      // behind `continue-on-error`. Absent means absent.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, text: async () => '# 9.0.0 — MAJOR. Ok.' });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubEnv('GITHUB_TOKEN', '');
+      vi.stubEnv('GH_TOKEN', '');
+
+      await fetchNotes(PIN);
+
+      expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    it('does NOT retry a 404 — a missing ref is an answer', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: false, status: 404, body: null });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(fetchNotes(PIN)).resolves.toBe('');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.unstubAllGlobals();
+    });
   });
 });
