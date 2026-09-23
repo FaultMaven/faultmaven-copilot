@@ -461,7 +461,7 @@ const ChatWindowComponent = function ChatWindow({
                             />
                           ))}
                         </div>
-                        <span className="font-mono font-medium text-[11.5px]">Thinking...</span>
+                        <span className="font-mono font-medium text-[11.5px]">Working...</span>
                       </div>
                     )}
 

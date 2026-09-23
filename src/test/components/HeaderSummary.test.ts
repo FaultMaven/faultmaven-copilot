@@ -48,32 +48,32 @@ function closed(extras: Partial<CaseUIResponse> = {}): CaseUIResponse {
 
 describe('getCaseActionOptions', () => {
   describe('INQUIRY', () => {
-    it('always offers the investigating transition (phase change, not gated)', () => {
+    it('never offers investigating — it is earned, not picked', () => {
       const opts = getCaseActionOptions(
         inquiry({
           disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
         }),
       );
-      expect(opts.some((o) => o.state === 'investigating')).toBe(true);
-      // The investigating transition is not gated by disposition_eligibility;
-      // its eligibility slot must be null.
-      const inv = opts.find((o) => o.state === 'investigating');
-      expect(inv?.eligibility).toBeNull();
+      // This entry used to be injected unconditionally with eligibility:null,
+      // which made the one transition with a real content precondition the one
+      // exempt from gating — and the backend could not withdraw it, because
+      // the entry was ours. INVESTIGATING is reached by confirming a problem
+      // statement (Gate 1), so it is not a menu action at all.
+      expect(opts.some((o) => o.state === 'investigating')).toBe(false);
     });
 
-    it('offers closed:ready alongside investigating in the default INQUIRY shape', () => {
+    it('offers closed:ready in the default INQUIRY shape', () => {
       const opts = getCaseActionOptions(
         inquiry({
           disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
         }),
       );
-      expect(opts).toContainEqual({ state: 'investigating', eligibility: null });
-      expect(opts).toContainEqual({ state: 'closed', eligibility: 'ready' });
+      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
       // resolved is not_eligible from INQUIRY (structurally invalid) — drop it.
       expect(opts.some((o) => o.state === 'resolved')).toBe(false);
     });
 
-    it('drops closed when not_eligible (defensive — backend should not emit this for INQUIRY today)', () => {
+    it('drops closed when not_eligible, leaving no actions', () => {
       const opts = getCaseActionOptions(
         inquiry({
           disposition_eligibility: {
@@ -82,8 +82,19 @@ describe('getCaseActionOptions', () => {
           },
         }),
       );
-      // Investigating remains, closed dropped.
-      expect(opts).toEqual([{ state: 'investigating', eligibility: null }]);
+      // Empty is the honest answer: an INQUIRY case whose close is not ready
+      // has no user action available. It previously showed Investigating,
+      // which the engine would have refused.
+      expect(opts).toEqual([]);
+    });
+
+    it('filters investigating out of valid_next_states from an older backend', () => {
+      const opts = getCaseActionOptions(
+        inquiry({
+          valid_next_states: ['investigating', 'closed'],
+        } as Partial<CaseUIResponse>),
+      );
+      expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
     });
   });
 
@@ -209,9 +220,12 @@ describe('getCaseActionOptions', () => {
       ]);
     });
 
-    it('INQUIRY fallback always retains the investigating transition', () => {
+    it('INQUIRY fallback offers close only — never investigating', () => {
+      // Last-resort path when the API returns neither disposition_eligibility
+      // nor valid_next_states. Close is always a valid disposition, so the
+      // menu is not empty; investigating is never a menu action.
       const opts = getCaseActionOptions(inquiry());
-      expect(opts.some((o) => o.state === 'investigating')).toBe(true);
+      expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
     });
   });
 });
