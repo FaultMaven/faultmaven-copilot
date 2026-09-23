@@ -13,7 +13,7 @@ import type {
   UserCase,
 } from '../../../../types/case';
 import type { UserCaseState } from '../../../../lib/api';
-import { STAGE_DISPLAY_INFO, closureDisplayFor, STATUS_LABELS } from '../../../../lib/api/services/case-service';
+import { STAGE_DISPLAY_INFO, closureDisplayFor, STATUS_LABELS, getValidActions } from '../../../../lib/api/services/case-service';
 import { SeverityChip, ChevronDownIcon, getPhaseIcon, formatTimeAgo } from './shared';
 import { createLogger } from '../../../../lib/utils/logger';
 
@@ -41,42 +41,45 @@ export interface CaseActionOption {
  * Derive the dropdown options for the case-action menu from the
  * server-provided readiness verdicts.
  *
- * **Design rule:** the dropdown surfaces *only* options the engine
- * will accept as the user's terminal disposition for the case as-is.
- * That means we show only ``ready`` verdicts; ``needs_info``,
- * ``suggests_alternative``, and ``not_eligible`` are all hidden.
+ * **Design rule:** the menu offers only what a user may PICK
+ * (``ALLOWED_ACTIONS``) and only where the case CONTENT supports it
+ * (``ready``). Both conditions, every path — the first is an allowlist
+ * intersection rather than a list of exclusions.
  *
  *   - ``needs_info``  → clicking would dead-end on a readiness prompt;
  *                       the agent surfaces what's missing through the
  *                       conversation flow instead.
- *   - ``suggests_alternative`` → clicking would pivot to the other
- *                       disposition (the engine's SUGGEST_RESOLVE
- *                       behaviour, [milestone_engine.py:6594-6603]).
- *                       Don't waste the user's click; the engine
- *                       considers the other action the right answer,
- *                       so render that instead.
+ *   - ``suggests_alternative`` → DO NOT RENDER. It is set exactly when a
+ *                       qualifying causal-absence row is on the case,
+ *                       which is exactly when the engine pivots every
+ *                       close back to a resolve proposal — so a Close
+ *                       control here could only ever produce "shall I
+ *                       mark this resolved?". There is no alternative
+ *                       control to render instead: resolve is not one.
  *   - ``not_eligible`` → no path to success.
  *
- * Both backend paths (dropdown click and natural-language request)
- * converge on the same ``assess_*_readiness`` + pivot logic, so the
- * dropdown options match what a free-text "please close this case"
- * request would commit to. Hiding non-``ready`` verdicts keeps the
- * UI honest with the engine.
+ * ‼ The menu CAN be empty, and on a resolution-grade case it is meant to be:
+ * the case has one terminal destination and the agent is already offering it
+ * through the confirm/decline pair. An earlier version of this block promised
+ * the dropdown is "never empty"; that promise is what a degraded-API fallback
+ * was for, not a property of the normal path.
  *
  * Preference order:
- *   1. ``case.disposition_eligibility`` (post PR #373) — keep only
- *      entries whose verdict is ``ready``.
- *   2. ``case.valid_next_states`` — structural fallback for older
- *      cases. All items show (the rich verdict isn't available, so
- *      we fall back to "show what the action graph allows").
- *   3. Hardcoded per-status defaults — last-resort safety net so the
- *      dropdown is never empty during a degraded API response.
+ *   1. ``case.disposition_eligibility`` (post PR #373) — of the actions
+ *      ``ALLOWED_ACTIONS`` permits, keep those whose verdict is ``ready``.
+ *   2. ``case.valid_next_states`` — structural fallback for older cases,
+ *      INTERSECTED with ``ALLOWED_ACTIONS`` rather than filtered by a
+ *      hand-maintained exclusion list.
+ *   3. ``ALLOWED_ACTIONS`` alone — last resort when the server offers
+ *      neither verdicts nor a state list.
  *
- * Both phases offer only ``closed``, because closing is the one decision that
- * needs no precondition. ``investigating`` is reached by confirming a problem
- * statement (Gate 1) and ``resolved`` by confirming the resolution the agent
- * proposes once the root cause is confirmed eliminated; the backend refuses
- * both as requests.
+ * Both phases offer only ``closed``. ``investigating`` is reached by confirming
+ * a problem statement (Gate 1) and ``resolved`` by confirming the resolution
+ * the agent proposes once the root cause is confirmed eliminated — neither is
+ * something a user picks. (Requesting ``investigating`` is refused by the
+ * backend today; requesting ``resolved`` is refused from contract 9.0.0, which
+ * this repo has not yet pinned — see ``api-contract.pin.json``. Hiding the
+ * control is safe against both, which is why it lands first.)
  *
  * The INQUIRY branch used to inject ``investigating`` unconditionally with
  * ``eligibility: null`` — which meant the one transition with a real content
@@ -94,81 +97,50 @@ export interface CaseActionOption {
 export function getCaseActionOptions(
   caseData: CaseUIResponse,
 ): CaseActionOption[] {
-  // Terminal states have no outgoing actions, regardless of which
-  // gating field is present.
-  if (caseData.state === 'resolved' || caseData.state === 'closed') {
+  // ALLOWLIST, not a growing denylist. This was a chain of literal exclusions
+  // added one per backend change — `s !== 'investigating'` (#1608), then
+  // `s !== 'resolved'` — in two branches with two idioms, and that is exactly
+  // how a gap ships: the INQUIRY fallback got the first filter and never the
+  // second, so an older backend listing `resolved` for INQUIRY rendered a
+  // Resolved control that leads to an empty modal and a silently dropped
+  // submit. ``ALLOWED_ACTIONS`` already answers "what may a user pick from
+  // this state", so ask it, and the omission becomes unrepresentable rather
+  // than merely fixed.
+  const selectable = getValidActions(caseData.state);
+  if (selectable.length === 0) {
+    // Terminal states, and any state the table gives no actions for.
     return [];
   }
 
   const elig = caseData.disposition_eligibility;
-
-  if (caseData.state === 'inquiry') {
-    // Only dispositions are user actions. ``investigating`` is earned by a
-    // confirmed problem statement and performed by Gate 1 — the server stopped
-    // listing it in ``valid_next_states`` and refuses the request outright, so
-    // offering it here would promise something no longer honoured.
-    const options: CaseActionOption[] = [];
-    if (elig) {
-      if (elig.closed === 'ready') {
-        options.push({ state: 'closed', eligibility: 'ready' });
-      }
-      // ``resolved`` is structurally invalid from INQUIRY (per backend
-      // ALLOWED_ACTIONS) so disposition_eligibility.resolved is always
-      // ``not_eligible`` here. Skip it.
-      return options;
-    }
-    // Fallback: structural valid_next_states or hardcoded.
-    const validStates =
-      ('valid_next_states' in caseData && caseData.valid_next_states) || null;
-    if (validStates) {
-      for (const s of validStates) {
-        // No ``investigating`` filter needed any more — the server does not
-        // list it. Kept as a guard for older backends still sending it.
-        if (s !== 'investigating' && s !== caseData.state) {
-          options.push({ state: s as UserCaseState, eligibility: null });
-        }
-      }
-    } else {
-      options.push({ state: 'closed', eligibility: null });
-    }
-    return options;
+  if (elig) {
+    // ‼ `ready` ONLY. `suggests_alternative` means DO NOT RENDER, not "warn
+    // and offer anyway": it is set exactly when a qualifying causal-absence
+    // row is on the case, which is exactly when every close pivots back to a
+    // resolve proposal. A Close control there could only ever produce "shall I
+    // mark this resolved?". On such a case there is NO status control, which
+    // is the honest rendering: one terminal destination, and the agent is
+    // already offering it in chat through the confirm/decline pair.
+    return selectable
+      .filter((s) => elig[s as keyof typeof elig] === 'ready')
+      .map((s) => ({ state: s, eligibility: 'ready' as const }));
   }
 
-  // INVESTIGATING — only `closed` is a user action, and it is content-gated.
-  //
-  // ``resolved`` is deliberately never offered. It is earned by a confirmed
-  // root-cause elimination and the agent proposes it through the confirm/
-  // decline pair; the backend refuses a request for it. ``elig.resolved`` is
-  // still read by other surfaces as FaultMaven's own readiness verdict — it
-  // just is not a control.
-  if (caseData.state === 'investigating') {
-    if (elig) {
-      // ‼ `ready` ONLY. `suggests_alternative` means DO NOT RENDER, not "warn
-      // and offer anyway": it is set exactly when a qualifying causal-absence
-      // row is on the case, which is exactly when every close pivots back to a
-      // resolve proposal. A Close control there could only ever produce "shall
-      // I mark this resolved?" — the dead control this menu exists to avoid.
-      // On such a case there is NO status control, which is the honest
-      // rendering: one terminal destination, already being offered in chat.
-      return elig.closed === 'ready'
-        ? [{ state: 'closed' as UserCaseState, eligibility: 'ready' }]
-        : [];
-    }
-    const validStates =
-      ('valid_next_states' in caseData && caseData.valid_next_states) || null;
-    if (validStates) {
-      // No `resolved` filter needed — the server does not list it. Kept as a
-      // guard for older backends that still do, the same way the INQUIRY
-      // branch above guards against `investigating`.
-      return validStates
-        .filter((s) => s !== caseData.state && s !== 'resolved')
-        .map((s) => ({ state: s as UserCaseState, eligibility: null }));
-    }
-    // Hardcoded fallback mirroring the legacy behaviour.
-    return [{ state: 'closed', eligibility: null }];
+  // Legacy fallback: an older backend with no eligibility verdicts. Intersect
+  // rather than subtract — what the server lists AND the table allows.
+  const validStates =
+    ('valid_next_states' in caseData && caseData.valid_next_states) || null;
+  if (validStates) {
+    return validStates
+      .filter(
+        (s) =>
+          s !== caseData.state && selectable.includes(s as UserCaseState),
+      )
+      .map((s) => ({ state: s as UserCaseState, eligibility: null }));
   }
 
-  return [];
+  // Last resort: neither verdicts nor a server list. The table is the answer.
+  return selectable.map((s) => ({ state: s, eligibility: null }));
 }
 
 /** The 6 progress milestones for milestone fraction display */
@@ -259,6 +231,23 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // ‼ Close the menu when the control that owns it goes away. The
+  // click-outside handler below closes on `dropdownRef.current`, and that ref
+  // belongs to a subtree rendered only while `canChangeStatus` — so if the
+  // control disappears with the menu open, React nulls the ref, the guard
+  // `if (dropdownRef.current && ...)` is false forever, and `dropdownOpen`
+  // latches true for the component's life. The menu then re-mounts ALREADY
+  // OPEN if the control returns.
+  //
+  // This was survivable while a non-empty option list was the norm. It is a
+  // mainline sequence now: a turn that records the fix flips eligibility to
+  // {resolved: ready, closed: suggests_alternative}, the option list becomes
+  // empty, and the control is replaced by a static pill — on exactly the turn
+  // a user is most likely to have the menu open.
+  useEffect(() => {
+    if (!canChangeStatus) setDropdownOpen(false);
+  }, [canChangeStatus]);
 
   useEffect(() => {
     if (!dropdownOpen) return;

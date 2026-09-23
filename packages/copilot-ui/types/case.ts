@@ -75,18 +75,21 @@ export interface UserCase {
 //     natural-language) asks the user for what's missing rather than
 //     proceeding, so the dropdown hides this verdict to keep the
 //     menu honest (no dead-end clicks).
-//   - ``suggests_alternative``: action is allowed but the engine will
-//     pivot to the other disposition at confirmation time. Today
-//     this fires only on the close-side for resolution-grade cases:
-//     ``Close`` would terminate as RESOLVED instead, discarding the
-//     close intent. The dropdown hides this verdict and the user
-//     sees the *resolved* option directly (which is the only useful
-//     terminal action for the case as-is).
+//   - ``suggests_alternative``: DO NOT RENDER. Fires only on the
+//     close side, for resolution-grade cases: ``Close`` would
+//     terminate as RESOLVED instead, discarding the close intent.
+//     This used to say the dropdown "hides this verdict and the user
+//     sees the *resolved* option directly" — there is no resolved
+//     option to see. RESOLVED is not user-selectable; the agent
+//     offers it through the confirm/decline pair in chat. So the
+//     honest rendering on such a case is NO status control at all.
 //   - ``not_eligible``: action is not available — menu item hidden.
 //
-// Net dropdown rule: render only ``ready``. The other verdicts are
-// still meaningful as server-side signals (analytics, future use)
-// but not user-clickable actions.
+// Net dropdown rule: of the actions ``ALLOWED_ACTIONS`` permits from
+// this state, render those whose verdict is ``ready``. ``resolved``
+// is never among them, so ``resolved: 'ready'`` renders nothing — it
+// is the engine's own readiness reading, and what it decides is
+// whether the AGENT opens the resolution handshake.
 //
 // Backend reference: ``derive_disposition_eligibility`` in
 // faultmaven/core/investigation/terminal_transitions.py.

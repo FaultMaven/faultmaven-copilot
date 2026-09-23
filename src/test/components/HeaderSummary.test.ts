@@ -143,10 +143,16 @@ describe('getCaseActionOptions', () => {
       expect(opts).toEqual([]);
     });
 
-    it('resolved:ready never renders a control, even alongside closed:ready', () => {
-      // The verdict is FaultMaven's readiness reading, not an affordance.
-      // Pinned on the one combination where a naive implementation would leak
-      // it back in.
+    it('resolved:ready never renders a control (hypothetical pair — see note)', () => {
+      // ‼ The backend cannot emit this combination today:
+      // ``assess_closure_readiness`` returns SUGGEST_RESOLVE iff
+      // ``_has_causal_absence``, which is the same predicate that makes
+      // resolution READY — so ``closed: 'ready'`` and ``resolved: 'ready'``
+      // are mutually exclusive. Kept as a DEFENSIVE pin, labelled as such,
+      // because it is the one shape where an implementation that iterates the
+      // eligibility map instead of the allowlist would leak Resolve back in.
+      // An earlier version of this test dropped the caveat and read as live
+      // coverage of a reachable state.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: { resolved: 'ready', closed: 'ready' },
@@ -200,6 +206,23 @@ describe('getCaseActionOptions', () => {
   });
 
   describe('Legacy fallback (no disposition_eligibility)', () => {
+    it('an INQUIRY fallback never surfaces resolved either', () => {
+      // The gap this file missed. The INQUIRY fallback filtered only
+      // ``investigating``; a pre-v3 backend lists ``resolved`` for INQUIRY
+      // too, and that rendered a control whose modal has no copy and whose
+      // submit is dropped on the floor — the user sees an empty quoted block,
+      // clicks Continue, and nothing enters the transcript.
+      //
+      // Not fixed by adding a second exclusion: ``getCaseActionOptions`` now
+      // intersects with ``ALLOWED_ACTIONS``, so an un-excluded state cannot
+      // leak through any path.
+      const opts = getCaseActionOptions({
+        state: 'inquiry',
+        valid_next_states: ['investigating', 'resolved', 'closed'],
+      } as unknown as CaseUIResponse);
+      expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
+    });
+
     it('falls back to valid_next_states when eligibility is absent', () => {
       const opts = getCaseActionOptions(
         investigating({

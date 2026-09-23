@@ -38,7 +38,9 @@ export const DEFAULT_CASE_LIST_LIMIT = 100;
  * Only `closed`, from either phase, because closing is the one decision that
  * needs no precondition. The two legal edges absent here are absent for the
  * same reason: a menu cannot honour an edge whose precondition is a fact about
- * the case, and the backend refuses both requests outright.
+ * the case.
+ *
+ * ``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo has not pinned yet (``api-contract.pin.json``). Hiding both is safe against a backend that still accepts them, which is why the client change lands first.
  *
  * - `investigating` is earned by a confirmed problem statement (Gate 1).
  * - `resolved` is earned by a confirmed root-cause elimination and offered by

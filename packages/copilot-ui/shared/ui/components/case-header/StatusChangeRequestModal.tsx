@@ -6,6 +6,7 @@
 
 import React, { useRef } from 'react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { createLogger } from '../../../../lib/utils/logger';
 
 interface StatusChangeRequestModalProps {
   isOpen: boolean;
@@ -17,10 +18,12 @@ interface StatusChangeRequestModalProps {
 
 // Agent messages for each case action.
 //
+const log = createLogger('StatusChangeRequestModal');
+
 // Only `closed` is reachable from the menu, from either phase. `investigating`
 // is earned by a confirmed problem statement and `resolved` by a confirmed
-// root-cause elimination; the backend refuses both as requests, so neither
-// needs copy here.
+// root-cause elimination, so neither is something a user picks and neither
+// needs copy here. (``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo has not pinned yet (``api-contract.pin.json``). Hiding both is safe against a backend that still accepts them, which is why the client change lands first.)
 const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
   inquiry: {
     closed: "Close this case. I don't need further investigation."
@@ -64,15 +67,33 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
     return labels[status] || status;
   };
 
-  const getMessage = () => {
-    return CASE_ACTION_MESSAGES[currentStatus]?.[newStatus] || '';
-  };
+  const message = CASE_ACTION_MESSAGES[currentStatus]?.[newStatus];
 
   const getTitle = () => {
     return ACTION_TITLES[currentStatus]?.[newStatus] || 'Perform case action?';
   };
 
   const isDisposition = newStatus === 'resolved' || newStatus === 'closed';
+
+  // ‼ FAIL CLOSED on a pair this modal has no copy for. It used to fall back
+  // to `''`, which rendered a highlighted block containing a literal empty
+  // quote under "Your request will be sent to the agent:", beneath a generic
+  // "Perform case action?" title — and left Continue live. The submit it
+  // leads to is dropped by `ChatWindow` for exactly the same reason (no
+  // message to send), so the user watched a modal close and nothing happen.
+  //
+  // Every other layer already refuses an unmapped pair — `getCaseActionOptions`
+  // does not offer it, `ChatWindow` returns without sending. This was the one
+  // layer that rendered an empty promise, and the pairs it lacks copy for are
+  // precisely the ones no longer reachable on purpose (`investigating` since
+  // #1608, `resolved` since this change).
+  if (!message) {
+    log.error('StatusChangeRequestModal: no copy for case action', {
+      currentStatus,
+      newStatus,
+    });
+    return null;
+  }
 
   return (
     <div
@@ -96,7 +117,7 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
 
           <div className="bg-fm-accent-soft border-l-4 border-blue-400 p-3 rounded">
             <p className="text-sm text-fm-text-primary italic">
-              {`"${getMessage()}"`}
+              {`"${message}"`}
             </p>
           </div>
 

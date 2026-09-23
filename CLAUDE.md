@@ -711,11 +711,20 @@ Cases follow a defined status lifecycle with specific transitions:
 | `resolved` | Issue resolved (terminal) | - |
 | `closed` | Closed without resolution (terminal) | - |
 
-**Only `closed` is ever selectable**, because closing is the one decision that
-needs no precondition — it is always honourable, and the user is the only one
-who can make it. Two legal transitions are deliberately absent, both for the
-same reason: a menu cannot honour an edge whose precondition is a fact about
-the case, and the backend refuses both requests with a 422.
+**Only `closed` is ever selectable.** Two legal transitions are deliberately
+absent, both for the same reason: a menu cannot honour an edge whose
+precondition is a fact about the case, and closing is the only disposition the
+STATE MACHINE will take on demand — it is always a legal, honourable end.
+
+‼ That is not the same as "no precondition". The CLIENT still gates the Close
+control on `disposition_eligibility.closed === 'ready'`, so `needs_info`,
+`suggests_alternative` and `not_eligible` all suppress it — which is why the
+menu can be, and on a resolution-grade case is meant to be, empty. The
+distinction is where the condition lives: the state machine accepts a close
+from either phase, the client declines to offer one where the engine would
+immediately redirect it.
+
+``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo has not pinned yet (``api-contract.pin.json``). Hiding both is safe against a backend that still accepts them, which is why the client change lands first.
 
 - `inquiry → investigating` is earned by a problem statement the user has
   confirmed; Gate 1 performs it (#1608).

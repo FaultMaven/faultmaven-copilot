@@ -211,6 +211,19 @@ const ChatWindowComponent = function ChatWindow({
     });
 
     if (!message) {
+      // Unreachable by design, and the three layers that make it so are worth
+      // naming because it USED to be reachable and silent: the user watched a
+      // modal close and nothing entered the transcript.
+      //
+      //   1. `getCaseActionOptions` offers only actions `ALLOWED_ACTIONS`
+      //      permits, and every one of those has copy — pinned by a test that
+      //      asserts the correspondence in both directions.
+      //   2. `StatusChangeRequestModal` refuses to render an unmapped pair
+      //      rather than showing an empty quoted block over a live Continue.
+      //   3. This guard, last.
+      //
+      // If it ever fires, (1) or (2) has drifted — a state was added to the
+      // action table with no copy — so it is a defect signal, not a fallback.
       log.error('Invalid status transition', { currentStatus, newStatus });
       return;
     }
