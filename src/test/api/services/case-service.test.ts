@@ -757,14 +757,21 @@ describe('Case Service', () => {
   });
 
   describe('Utility Functions', () => {
-    it('should return valid transitions', () => {
+    it('returns only selectable actions for inquiry', () => {
+      // Not 'investigating' — that is earned by a confirmed problem statement
+      // and the backend refuses the request. Not 'resolved' either: backend v3
+      // removed the INQUIRY edge, and this table had simply gone stale.
       const transitions = caseService.getValidTransitions('inquiry');
-      expect(transitions).toEqual(['investigating', 'closed', 'resolved']);
+      expect(transitions).toEqual(['closed']);
+    });
+
+    it('has no message for a transition that cannot be requested', () => {
+      expect(caseService.getStatusChangeMessage('inquiry', 'investigating')).toBeNull();
     });
 
     it('should get correct status change message', () => {
-      const msg = caseService.getStatusChangeMessage('inquiry', 'investigating');
-      expect(msg).toBe('I want to start a formal investigation to find the root cause.');
+      const msg = caseService.getStatusChangeMessage('inquiry', 'closed');
+      expect(msg).toBe("Close this case. I don't need further investigation.");
     });
   });
 

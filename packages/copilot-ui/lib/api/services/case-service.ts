@@ -32,8 +32,18 @@ export const DEFAULT_CASE_LIST_LIMIT = 100;
 /**
  * Allowed case actions (phase transitions and dispositions)
  */
+/**
+ * Case actions a USER may select — selectability, not legality.
+ *
+ * INQUIRY offers only `closed`. `investigating` is legal but earned: it
+ * requires a confirmed problem statement, which Gate 1 performs and the
+ * backend now refuses to accept as a request. `resolved` was removed from
+ * INQUIRY in backend v3 — the "fast-track KB resolution" it referred to
+ * routes through INVESTIGATING via the milestone collapse — and had simply
+ * gone stale here.
+ */
 export const ALLOWED_ACTIONS: Record<UserCaseState, UserCaseState[]> = {
-  inquiry: ['investigating', 'closed', 'resolved'],  // 'resolved' = fast-track KB resolution
+  inquiry: ['closed'],
   investigating: ['resolved', 'closed'],
   resolved: [],     // Disposition — terminal
   closed: []        // Disposition — terminal
@@ -183,7 +193,6 @@ export function getEvidenceTypeInfo(type: string): { label: string; shortLabel: 
  * Actual backend routing uses structured QueryIntent
  */
 export const CASE_ACTION_MESSAGES: Record<string, string> = {
-  'inquiry_to_investigating': 'I want to start a formal investigation to find the root cause.',
   'inquiry_to_closed': "Close this case. I don't need further investigation.",
   'investigating_to_resolved': 'The issue is resolved. Generate final documentation with root cause and solution.',
   'investigating_to_closed': 'Close this case as unresolved. Summarize what we found so far.'

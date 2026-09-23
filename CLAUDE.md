@@ -702,12 +702,20 @@ createCase({ title: 'My Case', priority: 'medium' });
 
 Cases follow a defined status lifecycle with specific transitions:
 
-| Status | Description | Valid Transitions |
-|--------|-------------|-------------------|
-| `inquiry` | Q&A mode - exploring the issue | `investigating`, `closed` |
+**Selectable actions** — what a user may pick from the status menu:
+
+| Status | Description | User-selectable actions |
+|--------|-------------|-------------------------|
+| `inquiry` | Q&A mode - exploring the issue | `closed` |
 | `investigating` | Active troubleshooting | `resolved`, `closed` |
 | `resolved` | Issue resolved (terminal) | - |
 | `closed` | Closed without resolution (terminal) | - |
+
+`inquiry → investigating` is a **legal** transition but **not a user action**.
+It is earned by a problem statement the user has confirmed — the backend's
+Gate 1 performs it, and requesting the state is refused with a 422. Every
+action in the table above is a *disposition*: a user decision carrying
+information the engine cannot derive.
 
 ```typescript
 import {
@@ -717,12 +725,15 @@ import {
   getStatusChangeMessage
 } from '~/lib/api/services/case-service';
 
-// Get valid transitions for current status
-const transitions = getValidTransitions('inquiry'); // ['investigating', 'closed']
+// Get selectable actions for current status
+const transitions = getValidTransitions('inquiry'); // ['closed']
 
-// Get predefined message for status change
-const msg = getStatusChangeMessage('inquiry', 'investigating');
-// "I want to start a formal investigation to find the root cause."
+// Get predefined message for a case action
+const msg = getStatusChangeMessage('inquiry', 'closed');
+// "Close this case. I don't need further investigation."
+
+// A transition that is legal but not selectable has no message
+getStatusChangeMessage('inquiry', 'investigating'); // null
 ```
 
 ### Post-Terminal Actions (ResolutionActionsCard)
