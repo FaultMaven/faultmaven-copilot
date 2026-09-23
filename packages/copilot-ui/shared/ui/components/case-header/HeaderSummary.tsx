@@ -72,9 +72,12 @@ export interface CaseActionOption {
  *   3. Hardcoded per-status defaults — last-resort safety net so the
  *      dropdown is never empty during a degraded API response.
  *
- * INQUIRY's ``investigating`` transition is a phase change (not a
- * disposition) so it is always included unconditionally, independent
- * of ``disposition_eligibility``.
+ * INQUIRY offers only ``closed``. ``investigating`` is a phase change, not a
+ * disposition: it is reached by confirming a problem statement (Gate 1), not
+ * by picking it, so the menu never offers it. This branch used to inject it
+ * unconditionally with ``eligibility: null`` — which meant the one transition
+ * with a real content precondition was the one exempt from gating, and the
+ * backend could not take it away because the entry was ours.
  *
  * Terminal states (``resolved`` / ``closed``) return ``[]`` —
  * disposition_eligibility on these is all ``not_eligible`` anyway.
@@ -93,11 +96,11 @@ export function getCaseActionOptions(
   const elig = caseData.disposition_eligibility;
 
   if (caseData.state === 'inquiry') {
-    // Phase change (investigating) is always offered; it is not a
-    // disposition and is not gated by disposition_eligibility.
-    const options: CaseActionOption[] = [
-      { state: 'investigating', eligibility: null },
-    ];
+    // Only dispositions are user actions. ``investigating`` is earned by a
+    // confirmed problem statement and performed by Gate 1 — the server stopped
+    // listing it in ``valid_next_states`` and refuses the request outright, so
+    // offering it here would promise something no longer honoured.
+    const options: CaseActionOption[] = [];
     if (elig) {
       if (elig.closed === 'ready') {
         options.push({ state: 'closed', eligibility: 'ready' });
@@ -112,6 +115,8 @@ export function getCaseActionOptions(
       ('valid_next_states' in caseData && caseData.valid_next_states) || null;
     if (validStates) {
       for (const s of validStates) {
+        // No ``investigating`` filter needed any more — the server does not
+        // list it. Kept as a guard for older backends still sending it.
         if (s !== 'investigating' && s !== caseData.state) {
           options.push({ state: s as UserCaseState, eligibility: null });
         }

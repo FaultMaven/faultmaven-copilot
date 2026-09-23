@@ -532,7 +532,7 @@ export function useMessageSubmission() {
       originalId: userMessageId
     } as OptimisticConversationItem;
 
-    const aiThinkingMessage: OptimisticConversationItem = {
+    const aiWorkingMessage: OptimisticConversationItem = {
       id: aiMessageId,
       question: '',
       response: '',
@@ -549,7 +549,7 @@ export function useMessageSubmission() {
 
     setConversations(prev => ({
       ...prev,
-      [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiThinkingMessage]
+      [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiWorkingMessage]
     }));
 
     setActiveCaseId(targetCaseId);
@@ -560,7 +560,7 @@ export function useMessageSubmission() {
       id: aiMessageId,
       type: 'submit_query',
       status: 'pending',
-      optimisticData: { userMessage, aiThinkingMessage, query, caseId: targetCaseId },
+      optimisticData: { userMessage, aiWorkingMessage, query, caseId: targetCaseId },
       rollbackFn: () => {
         log.debug('Rolling back failed message submission');
         setConversations(prev => ({

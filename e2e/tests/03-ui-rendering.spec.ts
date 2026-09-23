@@ -104,8 +104,8 @@ test.describe('UI Rendering', () => {
         await expect(sendBtn2).toBeEnabled();
         await sendBtn2.click();
 
-        // Verify the agent response area shows a loading/thinking indicator
-        await expect(page.getByText('Thinking...')).toBeVisible();
+        // Verify the agent response area shows the in-flight indicator
+        await expect(page.getByText('Working...')).toBeVisible();
     });
 
     test('Error response (500) shows user-friendly error message after sending', async ({ context, extensionId }) => {

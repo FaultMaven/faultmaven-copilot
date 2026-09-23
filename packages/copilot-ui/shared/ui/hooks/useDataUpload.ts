@@ -388,7 +388,7 @@ export function useDataUpload() {
         turnRequest.sourceUrl = payload.sourceUrl;
       }
 
-      // Step 3: Add optimistic messages immediately (instant "Thinking..." feedback)
+      // Step 3: Add optimistic messages immediately (instant "Working..." feedback)
       const userQuestion = payload.query?.trim() || 'Submitted data for analysis';
       const messageTimestamp = new Date().toISOString();
       const userMessageId = OptimisticIdGenerator.generateMessageId();
