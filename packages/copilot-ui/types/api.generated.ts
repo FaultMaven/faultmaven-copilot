@@ -31,13 +31,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        get?: never;
+        put?: never;
         /**
          * Trigger System Cleanup
          * @description Trigger comprehensive system cleanup and optimization.
+         *
+         *     Requires the platform administrator role.
          */
-        get: operations["trigger_system_cleanup_admin_optimization_trigger_cleanup_get"];
-        put?: never;
-        post?: never;
+        post: operations["trigger_system_cleanup_admin_optimization_trigger_cleanup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1671,7 +1673,10 @@ export interface paths {
          *     - ``409`` — evidence has no backing file (``ConflictError`` with
          *       ``conflict_reason="no_backing_file"``).
          *     - ``403`` — caller does not own the case (``AuthorizationError``).
-         *     - ``422`` — invalid or missing ``data_type`` (``ValidationException``).
+         *     - ``422`` — invalid or missing ``data_type``, OR the case is terminal
+         *       (both ``ValidationException``). A closed or resolved investigation
+         *       accepts questions, not mutation; the terminal refusal is raised after
+         *       the evidence lookup, so a missing evidence id is still a ``404``.
          *     - ``500`` — storage/preprocessing failure (``ServiceException``).
          */
         patch: operations["reclassify_evidence_api_v1_cases__case_id__evidence__evidence_id__classification_patch"];
@@ -3364,16 +3369,19 @@ export interface paths {
         };
         /**
          * List Sessions
-         * @description List all sessions with optional filtering.
+         * @description List the caller's own sessions.
+         *
+         *     Whose sessions are listed is not a request parameter: the route answers
+         *     with the authenticated caller's own sessions and nothing else. The
+         *     `user_id` filter this route used to accept was removed in contract 7.0.0.
          *
          *     Args:
-         *         user_id: Optional user ID filter
          *         session_type: Optional session type filter
          *         limit: Maximum number of sessions to return
          *         offset: Number of sessions to skip
          *
          *     Returns:
-         *         List of sessions
+         *         List of the authenticated caller's sessions
          */
         get: operations["list_sessions_api_v1_sessions_get"];
         put?: never;
@@ -3470,6 +3478,10 @@ export interface paths {
          *
          *     Returns:
          *         Session details
+         *
+         *     Raises:
+         *         404: Session not found
+         *         403: User not authorized to read this session
          */
         get: operations["get_session_api_v1_sessions__session_id__get"];
         /**
@@ -3502,6 +3514,10 @@ export interface paths {
          *
          *     Returns:
          *         Deletion confirmation
+         *
+         *     Raises:
+         *         404: Session not found
+         *         403: User not authorized to delete this session
          */
         delete: operations["delete_session_api_v1_sessions__session_id__delete"];
         options?: never;
@@ -3737,7 +3753,16 @@ export interface paths {
         };
         /**
          * Health Check
-         * @description Enhanced health check endpoint with component-specific metrics and SLA monitoring.
+         * @description Component health and SLA detail. Always answers 200; read `status`.
+         *
+         *     This is the **liveness** surface: production points its liveness *and*
+         *     startup probes here, and a liveness probe that fails on a dependency
+         *     restarts a pod that restarting cannot fix — during a database outage that
+         *     replaces a degraded service with a crash-looping one whose recovery is
+         *     then delayed by kubelet backoff. So a failing dependency is reported in
+         *     the body and never in the status code. The verdict that gates traffic
+         *     lives on `/readiness`, which is the question a status code can answer
+         *     without that side effect.
          */
         get: operations["health_check_health_get"];
         put?: never;
@@ -3964,7 +3989,32 @@ export interface paths {
         };
         /**
          * Readiness
-         * @description Readiness probe: return unready if Redis or ChromaDB are unavailable.
+         * @description Readiness probe: 503 when a *readiness-fatal* component is unhealthy.
+         *
+         *     This is the endpoint whose status code carries a verdict, and the only
+         *     one — a Kubernetes readiness failure removes the pod from its Service
+         *     without restarting it, which is exactly the action a per-pod fault
+         *     warrants. `/health` deliberately stays 200; see its docstring.
+         *
+         *     Only the readiness-fatal set is probed: a component fatal to serving that
+         *     can also fail on **one replica while the others keep serving**. That set
+         *     is **empty today**, so this endpoint currently agrees with `/health` on
+         *     every input — including a database outage, which is fatal but shared, so
+         *     gating on it would empty the Service rather than shed traffic to a
+         *     healthy sibling (#1524). The membership test and the argument for
+         *     `database`'s exclusion live beside the set, in
+         *     `infrastructure/health/component_monitor.py`.
+         *
+         *     Every additional dependency in this gate is another way to stop serving
+         *     requests that could have been served, so a component that merely degrades
+         *     the answer — the vector store, the knowledge base, the LLM router — is
+         *     reported at `/health` and does not appear here. Prior to #1515 this
+         *     endpoint pulled the pod when ChromaDB was absent, which pulls a pod that
+         *     can still read cases, accept evidence and authenticate.
+         *
+         *     A component we could not determine (UNKNOWN — typically the container has
+         *     not finished wiring) is not treated as unhealthy: "we cannot tell" must
+         *     never be the reason a pod leaves the Service.
          */
         get: operations["readiness_readiness_get"];
         put?: never;
@@ -4703,7 +4753,7 @@ export interface components {
             user_id: string;
             /**
              * Valid Next States
-             * @description Allowed state transitions from current state for user-initiated changes
+             * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
             valid_next_states?: string[];
         };
@@ -4977,7 +5027,7 @@ export interface components {
             user_id: string;
             /**
              * Valid Next States
-             * @description Allowed state transitions from current state for user-initiated changes
+             * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
             valid_next_states?: string[];
         };
@@ -5007,13 +5057,13 @@ export interface components {
             current_turn: number;
             /**
              * Disposition Eligibility
-             * @description Per-disposition eligibility for UI affordance gating. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
-             *     - ``ready`` — disposition is appropriate; render the affordance enabled with the default 'click to confirm' UX.
-             *     - ``needs_info`` — disposition is allowed but the case is partial; user must ADD information (root cause / solution) before transitioning. UX: prompt the user for the missing data. Currently only the Resolve side surfaces this.
-             *     - ``suggests_alternative`` — disposition is allowed but the system recommends the OTHER disposition for this case. UX: warn and offer the alternative; if the user confirms anyway, proceed. Distinct from ``needs_info`` — no data is missing; the user is asked to RE-DIRECT, not to add. Currently only the Close side surfaces this (when the case has root cause + solution → resolving preserves attribution).
-             *     - ``not_eligible`` — disposition is not available; hide the affordance entirely.
+             * @description Per-disposition eligibility. ‼ The two keys answer for DIFFERENT audiences: ``closed`` gates a user CONTROL, ``resolved`` gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution handshake. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
+             *     - ``ready`` — case content supports this disposition with no follow-up. On the CLOSED side: render the control. On the RESOLVED side: the agent proposes the handshake; render nothing.
+             *     - ``needs_info`` — content is partial; the user must supply more (root cause / solution / confirmation the problem is gone). Resolve side only, and no control either way — the agent asks in conversation.
+             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE. It is set exactly when a qualifying causal-absence row is on the case, which is exactly when every close pivots back to a resolve proposal — so a Close control there could only ever produce 'shall I mark this resolved?'. The honest rendering is no status control at all: the case has one terminal destination and the agent is already offering it.
+             *     - ``not_eligible`` — not available; render nothing.
              *
-             *     Different from ``valid_next_states`` — that field is the structural action graph (which edges exist), this field is the content-readiness layer on top.
+             *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
              */
             disposition_eligibility?: {
                 [key: string]: string;
@@ -5048,7 +5098,7 @@ export interface components {
             uploaded_files_count: number;
             /**
              * Valid Next States
-             * @description Allowed state transitions from current state for user-initiated changes
+             * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
             valid_next_states?: string[];
         };
@@ -5088,13 +5138,13 @@ export interface components {
             current_turn: number;
             /**
              * Disposition Eligibility
-             * @description Per-disposition eligibility for UI affordance gating. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
-             *     - ``ready`` — disposition is appropriate; render the affordance enabled with the default 'click to confirm' UX.
-             *     - ``needs_info`` — disposition is allowed but the case is partial; user must ADD information (root cause / solution) before transitioning. UX: prompt the user for the missing data. Currently only the Resolve side surfaces this.
-             *     - ``suggests_alternative`` — disposition is allowed but the system recommends the OTHER disposition for this case. UX: warn and offer the alternative; if the user confirms anyway, proceed. Distinct from ``needs_info`` — no data is missing; the user is asked to RE-DIRECT, not to add. Currently only the Close side surfaces this (when the case has root cause + solution → resolving preserves attribution).
-             *     - ``not_eligible`` — disposition is not available; hide the affordance entirely.
+             * @description Per-disposition eligibility. ‼ The two keys answer for DIFFERENT audiences: ``closed`` gates a user CONTROL, ``resolved`` gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution handshake. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
+             *     - ``ready`` — case content supports this disposition with no follow-up. On the CLOSED side: render the control. On the RESOLVED side: the agent proposes the handshake; render nothing.
+             *     - ``needs_info`` — content is partial; the user must supply more (root cause / solution / confirmation the problem is gone). Resolve side only, and no control either way — the agent asks in conversation.
+             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE. It is set exactly when a qualifying causal-absence row is on the case, which is exactly when every close pivots back to a resolve proposal — so a Close control there could only ever produce 'shall I mark this resolved?'. The honest rendering is no status control at all: the case has one terminal destination and the agent is already offering it.
+             *     - ``not_eligible`` — not available; render nothing.
              *
-             *     Different from ``valid_next_states`` — that field is the structural action graph (which edges exist), this field is the content-readiness layer on top.
+             *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
              */
             disposition_eligibility?: {
                 [key: string]: string;
@@ -5149,7 +5199,7 @@ export interface components {
             uploaded_files_count: number;
             /**
              * Valid Next States
-             * @description Allowed state transitions from current state for user-initiated changes
+             * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
             valid_next_states?: string[];
             /** @description Agent's current understanding of the problem */
@@ -5181,13 +5231,13 @@ export interface components {
             current_turn: number;
             /**
              * Disposition Eligibility
-             * @description Per-disposition eligibility for UI affordance gating. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
-             *     - ``ready`` — disposition is appropriate; render the affordance enabled with the default 'click to confirm' UX.
-             *     - ``needs_info`` — disposition is allowed but the case is partial; user must ADD information (root cause / solution) before transitioning. UX: prompt the user for the missing data. Currently only the Resolve side surfaces this.
-             *     - ``suggests_alternative`` — disposition is allowed but the system recommends the OTHER disposition for this case. UX: warn and offer the alternative; if the user confirms anyway, proceed. Distinct from ``needs_info`` — no data is missing; the user is asked to RE-DIRECT, not to add. Currently only the Close side surfaces this (when the case has root cause + solution → resolving preserves attribution).
-             *     - ``not_eligible`` — disposition is not available; hide the affordance entirely.
+             * @description Per-disposition eligibility. ‼ The two keys answer for DIFFERENT audiences: ``closed`` gates a user CONTROL, ``resolved`` gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution handshake. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
+             *     - ``ready`` — case content supports this disposition with no follow-up. On the CLOSED side: render the control. On the RESOLVED side: the agent proposes the handshake; render nothing.
+             *     - ``needs_info`` — content is partial; the user must supply more (root cause / solution / confirmation the problem is gone). Resolve side only, and no control either way — the agent asks in conversation.
+             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE. It is set exactly when a qualifying causal-absence row is on the case, which is exactly when every close pivots back to a resolve proposal — so a Close control there could only ever produce 'shall I mark this resolved?'. The honest rendering is no status control at all: the case has one terminal destination and the agent is already offering it.
+             *     - ``not_eligible`` — not available; render nothing.
              *
-             *     Different from ``valid_next_states`` — that field is the structural action graph (which edges exist), this field is the content-readiness layer on top.
+             *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
              */
             disposition_eligibility?: {
                 [key: string]: string;
@@ -5243,7 +5293,7 @@ export interface components {
             uploaded_files_count: number;
             /**
              * Valid Next States
-             * @description Allowed state transitions from current state for user-initiated changes
+             * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
             valid_next_states?: string[];
             /** @description How solution effectiveness was verified */
@@ -5629,12 +5679,6 @@ export interface components {
          */
         InquiryResponseData: {
             /**
-             * Decided To Investigate
-             * @description Whether agent has enough info to start investigation
-             * @default false
-             */
-            decided_to_investigate: boolean;
-            /**
              * Inquiry Turns
              * @description Number of conversation turns during inquiry phase
              * @default 0
@@ -5896,6 +5940,11 @@ export interface components {
             providers: {
                 [key: string]: components["schemas"]["LLMProviderDetail"];
             };
+            /**
+             * Role Routing
+             * @description Resolved (provider, model) per capability role, with provenance. Read-only: role routing is set in the environment and is not in the dashboard's override allowlist.
+             */
+            role_routing?: components["schemas"]["LLMRoleRouting"][];
             /** Strict Mode */
             strict_mode: boolean;
             /**
@@ -6048,6 +6097,57 @@ export interface components {
              * @default not_configured
              */
             state: string;
+        };
+        /**
+         * LLMRoleRouting
+         * @description Resolved routing for one capability role.
+         *
+         *     ``primary_provider`` alone does not describe what is running: three roles
+         *     ship pinned to a provider of their own and stay put when the anchor moves,
+         *     and the rest ship unset and follow it. A page showing only the anchor
+         *     reports a configuration that omits load-bearing routing (#1206).
+         */
+        LLMRoleRouting: {
+            /**
+             * Model
+             * @description Model this role runs on; empty string when that provider has no model configured
+             */
+            model: string;
+            /**
+             * Model Key
+             * @description Environment key carrying the model decision, e.g. GEMINI_CLASSIFIER_MODEL or GEMINI_MODEL; empty when unset. A per-task key does not move when the provider's model is changed
+             */
+            model_key: string;
+            /**
+             * Model Source
+             * @description Where the model came from: 'env-default', 'admin-override', or 'unset' (no model configured for this provider)
+             */
+            model_source: string;
+            /**
+             * Provider
+             * @description Provider this role's calls are routed to
+             */
+            provider: string;
+            /**
+             * Provider Initialized
+             * @description The named provider was built by the registry. False means its credential is missing, the routing is inert, and this role's calls fall back to fallback_chain
+             */
+            provider_initialized: boolean;
+            /**
+             * Provider Key
+             * @description Environment key carrying the provider decision, e.g. CLASSIFIER_PROVIDER
+             */
+            provider_key: string;
+            /**
+             * Provider Source
+             * @description Where the provider came from: 'env-default' (this role's own key is set), 'admin-override' (dashboard-written), or 'inherited' (no role key — follows CHAT_PROVIDER and moves with it)
+             */
+            provider_source: string;
+            /**
+             * Role
+             * @description Capability role: chat, multimodal, synthesis, classifier, code, da, knowledge, structured_output
+             */
+            role: string;
         };
         /**
          * LinkCaseRequest
@@ -7632,7 +7732,7 @@ export interface operations {
             };
         };
     };
-    trigger_system_cleanup_admin_optimization_trigger_cleanup_get: {
+    trigger_system_cleanup_admin_optimization_trigger_cleanup_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -11617,7 +11717,6 @@ export interface operations {
     list_sessions_api_v1_sessions_get: {
         parameters: {
             query?: {
-                user_id?: string | null;
                 session_type?: string | null;
                 limit?: number;
                 offset?: number;
@@ -12367,6 +12466,13 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Not ready to serve traffic */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
