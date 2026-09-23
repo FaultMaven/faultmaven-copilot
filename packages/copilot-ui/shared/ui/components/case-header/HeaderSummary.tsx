@@ -27,10 +27,11 @@ const log = createLogger('HeaderSummary');
  * retained for analytics / future use even though the dropdown
  * currently surfaces only ``ready`` items (everything else is hidden
  * so the menu shows just what the engine will actually let through).
- * It is null on the legacy fallback path (case has no
- * ``disposition_eligibility`` yet) and on phase-change transitions
- * like ``inquiry → investigating`` which are not gated by
- * disposition_eligibility.
+ * It is null on the legacy fallback path only — a case served without
+ * ``disposition_eligibility``. Phase-change transitions used to be the
+ * other source; there are none in this menu now (``inquiry →
+ * investigating`` left in #1608, ``investigating → resolved`` in
+ * contract 9.0.0), so every option this type describes is a disposition.
  */
 export interface CaseActionOption {
   state: UserCaseState;
@@ -78,8 +79,7 @@ export interface CaseActionOption {
  * the agent proposes once the root cause is confirmed eliminated — neither is
  * something a user picks. (Requesting ``investigating`` is refused by the
  * backend today; requesting ``resolved`` is refused from contract 9.0.0, which
- * this repo has not yet pinned — see ``api-contract.pin.json``. Hiding the
- * control is safe against both, which is why it lands first.)
+ * this repo pins.)
  *
  * The INQUIRY branch used to inject ``investigating`` unconditionally with
  * ``eligibility: null`` — which meant the one transition with a real content

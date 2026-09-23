@@ -724,7 +724,7 @@ distinction is where the condition lives: the state machine accepts a close
 from either phase, the client declines to offer one where the engine would
 immediately redirect it.
 
-``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo has not pinned yet (``api-contract.pin.json``). Hiding both is safe against a backend that still accepts them, which is why the client change lands first.
+``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo pins.
 
 - `inquiry → investigating` is earned by a problem statement the user has
   confirmed; Gate 1 performs it (#1608).
