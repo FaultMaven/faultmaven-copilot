@@ -95,6 +95,35 @@ vitestDescribe('the contract-hop disclosure', () => {
     expect(out).not.toContain('One contract adopted');
   });
 
+  it('prints the entries in VERSION order, not file order', () => {
+    // The notes are deliberately out of order (see NOTES above), so walking
+    // the file emits them that way. Measured on the real 6.2.0 -> 9.0.0 hop
+    // before this was fixed: 8.0.0, 7.2.0, 7.1.0, 7.0.0, 9.0.0 — the newest
+    // MAJOR printed LAST, behind a 16,241-character entry, in a tool whose
+    // argument is that a disclosure destroyed by volume is worse than none.
+    const out = describeHop({
+      before: pin('1.0.0'),
+      after: pin('3.8.0'),
+      notes: NOTES,
+    });
+    const order = [...out.matchAll(/(\d+\.\d+\.\d+) — /g)].map((m) => m[1]);
+    expect(order).toEqual([...order].sort());
+  });
+
+  it('reads CRLF notes as cleanly as LF', () => {
+    // `contract_version.py` is read over the network; a CRLF checkout or a
+    // proxy rewriting line endings would otherwise leave a carriage return on
+    // every emitted line. Every other fixture here joins with '\n', so nothing
+    // else in this file can tell the two apart.
+    const out = describeHop({
+      before: pin('3.7.0'),
+      after: pin('3.8.0'),
+      notes: NOTES.replace(/\n/g, '\r\n'),
+    });
+    expect(out).toContain('3.8.0 — MINOR. The newest entry.');
+    expect(out).not.toContain('\r');
+  });
+
   it('warns rather than goes quiet when the pin moved but no entry matched', () => {
     // Silence and confidence are the two outputs this must never produce by
     // accident, and a version with no note in the file is the way to get the

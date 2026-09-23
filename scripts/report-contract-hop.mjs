@@ -92,7 +92,13 @@ function entriesBetween(source, from, to) {
 
   const found = [];
   for (const [k, { index, version }] of headers.entries()) {
-    if (!version || compare(version, from) <= 0 || compare(version, to) > 0) continue;
+    // No `!version` guard: a header reaches `headers` only by matching
+    // `\d+\.\d+\.\d+`, and `parseVersion` on that capture always yields three
+    // integers — so the branch that used to sit here could never be taken. It
+    // read as a real guard against an unparseable header and protected
+    // nothing, which is worse than its absence: the next person to loosen the
+    // header pattern would trust it.
+    if (compare(version, from) <= 0 || compare(version, to) > 0) continue;
     // Both halves of the boundary, in one expression each: `limit` is the next
     // header (the ordering `headers` already has, so no lookup is needed), and
     // the loop condition is the not-a-comment half.
@@ -101,15 +107,24 @@ function entriesBetween(source, from, to) {
     while (end < limit && (lines[end].startsWith('#') || lines[end].trim() === '')) {
       end += 1;
     }
-    found.push(
-      lines
+    found.push({
+      version,
+      text: lines
         .slice(index, end)
         .map((l) => l.replace(/^#\s?/, ''))
         .join('\n')
         .trim(),
-    );
+    });
   }
-  return found;
+  // ‼ VERSION order, not file order. The notes are deliberately not in version
+  // order (the docstring above says why), so walking `headers` emits whatever
+  // order the file happens to have. Measured on the 6.2.0 -> 9.0.0 hop: 8.0.0,
+  // 7.2.0, 7.1.0, 7.0.0, 9.0.0 — the newest MAJOR printed LAST, behind a
+  // 16,241-character entry. This tool's whole argument is that a disclosure
+  // destroyed by volume is worse than none; burying the newest change under
+  // the longest one is that failure in miniature.
+  found.sort((a, b) => compare(a.version, b.version));
+  return found.map((entry) => entry.text);
 }
 
 /**
@@ -164,29 +179,53 @@ export function describe({ before, after, notes }) {
   );
 }
 
-// Retried, because the failure mode is silent and expensive. One flaked GET
-// is swallowed below and `describe()` degrades to "what this crossed is
-// unlisted" — on precisely the pull requests where the list matters most, the
-// large hops. Recovering means re-running a ~10-minute job (install, spec
-// download, full client regeneration) to retry one text fetch. The CI step
-// alongside this one already curls the same host with `--retry 3
-// --retry-delay 2 --retry-all-errors`; this is that, in-process.
+// Retried AND authenticated AND drained, because three different things can
+// silence this disclosure and only one of them is a blip.
+//
+//  - AUTH. `check-copilot-ui-pin.mjs` one file over already says why:
+//    "raw.githubusercontent is rate-limited per IP and CI shares a pool, so an
+//    unauthenticated read is a coin flip". A 429 resets on an hourly window,
+//    so retrying at t+0/2/4s gets the same 429 three times. The retry treats a
+//    symptom the token removes.
+//  - DRAINING. An un-consumed response body keeps the socket alive and the
+//    process never exits — measured: three un-drained 503s hang `node` until
+//    killed, and no job in ci.yml sets `timeout-minutes`, so the default is
+//    SIX HOURS. `continue-on-error` does not rescue a hang; it only forgives a
+//    non-zero exit. The retry made this worse before this fix, leaving up to
+//    three bodies open where the original left one.
+//  - A DEADLINE. Without a signal, undici's 300s headersTimeout applies per
+//    attempt, so the retry tripled the worst-case stall to ~15 minutes.
+//
+// Retried for genuine blips, which is what the retry is actually for.
 const NOTES_ATTEMPTS = 3;
 const NOTES_RETRY_MS = 2000;
+const NOTES_TIMEOUT_MS = 15000;
 
 async function fetchNotes(pin) {
   const url = `https://raw.githubusercontent.com/${pin.repository}/${pin.ref}/faultmaven/api/contract_version.py`;
+  const headers = { 'User-Agent': 'faultmaven-contract-hop' };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
   for (let attempt = 1; attempt <= NOTES_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'faultmaven-contract-hop' },
+        headers,
+        signal: AbortSignal.timeout(NOTES_TIMEOUT_MS),
       });
       if (response.ok) return await response.text();
-      // A 404 is an answer, not a blip: the ref has no such file, and retrying
-      // cannot change that. Only transient-looking failures are worth a retry.
-      if (response.status === 404) return '';
+      // Drain before deciding anything: the early return below would otherwise
+      // leave the socket open for the life of the process.
+      await response.body?.cancel();
+      // Any non-429 4xx is an ANSWER, not a blip — the same rule
+      // `check-copilot-ui-pin.mjs` applies, and it is the rule rather than a
+      // 404 special-case because raw.githubusercontent also 404s a ref it has
+      // not yet propagated.
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        return '';
+      }
     } catch {
-      // fall through to the retry
+      // Network error or deadline — worth a retry.
     }
     if (attempt < NOTES_ATTEMPTS) {
       await new Promise((resolve) => setTimeout(resolve, NOTES_RETRY_MS));
