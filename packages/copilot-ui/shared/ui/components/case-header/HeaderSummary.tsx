@@ -72,12 +72,19 @@ export interface CaseActionOption {
  *   3. Hardcoded per-status defaults — last-resort safety net so the
  *      dropdown is never empty during a degraded API response.
  *
- * INQUIRY offers only ``closed``. ``investigating`` is a phase change, not a
- * disposition: it is reached by confirming a problem statement (Gate 1), not
- * by picking it, so the menu never offers it. This branch used to inject it
- * unconditionally with ``eligibility: null`` — which meant the one transition
- * with a real content precondition was the one exempt from gating, and the
- * backend could not take it away because the entry was ours.
+ * Both phases offer only ``closed``, because closing is the one decision that
+ * needs no precondition. ``investigating`` is reached by confirming a problem
+ * statement (Gate 1) and ``resolved`` by confirming the resolution the agent
+ * proposes once the root cause is confirmed eliminated; the backend refuses
+ * both as requests.
+ *
+ * The INQUIRY branch used to inject ``investigating`` unconditionally with
+ * ``eligibility: null`` — which meant the one transition with a real content
+ * precondition was the one exempt from gating, and the backend could not take
+ * it away because the entry was ours. ``resolved`` was the mirror of that: it
+ * WAS gated here, on ``disposition_eligibility``, but only by this function's
+ * convention — the server listed it in ``valid_next_states`` for every
+ * investigating case, and the fallback below offered it ungated.
  *
  * Terminal states (``resolved`` / ``closed``) return ``[]`` —
  * disposition_eligibility on these is all ``not_eligible`` anyway.
@@ -127,30 +134,38 @@ export function getCaseActionOptions(
     return options;
   }
 
-  // INVESTIGATING — both resolved and closed are content-gated.
+  // INVESTIGATING — only `closed` is a user action, and it is content-gated.
+  //
+  // ``resolved`` is deliberately never offered. It is earned by a confirmed
+  // root-cause elimination and the agent proposes it through the confirm/
+  // decline pair; the backend refuses a request for it. ``elig.resolved`` is
+  // still read by other surfaces as FaultMaven's own readiness verdict — it
+  // just is not a control.
   if (caseData.state === 'investigating') {
     if (elig) {
-      const options: CaseActionOption[] = [];
-      if (elig.resolved === 'ready') {
-        options.push({ state: 'resolved', eligibility: 'ready' });
-      }
-      if (elig.closed === 'ready') {
-        options.push({ state: 'closed', eligibility: 'ready' });
-      }
-      return options;
+      // ‼ `ready` ONLY. `suggests_alternative` means DO NOT RENDER, not "warn
+      // and offer anyway": it is set exactly when a qualifying causal-absence
+      // row is on the case, which is exactly when every close pivots back to a
+      // resolve proposal. A Close control there could only ever produce "shall
+      // I mark this resolved?" — the dead control this menu exists to avoid.
+      // On such a case there is NO status control, which is the honest
+      // rendering: one terminal destination, already being offered in chat.
+      return elig.closed === 'ready'
+        ? [{ state: 'closed' as UserCaseState, eligibility: 'ready' }]
+        : [];
     }
     const validStates =
       ('valid_next_states' in caseData && caseData.valid_next_states) || null;
     if (validStates) {
+      // No `resolved` filter needed — the server does not list it. Kept as a
+      // guard for older backends that still do, the same way the INQUIRY
+      // branch above guards against `investigating`.
       return validStates
-        .filter((s) => s !== caseData.state)
+        .filter((s) => s !== caseData.state && s !== 'resolved')
         .map((s) => ({ state: s as UserCaseState, eligibility: null }));
     }
     // Hardcoded fallback mirroring the legacy behaviour.
-    return [
-      { state: 'resolved', eligibility: null },
-      { state: 'closed', eligibility: null },
-    ];
+    return [{ state: 'closed', eligibility: null }];
   }
 
   return [];

@@ -17,16 +17,15 @@ interface StatusChangeRequestModalProps {
 
 // Agent messages for each case action.
 //
-// INQUIRY offers only `closed`. `investigating` is not a user action — it is
-// earned by a confirmed problem statement and the backend refuses the request
-// — and `resolved` was removed from INQUIRY in backend v3. Neither can be
-// reached from the menu, so neither needs copy here.
+// Only `closed` is reachable from the menu, from either phase. `investigating`
+// is earned by a confirmed problem statement and `resolved` by a confirmed
+// root-cause elimination; the backend refuses both as requests, so neither
+// needs copy here.
 const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
   inquiry: {
     closed: "Close this case. I don't need further investigation."
   },
   investigating: {
-    resolved: "The issue is resolved. Generate final documentation with root cause and solution.",
     closed: "Close this case as unresolved. Summarize what we found so far."
   }
 };
@@ -37,7 +36,6 @@ const ACTION_TITLES: Record<string, Record<string, string>> = {
     closed: "Close case without investigating?"
   },
   investigating: {
-    resolved: "Mark case as resolved?",
     closed: "Close case as unresolved?"
   }
 };

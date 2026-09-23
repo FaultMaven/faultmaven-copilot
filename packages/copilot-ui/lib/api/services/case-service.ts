@@ -35,16 +35,23 @@ export const DEFAULT_CASE_LIST_LIMIT = 100;
 /**
  * Case actions a USER may select — selectability, not legality.
  *
- * INQUIRY offers only `closed`. `investigating` is legal but earned: it
- * requires a confirmed problem statement, which Gate 1 performs and the
- * backend now refuses to accept as a request. `resolved` was removed from
- * INQUIRY in backend v3 — the "fast-track KB resolution" it referred to
- * routes through INVESTIGATING via the milestone collapse — and had simply
- * gone stale here.
+ * Only `closed`, from either phase, because closing is the one decision that
+ * needs no precondition. The two legal edges absent here are absent for the
+ * same reason: a menu cannot honour an edge whose precondition is a fact about
+ * the case, and the backend refuses both requests outright.
+ *
+ * - `investigating` is earned by a confirmed problem statement (Gate 1).
+ * - `resolved` is earned by a confirmed root-cause elimination and offered by
+ *   the agent through the confirm/decline handshake. Resolving is something
+ *   the user SAYS, not something they click.
+ *
+ * (`resolved` was also removed from INQUIRY in backend v3 — the "fast-track KB
+ * resolution" it referred to routes through INVESTIGATING via the milestone
+ * collapse.)
  */
 export const ALLOWED_ACTIONS: Record<UserCaseState, UserCaseState[]> = {
   inquiry: ['closed'],
-  investigating: ['resolved', 'closed'],
+  investigating: ['closed'],
   resolved: [],     // Disposition — terminal
   closed: []        // Disposition — terminal
 };
@@ -194,7 +201,6 @@ export function getEvidenceTypeInfo(type: string): { label: string; shortLabel: 
  */
 export const CASE_ACTION_MESSAGES: Record<string, string> = {
   'inquiry_to_closed': "Close this case. I don't need further investigation.",
-  'investigating_to_resolved': 'The issue is resolved. Generate final documentation with root cause and solution.',
   'investigating_to_closed': 'Close this case as unresolved. Summarize what we found so far.'
 };
 /** @deprecated Use CASE_ACTION_MESSAGES */

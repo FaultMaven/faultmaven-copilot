@@ -126,7 +126,11 @@ app.get('/api/v1/cases/:id/ui', (req, res) => {
         created_at: '2026-02-20T21:42:36.236Z',
         updated_at: '2026-02-20T21:42:36.236Z',
         current_turn: 0,
-        valid_next_states: ['investigating', 'closed']
+        // The server lists only CLOSED. ``investigating`` stopped being a
+        // user action in #1608 and ``resolved`` in contract 9.0.0 — both are
+        // earned from case content and offered by the agent through a
+        // handshake, and both are refused as requests.
+        valid_next_states: ['closed']
     });
 });
 
