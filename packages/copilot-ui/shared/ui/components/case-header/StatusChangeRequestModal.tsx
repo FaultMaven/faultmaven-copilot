@@ -7,6 +7,7 @@
 import React, { useRef } from 'react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { createLogger } from '../../../../lib/utils/logger';
+import { normalizeState } from '../../../../lib/api/services/case-service';
 
 interface StatusChangeRequestModalProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ const log = createLogger('StatusChangeRequestModal');
 // Only `closed` is reachable from the menu, from either phase. `investigating`
 // is earned by a confirmed problem statement and `resolved` by a confirmed
 // root-cause elimination, so neither is something a user picks and neither
-// needs copy here. (``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo has not pinned yet (``api-contract.pin.json``). Hiding both is safe against a backend that still accepts them, which is why the client change lands first.)
+// needs copy here. (``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo pins.)
 const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
   inquiry: {
     closed: "Close this case. I don't need further investigation."
@@ -52,8 +53,27 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // ‼ NORMALIZE at this boundary. `getCaseActionOptions` derives the menu
+  // through `getValidActions` → `normalizeState`, which maps the legacy
+  // `consulting` / `unresolved` / `closed_resolved` / `closed_unresolved`
+  // values — but `EnhancedCaseHeader` passes the RAW `caseData.state` here,
+  // and the tables below are keyed only by normalized names. On a case still
+  // carrying a legacy string the menu correctly offers Close and this lookup
+  // then misses, so the layer that refuses is the one that refuses invisibly.
+  const fromState = normalizeState(currentStatus);
+  const toState = normalizeState(newStatus);
+  const message = CASE_ACTION_MESSAGES[fromState]?.[toState];
+
+  // ‼ `isActive` must match what RENDERS, not merely what is requested.
+  // `useFocusTrap` sets `document.body.style.overflow = 'hidden'`, and its
+  // cleanup runs only when `isActive` flips or the component unmounts — so a
+  // `return null` taken AFTER the hook leaves the panel's scroll locked with
+  // nothing on screen and no visible way out. Gating both on one condition is
+  // what keeps the refusal from costing more than the render would have.
+  const canRender = isOpen && Boolean(message);
+
   // Accessibility: trap focus, lock body scroll, close on Escape while open.
-  useFocusTrap({ isActive: isOpen, containerRef: modalRef, onEscape: onCancel });
+  useFocusTrap({ isActive: canRender, containerRef: modalRef, onEscape: onCancel });
 
   if (!isOpen) return null;
 
@@ -67,13 +87,11 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
     return labels[status] || status;
   };
 
-  const message = CASE_ACTION_MESSAGES[currentStatus]?.[newStatus];
-
   const getTitle = () => {
-    return ACTION_TITLES[currentStatus]?.[newStatus] || 'Perform case action?';
+    return ACTION_TITLES[fromState]?.[toState] || 'Perform case action?';
   };
 
-  const isDisposition = newStatus === 'resolved' || newStatus === 'closed';
+  const isDisposition = toState === 'resolved' || toState === 'closed';
 
   // ‼ FAIL CLOSED on a pair this modal has no copy for. It used to fall back
   // to `''`, which rendered a highlighted block containing a literal empty

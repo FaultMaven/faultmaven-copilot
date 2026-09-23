@@ -44,6 +44,19 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     if (error instanceof AuthenticationError) throw error;
     // See the note above: header-less is the transient path, not an error to
     // surface here.
+  // ‼ LOAD-BEARING, and not only here. Contract 7.0.0 closed four session
+  // routes that admitted an anonymous caller, and deliberately left
+  // `POST /api/v1/sessions` — the mint — open, citing THIS behaviour: the
+  // client goes out header-less when the token read stumbles, and `client.ts`
+  // treats a 401 on a credential-less request as the RECOVERABLE path and
+  // re-mints. Compose the two and requiring auth on the mint is a
+  // mint -> 401 -> re-mint loop in the field. The stated order is "client
+  // tolerant first, confirmed deployed, server after" (faultmaven #1460).
+  //
+  // So making this throw, or routing the mint through `authenticatedFetch`,
+  // is not a local cleanup: it silently removes the premise blocking a
+  // server-side change, and the anonymous-mint surface on self-hosted stays
+  // open for exactly as long as this client does not move.
     log.warn('No access token available - the request goes out unauthenticated', error);
   }
 

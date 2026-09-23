@@ -90,6 +90,7 @@ export interface APIError {
 // Cases & Messages
 export type { UserCase, UserCaseState, CaseState } from "../../../types/case";
 import { CaseState } from "../../../types/case"; // Import for usage in types
+import type { ProgressTransparencyInfo } from "../../../types/case";
 
 // ============================================================
 // Intent-Based Query System (Clean, No Keyword Matching)
@@ -229,12 +230,21 @@ export interface TurnResponse {
   progress_made: boolean;
   attachments_processed: AttachmentResult[];
   suggested_actions?: SuggestedAction[];
-  progress_transparency?: {
-    active: boolean;
-    pending_milestone?: string | null;
-    milestone_description?: string | null;
-    repair_type?: string | null;
-  } | null;
+  /**
+   * ‼ ALIASED to the generated schema, not re-declared. This was a CLOSED
+   * object literal with four of the schema's six fields — and unlike the
+   * `types/case.ts` copy there was no intersection to rescue it, so reading
+   * `turnResponse.progress_transparency?.verification_status` was a compile
+   * error on data the server does send. A maintainer hitting that concludes
+   * the field is case-read-only and adds a `getCaseUI()` round-trip after
+   * every turn to fetch a value that already arrived.
+   *
+   * `api-types-drift` cannot see a divergence like this: the job regenerates
+   * and diffs `api.generated.ts` only, so a hand-written mirror in this file
+   * is outside the contract gate by construction. Aliasing is what puts it
+   * back inside.
+   */
+  progress_transparency?: ProgressTransparencyInfo | null;
 }
 
 export interface Case {

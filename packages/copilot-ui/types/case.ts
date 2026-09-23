@@ -106,30 +106,34 @@ export interface DispositionEligibilityMap {
 
 // Inquiry Phase Types
 export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'] & {
-  /** Per-disposition readiness verdicts (PR #373). Drives menu gating. */
+  /** Drives menu gating. See the note on the INVESTIGATING variant. */
   disposition_eligibility?: DispositionEligibilityMap | null;
 };
-export type InquiryData = components['schemas']['InquiryResponseData'];
+// `InquiryData` alias removed — same reason the `InvestigationStrategy` alias
+// below went: no production consumer anywhere in src/, packages/, e2e/ or
+// playground/. It was also the only place in this client that witnessed
+// 8.0.0's removal of `decided_to_investigate`, so a reviewer asking what that
+// MAJOR costs us was reasoning about blast radius from a type nothing reads.
+// Deleting it makes the answer — nil — a fact rather than an inference.
 
-// Progress Transparency (added ahead of OpenAPI regeneration)
-export interface ProgressTransparencyInfo {
-  /** Whether transparent mode is active this turn */
-  active: boolean;
-  /** Milestone that progress is stalled on (e.g., 'root_cause_identified') */
-  pending_milestone?: string | null;
-  /** Human-readable description of what the pending milestone requires */
-  milestone_description?: string | null;
-  /** Agent state repair pattern detected, if any */
-  repair_type?: string | null;
-}
+// Progress Transparency. ALIASED, not re-declared: the hand copy was written
+// ahead of the OpenAPI regeneration and carried four fields where the schema
+// has six, silently dropping `cause_assurance` and `verification_status` —
+// the two the contract added so a frontend can label a lower-assurance
+// conclusion instead of presenting every conclusion at equal certainty.
+// Nothing caught it, because the intersection below narrowed nothing.
+export type ProgressTransparencyInfo =
+  components['schemas']['ProgressTransparencyInfo'];
 
 // Investigating Phase Types
+// ‼ Only the `disposition_eligibility` narrowing survives. The contract
+// publishes it as `{ [key: string]: string }` with no enum, so the four-literal
+// union is the one member still doing work. `progress_transparency` and
+// `problem_statement` re-declared generated members byte-identically — which
+// is worse than redundant: an intersection turns a future contract TIGHTENING
+// into a no-op instead of a compile error, so making `problem_statement`
+// required upstream would re-widen here and the drift gate would stay green.
 export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'] & {
-  /** Progress transparency state. Present when investigation has stalled. */
-  progress_transparency?: ProgressTransparencyInfo | null;
-  /** Confirmed problem statement (sourced from case.description). */
-  problem_statement?: string | null;
-  /** Per-disposition readiness verdicts (PR #373). Drives menu gating. */
   disposition_eligibility?: DispositionEligibilityMap | null;
 };
 export type InvestigationProgress = components['schemas']['InvestigationProgressSummary'];
@@ -143,9 +147,7 @@ export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'
 
 // Resolved Disposition Types
 export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'] & {
-  /** Confirmed problem statement (sourced from case.description). */
-  problem_statement?: string | null;
-  /** Per-disposition readiness verdicts (PR #373). All ``not_eligible`` on terminal cases. */
+  /** All ``not_eligible`` on terminal cases. See the note above. */
   disposition_eligibility?: DispositionEligibilityMap | null;
 };
 export type RootCause = components['schemas']['RootCauseSummary'];

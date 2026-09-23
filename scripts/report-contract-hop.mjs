@@ -164,16 +164,35 @@ export function describe({ before, after, notes }) {
   );
 }
 
+// Retried, because the failure mode is silent and expensive. One flaked GET
+// is swallowed below and `describe()` degrades to "what this crossed is
+// unlisted" — on precisely the pull requests where the list matters most, the
+// large hops. Recovering means re-running a ~10-minute job (install, spec
+// download, full client regeneration) to retry one text fetch. The CI step
+// alongside this one already curls the same host with `--retry 3
+// --retry-delay 2 --retry-all-errors`; this is that, in-process.
+const NOTES_ATTEMPTS = 3;
+const NOTES_RETRY_MS = 2000;
+
 async function fetchNotes(pin) {
-  try {
-    const response = await fetch(
-      `https://raw.githubusercontent.com/${pin.repository}/${pin.ref}/faultmaven/api/contract_version.py`,
-      { headers: { 'User-Agent': 'faultmaven-contract-hop' } },
-    );
-    return response.ok ? await response.text() : '';
-  } catch {
-    return '';
+  const url = `https://raw.githubusercontent.com/${pin.repository}/${pin.ref}/faultmaven/api/contract_version.py`;
+  for (let attempt = 1; attempt <= NOTES_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'faultmaven-contract-hop' },
+      });
+      if (response.ok) return await response.text();
+      // A 404 is an answer, not a blip: the ref has no such file, and retrying
+      // cannot change that. Only transient-looking failures are worth a retry.
+      if (response.status === 404) return '';
+    } catch {
+      // fall through to the retry
+    }
+    if (attempt < NOTES_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, NOTES_RETRY_MS));
+    }
   }
+  return '';
 }
 
 // `import.meta.main` is not available on every Node this repo supports, so the

@@ -224,6 +224,9 @@ describe('getCaseActionOptions', () => {
     });
 
     it('falls back to valid_next_states when eligibility is absent', () => {
+      // ``['resolved','closed']`` is a PRE-9.0.0 server; the adopted contract
+      // lists only ``closed``. Kept deliberately — the fallback exists for
+      // exactly those servers — and labelled so it is not read as current.
       const opts = getCaseActionOptions(
         investigating({
           valid_next_states: ['resolved', 'closed'],
@@ -240,10 +243,16 @@ describe('getCaseActionOptions', () => {
 
     it('falls back to hardcoded defaults when both eligibility and valid_next_states are absent', () => {
       const opts = getCaseActionOptions(investigating());
-      // Last-resort safety net — keep the dropdown non-empty. ``closed`` is
-      // the whole net now: it is the one action that needs no precondition,
-      // so it is the only one safe to offer when we know nothing about the
-      // case.
+      // Degraded-API fallback: no verdicts and no state list, so fall back to
+      // what the action table permits.
+      //
+      // ‼ NOT an invariant that the menu is non-empty — the JSDoc on
+      // `getCaseActionOptions` revokes that promise explicitly, and on a
+      // resolution-grade case an empty menu is the intended rendering. This
+      // comment used to assert the opposite, which made the KNOWN ASYMMETRY
+      // upstream (a `suggests_alternative` case still rendering Close through
+      // the unverdicted fallback) look like a regression to anyone tightening
+      // it: the fix would fail a test whose comment called the gap the rule.
       expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
     });
 

@@ -1,8 +1,7 @@
 {
   "$comment": "The FaultMaven API contract this client is written against. Moving `ref` is how this repository ADOPTS a contract change: the backend publishes by merging, and nothing reaches this client until this file says so. See docs/reference/api/openapi.json in the API repo, and its docs/development/api-contract-changes.md for the process.",
   "repository": "FaultMaven/faultmaven",
-  "ref": "a719264e7827de91da67e110aa375ac72350f9cf",
-  "contractVersion": "6.2.0",
-  "adopted": "2026-09-17",
-  "$note": "This client implements the contract-9.0.0 menu rule (RESOLVED is not user-selectable) while still PINNED to 6.2.0, deliberately and only in that direction: it hides a control, which is safe against a backend that still accepts the request, and it lands before the backend change so the reverse window \u2014 a live control the API 422s \u2014 never opens. The consequence is that api.generated.ts still carries 6.2.0's description of suggests_alternative ('warn and offer the alternative'), which the client no longer implements, and no gate can see that: the drift job only checks the pinned version against the pinned ref. Reconciled when the pin moves to 9.0.0 after FaultMaven/faultmaven#1624 merges."
+  "ref": "2d36a45201056aa90c92f75c0301a68e54e9b057",
+  "contractVersion": "9.0.0",
+  "adopted": "2026-09-23"
 }

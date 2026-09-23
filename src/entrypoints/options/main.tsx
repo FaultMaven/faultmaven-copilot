@@ -103,10 +103,24 @@ async function probeApi(apiBaseUrl: string): Promise<{ ok: boolean; error?: stri
     const res = await tryFetch('/v1/meta/capabilities');
     if (res.ok) return { ok: true };
     if (res.status === 404) {
+      // ‼ `/health` ALWAYS answers 200 — "read `status`", per the contract.
+      // This branched on `health.ok`, so the unhealthy arm was dead: a
+      // self-hosted server with its database down answered 200 with
+      // `{status: 'unhealthy'}` and this reported "Connection successful".
+      // The gating verdict lives on `/readiness` (503 since 7.1.0), but that
+      // is a Kubernetes probe, not a reachability check — what this page wants
+      // is the body.
       const health = await tryFetch('/health');
-      return health.ok
-        ? { ok: true }
-        : { ok: false, error: `Server reachable but unhealthy (${health.status}).` };
+      if (!health.ok) {
+        return { ok: false, error: `Server reachable but unhealthy (${health.status}).` };
+      }
+      const status = await health
+        .json()
+        .then((b: { status?: string }) => b?.status)
+        .catch(() => undefined);
+      return status && status !== 'healthy'
+        ? { ok: false, error: `Server reachable but ${status}.` }
+        : { ok: true };
     }
     return { ok: false, error: `Server returned ${res.status}. Check the URL and server status.` };
   } catch (error: any) {
