@@ -83,14 +83,8 @@ jobs:
     name: API Types Drift Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Checks out this repository. The pinned CONTRACT (the spec, for
-    # regeneration) is still fetched unauthenticated — it is a large file on a
-    # CDN path and has not been the thing that rate-limits. The hop report's
-    # `contract_version.py` read is now authenticated, because that one is a
-    # small read on a shared runner IP where a 429 resets hourly, so the
-    # script's retry cannot clear one and the disclosure degrades to
-    # "unlisted" on exactly the large hops that need it. The script works
-    # without the token; CI shares an IP pool and would not.
+    # Checks out this repository; the pinned contract is fetched over
+    # unauthenticated raw.githubusercontent.com, not with GITHUB_TOKEN.
     permissions:
       contents: read
 
@@ -163,11 +157,6 @@ jobs:
       - name: Report what the pin bump crossed
         if: success()
         continue-on-error: true
-        # See the job comment: this read is small, shared-IP and hourly-windowed,
-        # so the token is what keeps the disclosure from degrading to
-        # "unlisted" on a large hop.
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
