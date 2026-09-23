@@ -106,14 +106,20 @@ import { CaseState } from "../../../types/case"; // Import for usage in types
  * const intent: QueryIntent = {
  *   type: IntentType.StatusTransition,
  *   from_state: 'investigating',
- *   to_state: 'resolved'
+ *   to_state: 'closed'
  * };
  * ```
+ *
+ * ‼ `closed` is the ONLY target this client may send. The example used to
+ * build `to_state: 'resolved'`, which is no longer a user-selectable case
+ * action — RESOLVED is earned and the agent offers it through the
+ * confirm/decline pair, which the client answers with a `confirmation`
+ * intent, not a `status_transition`. A copied example is a producer.
  */
 export enum IntentType {
   /** Natural language query - use LLM */
   Conversation = 'conversation',
-  /** Explicit state transition (resolve/close) */
+  /** Explicit state transition — `closed` only; see the note above */
   StatusTransition = 'status_transition',
   /** Yes/No confirmation response */
   Confirmation = 'confirmation',

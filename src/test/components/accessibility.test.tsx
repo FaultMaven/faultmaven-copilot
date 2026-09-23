@@ -222,8 +222,14 @@ describe('Accessibility: StatusChangeRequestModal', () => {
           </button>
           <StatusChangeRequestModal
             isOpen={isOpen}
+            // A LIVE pair. This drove `inquiry → investigating`, which has
+            // been absent from the modal's copy maps since #1608 — so the
+            // component rendered a generic title over an empty quoted block,
+            // and this test asserted focus-trap behaviour on that degenerate
+            // state while neither real pair was rendered anywhere. The modal
+            // now refuses to render an unmapped pair at all.
             currentStatus="inquiry"
-            newStatus="investigating"
+            newStatus="closed"
             onConfirm={() => {}}
             onCancel={() => {
               onCancelMock();

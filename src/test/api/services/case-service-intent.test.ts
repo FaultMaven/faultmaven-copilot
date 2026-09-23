@@ -67,7 +67,7 @@ describe('Intent-Based Turn System', () => {
         intentType: 'status_transition',
         intentData: {
           from_state: 'investigating',
-          to_state: 'resolved',
+          to_state: 'closed',
           user_confirmed: true
         }
       });
@@ -77,7 +77,7 @@ describe('Intent-Based Turn System', () => {
       expect(body.get('intent_type')).toBe('status_transition');
       expect(JSON.parse(body.get('intent_data') as string)).toEqual({
         from_state: 'investigating',
-        to_state: 'resolved',
+        to_state: 'closed',
         user_confirmed: true
       });
     });

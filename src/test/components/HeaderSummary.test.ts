@@ -12,13 +12,17 @@
  *
  * Matrix coverage (backend emits per derive_disposition_eligibility):
  *
+ * ``resolved`` NEVER renders a control. It is earned by a confirmed root-cause
+ * elimination and the agent proposes it through the confirm/decline pair; the
+ * backend refuses a request for it. The key is still published — it is
+ * FaultMaven's own readiness verdict — it is simply not a button.
+ *
  * | Case state                                | resolved              | closed                | Dropdown shows           |
  * |-------------------------------------------|-----------------------|-----------------------|--------------------------|
- * | INQUIRY                                   | not_eligible          | ready                 | Investigating + Closed   |
+ * | INQUIRY                                   | not_eligible          | ready                 | Closed only              |
  * | INVESTIGATING + too thin (SUGGEST_CLOSE)  | not_eligible          | ready                 | Closed only              |
  * | INVESTIGATING + partial (NEEDS_INFO)      | needs_info            | ready                 | Closed only              |
- * | INVESTIGATING + resolution-grade          | ready                 | suggests_alternative  | Resolved only            |
- * | INVESTIGATING + both ready (hypothetical) | ready                 | ready                 | Resolved + Closed        |
+ * | INVESTIGATING + resolution-grade          | ready                 | suggests_alternative  | (none)                   |
  * | Terminal (RESOLVED / CLOSED)              | not_eligible          | not_eligible          | (none)                   |
  *
  * Plus the legacy fallback path (no ``disposition_eligibility`` on the
@@ -121,11 +125,13 @@ describe('getCaseActionOptions', () => {
       expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
     });
 
-    it('resolution-grade case (resolved:ready, closed:suggests_alternative) hides Close — only Resolve shows', () => {
-      // ``suggests_alternative`` is hidden: clicking Close here would pivot
-      // to RESOLVED at confirmation time (the engine's SUGGEST_RESOLVE
-      // behaviour). Don't waste the user's click — show Resolve directly,
-      // which is the engine's intended outcome for a resolution-grade case.
+    it('resolution-grade case (resolved:ready, closed:suggests_alternative) shows NOTHING', () => {
+      // The empty menu is correct, not a gap. ``suggests_alternative`` is set
+      // exactly when a qualifying causal-absence row is on the case — which is
+      // exactly when INV-37 pivots every close back to a resolve proposal. So
+      // a Close control here could only ever produce "shall I mark this
+      // resolved?", and Resolve is not a control at all. The case has one
+      // terminal destination and the agent is already offering it in chat.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: {
@@ -134,21 +140,25 @@ describe('getCaseActionOptions', () => {
           },
         }),
       );
-      expect(opts).toEqual([{ state: 'resolved', eligibility: 'ready' }]);
+      expect(opts).toEqual([]);
     });
 
-    it('both ready (hypothetical — backend never co-emits this today) shows both', () => {
-      // Defensive: if backend ever decouples the readiness conditions and
-      // emits ``{resolved: ready, closed: ready}``, both options surface.
+    it('resolved:ready never renders a control (hypothetical pair — see note)', () => {
+      // ‼ The backend cannot emit this combination today:
+      // ``assess_closure_readiness`` returns SUGGEST_RESOLVE iff
+      // ``_has_causal_absence``, which is the same predicate that makes
+      // resolution READY — so ``closed: 'ready'`` and ``resolved: 'ready'``
+      // are mutually exclusive. Kept as a DEFENSIVE pin, labelled as such,
+      // because it is the one shape where an implementation that iterates the
+      // eligibility map instead of the allowlist would leak Resolve back in.
+      // An earlier version of this test dropped the caveat and read as live
+      // coverage of a reachable state.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: { resolved: 'ready', closed: 'ready' },
         }),
       );
-      expect(opts).toEqual([
-        { state: 'resolved', eligibility: 'ready' },
-        { state: 'closed', eligibility: 'ready' },
-      ]);
+      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
     });
 
     it('hides both when each side is non-ready (hypothetical — degenerate state)', () => {
@@ -196,6 +206,23 @@ describe('getCaseActionOptions', () => {
   });
 
   describe('Legacy fallback (no disposition_eligibility)', () => {
+    it('an INQUIRY fallback never surfaces resolved either', () => {
+      // The gap this file missed. The INQUIRY fallback filtered only
+      // ``investigating``; a pre-v3 backend lists ``resolved`` for INQUIRY
+      // too, and that rendered a control whose modal has no copy and whose
+      // submit is dropped on the floor — the user sees an empty quoted block,
+      // clicks Continue, and nothing enters the transcript.
+      //
+      // Not fixed by adding a second exclusion: ``getCaseActionOptions`` now
+      // intersects with ``ALLOWED_ACTIONS``, so an un-excluded state cannot
+      // leak through any path.
+      const opts = getCaseActionOptions({
+        state: 'inquiry',
+        valid_next_states: ['investigating', 'resolved', 'closed'],
+      } as unknown as CaseUIResponse);
+      expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
+    });
+
     it('falls back to valid_next_states when eligibility is absent', () => {
       const opts = getCaseActionOptions(
         investigating({
@@ -204,20 +231,20 @@ describe('getCaseActionOptions', () => {
       );
       // All eligibility null on the fallback path — no verdict info available.
       // We surface what the action graph allows so the dropdown isn't empty
-      // for cases that pre-date the disposition_eligibility column.
-      expect(opts).toEqual([
-        { state: 'resolved', eligibility: null },
-        { state: 'closed', eligibility: null },
-      ]);
+      // for cases that pre-date the disposition_eligibility column — but
+      // ``resolved`` is filtered even here. An older backend still lists it,
+      // and this fallback offering it UNGATED was the mirror of the
+      // ``investigating`` entry #1608 removed for the same reason.
+      expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
     });
 
     it('falls back to hardcoded defaults when both eligibility and valid_next_states are absent', () => {
       const opts = getCaseActionOptions(investigating());
-      // Last-resort safety net — keep the dropdown non-empty.
-      expect(opts).toEqual([
-        { state: 'resolved', eligibility: null },
-        { state: 'closed', eligibility: null },
-      ]);
+      // Last-resort safety net — keep the dropdown non-empty. ``closed`` is
+      // the whole net now: it is the one action that needs no precondition,
+      // so it is the only one safe to offer when we know nothing about the
+      // case.
+      expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
     });
 
     it('INQUIRY fallback offers close only — never investigating', () => {

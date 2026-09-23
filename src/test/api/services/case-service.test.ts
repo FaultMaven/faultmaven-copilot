@@ -575,7 +575,7 @@ describe('Case Service', () => {
       await caseService.submitTurn('case-123', {
         query: 'Resolve this case',
         intentType: 'status_transition',
-        intentData: { from_state: 'investigating', to_state: 'resolved', user_confirmed: true }
+        intentData: { from_state: 'investigating', to_state: 'closed', user_confirmed: true }
       });
 
       const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
@@ -584,7 +584,7 @@ describe('Case Service', () => {
       expect(body.get('intent_type')).toBe('status_transition');
       expect(JSON.parse(body.get('intent_data'))).toEqual({
         from_state: 'investigating',
-        to_state: 'resolved',
+        to_state: 'closed',
         user_confirmed: true
       });
     });
@@ -790,6 +790,40 @@ describe('Case Service', () => {
     // gate, so there is no artifact to assert against. The real protection is
     // the `other` fallback every consumer now applies, which degrades an
     // unknown reason to a readable row instead of dropping it.
+    // Same shape as the CLOSURE_DISPLAY_INFO pin below, for the same reason
+    // and with the same limits. ALLOWED_ACTIONS and CASE_ACTION_MESSAGES were
+    // BOTH invisible to this suite — mutation-proven: reverting
+    // `investigating: ['closed']` to `['resolved','closed']`, or re-adding the
+    // deleted `investigating_to_resolved` key, left all 1053 tests green. The
+    // table only asserted its INQUIRY row.
+    //
+    // It matters more than it used to: `getCaseActionOptions` now derives the
+    // rendered menu from ALLOWED_ACTIONS via `getValidActions`, so this table
+    // is no longer an unread mirror of the menu — it IS the menu's allowlist.
+    // Like the closure map, this cannot detect backend drift; it pins the
+    // client's own answer against a deliberate edit.
+    it('pins every user-selectable action, not just the INQUIRY row', () => {
+      expect(caseService.ALLOWED_ACTIONS).toEqual({
+        inquiry: ['closed'],
+        investigating: ['closed'],
+        resolved: [],
+        closed: [],
+      });
+    });
+
+    it('has agent copy for exactly the selectable actions, and no others', () => {
+      // A key with no action renders nothing; an action with no key reaches
+      // `StatusChangeRequestModal`, which now refuses to render rather than
+      // showing an empty quoted block over a live Continue button. Either
+      // direction is a defect, so pin the correspondence rather than the list.
+      const expected = Object.entries(caseService.ALLOWED_ACTIONS)
+        .flatMap(([from, tos]) => tos.map((to) => `${from}_to_${to}`))
+        .sort();
+      expect(Object.keys(caseService.CASE_ACTION_MESSAGES).sort()).toEqual(
+        expected,
+      );
+    });
+
     it('pins the map to the backend reasons plus the defensive fallback', () => {
       expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
         'closed_insufficient_evidence',

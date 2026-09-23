@@ -707,15 +707,38 @@ Cases follow a defined status lifecycle with specific transitions:
 | Status | Description | User-selectable actions |
 |--------|-------------|-------------------------|
 | `inquiry` | Q&A mode - exploring the issue | `closed` |
-| `investigating` | Active troubleshooting | `resolved`, `closed` |
+| `investigating` | Active troubleshooting | `closed` |
 | `resolved` | Issue resolved (terminal) | - |
 | `closed` | Closed without resolution (terminal) | - |
 
-`inquiry → investigating` is a **legal** transition but **not a user action**.
-It is earned by a problem statement the user has confirmed — the backend's
-Gate 1 performs it, and requesting the state is refused with a 422. Every
-action in the table above is a *disposition*: a user decision carrying
-information the engine cannot derive.
+**Only `closed` is ever selectable.** Two legal transitions are deliberately
+absent, both for the same reason: a menu cannot honour an edge whose
+precondition is a fact about the case, and closing is the only disposition the
+STATE MACHINE will take on demand — it is always a legal, honourable end.
+
+‼ That is not the same as "no precondition". The CLIENT still gates the Close
+control on `disposition_eligibility.closed === 'ready'`, so `needs_info`,
+`suggests_alternative` and `not_eligible` all suppress it — which is why the
+menu can be, and on a resolution-grade case is meant to be, empty. The
+distinction is where the condition lives: the state machine accepts a close
+from either phase, the client declines to offer one where the engine would
+immediately redirect it.
+
+``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo has not pinned yet (``api-contract.pin.json``). Hiding both is safe against a backend that still accepts them, which is why the client change lands first.
+
+- `inquiry → investigating` is earned by a problem statement the user has
+  confirmed; Gate 1 performs it (#1608).
+- `investigating → resolved` is earned by a confirmed root-cause elimination.
+  The agent offers it through the confirm/decline pair once it sees the case
+  reach that bar, or when the user says so in conversation. **Resolving is
+  something the user SAYS, not something they click** (contract 9.0.0).
+
+‼ `disposition_eligibility.resolved` is still published, and it is NOT an
+affordance — it is FaultMaven's own readiness verdict, useful as a signal that
+saying so will land. `suggests_alternative` on the `closed` side means **do not
+render**: it is set exactly when every close would pivot back to a resolve
+proposal, so a Close control there could only ever produce "shall I mark this
+resolved?". On a resolution-grade case the status menu is correctly EMPTY.
 
 ```typescript
 import {
