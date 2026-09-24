@@ -1,5 +1,5 @@
 {
-  "version": "1.0.6",
+  "version": "1.0.7",
   "manifestSurface": {
     "key": null,
     "permissions": [
@@ -27,7 +27,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "2a2ae04c9d7e34b83c76924a1f3dac131ea2ff900926417423c4d4b9ff41dacc"
+    "sha256": "e0be130a3ee3222af86ad92e0d48b2bd50464b38c249408f109eb04baafe3cc5"
   },
   "iconSources": {
     "fileCount": 8,
@@ -198,7 +198,7 @@
     "icon/square-dark.svg": "ebf5f47118d88a07f4e30db80d58224b4868c53b5cb32bf7b98645ad705e4710",
     "icon/square-light.svg": "055b776191c81d19c72c87914ec2bacca30e75e57aa3aa54986af06648034a06",
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
-    "manifest.json": "a855117a0098fc674a717b276b656e255c5f8c2b5c4167ed3e54bf381f8794b3",
+    "manifest.json": "090d09cd5878fb7b3ba1108a14eb6ae06537148a16c17dd4152768fa9d848a1d",
     "options.html": "a4714fe5beabc14a246f66c10bab179cf942691405b6620bd424e782478fa521",
     "sidepanel_manual.html": "11df1623f5c5bbbde3ab64c4e5a989abe2861ce108870944569c90576ef00d8b"
   }
