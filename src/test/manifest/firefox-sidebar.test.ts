@@ -27,6 +27,25 @@ describe('panel surface per target', () => {
     expect(sidebar?.default_panel).toBe(panelPath);
   });
 
+  it('does not open the Firefox sidebar on install', async () => {
+    // Firefox opens a new add-on's sidebar at install unless told not to;
+    // Chrome never opens the side panel unasked. The toolbar icon opens it on both.
+    const firefox = await loadManifest({ browser: 'firefox', manifestVersion: 2 });
+    const sidebar = firefox.sidebar_action as { open_at_install?: boolean } | undefined;
+    expect(sidebar?.open_at_install).toBe(false);
+  });
+
+  it('requests `sidePanel` on Chromium only', async () => {
+    // Firefox has no such permission (its sidebar needs none), WXT does not
+    // strip it, and AMO's linter reports it as invalid.
+    const chrome = await loadManifest({ browser: 'chrome', manifestVersion: 3 });
+    const firefox = await loadManifest({ browser: 'firefox', manifestVersion: 2 });
+    expect(chrome.permissions).toContain('sidePanel');
+    expect(firefox.permissions).not.toContain('sidePanel');
+    // Nothing else moves: the two lists differ by exactly that entry.
+    expect((chrome.permissions as string[]).filter((p) => p !== 'sidePanel')).toEqual(firefox.permissions);
+  });
+
   it('keeps `sidebar_action` out of the Chrome manifest', async () => {
     // WXT does not strip it from the Chrome output, and Chrome does not know it.
     const chrome = await loadManifest({ browser: 'chrome', manifestVersion: 3 });

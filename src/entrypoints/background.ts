@@ -11,9 +11,11 @@ import {
 } from '../extension/auth/revoke-refresh-token';
 import { AUTH_STATE_KEY, isUsableDuration, isUsableTimestamp, type CredentialKey } from '../extension/auth/storage-keys';
 import {
+  panelSurface,
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
   releaseSidePanelForTab,
+  toolbarButton,
   yieldSidePanelForAdvertisedTab,
 } from '../extension/side-panel-yield';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -52,76 +54,25 @@ class StaleAuthCallbackError extends Error {
 }
 
 /**
- * The toolbar-icon and panel APIs, as each target actually exposes them.
- *
- * `wxt/browser` is the raw `browser`/`chrome` global — there is no polyfill
- * mapping one target's names onto the other's — and the two builds differ:
- *
- *   Chromium MV3: `action` (manifest `action`) + `sidePanel` (`side_panel`)
- *   Firefox MV2:  `browserAction` (`browser_action`, which WXT emits from the
- *                 same `action` key) + `sidebarAction` (`sidebar_action`,
- *                 declared for the Firefox target in wxt.config.ts)
- *
- * Declared locally, every member optional, because the Chromium typings claim
- * `action` and `sidePanel` always exist — which is exactly the assumption that
- * made an unconditional `browser.action.onClicked` throw during MV2 startup.
- */
-interface ToolbarButton {
-  onClicked: { addListener(callback: (tab: { windowId?: number }) => void): void };
-}
-
-interface PanelSurfaces {
-  action?: ToolbarButton;
-  browserAction?: ToolbarButton;
-  sidePanel?: { open(options: { windowId: number }): Promise<void> };
-  sidebarAction?: { open(): Promise<void> };
-}
-
-/**
- * Make the toolbar icon open the panel, using whichever pair of APIs this
- * browser has, and register nothing when it has no panel to open.
- *
- * Feature-detected rather than keyed to a build-target list, like the side-panel
- * yield: what the handler depends on is whether the methods exist.
+ * Make the toolbar icon open the panel, on whichever surface this browser has:
+ * Chromium's side panel, or the Firefox sidebar. With no toolbar button or no
+ * panel surface, register nothing — a handler could only reach a missing API.
  */
 function registerToolbarPanelOpener(log: ReturnType<typeof createLogger>): void {
-  const surfaces = browser as unknown as PanelSurfaces;
-  const button = surfaces.action ?? surfaces.browserAction;
-  if (!button) return;
-
-  const sidePanel = surfaces.sidePanel;
-  if (sidePanel) {
-    // Window-wide; the per-tab yield registered in main() narrows it.
-    button.onClicked.addListener(async (tab) => {
-      log.info('Toolbar icon clicked, opening side panel');
-      try {
-        if (tab.windowId) {
-          await sidePanel.open({ windowId: tab.windowId });
-        }
-      } catch (error) {
-        log.error('Error opening side panel:', error);
-      }
-    });
+  const button = toolbarButton();
+  const surface = panelSurface();
+  if (!button || !surface) {
+    log.warn('No toolbar button or panel surface; the toolbar icon opens nothing');
     return;
   }
-
-  const sidebarAction = surfaces.sidebarAction;
-  if (sidebarAction) {
-    // NOT async, and nothing may be awaited before `open()`: Firefox honours it
-    // only while the user-input handler is still on the stack, and refuses a
-    // call made after an await ("may only be called from a user input handler").
-    button.onClicked.addListener(() => {
-      log.info('Toolbar icon clicked, opening sidebar');
-      sidebarAction.open().catch((error: unknown) => {
-        log.error('Error opening sidebar:', error);
-      });
+  // NOT async, and nothing is awaited before `open`: the browser honours it
+  // only from inside the click (see PanelSurface).
+  button.onClicked.addListener((tab) => {
+    log.info('Toolbar icon clicked, opening the panel');
+    surface.open(tab).catch((error: unknown) => {
+      log.error('Error opening the panel:', error);
     });
-    return;
-  }
-
-  // A toolbar button with no panel API behind it: nothing a click could reveal,
-  // and a handler here could only reach an API that does not exist.
-  log.warn('No side panel or sidebar API; the toolbar icon opens nothing');
+  });
 }
 
 export default defineBackground({
@@ -785,10 +736,11 @@ export default defineBackground({
     // Dashboard. A Dashboard with no built-in panel — an older self-hosted
     // image, Cloud before its own ships — never advertises and so is untouched.
     //
-    // Chromium only. Guarded on the API's presence rather than the build target
-    // so the Firefox build, which has no browser.sidePanel at all, registers
-    // nothing and behaves exactly as it does today.
-    if (browser.sidePanel) {
+    // Both surfaces: Chromium's side panel and the Firefox sidebar (which
+    // yields by showing a placeholder on that tab — see side-panel-yield.ts).
+    // Guarded on the API's presence rather than the build target, so a browser
+    // with neither registers nothing.
+    if (panelSurface()) {
       // Per-tab options do not necessarily survive an extension reload, and a
       // tab can have moved off the Dashboard while the worker was evicted.
       reconcileSidePanelForAllTabs();

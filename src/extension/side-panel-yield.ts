@@ -1,4 +1,4 @@
-// src/lib/side-panel-yield.ts
+// src/extension/side-panel-yield.ts
 import { browser } from 'wxt/browser';
 import { isTrustedDashboardOrigin } from './auth/trusted-origin';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -6,8 +6,9 @@ import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 /**
  * Yield the side panel on Dashboard tabs that host their own copilot panel.
  *
- * The panel is opened window-wide (`sidePanel.open({ windowId })` in the
- * toolbar-icon handler), so it stays visible on every tab in that window. On a
+ * The panel is opened window-wide (`sidePanel.open({ windowId })`, or
+ * `sidebarAction.open()` on Firefox, from the toolbar-icon handler), so it
+ * stays visible on every tab in that window. On a
  * Dashboard tab that renders the copilot itself, the page already IS the
  * product: signed out that is two sign-in boxes side by side, signed in it is
  * two chat panels for one account.
@@ -50,6 +51,20 @@ import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
  * an opaque origin, a storage read that throws, a page that says nothing, a
  * browser without the API — all leave the tab alone.
  *
+ * TWO SURFACES, ONE RULE. Chromium's panel is `sidePanel`; Firefox's is the
+ * `sidebar_action` sidebar. Both are window-wide, so both would sit beside a
+ * Dashboard that shows its own copilot. `panelSurface()` below adapts each to
+ * the same three verbs — open, hide on a tab, release a tab — and everything
+ * else in this module is shared, so the two targets cannot drift apart in
+ * WHEN they yield. They differ only in HOW a yielded tab looks:
+ *
+ *  - Chromium disables the panel for that tab (`setOptions({ enabled: false })`),
+ *    so it disappears while the tab is in front.
+ *  - Firefox cannot hide an open sidebar per tab, so it swaps in a small
+ *    placeholder page for that tab (`setPanel({ tabId, panel })`) that says the
+ *    copilot is open in the page. Clearing the tab's panel (`panel: null`)
+ *    hands the tab back the global panel.
+ *
  * ORIGIN SET — one source of truth. `isTrustedDashboardOrigin` already answers
  * "is this origin the Dashboard?" for the auth bridge (Cloud default plus the
  * user's configured `dashboardUrl`). Both the advertisement check and the
@@ -72,8 +87,38 @@ interface PanelOptions {
 }
 
 interface PerTabSidePanel {
+  open(options: { windowId: number }): Promise<void>;
   setOptions(options: PanelOptions): Promise<void>;
   getOptions(options: { tabId?: number }): Promise<PanelOptions>;
+}
+
+/**
+ * The slice of Firefox's `sidebarAction` this rule needs. Same reason for being
+ * declared locally: the typings are Chromium's and do not know it exists.
+ */
+interface PerTabSidebar {
+  open(): Promise<void>;
+  setPanel(details: { tabId?: number; panel: string | null }): Promise<void>;
+  getPanel(details: { tabId?: number }): Promise<string>;
+}
+
+/** A toolbar-button namespace: `action` (MV3) or `browserAction` (MV2). */
+interface ToolbarButton {
+  onClicked: { addListener(callback: (tab: { windowId?: number }) => void): void };
+}
+
+/**
+ * The panel surface this browser has, reduced to the three things done with it.
+ *
+ * `open` must call the browser API SYNCHRONOUSLY, before it awaits anything:
+ * both browsers honour an open only from inside the user's click, and Firefox
+ * refuses one made after an await ("may only be called from a user input
+ * handler").
+ */
+export interface PanelSurface {
+  open(tab: { windowId?: number }): Promise<void>;
+  hide(tabId: number): Promise<void>;
+  release(tabId: number): Promise<void>;
 }
 
 /**
@@ -86,16 +131,134 @@ interface PerTabSidePanel {
  * build-target list: a list here would be a copy of that one, free to drift, and
  * the thing we actually depend on is whether the methods exist.
  *
- * `setOptions` AND `getOptions` are both required — the release path reads
- * before it writes, so a target with only half the API must be left alone
- * rather than half-driven.
+ * `open`, `setOptions` AND `getOptions` are all required — the toolbar opens
+ * with the first, and the release path reads before it writes, so a target
+ * with only part of the API must be left alone rather than half-driven.
  */
 function perTabSidePanel(): PerTabSidePanel | null {
   const api = (browser as unknown as { sidePanel?: Partial<PerTabSidePanel> }).sidePanel;
-  if (!api || typeof api.setOptions !== 'function' || typeof api.getOptions !== 'function') {
+  if (
+    !api ||
+    typeof api.open !== 'function' ||
+    typeof api.setOptions !== 'function' ||
+    typeof api.getOptions !== 'function'
+  ) {
     return null;
   }
   return api as PerTabSidePanel;
+}
+
+/**
+ * Firefox's per-tab sidebar API, or null where it does not exist.
+ *
+ * `browser.sidebarAction` exists only when the manifest declares
+ * `sidebar_action` — wxt.config.ts does so for the Firefox target alone. All
+ * three methods are required for the same reason as above: the release path
+ * reads before it writes.
+ */
+function perTabSidebar(): PerTabSidebar | null {
+  const api = (browser as unknown as { sidebarAction?: Partial<PerTabSidebar> }).sidebarAction;
+  if (
+    !api ||
+    typeof api.open !== 'function' ||
+    typeof api.setPanel !== 'function' ||
+    typeof api.getPanel !== 'function'
+  ) {
+    return null;
+  }
+  return api as PerTabSidebar;
+}
+
+/**
+ * The page a yielded Firefox tab shows in the sidebar. Built for the Firefox
+ * target only (see its `manifest.include`).
+ *
+ * Absolute, because `getPanel` answers with an absolute URL and the release
+ * path compares against it.
+ */
+const YIELDED_PANEL_PAGE = '/panel_yielded.html';
+
+function yieldedPanelUrl(): string {
+  return (browser.runtime.getURL as (path: string) => string)(YIELDED_PANEL_PAGE);
+}
+
+function sidePanelSurface(sidePanel: PerTabSidePanel): PanelSurface {
+  return {
+    open: async (tab) => {
+      if (tab.windowId) {
+        await sidePanel.open({ windowId: tab.windowId });
+      }
+    },
+    // Chromium hides the panel only while that tab is in front and brings the
+    // window-level panel straight back on any other tab, so nothing about the
+    // window-wide open path changes.
+    hide: async (tabId) => {
+      await sidePanel.setOptions({ tabId, enabled: false });
+    },
+    release: async (tabId) => {
+      // SOLE-WRITER INVARIANT, and callers lean on it. `hide` above is the
+      // only thing in this extension that writes `enabled: false`, so "the
+      // options say false" means "this rule hid it" and nothing else. That is
+      // what lets the release paths skip an origin check without being able to
+      // un-hide a panel somebody else disabled. Anything that ever disables a
+      // panel for another reason — a privacy mode, a per-tab mute — breaks
+      // that reading and has to come with a way to tell the two apart.
+      const current = await sidePanel.getOptions({ tabId });
+      // Only an explicit `false` is ours to undo. A tab with no tab-specific
+      // options reports the defaults, and must be left exactly as it is.
+      if (current?.enabled !== false) return;
+
+      const path = globalPanelPath();
+      await sidePanel.setOptions({ tabId, enabled: true, ...(path ? { path } : {}) });
+    },
+  };
+}
+
+function sidebarSurface(sidebar: PerTabSidebar): PanelSurface {
+  return {
+    // Returned, not awaited first: the call itself must happen inside the click.
+    open: () => sidebar.open(),
+    hide: async (tabId) => {
+      await sidebar.setPanel({ tabId, panel: yieldedPanelUrl() });
+    },
+    release: async (tabId) => {
+      // Same sole-writer invariant as the Chromium surface: `hide` is the only
+      // thing that sets the placeholder, so "this tab shows the placeholder"
+      // means "this rule put it there". Anything else — the global panel, or a
+      // panel set for another reason — is left alone.
+      const current = await sidebar.getPanel({ tabId });
+      if (current !== yieldedPanelUrl()) return;
+      // `null` removes the tab-specific panel; the tab inherits the global one.
+      await sidebar.setPanel({ tabId, panel: null });
+    },
+  };
+}
+
+/**
+ * This browser's panel surface, or null where it has none.
+ *
+ * Feature-detected, never keyed to a build-target list: what the rule depends
+ * on is whether the methods exist. Chromium's side panel is preferred when both
+ * are present, because that is the surface the Chromium manifest declares.
+ */
+export function panelSurface(): PanelSurface | null {
+  const sidePanel = perTabSidePanel();
+  if (sidePanel) return sidePanelSurface(sidePanel);
+  const sidebar = perTabSidebar();
+  if (sidebar) return sidebarSurface(sidebar);
+  return null;
+}
+
+/**
+ * The toolbar button: `action` on MV3, `browserAction` on Firefox MV2.
+ *
+ * `wxt/browser` is the raw `browser`/`chrome` global with no polyfill, so the
+ * MV2 build has no `action` at all — reading `browser.action.onClicked`
+ * unguarded threw while the Firefox background was still starting.
+ */
+export function toolbarButton(): ToolbarButton | null {
+  const api = browser as unknown as { action?: ToolbarButton; browserAction?: ToolbarButton };
+  return api.action ?? api.browserAction ?? null;
 }
 
 /**
@@ -186,47 +349,6 @@ async function isDashboardTab(url: string | undefined): Promise<boolean> {
 }
 
 /**
- * Hide the panel on one tab. Chromium hides it only while that tab is in front
- * and brings the window-level panel straight back on any other tab, so nothing
- * about the window-wide open path changes.
- */
-async function yieldTab(sidePanel: PerTabSidePanel, tabId: number): Promise<void> {
-  await sidePanel.setOptions({ tabId, enabled: false });
-}
-
-/**
- * Give one tab its panel back — but only if this rule is what took it away.
- *
- * The tab's CURRENT options are read first and rewritten only when they
- * actually say `enabled: false`. Two things follow, both of them about the
- * worse failure direction:
- *
- *  - A tab this rule never suppressed is not written to at all, so it keeps the
- *    pristine window-level panel rather than acquiring tab-specific options it
- *    did not ask for.
- *  - The browser's own per-tab state is the memory, not a Set in this worker.
- *    An MV3 worker is evicted routinely; anything it remembered about which tabs
- *    it had disabled would be gone by the time that tab navigated away, and the
- *    tab would stay dark. Reading the state back cannot lose it.
- */
-async function releaseTab(sidePanel: PerTabSidePanel, tabId: number): Promise<void> {
-  // SOLE-WRITER INVARIANT, and callers lean on it. `yieldTab` above is the only
-  // thing in this extension that writes `enabled: false`, so "the options say
-  // false" means "this rule hid it" and nothing else. That is what lets the
-  // release paths skip an origin check without being able to un-hide a panel
-  // somebody else disabled. Anything that ever disables a panel for another
-  // reason — a privacy mode, a per-tab mute — breaks that reading and has to
-  // come with a way to tell the two apart.
-  const current = await sidePanel.getOptions({ tabId });
-  // Only an explicit `false` is ours to undo. A tab with no tab-specific
-  // options reports the defaults, and must be left exactly as it is.
-  if (current?.enabled !== false) return;
-
-  const path = globalPanelPath();
-  await sidePanel.setOptions({ tabId, enabled: true, ...(path ? { path } : {}) });
-}
-
-/**
  * A Dashboard page has told us it hosts the built-in copilot panel.
  *
  * `origin` must be the origin the BROWSER attributed to the sender, never one
@@ -242,8 +364,8 @@ export async function yieldSidePanelForAdvertisedTab(
   tabId: number | undefined,
   origin: string | undefined
 ): Promise<void> {
-  const sidePanel = perTabSidePanel();
-  if (!sidePanel) return;
+  const surface = panelSurface();
+  if (!surface) return;
   if (typeof tabId !== 'number' || tabId < 0) return;
   if (!origin) return;
 
@@ -253,7 +375,7 @@ export async function yieldSidePanelForAdvertisedTab(
         log.warn('Ignoring a built-in panel advertisement from a non-Dashboard origin', { origin });
         return;
       }
-      await yieldTab(sidePanel, tabId);
+      await surface.hide(tabId);
     } catch (error) {
       log.debug('Could not yield the side panel for an advertising tab', { tabId, error });
     }
@@ -277,9 +399,9 @@ export async function yieldSidePanelForAdvertisedTab(
  *    check that can strand a tab dark. An origin this worker cannot resolve is
  *    not a reason to keep someone's only surface hidden.
  *
- * Nothing is lost by that, and the reason is `releaseTab`'s sole-writer
- * invariant above: only this rule ever writes `enabled: false`, so a release
- * can only ever undo this rule's own work. The content script additionally
+ * Nothing is lost by that, and the reason is each surface's sole-writer
+ * invariant in `release` above: only this rule ever hides a panel, so a
+ * release can only ever undo this rule's own work. The content script additionally
  * refuses to forward from an untrusted origin, and the background rejects
  * senders that are not this extension.
  */
@@ -287,13 +409,13 @@ export async function releaseSidePanelForTab(
   tabId: number | undefined,
   reason: 'withdrawn' | 'navigating'
 ): Promise<void> {
-  const sidePanel = perTabSidePanel();
-  if (!sidePanel) return;
+  const surface = panelSurface();
+  if (!surface) return;
   if (typeof tabId !== 'number' || tabId < 0) return;
 
   await onTab(tabId, async () => {
     try {
-      await releaseTab(sidePanel, tabId);
+      await surface.release(tabId);
     } catch (error) {
       // A tab can close underneath us, and a browser can refuse an option
       // write. Neither is worth failing anything over.
@@ -330,14 +452,14 @@ export async function reconcileSidePanelForTab(
   url: string | undefined,
   { documentReplaced = false }: { documentReplaced?: boolean } = {}
 ): Promise<void> {
-  const sidePanel = perTabSidePanel();
-  if (!sidePanel) return;
+  const surface = panelSurface();
+  if (!surface) return;
   if (typeof tabId !== 'number' || tabId < 0) return;
 
   await onTab(tabId, async () => {
     try {
       if ((await isDashboardTab(url)) && !documentReplaced) return;
-      await releaseTab(sidePanel, tabId);
+      await surface.release(tabId);
     } catch (error) {
       log.debug('Side panel reconcile skipped for tab', { tabId, error });
     }
@@ -355,7 +477,7 @@ export async function reconcileSidePanelForTab(
  * unable to hide the panel anywhere.
  */
 export async function reconcileSidePanelForAllTabs(): Promise<void> {
-  if (!perTabSidePanel()) return;
+  if (!panelSurface()) return;
 
   try {
     const tabs = await browser.tabs.query({});

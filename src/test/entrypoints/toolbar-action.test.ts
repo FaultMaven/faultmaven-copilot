@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { chromeMv3Shape, firefoxMv2Shape, type BrowserShape } from '../support/browser-shapes';
 
 /**
  * The toolbar icon reveals the panel on every target the extension is built
@@ -12,116 +13,47 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * polyfill maps one onto the other — so an unconditional `browser.action.*`
  * throws while the MV2 background is still starting.
  *
- * These drive the BACKGROUND ENTRYPOINT against a browser object shaped like
- * each target, rather than testing a helper: whether `main()` survives startup
- * is itself part of the invariant.
+ * Each case installs its target's `browser` BEFORE importing the background,
+ * so every module-level read sees that target rather than a shape captured by
+ * an earlier import.
  */
 
-const { mockBrowser, clicks } = vi.hoisted(() => {
-  (global as any).defineBackground = (config: any) => config;
-  return {
-    // Some modules read `runtime.getManifest` at import time; each test
-    // replaces the whole shape before it mounts the background.
-    mockBrowser: { runtime: { getManifest: () => ({}) } } as Record<string, any>,
-    clicks: [] as Array<(tab: { id?: number; windowId?: number }) => unknown>,
-  };
+const state = vi.hoisted(() => {
+  (globalThis as any).defineBackground = (config: unknown) => config;
+  return { current: {} as Record<string, any> };
 });
 
-vi.mock('wxt/browser', () => ({ browser: mockBrowser }));
-(global as any).browser = mockBrowser;
+// A getter, so a re-imported module graph reads the shape installed for it.
+vi.mock('wxt/browser', () => ({
+  get browser() {
+    return state.current;
+  },
+}));
 
 vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
   authManager: { saveAuthState: vi.fn(), clearAuthState: vi.fn() },
 }));
 
-// Not under test here, and it reaches for scripting/permissions APIs whose
-// Firefox shape is irrelevant to the toolbar.
+// Not under test here.
 vi.mock('../../extension/auth/auth-bridge-registration', () => ({
   reconcileAuthBridgeRegistration: vi.fn(),
   unregisterAuthBridge: vi.fn(),
 }));
 
-import backgroundEntry from '../../entrypoints/background';
+// Import (and so transform) the background's module graph once, up front, with
+// a generous timeout. Each case then re-imports it after `vi.resetModules()`,
+// which re-evaluates but reuses the transform; without this the first case pays
+// for the whole graph and can time out under a loaded full-suite run.
+beforeAll(async () => {
+  state.current = firefoxMv2Shape().browser;
+  await import('../../entrypoints/background');
+}, 60_000);
 
-const listener = () => ({ addListener: vi.fn(), removeListener: vi.fn() });
-
-/** A toolbar-button namespace whose click listener lands in `clicks`. */
-function toolbarButton() {
-  return {
-    onClicked: {
-      addListener: vi.fn((fn: (tab: { id?: number; windowId?: number }) => unknown) => {
-        clicks.push(fn);
-      }),
-      removeListener: vi.fn(),
-    },
-  };
-}
-
-/** Everything both targets expose that the background touches at startup. */
-function commonApis() {
-  return {
-    runtime: {
-      id: 'test-copilot-id',
-      onMessage: listener(),
-      onInstalled: listener(),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
-      getURL: vi.fn((path: string) => `moz-extension://test-copilot-id${path}`),
-      getManifest: vi.fn(() => ({})),
-    },
-    identity: {
-      getRedirectURL: vi.fn(() => 'https://0123456789abcdef0123456789abcdef01234567.extensions.allizom.org/'),
-      launchWebAuthFlow: vi.fn(),
-    },
-    tabs: { onUpdated: listener(), query: vi.fn().mockResolvedValue([]) },
-    permissions: {
-      contains: vi.fn().mockResolvedValue(true),
-      onAdded: listener(),
-      onRemoved: listener(),
-    },
-    storage: {
-      local: {
-        get: vi.fn().mockResolvedValue({}),
-        set: vi.fn().mockResolvedValue(undefined),
-        remove: vi.fn().mockResolvedValue(undefined),
-      },
-      onChanged: listener(),
-    },
-  };
-}
-
-/** Chrome MV3: `action` + `sidePanel`. */
-function chromeMv3() {
-  return {
-    ...commonApis(),
-    action: toolbarButton(),
-    sidePanel: {
-      open: vi.fn().mockResolvedValue(undefined),
-      setOptions: vi.fn().mockResolvedValue(undefined),
-      getOptions: vi.fn().mockResolvedValue({ enabled: true }),
-    },
-  };
-}
-
-/**
- * Firefox MV2 as the built manifest declares it: `browser_action` +
- * `sidebar_action`, so the namespaces are `browserAction` and `sidebarAction`.
- * There is no `action` and no `sidePanel`.
- */
-function firefoxMv2() {
-  return {
-    ...commonApis(),
-    browserAction: toolbarButton(),
-    sidebarAction: {
-      open: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      toggle: vi.fn().mockResolvedValue(undefined),
-    },
-  };
-}
-
-function useBrowser(shape: Record<string, any>) {
-  for (const key of Object.keys(mockBrowser)) delete mockBrowser[key];
-  Object.assign(mockBrowser, shape);
+async function loadBackgroundWith(shape: BrowserShape): Promise<{ main(): void }> {
+  state.current = shape.browser;
+  (globalThis as any).browser = shape.browser;
+  vi.resetModules();
+  return (await import('../../entrypoints/background')).default as { main(): void };
 }
 
 async function settle() {
@@ -129,44 +61,44 @@ async function settle() {
 }
 
 describe('toolbar icon', () => {
-  beforeEach(() => {
-    clicks.length = 0;
-  });
-
   describe('Chrome MV3 (action + sidePanel)', () => {
     it('opens the side panel for the clicked window', async () => {
-      useBrowser(chromeMv3());
+      const shape = chromeMv3Shape();
+      const background = await loadBackgroundWith(shape);
 
-      expect(() => backgroundEntry.main()).not.toThrow();
-      expect(mockBrowser.action.onClicked.addListener).toHaveBeenCalledTimes(1);
+      expect(() => background.main()).not.toThrow();
+      expect(shape.browser.action.onClicked.addListener).toHaveBeenCalledTimes(1);
 
-      await clicks[0]({ id: 7, windowId: 3 });
+      shape.listeners.toolbarClick({ id: 7, windowId: 3 });
+      await settle();
 
-      expect(mockBrowser.sidePanel.open).toHaveBeenCalledWith({ windowId: 3 });
+      expect(shape.browser.sidePanel.open).toHaveBeenCalledWith({ windowId: 3 });
     });
   });
 
   describe('Firefox MV2 (browserAction + sidebarAction)', () => {
-    it('starts without throwing', () => {
-      useBrowser(firefoxMv2());
+    it('starts without throwing, and wires the toolbar and the per-tab yield', async () => {
+      const shape = firefoxMv2Shape();
+      const background = await loadBackgroundWith(shape);
 
-      expect(() => backgroundEntry.main()).not.toThrow();
+      expect(() => background.main()).not.toThrow();
+      expect(shape.browser.browserAction.onClicked.addListener).toHaveBeenCalledTimes(1);
+      // The Dashboard yield runs on Firefox too (side-panel-yield.ts), so the
+      // navigation listener that releases it must be there.
+      expect(shape.browser.tabs.onUpdated.addListener).toHaveBeenCalledTimes(1);
     });
 
-    it('opens the sidebar from the toolbar click, synchronously', () => {
-      useBrowser(firefoxMv2());
-      backgroundEntry.main();
-
-      expect(mockBrowser.browserAction.onClicked.addListener).toHaveBeenCalledTimes(1);
-      expect(clicks).toHaveLength(1);
+    it('opens the sidebar from the toolbar click, synchronously', async () => {
+      const shape = firefoxMv2Shape();
+      (await loadBackgroundWith(shape)).main();
 
       // Firefox honours sidebarAction.open() only while the user-input handler
       // is still on the stack: a call after any `await` is refused with "may
       // only be called from a user input handler". So the call must already
       // have happened when the listener returns, before anything settles.
-      void clicks[0]({ id: 7, windowId: 3 });
+      shape.listeners.toolbarClick({ id: 7, windowId: 3 });
 
-      expect(mockBrowser.sidebarAction.open).toHaveBeenCalledTimes(1);
+      expect(shape.browser.sidebarAction.open).toHaveBeenCalledTimes(1);
     });
 
     it('handles a refused open rather than leaving an unhandled rejection', async () => {
@@ -174,18 +106,17 @@ describe('toolbar icon', () => {
       // subscribes to every promise it returns (to record `settledResults`),
       // which marks the rejection handled and would hide a missing `.catch`.
       let opens = 0;
-      const shape = firefoxMv2();
-      shape.sidebarAction.open = (() => {
+      const shape = firefoxMv2Shape();
+      shape.browser.sidebarAction.open = () => {
         opens++;
         return Promise.reject(new Error('refused'));
-      }) as typeof shape.sidebarAction.open;
-      useBrowser(shape);
-      backgroundEntry.main();
+      };
+      (await loadBackgroundWith(shape)).main();
 
       const unhandled = vi.fn();
       process.on('unhandledRejection', unhandled);
       try {
-        clicks[0]({ id: 7, windowId: 3 });
+        shape.listeners.toolbarClick({ id: 7, windowId: 3 });
         await settle();
       } finally {
         process.off('unhandledRejection', unhandled);
@@ -196,17 +127,23 @@ describe('toolbar icon', () => {
     });
   });
 
-  describe('a browser with a toolbar button but no panel API', () => {
-    it('starts, and registers no click handler that could reach a missing API', () => {
-      // An MV2 manifest without `sidebar_action` (or any future target that
-      // has neither panel API): there is nothing the click could reveal.
-      const shape: Record<string, any> = firefoxMv2();
-      delete shape.sidebarAction;
-      useBrowser(shape);
+  describe('a browser with a toolbar button but no usable panel API', () => {
+    it.each([
+      ['no sidebarAction at all (an MV2 manifest without sidebar_action)', (b: Record<string, any>) => {
+        delete b.sidebarAction;
+      }],
+      ['a sidebarAction without the per-tab calls', (b: Record<string, any>) => {
+        delete b.sidebarAction.setPanel;
+        delete b.sidebarAction.getPanel;
+      }],
+    ])('%s: starts, and registers nothing that could reach a missing API', async (_label, strip) => {
+      const shape = firefoxMv2Shape();
+      strip(shape.browser);
+      const background = await loadBackgroundWith(shape);
 
-      expect(() => backgroundEntry.main()).not.toThrow();
-      expect(mockBrowser.browserAction.onClicked.addListener).not.toHaveBeenCalled();
-      expect(clicks).toHaveLength(0);
+      expect(() => background.main()).not.toThrow();
+      expect(shape.browser.browserAction.onClicked.addListener).not.toHaveBeenCalled();
+      expect(shape.browser.tabs.onUpdated.addListener).not.toHaveBeenCalled();
     });
   });
 });

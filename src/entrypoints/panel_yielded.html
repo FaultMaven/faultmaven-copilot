@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      Firefox only. Shown in the sidebar, for one tab, while that tab's
+      Dashboard page is showing its own copilot panel (sidebarAction.setPanel in
+      src/extension/side-panel-yield.ts). Chromium hides its side panel on such
+      a tab instead, so it has no use for this page.
+    -->
+    <meta name="manifest.include" content="['firefox']" />
+    <title>FaultMaven Copilot</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --text: #1f2328;
+        --muted: #59636e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1117;
+          --text: #e6edf3;
+          --muted: #9198a1;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        max-width: 18rem;
+        padding: 1.5rem;
+        text-align: center;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>The copilot is open in this page</h1>
+      <p>This Dashboard tab shows its own copilot panel, so the sidebar steps aside here. Switch to another tab to use it.</p>
+    </main>
+  </body>
+</html>

@@ -3,27 +3,20 @@
 # Setup script for local development
 echo "Setting up FaultMaven Copilot for local development..."
 
-# Create .env.local file with local API endpoint
-cat > .env.local << EOF
-# Local development API endpoint
-# Uncomment the line below to use local development server
-VITE_API_URL=http://api.faultmaven.local:8000
-EOF
-
-echo "✅ Created .env.local with local API endpoint"
-echo "📝 API URL set to: http://api.faultmaven.local:8000"
+# Build-time knobs (VITE_*) live in .env.local. Endpoints are NOT among them:
+# the API and Dashboard URLs are runtime settings (Welcome screen / Settings
+# page), stored in browser.storage.local — see src/extension/host/endpoints.ts.
+if [ -f .env.local ]; then
+  echo "ℹ️  .env.local already exists; leaving it unchanged"
+else
+  cp .env.example .env.local
+  echo "✅ Created .env.local from .env.example"
+fi
 echo ""
-echo "🔧 Configuration Summary:"
-echo "   - Development: http://api.faultmaven.local:8000"
-echo "   - Production:  https://api.faultmaven.ai (default)"
+echo "🔧 Endpoints:"
+echo "   - Default: FaultMaven Cloud (https://api.faultmaven.ai, https://app.faultmaven.ai)"
+echo "   - Local:   choose \"Standalone (Self-Hosted)\" on the Welcome screen"
+echo "              (http://localhost:8090, http://localhost:3333), or set them on the Settings page"
 echo ""
 echo "🚀 To start development:"
 echo "   pnpm dev"
-echo ""
-echo "🔄 To switch back to production API:"
-echo "   rm .env.local"
-echo "   pnpm dev"
-echo ""
-echo "📦 To build for production (always uses production API):"
-echo "   rm .env.local  # Ensure no local config"
-echo "   pnpm build" 

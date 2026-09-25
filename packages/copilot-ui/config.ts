@@ -43,18 +43,30 @@ interface Config {
  * - VITE_MAX_FILE_SIZE_MB: Max file size in MB (default: 10, matches backend MAX_UPLOAD_SIZE_MB)
  * - VITE_SESSION_TIMEOUT_MINUTES: Session timeout in minutes (default: 180 = 3 hours)
  */
-const sessionTimeoutMinutes = parseInt(import.meta.env.VITE_SESSION_TIMEOUT_MINUTES || '180', 10);
+/**
+ * An integer build-time knob, or `fallback` when it is unset OR unparseable.
+ *
+ * Not `parseInt(value || default)`: that only covers the empty string, and
+ * `parseInt('abc')` is NaN — which then slips through every Math.min/Math.max
+ * clamp downstream (the session timeout went out as `timeout_minutes: null`).
+ */
+function intFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const sessionTimeoutMinutes = intFromEnv(import.meta.env.VITE_SESSION_TIMEOUT_MINUTES, 180);
 
 const config: Config = {
   // Input Limits Configuration (build-time only, rarely changed)
   inputLimits: {
-    dataModeLinesThreshold: parseInt(import.meta.env.VITE_DATA_MODE_LINES || '100', 10),
+    dataModeLinesThreshold: intFromEnv(import.meta.env.VITE_DATA_MODE_LINES, 100),
     // Match backend query max_length=200000 (200KB)
-    maxQueryLength: parseInt(import.meta.env.VITE_MAX_QUERY_LENGTH || '200000', 10),
+    maxQueryLength: intFromEnv(import.meta.env.VITE_MAX_QUERY_LENGTH, 200000),
     textareaMinRows: 2,
     textareaMaxRows: 8,
     // Match backend MAX_UPLOAD_SIZE_MB=10
-    maxFileSize: (parseInt(import.meta.env.VITE_MAX_FILE_SIZE_MB || '10', 10)) * 1024 * 1024,
+    maxFileSize: intFromEnv(import.meta.env.VITE_MAX_FILE_SIZE_MB, 10) * 1024 * 1024,
     allowedFileExtensions: ['.txt', '.log', '.json', '.csv', '.md'],
     allowedMimeTypes: ['text/plain', 'text/markdown', 'application/json', 'text/csv'],
   },

@@ -149,8 +149,16 @@ export default defineConfig({
     // side-panel button, where activeTab never activates, so the capture path
     // requests per-origin host permission instead (usePageContent.ts). A
     // declared-but-unused permission is a CWS rejection trigger.
+    //
+    // `sidePanel` is Chromium-only, gated like `key` and
+    // `minimum_chrome_version`: Firefox has no such permission (its panel is the
+    // `sidebar_action` below, which needs none), WXT does not strip it, and
+    // AMO's linter reports it as invalid.
     permissions: [
-      "storage", "sidePanel", "scripting", "identity"
+      "storage",
+      ...(CHROMIUM_TARGETS.includes(browser) ? ["sidePanel"] : []),
+      "scripting",
+      "identity"
     ],
     // `tabs` is OPTIONAL, and the reason is the install dialog.
     //
@@ -212,6 +220,10 @@ export default defineConfig({
           sidebar_action: {
             default_panel: PANEL_PAGE,
             default_title: "__MSG_appName__",
+            // Firefox opens a new add-on's sidebar on install unless told
+            // not to. Chrome never opens the side panel unasked; the toolbar
+            // icon is how the panel is reached on both.
+            open_at_install: false,
             default_icon: {
               "16": "icon/px16-square-dark.png",
               "32": "icon/px32-square-dark.png"
