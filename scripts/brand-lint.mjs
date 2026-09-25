@@ -2,7 +2,7 @@
 /**
  * Brand-messaging terminology lint (downstream check).
  *
- * Canonical source: `.claude/skills/brand-messaging.md` (§3 terminology, §7
+ * Canonical source: `faultmaven/.claude/skills/brand-messaging/SKILL.md` (§3 terminology, §7
  * enforcement) in the faultmaven repo. This is the downstream copy for the
  * Copilot extension. Stdlib only.
  *
@@ -23,7 +23,7 @@
  * used by contrast; enforced by review.
  *
  * Put 'brand-lint: allow' on a line to whitelist a deliberate, justified use.
- * When retiring a NEW term, add it here AND to brand-messaging.md §7 together.
+ * When retiring a NEW term, add it here AND to the brand-messaging skill §7 together.
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -94,7 +94,7 @@ for (const f of UNIVERSAL_FILES) scan(f, UNIVERSAL, hits);
 for (const f of CORE_FILES) scan(f, CORE_ONLY, hits);
 
 if (hits.length) {
-  console.error('Brand-messaging lint failed (canonical: faultmaven/.claude/skills/brand-messaging.md):\n');
+  console.error('Brand-messaging lint failed (canonical: faultmaven/.claude/skills/brand-messaging/SKILL.md):\n');
   for (const h of hits) {
     const note = h.json ? '  (JSON — the marker cannot go on this line without changing the value; fix the value)' : '';
     console.error(`  ${h.rel}:${h.line}: ${h.msg}${note}`);
