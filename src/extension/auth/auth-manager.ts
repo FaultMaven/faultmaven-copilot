@@ -49,7 +49,8 @@ class AuthManager {
    * The identity half of a teardown: the `authState` row and the case cache,
    * leaving the credential keys. Its one legitimate caller is
    * `clearAllAuthData()`, which is built out of it — on its own it leaves a live
-   * Bearer that TokenManager can re-mint from. See CLAUDE.md, "Auth teardown".
+   * Bearer that TokenManager can re-mint from. See src/extension/auth/CLAUDE.md,
+   * "Auth teardown".
    */
   async clearAuthState(): Promise<void> {
     if (typeof browser === 'undefined' || !browser.storage) return;

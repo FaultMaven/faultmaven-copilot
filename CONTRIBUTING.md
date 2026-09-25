@@ -34,13 +34,16 @@ Thank you for your interest in contributing to FaultMaven Copilot! This guide wi
 
 ## Project Structure
 
-*   `src/entrypoints`: WXT entry points (background, content scripts, sidepanel, popup).
-*   `src/lib`: Shared libraries (API, state, utils).
-    *   `src/lib/api`: API client and services.
-    *   `src/lib/state`: Zustand state slices.
-    *   `src/lib/optimistic`: Optimistic UI updates logic.
-*   `src/shared`: Shared UI components and hooks.
-*   `src/test`: Tests (unit, integration, e2e).
+*   `packages/copilot-ui`: the shared UI package (`@faultmaven/copilot-ui`), built by this extension and by the Dashboard.
+    *   `packages/copilot-ui/lib/api`: API client and services.
+    *   `packages/copilot-ui/lib/state`: Zustand store and slices.
+    *   `packages/copilot-ui/lib/optimistic`: Optimistic UI updates logic.
+    *   `packages/copilot-ui/shared/ui`: UI components and hooks.
+*   `src/entrypoints`: WXT entry points (background, content script, side panel, options).
+*   `src/extension`: the extension host — auth, endpoints, page capture, sign-in screens.
+*   `src/test`: Vitest suite; `e2e/`: Playwright.
+
+See [docs/HOST_INDEPENDENT_UI.md](docs/HOST_INDEPENDENT_UI.md) for the boundary between the package and the extension.
 
 ## Testing
 
@@ -60,7 +63,7 @@ pnpm test --watch
 ## Code Style
 
 *   We use TypeScript for all code.
-*   Pre-commit hooks are configured to run `npm run compile` and `npm run test` before committing.
+*   Pre-commit hooks run `node scripts/brand-lint.mjs`, `npm run compile` and `npm run test` before committing.
 *   Please ensure your code has no linting or type errors.
 *   Run `pnpm lint` to check for ESLint warnings (including console.log usage).
 
@@ -71,7 +74,7 @@ We use a structured logging system to maintain clean, production-ready code. **N
 ### Quick Start
 
 ```typescript
-import { createLogger } from '~/lib/utils/logger';
+import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('MyComponent');
 
@@ -130,7 +133,7 @@ Our ESLint configuration warns when `console.log` is used. To migrate:
 
 1. **Add logger import:**
    ```typescript
-   import { createLogger } from '~/lib/utils/logger';
+   import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
    const log = createLogger('ComponentName');
    ```
 

@@ -433,8 +433,9 @@ describe('LocalAuthClient', () => {
       // Routed through the ONE teardown rather than a hand-written key list.
       // This used to assert the literal eight keys — which passed while the
       // method was a fourth teardown variant that removed the credentials and
-      // `authState` but never the case cache, the partial teardown CLAUDE.md
-      // warns against. Asserting the delegation is what actually pins the rule.
+      // `authState` but never the case cache, the partial teardown
+      // src/extension/auth/CLAUDE.md warns against. Asserting the delegation is
+      // what actually pins the rule.
       expect(authManager.clearAllAuthData).toHaveBeenCalledTimes(1);
 
       // Verify auth state change was broadcasted

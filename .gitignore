@@ -54,6 +54,9 @@ coverage/
 # the test runner collecting a second, stale copy of the suite.
 .worktrees/
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Playwright artifacts
 playwright-report/
 test-results/

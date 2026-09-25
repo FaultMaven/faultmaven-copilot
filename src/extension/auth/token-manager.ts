@@ -554,7 +554,8 @@ export class TokenManager {
    *
    * ⚠️ Not a teardown: `authManager.clearAllAuthData()` is, and is built out of
    * this. Widening it to cover `authState` would put a second, partial
-   * definition beside the real one. See CLAUDE.md, "Auth teardown".
+   * definition beside the real one. See src/extension/auth/CLAUDE.md,
+   * "Auth teardown".
    */
   async clearTokens(): Promise<void> {
     log.info('Clearing credential keys');

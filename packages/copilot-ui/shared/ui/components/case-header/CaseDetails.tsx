@@ -519,7 +519,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
 
   // Reports row is intentionally dropped — the closure summary is rendered
   // inline in chat at the moment of generation (per the no-Dashboard-link
-  // policy in CLAUDE.md). A header drill-down listing reports without a
+  // policy in packages/copilot-ui/CLAUDE.md). A header drill-down listing reports without a
   // working link to view them was noise.
 
   // Track which sub-rows we have so the wrapper renders an empty-state when none

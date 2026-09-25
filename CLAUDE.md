@@ -1,1045 +1,164 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
-## Repository Overview
+**FaultMaven Copilot** is the browser extension: a side panel that talks to a
+FaultMaven backend (Cloud or self-hosted). WXT 0.20 (MV3 for Chromium, MV2 for
+Firefox), React 19, TypeScript, Tailwind, Zustand + TanStack Query, Vitest,
+Playwright. Package manager is pnpm.
 
-This is the **FaultMaven Copilot** browser extension - an AI-powered troubleshooting copilot built with WXT framework. The extension provides in-context help, analyzes web content, and enables interaction with the FaultMaven AI to diagnose and resolve issues efficiently.
+## Commands
 
-**Key Technologies**: WXT v0.20.6, React 19.x, TypeScript 5.x, Tailwind CSS, Vitest, TanStack Query 5.x.
-
-## Common Commands
-
-### Development
 ```bash
-pnpm install                    # Install dependencies
-pnpm dev                        # Chrome development with HMR
-pnpm dev:firefox                # Firefox development
-npm run compile                 # TypeScript compilation check
+pnpm install                  # also runs `wxt prepare`
+pnpm dev / pnpm dev:firefox   # HMR dev build
+pnpm build / pnpm build:firefox
+pnpm zip / pnpm zip:firefox   # store-ready zips in .output/
+pnpm compile                  # tsc --noEmit for src/ AND the package
+pnpm lint                     # eslint src packages
+pnpm test                     # vitest (add --watch); test:ui, test:coverage
+pnpm test:e2e                 # playwright e2e/ (needs `pnpm build` first)
+pnpm generate:api-types       # regenerate the API client from the pinned contract
+pnpm extension:digest         # compare the built Chrome artifact to extension-baseline.json
+pnpm playground               # the shared UI against a stub web host, :5174
 ```
 
-### Building and Packaging
-```bash
-pnpm build                      # Chrome production build
-pnpm build:firefox              # Firefox production build
-pnpm zip                        # Package for Chrome Web Store
-pnpm zip:firefox                # Package for Firefox Add-ons
+Pre-commit (husky) runs `node scripts/brand-lint.mjs && npm run compile && npm run test`.
+CI (`.github/workflows/ci.yml`) runs `compile`, `api-types-drift`, `test:coverage`,
+and `build` (both zips, manifest version == `package.json`, `extension:digest`).
+
+## Layout
+
+Two trees, one boundary. Read [docs/HOST_INDEPENDENT_UI.md](docs/HOST_INDEPENDENT_UI.md)
+before moving code across it.
+
+```text
+packages/copilot-ui/      @faultmaven/copilot-ui — the panel and everything it needs.
+                          Consumed by this extension as a workspace dependency and by
+                          the Dashboard as a git dependency pinned by SHA.
+  index.ts                the supported entry for a host
+  contract.ts             cross-repo handshake names (import from '/contract' in content scripts)
+  shared/host/adapter.ts  the HostAdapter contract a host implements
+  shared/ui/              CopilotPanel.tsx, components/, hooks/, layouts/
+  lib/                    api/ (client, services, session-core), state/ (Zustand store + slices),
+                          errors/, optimistic/, session/, utils/ (logger, memory-manager, …)
+  types/                  case.ts + api.generated.ts (GENERATED — never hand-edit)
+  config.ts               build-time VITE_* constants (input limits, session timeout)
+src/                      the extension host and nothing else
+  entrypoints/            background.ts (service worker), auth-bridge.content.ts,
+                          sidepanel_manual/, options/
+  extension/              ExtensionApp.tsx (mounts CopilotPanel), messaging.ts (EventBus),
+                          side-panel-yield.ts, auth/ (token chain, OAuth, local auth,
+                          teardown), host/ (HostAdapter implementation, endpoints,
+                          page capture, session credential), components/ (sign-in screens)
+  test/                   vitest suite (mirrors both trees) + manifest/ and packages/ guards
+playground/               the host-independence proof: the package mounted in a plain web page
+e2e/                      Playwright against the built extension
+scripts/                  generate-api-types, extension-digest, brand-lint, sync-ui-assets, icons
 ```
 
-### Testing
-```bash
-npm run test                    # Run all tests (Vitest)
-pnpm test --watch               # Run tests in watch mode
-pnpm test:ui                    # Run tests with UI
-pnpm test:coverage              # Generate coverage report
-```
+Rules the layout enforces (`src/test/packages/` pins them — `closure-boundary`,
+`preset-tokens`, `package-assets`, `contract-entry`, …):
 
-### Asset Generation
-```bash
-pnpm generate-icons             # Generate extension icons from SVG
-```
+- **No path aliases.** Import the package by name:
+  `import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger'`.
+  Inside the package every import is relative.
+- **The package reaches no extension API, holds no credential and imports no
+  runtime messaging.** Sign-in screens, the token chain, page capture and
+  endpoint settings are the extension's (`src/extension/`). The UI asks the host
+  for an access token (`session.accessToken()`); it never sees a refresh token.
+- **`HostAdapter` has no optional capability or method** — a capability a host
+  lacks is a union arm carrying a reason, or an explicit `null` — and `kind` is
+  for copy and telemetry, never for behaviour.
 
 ## Configuration
 
-### Environment Variables
-All configuration is done via environment variables (set before build). Copy `.env.example` to `.env.local`.
-
-**Core Variables:**
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VITE_DASHBOARD_URL` | Dashboard URL for OAuth | `http://localhost:3333` |
-| `VITE_API_URL` | Backend API endpoint (deprecated - derived from dashboard) | - |
-| `VITE_DEBUG` | Enable debug logging | `false` |
-
-**Polling Configuration:**
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VITE_POLL_INITIAL_MS` | Initial polling interval | `1500` |
-| `VITE_POLL_BACKOFF` | Polling backoff multiplier | `1.5` |
-| `VITE_POLL_MAX_MS` | Maximum polling interval | `10000` |
-| `VITE_POLL_MAX_TOTAL_MS` | Maximum total polling time | `600000` (10 min) |
-| `VITE_HEARTBEAT_INTERVAL_MS` | Session keep-alive ping interval (keep below the server session TTL) | `600000` (10 min) |
-
-**Input Limits:**
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VITE_DATA_MODE_LINES` | Lines threshold for data upload mode | `100` |
-| `VITE_MAX_QUERY_LENGTH` | Maximum query length (chars) | `200000` |
-| `VITE_MAX_FILE_SIZE_MB` | Maximum file upload size | `10` |
-
-**Configuration Files:**
-- **`src/config.ts`** - Central runtime configuration
-- **`.env.example`** - Documentation of all available variables
-
-## High-Level Architecture
-
-### Directory Structure
-```
-src/
-├── entrypoints/               # WXT entry points
-│   ├── background.ts                    # Service worker (auth, sessions, messages)
-│   ├── auth-bridge.content.ts           # OAuth bridge content script
-│   ├── sidepanel_manual/main.tsx        # React side panel entry
-│   └── options/main.tsx                 # Extension options page
-│
-├── lib/                       # Core business logic
-│   ├── api/                             # API layer
-│   │   ├── client.ts                    # Authenticated fetch with retry + prepareBody
-│   │   ├── fetch-utils.ts               # Auth header utilities
-│   │   ├── query-client.ts              # TanStack Query configuration
-│   │   ├── session-core.ts              # Session lifecycle management
-│   │   ├── services/                    # Service modules
-│   │   │   ├── auth-service.ts          # Authentication endpoints
-│   │   │   ├── case-service.ts          # Case CRUD & conversations
-│   │   │   ├── session-service.ts       # Session lifecycle
-│   │   │   └── knowledge-service.ts     # Knowledge base queries
-│   │   └── types/                       # API type definitions
-│   │
-│   ├── auth/                            # Authentication
-│   │   ├── auth-manager.ts              # Centralized auth state
-│   │   ├── auth-config.ts               # Auth mode detection (local/oauth)
-│   │   ├── dashboard-oauth.ts           # OAuth flow (PKCE)
-│   │   ├── local-auth-client.ts         # Local username/password auth
-│   │   ├── trusted-origin.ts            # Dashboard-origin validation for the auth bridge
-│   │   └── token-manager.ts             # Token storage & mode-aware refresh
-│   │
-│   ├── errors/                          # Error handling
-│   │   ├── types.ts                     # UserFacingError class hierarchy
-│   │   ├── classifier.ts                # Error classification
-│   │   ├── recovery-strategies.ts       # Recovery implementations
-│   │   ├── index.ts                     # Exports
-│   │   └── useErrorHandler.tsx          # React error hook
-│   │
-│   ├── optimistic/                      # Optimistic update system
-│   │   ├── OptimisticIdGenerator.ts     # Generate optimistic IDs (opt_*)
-│   │   ├── IdMappingManager.ts          # Map optimistic → real IDs
-│   │   ├── PendingOperationsManager.ts  # Track pending operations
-│   │   ├── IdUtils.ts                   # ID utilities
-│   │   └── types.ts                     # Optimistic type definitions
-│   │
-│   ├── session/                         # Session management
-│   │   └── client-session-manager.ts    # Client-side session handling
-│   │
-│   └── utils/                           # Utilities
-│       ├── logger.ts                    # Centralized logging (createLogger)
-│       ├── messaging.ts                 # EventBus for cross-context
-│       ├── resilient-operation.ts       # Retry wrapper
-│       ├── persistence-manager.ts       # Data persistence
-│       ├── data-integrity.ts            # Strict data separation utilities
-│       ├── memory-manager.ts            # Memory management
-│       └── api-error-handler.ts         # API error handling utilities
-│
-├── shared/ui/                 # React UI layer
-│   ├── SidePanelApp.tsx                 # Main app component
-│   ├── components/                      # React components
-│   │   ├── ChatWindow.tsx               # Conversation display
-│   │   ├── ResolutionActionsCard.tsx    # Post-terminal status banner (resolution/closure label + Q&A affordance)
-│   │   ├── ConversationsList.tsx        # Case list sidebar
-│   │   ├── AuthScreen.tsx               # Login screen
-│   │   ├── LocalLoginForm.tsx           # Local auth form
-│   │   ├── case-header/                 # Case header components (incl. hypothesis rows in CaseDetails.tsx)
-│   │   │   ├── shared.tsx               # SVG icons, DetailRow, SeverityChip, helpers
-│   │   │   ├── EnhancedCaseHeader.tsx   # Wrapper: HeaderSummary + CaseDetails + modal
-│   │   │   ├── HeaderSummary.tsx        # Collapsed 2-line status bar
-│   │   │   ├── CaseDetails.tsx          # Unified expandable rows (all phases)
-│   │   │   ├── EvidenceDetailsModal.tsx # Evidence detail modal
-│   │   │   └── StatusChangeRequestModal.tsx # Status change confirmation
-│   │   └── ...                          # Many more components
-│   ├── hooks/                           # Custom hooks
-│   │   ├── useAuth.ts                   # Authentication hook
-│   │   ├── useSessionManagement.ts      # Session hook
-│   │   ├── useCaseManagement.ts         # Case management hook
-│   │   ├── useMessageSubmission.ts      # Message submission hook
-│   │   └── usePendingOperations.ts      # Pending operations hook
-│   └── layouts/                         # Layout components
-│       ├── CollapsibleNavigation.tsx    # Navigation layout
-│       └── ContentArea.tsx              # Content area layout
-│
-├── types/                     # Shared TypeScript types
-│   ├── api.generated.ts                 # Auto-generated API types
-│   └── case.ts                          # Case type definitions
-│
-└── test/                      # Test files (mirror src structure)
-    ├── setup.ts                         # Test environment setup
-    ├── api/                             # API tests
-    ├── components/                      # Component tests
-    ├── hooks/                           # Hook tests
-    ├── integration/                     # Integration tests
-    ├── lib/auth/                        # Auth tests
-    ├── session/                         # Session tests
-    └── utils/                           # Utility tests
-```
-
-### Path Aliases
-Configured in `tsconfig.json` and `wxt.config.ts`:
-- `~` → `src/`
-- `~lib` → `src/lib/`
-
-Example: `import { createLogger } from '~/lib/utils/logger'`
-
-### Key Patterns
-
-1. **State Management**: Global state lives in a **Zustand** store (`lib/state/store.ts`, slices: `app`/`auth`/`session`/`cases`/`pending-ops`); `SidePanelApp.tsx` reads it via `useAppStore` selectors (no local `useState`). The `shared/ui/hooks/*` family (`useCaseManagement`, `useSessionManagement`, `useMessageSubmission`, `useDataUpload`, `usePendingOperations`) wraps the store + lifecycle. Server state via TanStack Query
-2. **Optimistic UI**: Immediate feedback with background reconciliation and rollback
-3. **Data Integrity**: Strict separation between optimistic (`opt_*`) and real IDs
-4. **Event Bus**: Typed `EventBus` for Background ↔ Sidepanel ↔ Content script communication
-5. **Resilience**: `resilientOperation` pattern for retries and offline handling
-6. **Logging**: Centralized `createLogger` utility (replaces console.log)
-7. **Error Handling**: `UserFacingError` hierarchy with recovery strategies
-
-### Authentication Modes
-
-The extension supports two authentication modes, determined by backend configuration:
-
-**1. Local Auth (`AUTH_MODE=local`)**
-- Direct username/password authentication
-- Used for self-hosted deployments
-- Implemented in `src/lib/auth/local-auth-client.ts`
-- Endpoints: `POST /api/v1/auth/login`, `POST /api/v1/auth/register`
-
-**2. OAuth (`AUTH_MODE=oauth`)**
-- PKCE-based OAuth flow via Dashboard
-- Used for cloud deployments
-- Implemented in `src/lib/auth/dashboard-oauth.ts`
-- Flow: the extension calls `identity.launchWebAuthFlow`, which opens the Dashboard `/auth/authorize` page (PKCE) in a browser-owned auth window; the extension then exchanges the returned code at `POST /api/v1/auth/oauth/token`
-- The redirect URI is browser-derived (`https://<id>.chromiumapp.org/`, or a 40-hex `.extensions.allizom.org` host on Firefox) and is the **only** target `launchWebAuthFlow` settles on — it resolves on a real navigation there and nothing else, which is why the Dashboard's approve path must navigate rather than rewrite the address bar. There is no tab watcher: the browser opens the window and closes it itself on redirect.
-- `state` is still verified against the value this flow minted. `launchWebAuthFlow` proves only that the redirect reached *this* extension, not which request produced it.
-
-Auth mode is auto-detected via `GET /api/v1/auth/config`.
-
-**Token refresh is mode-aware.** `TokenManager.performRefreshOnce` picks the refresh endpoint by auth mode (from the cached `getAuthConfig()`):
-
-- **Local mode** (standalone / dashboard-bridge sessions): `POST /api/v1/auth/refresh` with `{ refresh_token }` → `{ access_token, token_type, expires_in, refresh_token }` (rotated; **no** `refresh_expires_in`). The OAuth `/oauth/token` endpoint is **not mounted** in local mode, so refreshing there 404s and forces a re-login — don't hardcode it.
-- **OAuth/cloud mode**: `POST /api/v1/auth/oauth/token` (RFC 6749 refresh grant) → includes `refresh_expires_in`.
-
-`refresh_expires_in` is OAuth-only, so it is **not** part of the well-formed-payload check; when absent, `refresh_expires_at` is cleared (an undefined refresh window means "refresh until the backend definitively rejects").
-
-**Dashboard-bridge sessions** (`handleStoreAuth`) persist the TokenManager keys — including `refresh_token` — from the dashboard's `fm_auth_state` payload, not just the composite `authState`; otherwise a bridge session has no refresh material and silently logs out at access-token expiry.
-
-**Auth teardown — who DECIDES, who REPORTS, who ENDS:**
-
-**One verdict.** `TokenManager.assess()` is the only code that produces a VERDICT on the credential — applies the usable-token margin, rules on a missing expiry, weighs refreshability. It returns `absent` / `usable` / `refreshable` / `dead` and writes nothing. Both readers consume it — `getValidAccessToken` acts on it, `isAuthenticated` reduces it to a boolean — so there is no second opinion to have. They used to derive liveness separately and disagreed: for `{access_token, no expires_at, no refresh_token}` one answered "present it and let the backend rule" and the other "not valid", and `getAuthState()` escalated that into destroying a working credential. The policy that settles it lives in `assess()`, and the ORDER inside it matters: refreshability is decided before an unmeasurable expiry is ruled on.
-
-- **Unmeasurable expiry + a refresh token → `refreshable`.** The refresh writes a real `expires_at`, so the state heals permanently. Calling it `usable` instead means no refresh is ever attempted: the stale token is presented until the backend 401s, and a 401 carrying a bearer is the *hard* teardown — destroying a valid refresh token that would have renewed the session.
-- **Unmeasurable expiry, nothing to refresh with → `usable`.** We cannot rule on it, the backend can, and a 401 converges; calling it dead destroys a session that may be fine.
-- **A closed refresh window is not death.** It is a reason not to spend the access token's remaining life on a proactive refresh — but once that life is spent, a refresh token we still HOLD is presented anyway and the backend rules. Deciding locally was a hole: a window that lapses while the backend is merely *down* answered `dead` on every later read, so a session the outage handling had just preserved was torn down by the very next credential read — including the one inside that request's own recovery path. **`dead` means only: nothing to present, and nothing to present it with.**
-
-**TokenManager reports; it never ends a session.** `getValidAccessToken()` answers a token, or `null` meaning *nothing usable right now* (transient — header-less request, its 401 routes to the recoverable path, a later call retries; #99), or throws **`SessionEndedError`**, which extends the package's `AuthenticationError`. That inheritance is the contract: `getAuthHeaders` swallows every other throw into a header-less request and **propagates this one**, so a dead session never becomes a doomed `POST /sessions` and a "session expired, retrying" — the request is not sent and the caller gets an error whose recovery is a sign-in prompt. A host that throws anything else keeps the old behaviour, so the distinction is opt-in and the Dashboard host is unaffected. Collapsing those last two into `null` is what once forced the teardown inside `TokenManager`, where it ran inside the refresh lock and inside the refresh *verdict* — so a failing teardown re-classified a revocation as retryable and preserved the dead chain.
-
-**`readSessionAccessToken()` (`host/session-credential.ts`) is the one place that acts**, catching `SessionEndedError` and calling `clearAllAuthData()`. It is a module, not inline in `ExtensionApp`, because two test harnesses model this contract and inline copies of it drifted — one still carried an `authManager` fallback the real host never had, and both missed the act-site, so the seam the design turns on was verified against a host that did not exist. All three import the same function. It is the one place that ACTS. `getValidAccessToken` has two callers — this, and `logoutAuth`, which asks it directly and deliberately **swallows** the verdict so its own POST can never tear the session down. There is no background-worker path to cover: `background.ts` uses direct `fetchWithTimeout`.
-
-**`logoutAuth` does not use `authenticatedFetch`.** It asks `getValidAccessToken()` directly, **swallows the verdict**, falls back to `peekAccessToken()`, and POSTs by hand. Through `getAuthHeaders`, a near-expired access token triggers a proactive refresh whose verdict the act-site acts on — tearing the session down *mid-logout*, before the broadcast, and destroying the refresh token the revoke still needs. Capturing that token up front, re-reading it afterwards and preferring one copy over the other were all workarounds for a call path that simply should not have been there. A possibly-expired bearer is fine: server-side logout is best-effort and the local teardown runs regardless.
-
-Both halves of that matter: a healthy near-expiry session refreshes, so the POST is authenticated and the account-wide revocation actually gets written (reading the stored token alone meant that after a laptop sleep the POST 401'd and the user was told their other sessions could not be confirmed ended); and a dead chain tears nothing down, because the verdict never reaches the act-site.
-
-Order in the `finally`: read the refresh token → `clearAllAuthData()` → **broadcast** → revoke, and the revoke is **not awaited**. `ExtensionApp.signOut` awaits `logoutAuth`, so awaiting a ~20s best-effort network call there stalls the panel that asked for the sign-out — the very thing ordering it last was meant to prevent. The revoke resolves an auth config and then waits on the network (~20s worst case) and nothing about it is needed for the sign-out to be observable, so it goes last — and the teardown must never sit behind it, or a panel closed mid-revoke leaves a "signed out" user holding live tokens at rest.
-
-**`clearAllAuthData()` single-flights and NEVER REJECTS**, and both are contracts. Four sites tear a session down — the act-site, `onUnauthorized`, `logoutAuth`, `reconcileSession` — and the first two fire once per failing request, so a revoked credential otherwise means three teardowns and three sign-out notifications; inside `TokenManager` the refresh lock serialized that for free. And every caller does something load-bearing immediately afterwards: `logoutAuth` and `LocalAuthClient.signOut` broadcast `auth_state_changed`, and `onUnauthorized` must return an `AuthOutcome` because `client.ts` awaits it unguarded and turns anything else into an `UnknownError`, so the sign-in prompt never appears. A throwing teardown suppressed exactly the notification that makes a sign-out observable — this area's original bug pointed the other way.
-
-**A transient outage never ends a session.** The refresh ladder can burn ~48s, enough to carry a short refresh window past its end; a `dead` verdict reached only because the clock moved while the backend was down returns `null` (tokens preserved, a later call retries) rather than throwing. The backend saying we are revoked arrives as `SessionEndedError` from the attempt itself.
-
-⚠️ **The success-path compare-and-swap is narrowed, not closed.** It is check-then-act and the sign-in side holds no lock — `handleStoreAuth`, the OAuth exchange and `LocalAuthClient.storeTokens` all write storage directly. The rotation is therefore a single `set()`, so a sign-in cannot interleave *between* the credential keys and `authState` and leave B's tokens paired with A's identity.
-
-**Reads never destroy.** `getAuthState()` / `isAuthenticated()` / `getCurrentUser()` answer a question and nothing else — `extension-reload.ts` asks one to detect a reload and the options page asks another to render a name. Repair is `authManager.reconcileSession()`: explicit, run once at panel startup. It clears a row with no live credential behind it (what a pre-fix build left, and an upgrading user carries across) and a row with no `user` (copilot#185 — every reader refuses it, so the panel shows the sign-in screen while the credential sits at rest forever).
-
-⚠️ It asks `tokenManager.isAuthenticated()` **directly**, not through `getAuthState()`, which folds "the read threw" into the same `null` as "no live session". Reconciling on that conflation turns a transient storage error into an irreversible sign-out of a live session — the one thing a repair must never do. It RETURNS the state it validated, and `userFromAuthState()` maps it — startup asks once instead of re-reading the same storage three times.
-
-- `authManager.clearAllAuthData()` — **the teardown**. `authState` + case cache + every credential key. Runs both halves even if the first throws. Used by `logoutAuth()`, `ExtensionApp`'s `onUnauthorized` (which is what `client.ts handleAuthError()` delegates a hard 401 to), options `handleSignOut()`, `LocalAuthClient.signOut()`, `reconcileSession()`, and the act-site.
-- `authManager.clearAuthState()` — the **identity half**, one legitimate caller: `clearAllAuthData()`. On its own it leaves a live Bearer that TokenManager re-mints from. Treat as private.
-- `tokenManager.clearTokens()` — credential keys only, and **not** a teardown. Clearing them without `authState` ends a session *unobservably*: `subscribeExtensionAuthState` watches `authState` alone.
-
-Both key lists and the timestamp predicate live in `auth/storage-keys.ts` (`AUTH_STATE_KEY`, `CREDENTIAL_KEYS`, `isUsableTimestamp`). All three credential writers use it, and all three OMIT an unusable expiry rather than storing a sentinel — one encoding of "unknown" (an absent key), with `AuthState.expires_at` optional to match. A key a response cannot supply is REMOVED, never left to be inherited from the previous session: `storage.set` drops an undefined value instead of clearing. A key added to the writers and forgotten in the teardown stays at rest after a "full" logout — the same partial teardown, invisible to every test.
-
-**What `clearAllAuthData()` does NOT cover.** Persisted conversations, titles, pinned cases and the resumable client id are purged by `auth-slice.signOutLocally()`, which needs a **mounted panel** to observe the `authState` change. It is the credential-and-identity half, not a complete local purge.
-
-
-**Compare-and-swap on `refresh_token` before acting on any refresh verdict**, on the rejection path *and* the success path. A sign-in landing mid-refresh rotates the chain; the success path is worse, because every field it writes (`session_id`, `user`, `authState.user`) comes from the pre-flight snapshot and would stamp the previous identity over storage the new sign-in just re-seeded.
-
-> Note: `logoutAuth()` POSTs `/api/v1/auth/logout`, which revokes the **access** token server-side. The **refresh** token is revoked separately, in OAuth (cloud) mode only, by a best-effort `POST /api/v1/auth/oauth/revoke` (`token_type_hint: refresh_token`, RFC 7009). Wrapped so any failure never blocks logout, and skipped in local mode (where `/oauth/revoke` isn't mounted). The in-browser copy is destroyed by `clearAllAuthData()` regardless.
->
-> That revoke is **handed to the background worker**, not made by the caller (`revoke-refresh-token.ts`). `logoutAuth` runs in the side panel and deliberately does not await it — awaiting stalled the panel that asked for the sign-out for as long as the network took. But an un-awaited fetch belongs to the document that started it, so a user who signs out and closes the panel would take the call with them. The worker outlives the panel and has nobody waiting on it. `runtime.sendMessage` reaches extension pages and the worker, never a content script, so the token does not enter any page's world, and the worker's `sender.id` gate is what makes carrying it in a payload safe. The hand-off **falls back to calling in-context** when no worker takes the message (evicted, a test environment, or `logoutAuth` called from the worker itself, where Chrome does not deliver a message to the sender's own listener) — without that fallback the hand-off would be a new way to lose the revoke rather than a way to keep it.
-
-### Deployment Modes
-
-**Cloud Deployment** (default):
-- Dashboard: `https://app.faultmaven.ai`
-- API: `https://api.faultmaven.ai` (derived from dashboard URL)
-- OAuth authentication
-
-**Self-Hosted Deployment**:
-- Dashboard: `http://localhost:3333` (or configured URL)
-- API: Derived by replacing port 3333 → 8090
-- Local authentication support
-
-URL configuration is done via the Settings page and stored in `browser.storage.local`.
-
-### Testing Infrastructure
-
-- **Vitest**: Fast testing with jsdom environment
-- **React Testing Library**: Component testing
-- **Coverage**: Vitest suite across API, hooks, components, and integration (run `npm run test`)
-- **Mocks**: Browser API and Fetch mocked in `src/test/setup.ts`
-
-## Development Guidelines
-
-### Code Patterns
-
-**Logging** - ALWAYS use the logger instead of console.log:
-```typescript
-import { createLogger } from '~/lib/utils/logger';
-const log = createLogger('ComponentName');
-
-log.debug('Debug message', data);   // Dev only
-log.info('Info message', data);     // Dev only
-log.warn('Warning', data);          // Always logged
-log.error('Error', error);          // Always logged
-```
-
-**Structured Logging Best Practices** (gold standard from ConversationsList):
-```typescript
-// ✅ GOOD: Use structured data objects
-log.debug('Fetched cases', { count: list.length, hasOptimistic: pending.length > 0 });
-
-// ❌ BAD: JSON.stringify (computationally expensive)
-log.debug('Fetched cases', JSON.stringify(list));
-
-// ✅ GOOD: Single consolidated log
-log.info('Case renamed', { caseId, newTitle });
-
-// ❌ BAD: Multiple logs for same operation
-log.info('Renaming case...');
-log.info(`Case ID: ${caseId}`);
-log.info(`New title: ${newTitle}`);
-```
-
-**State Access** - Use the custom hooks for state and lifecycle:
-```typescript
-const { isAuthenticated, user, login, logout } = useAuth();
-const { sessionId, refreshSession } = useSessionManagement(shouldInit);
-const { currentCaseId, setActiveCase } = useCaseManagement(sessionId);
-```
-
-**Async** - Prefer `async/await` over `.then()`.
-
-**Pre-commit Hooks** - Husky enforces `npm run compile` and `npm run test` before commits.
-
-### API Integration
-
-**Authenticated Fetch:**
-```typescript
-import { authenticatedFetch, authenticatedFetchWithRetry } from '~/lib/api/client';
-
-// Basic authenticated request
-const response = await authenticatedFetch('/api/endpoint');
-
-// With automatic session refresh on 401
-const response = await authenticatedFetchWithRetry('/api/endpoint');
-```
-
-On a `401 SESSION_EXPIRED`, `authenticatedFetchWithRetry` calls `refreshSession()` (in `session-core.ts`). That refresh is **single-flighted** — N parallel failing requests trigger **one** `/sessions` POST, not a herd — via the Web Locks API (cross-context, matching `TokenManager`) with an in-context promise fallback, and it **persists the new `session_id`** to `browser.storage.local` so the retried request (and everything after) attaches `X-Session-Id`. Do not go back to calling `createSession()` directly on this path: it returns a session but does not persist it, so the retry would go out session-less.
-
-**Services** - Define API services in `src/lib/api/services/`.
-
-### Error Handling
-
-Use the `UserFacingError` class hierarchy for consistent error handling:
-
-| Error Class | Category | Recovery Strategy |
-|-------------|----------|-------------------|
-| `SessionExpiredError` | authentication | auto_retry_with_delay |
-| `AuthenticationError` | authentication | show_modal |
-| `PermissionError` | authorization | graceful_degradation |
-| `NetworkError` | network | retry_with_backoff |
-| `TimeoutError` | timeout | manual_retry |
-| `ServerError` | server | manual_retry |
-| `ValidationError` | validation | user_fix_required |
-| `RateLimitError` | rate_limit | auto_retry_with_delay **or** manual_retry (see below) |
-| `QuotaExhaustedError` | billing | graceful_degradation |
-| `CaseVersionConflictError` | validation | manual_retry |
-| `OptimisticUpdateError` | optimistic_rollback | rollback_and_retry |
-| `UnknownError` | unknown | manual_retry |
-
-`RateLimitError` is the one entry whose recovery is **derived, not fixed**. The
-protection middleware's `Retry-After` is measured and uncapped — it is the
-instant the oldest entry ages out of the window that refused, so a per-minute
-bucket asks for seconds and an hourly one for up to 3600s. Within
-`MAX_AUTO_RETRY_WAIT_MS` (120s, exported from `errors/types.ts`) the error is
-`auto_retry_with_delay` and `resilientOperation` waits the window out in full.
-Past it the error is `manual_retry`: the quota provably has not freed, so an
-automatic attempt is refused by construction and only spends the operation's
-bounded attempts.
-
-**120s is derived, not chosen.** With `maxAttempts: 3` the previous code got two
-waits of at most 60s each, so a window freeing within 120s was the most it could
-ever recover. The bound sits exactly there, which is what makes the split
-non-regressive: every recovery that used to happen automatically still does.
-Lowering it would hand the user a retry the client used to perform itself.
-
-Never clamp the wait and retry anyway — that was the original defect (fm#985
-item 9). A shortened window does not make quota free sooner; it only guarantees
-the retry lands inside it. `userAction` and `getDisplayOptions()` follow the
-same split: the long-wait copy states the wait instead of promising a retry, and
-its toast is dismissible and persistent rather than pinned undismissible for the
-length of the window. `duration` there is a real auto-dismiss timer, so it must
-never be handed a window length.
-
-`QuotaExhaustedError` is raised for **HTTP 402 / `x-error-code: QUOTA_EXHAUSTED`** — the AI provider is out of quota/credits. Recovery is `graceful_degradation` (no auto-retry, no retry button); the chat surfaces an operator-actionable "add credits / update billing" message and preserves the user's input so they can resend once billing is fixed.
-
-Each error provides:
-- `userTitle`, `userMessage`, `userAction` - User-facing strings
-- `category` - For classification
-- `recovery` - Strategy for handling
-- `getDisplayOptions()` - Toast/modal/inline configuration
-
-#### Reading an error body: always `errorBodyText`
-
-The backend answers errors in **two shapes**, and which one you get depends on
-what refused the request:
-
-| Shape | Sent by | Statuses |
-|-------|---------|----------|
-| `{ detail: "…" }` | Every FastAPI handler — `HTTPException`, the validation handlers, the idempotency middleware | any |
-| `{ error, message, retry_after }` | `ProtectionErrorResponse`, from the protection middleware. **No `detail` field at all** | 429 rate limit, 409/503 deduplication |
-
-```typescript
-import { errorBodyText } from '~/lib/errors/error-body';
-
-const errorData = await response.json().catch(() => ({}));
-throw new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`);
-```
-
-**Never write `errorData.detail || '<fallback>'`.** It reads as complete and
-silently discards everything the server said on precisely the responses where
-the server said the most — a rate-limited request reported a fabricated generic
-string instead of its actual limit and window (fm#994). Thirteen call sites had
-independently written that chain. `src/test/lib/errors/error-body.test.ts` fails
-if a new one appears.
-
-`errorBodyText` returns **a string or nothing**, never an array: a 422 puts its
-per-field validation errors in `detail`, and using that as a message rendered
-`"[object Object]"`. Field errors are read from the body by
-`ErrorClassifier.extractFieldErrors`, which is the code that knows their shape.
-
-**Carry `status` and `retryAfter` too** when you throw from a raw `fetch`.
-`ErrorClassifier` needs them to produce a `RateLimitError` — without them a 429
-becomes an `UnknownError`, so the wait is lost entirely — neither stated to the
-user nor honoured by `resilientOperation`, and the recovery split above cannot
-happen at all. See `client-session-manager.ts` for the shape.
-
-Note what the recovered text is *for*. On a 429 the chat reply and toast render
-`RateLimitError.userMessage` ("You're sending requests too quickly.") and its
-`userAction` — deliberately, because `per_session_read (121/120)` is diagnostic,
-not something to put in front of a user mid-conversation. The server's text
-surfaces in the failed-operations banner, in `error.message`, and in logs.
-
-`userAction` is a **static string rendered once**, not a live countdown: it
-states the wait ("You can try again in about 60 minutes.") or the pending retry
-("We'll try again in 5 seconds..."). Nothing ticks it down.
-
-### Data Integrity for Optimistic Updates
-
-The `src/lib/utils/data-integrity.ts` module enforces strict separation between optimistic and real data:
-
-**ID Format Rules:**
-- Optimistic IDs: Always start with `opt_` (e.g., `opt_case_abc123`)
-- Real IDs: Never start with `opt_` (UUIDs from backend)
-
-**Key Functions:**
-```typescript
-import {
-  isOptimisticId,        // Check if ID is optimistic
-  isRealId,              // Check if ID is real
-  sanitizeBackendCases,  // Extract only real cases from mixed backend data
-  validateStateIntegrity // Validate conversations/titles have no opt_ leakage
-} from '~/lib/utils/data-integrity';
-
-// Backend case lists carry only real ids; sanitize defensively.
-const realCases = sanitizeBackendCases(backendCases, 'ComponentName');
-```
-
-> The case list is real-only: a transient `opt_case_*` exists solely while a
-> lazy case-create is in flight (`handleQuerySubmit`), where it is set as the
-> active-case id and reconciled to the real id via `idMappingManager`. It is
-> never surfaced as a separate "pending case" in the sidebar. If a create fails,
-> the optimistic active-case id is rolled back; both submit paths also guard
-> against a stale `opt_case_*` before POSTing a turn (resolve via the mapping, or
-> create a fresh real case) so a turn never targets an unreconciled id.
-
-### Optimistic Updates Pattern
-
-Three-step process for immediate UI feedback:
-
-1. **Immediate UI update** - Show optimistic data instantly
-2. **Track pending operation** - Store retry/rollback functions
-3. **Background sync** - Send to backend, reconcile on response
-
-```typescript
-// 1. Generate optimistic ID and update UI
-const optimisticId = OptimisticIdGenerator.generateCaseId();
-set(state => ({
-  conversations: {
-    ...state.conversations,
-    [caseId]: [...existing, { id: optimisticId, optimistic: true, ... }]
-  }
-}));
-
-// 2. Create pending operation with retry/rollback
-const operation: PendingOperation = {
-  id: operationId,
-  type: 'submit_query',
-  status: 'pending',
-  retryFn: async () => { /* retry logic */ },
-  rollbackFn: () => { /* undo optimistic update */ }
-};
-
-// 3. Send to backend and reconcile
-try {
-  const realId = await submitToBackend();
-  IdMappingManager.set(optimisticId, realId);
-} catch (error) {
-  operation.rollbackFn();
-}
-```
-
-### Transcript Message Kinds (user / assistant / **notice**)
-
-`GET /cases/{id}/messages` serves three roles — the backend CHECK constraint is
-`role IN ('user', 'assistant', 'system')` — and the delta mapper in
-`cases-slice.handleCaseSelect` maps every row to **exactly one** populated
-content slot on `OptimisticConversationItem`, chosen by `messageKind`
-(`lib/state/message-kind.ts`):
-
-| Kind | Slot | Rendered as |
-|------|------|-------------|
-| `user` | `question` | right-aligned bubble |
-| `assistant` | `response` | left-aligned FaultMaven card |
-| `notice` | `notice` | full-width quiet row labelled **System** |
-
-**`notice` is the default arm, not an equality test on `'system'`.** A role the
-backend adds later must not inherit the bug this replaced, and must never be
-presented as something a participant said. `messageKind` therefore takes a
-`string` rather than the generated `role` union — the union is what the contract
-*declares*, and the default arm is about what it does not.
-
-`system` is the channel the backend reports background work on
-(`milestone_engine._run_runbook_conversion`). These rows used to be filtered out
-of the store entirely, which made a **failed** runbook conversion completely
-silent: no draft appeared, nothing said one had failed, and the way out named in
-the notice ("write one yourself in the Dashboard under **Knowledge Base**") was
-unreadable (#209). faultmaven#1135 dropped the initiating turn's promise of an
-in-chat notification because this client could not honour it.
-
-⚠️ These notice strings live in faultmaven and have already been reworded once
-(#1135). Do not quote them anywhere a stale copy would mislead — cite
-`_run_runbook_conversion` and check `origin/main` before repeating any wording.
-
-Two invariants to keep when touching the mapper:
-
-1. **No committed row may be one that renders nothing.** Two guards hold this:
-   `notice` gives every *role* a slot (so nothing is dropped for its role), and a
-   **blank-content filter** skips rows whose content is empty or whitespace-only.
-   Kind decides which slot is populated and cannot make an empty string render,
-   and every content guard in `ChatWindow` is a truthiness test — so a blank row
-   would sit in the conversation as an item the user can never see.
-   `QueryRequest.query` is `min_length=1` on the backend, which admits a
-   whitespace-only message, so this is reachable.
-
-   ⚠️ **The blank filter has a known, accepted cost.** `offset` is a count of
-   local rows used as an **index into the backend list**, so it is only exact
-   while the local copy is a lossless prefix. Skipping a row leaves that case's
-   offset permanently one short: later opens re-read the tail, and the id dedup
-   cannot absorb it (see the id hole below), so a re-read locally-submitted turn
-   can append as a **duplicate**. Bounded to one case, only when it holds a blank
-   row, and cleared by the next `CONVERSATION_CACHE_VERSION` bump. Do not paper
-   over it with a compensating skipped-row counter — that double-counts on the
-   capped-conversation over-read and skips a *real* message, the worse direction.
-   Since #213 the skew is largely defanged: a re-read locally-submitted turn is
-   reconciled to its backend id rather than duplicated. The offset stays
-   inexact — the tail is re-read on each open — but it no longer corrupts the
-   conversation.
-2. **A notice carries `turn_number` but never displays it.** The merge's
-   turn-floor guard needs the number to place the row; the *claim* of turn
-   membership is suppressed in `ChatWindow` because the value is only whichever
-   turn was open when the background job finished. `formatTimestampWithTurn` is
-   called without the turn for exactly this reason.
-3. **Two turn counters, and they are not interchangeable** (#251, API contract
-   3.5.0). `turn_number` / `current_turn` is the MESSAGE clock and advances on
-   asides too — small talk, trivia, a question about FaultMaven itself.
-   `investigation_turn` is how far the investigation has got, and an aside
-   leaves it alone; it is what "Turn N" must print, via `displayedTurn`
-   (`lib/state/turn-label.ts`), which falls back to the clock for a server
-   older than 3.5.0. ⚠️ **The clock is what ADDRESSES a turn.** `data-turn` and
-   `scrollToTurn` stay on it because they are fed `uploaded_at_turn` from
-   `EvidenceDetailsModal` and `CaseDetails`; re-basing the anchor to match the
-   label breaks jump-to-turn with no error. The same split applies to the case
-   header's `T{n}` and the resolution card's "N turns". Those two evidence
-   surfaces NAME a turn they do not render, so they take a `turnLabel`
-   resolver (threaded `ChatWindow` → `EnhancedCaseHeader` → `CaseDetails` →
-   `EvidenceDetailsModal`, backed by `investigationTurnFor`) — **superseded by contract 3.7.0**, which puts `investigation_turn` on the evidence and file rows themselves (faultmaven#1391): the resolver returns nothing once the conversation is trimmed past the row, where the served field always answers. The threading stays until the surfaces read the field to print the
-   number the conversation prints — while still handing `onScrollToTurn` the
-   raw `uploaded_at_turn`. Label and anchor differ on purpose. That resolver
-   returns `undefined` when the conversation does not hold the row, and those
-   surfaces then print NO turn: falling back to the clock would show the other
-   counter without saying so, and renumber in place once the delta fetch lands.
-   ⚠️ Adopting `TurnResponse.investigation_turn` onto a submitted row is gated
-   on `serverSuppliesInvestigationTurn` — that field exists from contract
-   2.7.0 and the per-row one only from 3.5.0, so against a server in between,
-   taking both would number one conversation two ways.
-
-**Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
-persisted `conversations` map, and `useDataRecovery` discards a cache carrying a
-different version. This exists because of the offset rule above: a cache written
-by a build that admitted a **different set of backend rows** is short by the ones
-it dropped, so its offset points *past* them and they are unreachable for the
-life of that cache. Pre-v2 builds filtered out every `role: "system"` row — so
-without this gate the #209 fix would reach new notices only, and miss the already
-stuck case the user is actually waiting on. Discarding is lossless (committed
-messages all live on the backend; titles, pins and id-mappings are untouched) and
-re-reads each case at offset 0 in backend order. **Bump the version whenever a
-change alters which backend rows reach the store.**
-
-**Delivery — a notice is seen only when the case is re-opened.**
-`getCaseConversation` has exactly one call site: `cases-slice.handleCaseSelect`.
-So a user who starts a background job and then *stays in that case* will not see
-its outcome no matter how many further turns they submit — they must navigate to
-another case and back. State it that way; "visible on case open" reads as
-"next time you look" and understates it.
-
-Two options exist, with different causes — do not conflate them:
-
-- **Live push** is still blocked. It needs a structured "background job started"
-  marker on the turn response. There is no SSE/WebSocket, `submitTurn`'s polling
-  is scoped to one in-flight turn, and every arm of the backend's runbook handler
-  returns the same `metadata` dict, so nothing client-side can key a poll off
-  anything but response text.
-- **Re-running the delta merge after each turn** — the cheap option, needing no
-  backend change — **is no longer blocked**. It was, but not by that marker: by
-  the id hole. A refresh whose fetch returned anything re-read the
-  locally-submitted turn under its backend id, which could not dedup and appended
-  a **duplicate** — failing precisely when it would have helped. Since #213 that
-  re-read reconciles instead, so such a refresh is a no-op when local and backend
-  counts agree and surfaces the notice when they do not. Nothing implements it
-  yet; it is now a cost/benefit call about one extra request per turn, not an
-  impossibility. **Until it is built, the limitation in the heading stands.**
-
-The hole is closed at merge time by `lib/state/reconcile-message-ids.ts`
-(#213): an incoming backend row that matches a local **committed** row still
-carrying an `opt_` id, on **turn number AND slot**, adopts that row's identity
-instead of being appended as a second copy. It is self-healing — after the first
-delta fetch following a turn the row carries a backend id and dedups by id
-forever after — and it refuses an ambiguous `(turn, slot)` rather than guessing.
-
-⚠️ **Slot matching is the load-bearing part.** A notice shares a turn number with
-the exchange it landed during but never its slot, so matching on turn alone would
-let a locally-submitted turn swallow the notice — quietly undoing #209. Tests pin
-this in both the unit and slice layers.
-
-`useMessageSubmission` also takes the backend `turn_number` for the **user** row
-on turn success, not just the agent row. The old value was a prediction
-(`highestTurn + 1`), and the reconciliation matches on turn, so a wrong
-prediction would silently miss and restore the duplicate.
-
-The Dashboard classifies the same rows the same way, in
-`lib/cases/messageAttribution.ts` (on `main` since faultmaven-dashboard#105) —
-kept as a parallel copy, not shared code. Change one, look at the other.
-
-### Persistence Contract (what reaches `browser.storage.local`)
-
-The Zustand store persists via a debounced subscribe in `lib/state/store.ts`. Two rules keep a reload from corrupting state:
-
-1. **Committed conversation data only.** Conversations are run through `memoryManager.sanitizeAndCapForPersistence()` before writing: transient items (`optimistic` / `loading` / `failed` / `error` — see `isCommittedMessage`) are dropped, and empty conversations are removed. A reload therefore never rehydrates a stuck "thinking" spinner or an optimistic turn that would duplicate once the real turn is delta-fetched. In-flight/failed turns are reconciled from the backend on case open, not from storage.
-2. **`pendingOperations` is never persisted.** Its `retryFn`/`rollbackFn` are closures that can't survive JSON serialization, so a restored pending op could never function. `pendingOpsManager` is the single in-session source of truth.
-
-Growth is bounded by dropping transient items, capping the **number** of conversations, and capping the message count *within* each conversation to its most-recent turns. The in-conversation cap is safe because `cases-slice.handleCaseSelect` no longer assumes the local copy is the backend **prefix**: it treats the committed-message count as a lower-bound fetch hint (so a suffix over-reads harmlessly) and merges the delta with a **turn-floor + message_id** guard, dropping any re-read head instead of re-appending it as duplicates. `memoryManager.capConversationToRecentTurns` snaps the cut forward to a turn boundary so the retained floor turn is whole and falls out of the merge via id dedup.
-
-### API Request Serialization (prepareBody)
-
-All API service functions use `prepareBody()` for JSON serialization. This utility converts `undefined` → `null` to ensure consistent backend behavior:
-
-```typescript
-import { prepareBody } from '~/lib/api/client';
-
-// prepareBody converts undefined values to null
-prepareBody({ title: undefined, priority: 'medium' });
-// Returns: '{"title":null,"priority":"medium"}'
-
-// This addresses the TypeScript-to-REST semantic mismatch where
-// JSON.stringify silently strips undefined values
-```
-
-**Design rationale:**
-- `undefined` → `null`: Explicitly tells backend "this field is empty"
-- Field not in object: Truly missing (use for partial updates)
-- Use explicit types (`field: string | null`) to force conscious decisions
-
-### Case Title Generation
-
-Backend auto-generates case titles in `Case-MMDD-N` format (e.g., `Case-0127-1`). The `CreateCaseRequest` type enforces explicit intent:
-
-```typescript
-interface CreateCaseRequest {
-  title: string | null;  // Required - must explicitly choose
-  priority?: 'low' | 'medium' | 'high' | 'critical';
-}
-
-// ✅ CORRECT: Explicit null triggers auto-generation
-createCase({ title: null, priority: 'medium' });
-// Sends: {"title":null,"priority":"medium"}
-
-// ✅ CORRECT: Provide explicit title
-createCase({ title: 'My Case', priority: 'medium' });
-// Sends: {"title":"My Case","priority":"medium"}
-```
-
-**Three title scenarios:**
-1. **New case creation**: `title: null` → Backend generates `Case-MMDD-N`
-2. **Manual rename**: `PUT /api/v1/cases/{id}` with explicit title string
-3. **LLM auto-generate**: `POST /api/v1/cases/{id}/title` triggers AI summarization
-
-**Display-title precedence (single source):** which title actually renders is resolved by `selectCaseTitle` (`lib/state/case-title.ts`): **store (`conversationTitles[caseId]`) > backend `UserCase.title` > fallback**. The store is the authoritative client source — `SidePanelApp.onCaseTitleChange` writes it synchronously on rename/generate and rolls it back if the backend PUT fails. Every title read (`ConversationsList` list rows, `handleCaseSelect` active-case header) goes through this one selector, so there is no per-call-site precedence and no divergent local mirror to cause title reversion.
-
-### Case Status Lifecycle
-
-Cases follow a defined status lifecycle with specific transitions:
-
-**Selectable actions** — what a user may pick from the status menu:
-
-| Status | Description | User-selectable actions |
-|--------|-------------|-------------------------|
-| `inquiry` | Q&A mode - exploring the issue | `closed` |
-| `investigating` | Active troubleshooting | `closed` |
-| `resolved` | Issue resolved (terminal) | - |
-| `closed` | Closed without resolution (terminal) | - |
-
-**Only `closed` is ever selectable.** Two legal transitions are deliberately
-absent, both for the same reason: a menu cannot honour an edge whose
-precondition is a fact about the case, and closing is the only disposition the
-STATE MACHINE will take on demand — it is always a legal, honourable end.
-
-‼ That is not the same as "no precondition". The CLIENT still gates the Close
-control on `disposition_eligibility.closed === 'ready'`, so `needs_info`,
-`suggests_alternative` and `not_eligible` all suppress it — which is why the
-menu can be, and on a resolution-grade case is meant to be, empty. The
-distinction is where the condition lives: the state machine accepts a close
-from either phase, the client declines to offer one where the engine would
-immediately redirect it.
-
-``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo pins.
-
-- `inquiry → investigating` is earned by a problem statement the user has
-  confirmed; Gate 1 performs it (#1608).
-- `investigating → resolved` is earned by a confirmed root-cause elimination.
-  The agent offers it through the confirm/decline pair once it sees the case
-  reach that bar, or when the user says so in conversation. **Resolving is
-  something the user SAYS, not something they click** (contract 9.0.0).
-
-‼ `disposition_eligibility.resolved` is still published, and it is NOT an
-affordance — it is FaultMaven's own readiness verdict, useful as a signal that
-saying so will land. `suggests_alternative` on the `closed` side means **do not
-render**: it is set exactly when every close would pivot back to a resolve
-proposal, so a Close control there could only ever produce "shall I mark this
-resolved?". On a resolution-grade case the status menu is correctly EMPTY.
-
-```typescript
-import {
-  normalizeStatus,
-  getValidTransitions,
-  isTerminalStatus,
-  getStatusChangeMessage
-} from '~/lib/api/services/case-service';
-
-// Get selectable actions for current status
-const transitions = getValidTransitions('inquiry'); // ['closed']
-
-// Get predefined message for a case action
-const msg = getStatusChangeMessage('inquiry', 'closed');
-// "Close this case. I don't need further investigation."
-
-// A transition that is legal but not selectable has no message
-getStatusChangeMessage('inquiry', 'investigating'); // null
-```
-
-### Post-Terminal Actions (ResolutionActionsCard)
-
-When a case reaches terminal state (resolved/closed), `ResolutionActionsCard` is rendered above the chat history. It's a small status banner — not a navigation surface. It shows:
-
-**Resolved cases:**
-
-- "Case Resolved" label, root cause summary (if available), duration / turn stats
-- One-line affordance hint: *"Ask questions or request a runbook from this case."*
-
-**Closed cases:**
-
-- "Case Closed" + closure reason label — the `shortLabel` from `CLOSURE_DISPLAY_INFO` (case-service.ts), keyed on the engine-derived `closure_reason`. Five reasons, mirroring backend `VALID_CLOSURE_REASONS`: Inquiry Only / Fix Deferred / Cause Unreachable / Stabilized / Insufficient Evidence. Every consumer falls back to the `other` entry for a reason this build does not know, so an unrecognized value degrades to a readable row rather than disappearing
-- All closure reasons share the same neutral styling and a simpler "Ask questions about this case." affordance line
-- Duration / turn stats on their own line
-
-**No Dashboard link.** The card deliberately does not link to the Dashboard's Report tab. Closure summaries are rendered inline in the chat reply at the moment of generation (a backend-side design decision: the chat is now the primary surface for the summary; the Dashboard is the persistent view). A chat-side card linking to the Dashboard for a summary the user can already see in chat above would be redundant noise.
-
-**Auto-generated summaries vs runbooks:**
-
-- **Summaries** (Resolution Summary, Closure Summary) are auto-generated synchronously at terminal transition and embedded directly into the closure-turn chat reply.
-- **Runbooks** are user-requested knowledge artifacts generated from RESOLVED cases or eligible CLOSED cases. The agent offers them as DECIDE suggestions in chat on terminal Q&A turns; the user accepts or ignores. The backend uses different readiness criteria and templates based on case type, but to the user it's always a "runbook."
-
-**Key files:**
-
-- `src/shared/ui/components/ResolutionActionsCard.tsx` — Post-terminal card component
-
-### API Response Polling
-
-For async operations returning 202 Accepted:
-```typescript
-const POLL_INITIAL_MS = 1500;    // Initial delay
-const POLL_BACKOFF = 1.5;        // Exponential multiplier
-const POLL_MAX_MS = 10000;       // Max interval cap
-const POLL_MAX_TOTAL_MS = 600000; // 10 min timeout
-```
-
-`POLL_MAX_TOTAL_MS` is a **wall-clock** budget measured with `Date.now()` from the
-first poll — it counts both the time spent inside each poll request and the
-backoff sleeps. (Do not re-introduce the old `elapsed += delay` accounting: it
-counted only sleeps, so a poll stalled up to the client timeout contributed
-nothing and the real ceiling became effectively unbounded.)
-
-`submitTurn(caseId, request, { signal })` accepts an optional `AbortSignal`.
-Passing it lets a caller cancel an in-flight turn — including its async polling —
-so a detached poll loop stops instead of hammering the job endpoint. The
-side-panel hooks (`useMessageSubmission`, `useDataUpload`) abort their in-flight
-turns on unmount; abort surfaces as an `AbortError` (non-retryable) and is
-treated as a **silent cancellation**, not a failed turn.
-
-### Cross-Context Communication
-
-Use EventBus for Background ↔ Sidepanel communication:
-```typescript
-// Emit event
-EventBus.emit({ type: 'auth_state_changed', authState });
-
-// Listen for events
-EventBus.on('auth_state_changed', (event) => {
-  // Handle auth state change
-});
-```
-
-## The side panel yields to a Dashboard that is showing its own (ADR-016 D4, as reversed by ADR-018 D0/D4)
-
-The panel opens **window-wide** (`sidePanel.open({ windowId })` from the toolbar
-icon), so it is up on every tab in that window — including a Dashboard tab that
-renders the copilot itself, where it is a second copy of the same thing.
-`src/extension/side-panel-yield.ts` is the whole rule.
-
-### The claim is LIVE, not a property of the build
-
-Before ADR-018 the yield keyed off `DASHBOARD_PANEL_ATTR` in the Dashboard's
-initial HTML, read at document_end. That could never work, for three reasons
-that are now designed around rather than lived with:
-
-- it cannot express a **per-user preference** — not knowable before React runs;
-- it cannot express a **route** — one SPA document serves `/login` and `/cases`;
-- it was **monotonic**. A page could say "I host a panel" and never "not any
-  more", so turning the Dashboard's built-in panel off on an already-yielded tab
-  left the user with **neither** surface and no way back but leaving the origin.
-
-So the three names in `@faultmaven/copilot-ui/contract` now mean:
-
-| Name | Meaning | Yields? |
-|---|---|---|
-| `DASHBOARD_PANEL_ATTR` | a BUILD CAPABILITY claim — "this deployment could host a panel" | **No** (ADR-018 row 7) |
-| `DASHBOARD_PANEL_MESSAGE` | "a panel is showing on this tab, right now, for this user" | **Yes** |
-| `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` | "…not any more" | releases |
-
-They live in the PACKAGE because both repositories need the same names and the
-same rule about what counts as advertising; `src/extension/auth/presence-marker.ts`
-re-exports them so the extension has one door to the handshake in both
-directions. From `/contract`, never the package entry — the entry brings the
-panel, the store and the transport with it, into a **content script**.
-
-### Three release paths, one yield path
-
-- `yieldSidePanelForAdvertisedTab(tabId, origin)` — the only thing that hides
-  the panel. Origin-gated against `isTrustedDashboardOrigin`, re-derived from
-  what the BROWSER attributed to the sender, never from the message body.
-- `releaseSidePanelForTab(tabId, reason)` — the retraction, and the release a
-  replaced document forces. One function for both, because they had identical
-  bodies and a bug found in one of two identical bodies gets fixed in one of
-  them. **Deliberately not origin-gated**: hiding is the severe failure and is
-  checked hard; showing is the mild one, so the release path must not carry a
-  check that can strand a tab dark. It is safe because `releaseTab` rewrites
-  only options that say `enabled: false`, and `yieldTab` is the **sole writer**
-  of that — anything that ever disables a panel for another reason breaks that
-  reading.
-- `reconcileSidePanelForTab(tabId, url, { documentReplaced })` — runs on every
-  update and at worker startup, and **leaves Dashboard tabs alone unless the
-  document is being replaced**. Without that exception a title change would undo
-  a live yield and a worker restart would un-hide every already-correct tab with
-  no page left to re-assert; with it, a reload drops a yield that belonged to
-  the document going away. `documentReplaced` comes from
-  `changeInfo.status === 'loading'` and nothing else. The browser's own per-tab
-  `enabled: false` is the memory — nothing is kept in the worker, which MV3
-  evicts routinely.
-
-### Every write to one tab is serialized
-
-`onTab(tabId, work)` chains operations per tab, and it is not a nicety. The
-yield and the release are both read-modify-write sequences on the same options,
-the background dispatches them without awaiting, and their awaits differ in
-length — the yield resolves `isTrustedDashboardOrigin`, which for a
-**self-hosted** origin reads `browser.storage.local`, while the release awaits
-only `getOptions`. Unserialized, an advertise immediately followed by a
-withdrawal interleaves so that the release reads the options *before* the yield
-writes, returns without writing, and the yield then hides a tab whose page is
-showing no panel: **neither surface, and the withdrawal already spent.** Ordering
-follows arrival, so the withdrawal queued behind the yield undoes it.
-
-### The costs, both accepted deliberately
-
-- **A flash on load.** Requiring the live message means the extension's panel is
-  briefly visible before a Dashboard that does host one asserts. Mild; a dark
-  tab is severe. Every ambiguous branch in this module fails towards *showing*.
-- **Cross-repo release order.** An extension that predates
-  `DASHBOARD_PANEL_WITHDRAWN_MESSAGE` ignores it and leaves the tab yielded —
-  the dark-tab failure. **This release must reach the field before the Dashboard
-  starts withdrawing** (ADR-018 sequences row 4 strictly before row 5).
-- **The page must re-assert on `pageshow`, not only on mount.** `status:
-  'loading'` is reported for things that create no new document — a bfcache
-  back/forward, an aborted navigation, a link that becomes a download — so the
-  tab is released while no content script is re-injected and no React effect
-  re-runs. A page that asserts only on mount never yields again for the life of
-  that document. The extension cannot fix this from its side: it has no way to
-  ask a page what it is currently showing, and the failure direction is the mild
-  one. Recorded in `contract.ts` where the Dashboard implementer will read it.
-
-Firefox has no `browser.sidePanel` at all; every entry point feature-detects
-rather than checking a build-target list, so the MV2 build registers nothing.
-
-## Extension Manifest
-
-Key permissions (Manifest v3):
-- `storage` - Local data persistence
-- `sidePanel` - Side panel UI
-- `tabs` - **OPTIONAL, not required** (`optional_permissions`), because a required
-  `tabs` is what put "Read your browsing history" on the install dialog: Chrome
-  builds that dialog from the required set, and the rule
-  `{IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, {APIPermissionID::kTab}}` is keyed
-  to this permission alone. Requested at capture time instead, and granting ENDS
-  that call — the user clicks capture again. One `permissions.request` per user
-  gesture (`permissions_api.cc` refuses without a live gesture, and transient
-  activation does not survive a dialog), and no re-reading of the active tab
-  after a prompt the user could have switched tabs behind.
-  (No `activeTab`: it only activates on a toolbar-icon click, which here just
-  opens the side panel — capture runs from a side-panel button and uses
-  per-origin optional host permissions instead.)
-  ‼ What still works WITHOUT it: reading the url of any tab whose origin is in
-  `host_permissions`. Chromium un-scrubs those (`GetScrubTabBehaviorImpl` →
-  `HasExplicitAccessToOrigin`), so Dashboard-tab focusing and the side-panel
-  yield still see Cloud Dashboard tabs. A self-hosted Dashboard origin that has
-  never been granted is the exception: its tabs report no url, so a Dashboard
-  link opens a new tab instead of focusing the existing one.
-- `scripting` - Content script injection
-- `identity` - Sign-in only, via a single `identity.launchWebAuthFlow` call. Never
-  `identity.getProfileUserInfo`: the extension does not read the browser account
-  identity. Store review compares this against the permission justifications in
-  the Chrome Web Store listing (maintained with the submission collateral,
-  outside this repo), so a permission change requires updating the listing too.
-
-Host permissions (see `wxt.config.ts` for the authoritative list):
-- Static `host_permissions`: `https://app.faultmaven.ai/*`, `https://api.faultmaven.ai/*`
-- `optional_host_permissions`: `http://localhost/*`, `http://127.0.0.1/*`, **and `http://*/*`, `https://*/*`** (user-granted at runtime — needed for page capture on arbitrary sites and self-hosted backends on any origin; justified in the store listing)
-- CSP `connect-src 'self' http: https:` — the side panel can connect to any origin (self-hosted backend URLs)
-- `minimum_chrome_version: "116"` — the floor for `sidePanel.open()`, which the toolbar-icon handler calls. Emitted for the **Chrome target only**: the `manifest` block is shared by every target and WXT keeps this key in the Firefox MV2 output, where AMO warns on it
-
-Page capture covers http/https tabs only. `file://` is **not** grantable at
-runtime — Chrome governs it solely through the "Allow access to file URLs"
-switch on the extension's details page, so `permissions.request()` rejects the
-origin ("Only permissions specified in the manifest may be requested"). The
-capture path checks the scheme up front (`usePageContent.ts`) and says what to
-do instead: serve the page over http://, or attach the file to the message.
-That check is an **allowlist** — `blob:`, `data:`, `filesystem:` and
-`chrome-search:` have no origin the browser can grant either, and a denylist
-let them reach the origin builder, where `permissions.contains()` threw a raw
-browser error on a pattern like `blob:///*`. Browser-internal pages, `file://`
-and the extension galleries are named ahead of the allowlist only because each
-earns a more useful message.
-
-## API Types
-
-`packages/copilot-ui/types/api.generated.ts` is **generated** from faultmaven's
-committed `docs/reference/api/openapi.json` — never edit it by hand.
-
-⚠️ It lives in the PACKAGE, not in `src/`. This page said `src/types/...` for
-long enough to outlive the move, and that path does not exist in this
-repository: a repo-wide find returns exactly one `api.generated.ts`, the one
-above. Anyone following these steps literally looks for — or creates — a file
-nothing imports, while the real client goes stale and `api-types-drift` keeps
-diffing the file they did not touch.
-
-```bash
-pnpm generate:api-types
-```
-
-By default it reads the spec from the core commit pinned in
-`api-contract.pin.json`, which is the same file the `api-types-drift` CI job
-reads — so the local command and the gate cannot disagree about which contract is
-in force. It does **not** follow `main`: a backend merge reaches this client only
-when a pull request here moves `ref` (and `contractVersion` to match), and that
-commit is where this repository accepts the change. Point the generator elsewhere
-to build against a contract you have not adopted — `--spec` works identically on
-every platform:
-
-```bash
-pnpm generate:api-types --spec ../faultmaven/docs/reference/api/openapi.json
-```
-
-`FM_OPENAPI_SPEC` does the same and is what CI sets. Note the environment-prefix
-form is POSIX-only — neither `cmd.exe` nor PowerShell accepts it:
-
-```bash
-FM_OPENAPI_SPEC=../faultmaven/docs/reference/api/openapi.json pnpm generate:api-types   # bash/zsh
-```
-```
-set FM_OPENAPI_SPEC=..\faultmaven\docs\reference\api\openapi.json && pnpm generate:api-types   :: cmd.exe
-$env:FM_OPENAPI_SPEC = "..\faultmaven\docs\reference\api\openapi.json"; pnpm generate:api-types   # PowerShell
-```
-
-Prefer `--spec` — it avoids the question entirely.
-
-⚠️ Do **not** generate from a live server (`http://localhost:8090/openapi.json`).
-Generating against whatever build happens to be running is how this repo and the
-other frontend ended up with different names for the same schema (fm#880).
-
-A spec change in faultmaven does **not** turn this repository red: the job
-regenerates from the pinned commit, so merging there reaches nothing here.
-`api-types-drift` goes red when the generated file stops matching the contract
-this repo pins — `ref` moved without a regeneration, or the generated file was
-edited by hand. Adopt a new contract in a PR of its own, pin and regenerated
-types together, rather than folding it into unrelated work.
-
-### Paired PRs: preparing before the spec reaches `main`
-
-The warning above is about *provenance*, not about the branch name. Generating
-from the **committed `openapi.json` on the core faultmaven PR** is correct and is
-the normal way to get ready for a spec change that has not merged yet:
-
-1. The core PR commits its regenerated `openapi.json`.
-2. Here, generate with `--spec` pointed at that PR's committed spec, so the
-   branch compiles and its tests run against the proposed contract.
-3. Merge the core PR. Then adopt: move `ref` in `api-contract.pin.json` to the
-   commit now on `main`, regenerate against it, and commit the two together.
-
-Preparing and adopting are separate acts, and only the second is a contract
-change. A branch that merely prepares leaves the pin alone, so `api-types-drift`
-stays **green** on it — the job regenerates from the pinned commit, and that has
-not moved. Never edit the generated client by hand to make the gate look
-right in either state (again: the file is
-`packages/copilot-ui/types/api.generated.ts`).
-
-To tell a prepared branch apart from a genuine drift failure, regenerate with
-`--spec` pointed at the core PR's committed spec and diff against the branch's
-committed file. An empty diff means the types match the proposed contract; a
-non-empty one means they came from somewhere else — a live server or an unrelated
-build — which is the fm#880 failure mode above.
-
-Worked example: copilot #207 was paired with faultmaven#1119 (which lifted the
-`pydantic` ceiling, moving the schema shape) and was merged core-first. It
-predates `api-contract.pin.json` (#217), when the job did follow `main` and a
-paired PR was expected to sit red until the core change landed.
+- Endpoints are **runtime settings**, not env: `apiBaseUrl` and `dashboardUrl`
+  in `browser.storage.local`, Cloud defaults when unset, configured
+  independently (no derivation of one from the other — a one-time migration
+  seed from the legacy `apiEndpoint` key aside). `src/extension/host/endpoints.ts`;
+  user-facing model in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
+- Build-time knobs are `VITE_*` (`packages/copilot-ui/config.ts`, polling in
+  `lib/api/services/case-service.ts`, heartbeat in `lib/state/slices/session-slice.ts`,
+  `VITE_DEBUG` in the logger). `VITE_DASHBOARD_URL` and `VITE_API_URL` are declared
+  in `src/vite-env.d.ts` but read by no source file.
+- `FM_STORE_KEY=<store item public key> pnpm build` gives an unpacked build the
+  **published extension id** — the only OAuth redirect FaultMaven Cloud admits.
+  Pass it per invocation; never put it in a dotenv file or a workflow
+  (`wxt.config.ts` `storeIdentity`, `src/test/manifest/store-key-optin.test.ts`).
+
+## Hard rules
+
+**Logging.** `createLogger('Name')` from `@faultmaven/copilot-ui/lib/utils/logger`;
+never `console.*`. `debug`/`info` are dev-only, `warn`/`error` always. Log one
+structured object per operation, not `JSON.stringify` and not several lines.
+
+**Cross-context events.** `EventBus` (`src/extension/messaging.ts`) wraps
+`browser.runtime.sendMessage`/`onMessage`. `emit` never reaches the sender's own
+context; `on` returns the unsubscribe. `EventType` in `messaging.ts` is the list.
+
+**Chrome vs Firefox.** Feature-detect, never branch on a build-target list:
+Firefox has no `browser.sidePanel` (`background.ts` registers the side-panel
+yield handlers inside `if (browser.sidePanel)`, so the MV2 build registers none
+of them; the toolbar `action.onClicked` handler sits outside that guard), and
+its OAuth redirect host is derived from the add-on id
+(`<hash>.extensions.allizom.org`) rather than `<id>.chromiumapp.org`
+(`src/extension/auth/dashboard-oauth.ts`). Chromium-only manifest keys (`key`,
+`minimum_chrome_version`) are gated on `CHROMIUM_TARGETS` in `wxt.config.ts`
+because WXT does not strip them from the Firefox output and AMO warns on them.
+Firefox-specific self-hosting limits: [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
+
+**Manifest.** The comments in `wxt.config.ts` are the authoritative rationale;
+`src/test/manifest/` pins them. `tabs` is an *optional* permission requested at
+capture time (a required `tabs` puts "Read your browsing history" on the install
+dialog); there is no `activeTab`; `identity` is `launchWebAuthFlow` only, never
+`getProfileUserInfo`. A permission, host-permission or CSP change is also a store
+listing change — see [docs/RELEASING.md](docs/RELEASING.md). Page capture is
+http/https only, by allowlist (`src/extension/host/extension-page-capture.ts`);
+`file://` is not runtime-grantable.
+
+**Auth.** Two modes, auto-detected from `GET /api/v1/auth/config`: `local`
+(username/password, `POST /api/v1/auth/refresh`) and `oauth` (PKCE via the
+Dashboard, `POST /api/v1/auth/oauth/token`). The refresh endpoint follows the
+mode; `/oauth/token` is not mounted in local mode. Credentials live only in
+`browser.storage.local` under the keys in `src/extension/auth/storage-keys.ts`.
+`TokenManager.assess()` is the one verdict on a credential, TokenManager never
+ends a session, and `authManager.clearAllAuthData()` is the one teardown. The
+full contract is `src/extension/auth/CLAUDE.md`; `.claude/rules/credential-chain.md`
+points there from the host files that take part (`session-credential.ts`,
+`auth-state.ts`, `ExtensionApp.tsx`, `background.ts`, options `main.tsx`).
+
+**Side-panel yield.** On a Dashboard tab that is *currently showing* its own
+copilot panel, the extension's panel hides; every ambiguous case shows it. Rule
+in `.claude/rules/side-panel-yield.md`; code in `src/extension/side-panel-yield.ts`.
+
+**Shared-UI contracts** (transcript row kinds, cache versioning, persistence,
+error bodies, rate-limit recovery, case status actions, optimistic ids) are in
+`packages/copilot-ui/CLAUDE.md`, which loads when you touch the package.
+
+**API types.** `packages/copilot-ui/types/api.generated.ts` is generated from the
+core commit pinned in `api-contract.pin.json`; never edit it by hand and never
+generate from a live server. Adopting a contract = moving `ref` +
+`contractVersion` and regenerating, in one PR. Preparing against an unmerged
+core PR uses `--spec`. Details: [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+
+**Releases.** `package.json` is the only version source. Anything that changes
+the built artifact must refresh `extension-baseline.json` in the same PR
+(`pnpm zip && pnpm extension:digest:write`). Tag `vX.Y.Z` on the merge commit;
+`release.yml` builds and attaches both zips; the store upload is manual.
+[docs/RELEASING.md](docs/RELEASING.md).
+
+**Store identity and redirects.** The Cloud OAuth allowlist admits the published
+extension id only. A sideloaded build without `FM_STORE_KEY` cannot sign in to
+Cloud; that is by design, not a bug to route around.
+
+## Working here
+
+- Conventional Commits; feature branches; PRs against `main`.
+- A repo-wide `git grep CLAUDE.md` must resolve after any move of these files:
+  code comments in `src/extension/auth/` and
+  `packages/copilot-ui/shared/ui/components/case-header/CaseDetails.tsx` cite them.
+- Docs: [ARCHITECTURE.md](ARCHITECTURE.md) (design overview),
+  [docs/HOST_INDEPENDENT_UI.md](docs/HOST_INDEPENDENT_UI.md),
+  [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md), [docs/RELEASING.md](docs/RELEASING.md),
+  [docs/API_CONTRACT.md](docs/API_CONTRACT.md), [CONTRIBUTING.md](CONTRIBUTING.md).
