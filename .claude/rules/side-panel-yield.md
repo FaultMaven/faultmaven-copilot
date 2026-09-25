@@ -87,7 +87,8 @@ Unserialized, an advertise immediately followed by a withdrawal can leave
   React effect. The extension cannot fix this from its side. Recorded in
   `contract.ts` where the Dashboard implementer reads it.
 
-Firefox has no `browser.sidePanel`. The yield handlers above are registered
-inside `if (browser.sidePanel)` in `background.ts` — guarded on the API's
-presence rather than the build target — so the MV2 build registers none of them.
-The toolbar `action.onClicked` handler is registered outside that guard.
+Firefox has no `browser.sidePanel`. `panelSurface()` feature-detects Chromium's
+`sidePanel` or Firefox's `sidebarAction` (declared for Firefox only), so the
+MV2 build registers a `browserAction` → `sidebarAction.open()` opener and the
+same per-tab yield. On Firefox, a yielded tab shows the `panel_yielded.html`
+placeholder instead of hiding.
