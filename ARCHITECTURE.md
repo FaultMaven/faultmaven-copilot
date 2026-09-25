@@ -82,7 +82,7 @@ The copilot captures web page content (dashboards, alert pages, status pages) an
 
 ### Capture path
 
-Capture is driven by `src/extension/host/extension-page-capture.ts`. It first tries `browser.tabs.sendMessage(tabId, { action: "getPageContent" })`, but **no content script listens for that message**, so on a normal page that call rejects and control always falls through to the real path: **programmatic injection** via `browser.scripting.executeScript()` with a fully **inlined** extractor. The extractor must be self-contained — `scripting.executeScript` serializes it, so it takes no imports. (There is no separate `page-content.content.ts` / `lib/utils/html-to-structured-text.ts`; the extraction logic lives inline in `extension-page-capture.ts`.)
+Capture is `src/extension/host/extension-page-capture.ts`. No content script implements a `getPageContent` handler; the extractor is always injected programmatically via `browser.scripting.executeScript()` with a fully inlined function (it is serialized, so it takes no imports). There is no separate `page-content.content.ts` or `html-to-structured-text.ts`; the extraction logic lives inline in `extension-page-capture.ts`.
 
 ### Extraction
 
@@ -135,17 +135,19 @@ API logic is decoupled from UI components.
 
 ### Services (`packages/copilot-ui/lib/api/services/`)
 
-*   `auth-service.ts`: Login, logout, token management.
 *   `case-service.ts`: CRUD for cases, query submission, history fetching.
 *   `session-service.ts`: Session creation and heartbeats.
 *   `knowledge-service.ts`: Knowledge base operations.
+*   `user-service.ts`: current-user profile.
+
+Auth (login/logout/refresh) belongs to the extension host: `src/extension/auth/`.
 
 ### Event Bus (`src/extension/messaging.ts`)
 
-A typed **Event Bus** handles asynchronous communication between the Extension Background Script, Content Scripts, and the React UI.
+A typed **Event Bus** over `browser.runtime.sendMessage` / `onMessage` carries events between the background worker and the extension pages (side panel, options). It does not reach content scripts: the auth-bridge content script sends its own `runtime.sendMessage` to the worker. `EventType` in `messaging.ts` lists the events.
 
-*   `EventBus.emit('auth_state_changed', { ... })`
-*   `EventBus.on('session_expired', handler)`
+*   `EventBus.emit({ type: 'auth_state_changed', authState })`
+*   `EventBus.on('auth_state_changed', handler)` — returns the unsubscribe
 
 ---
 

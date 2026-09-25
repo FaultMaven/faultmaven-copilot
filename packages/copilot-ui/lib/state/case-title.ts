@@ -11,8 +11,9 @@
  *      authoritative client source: `SidePanelApp.onCaseTitleChange` writes it
  *      synchronously on rename and on smart-title generation (and rolls it back if
  *      the backend PUT fails), so it always reflects the latest user/system intent.
- *   2. the backend `UserCase.title` — the server title (auto-generated `Case-MMDD-N`
- *      for cases the user has not renamed), used until the store has an entry.
+ *   2. the backend `UserCase.title` — the server title (auto-generated `Case-YYMMDD-N`,
+ *      older `MMDD` width also accepted, for cases the user has not renamed),
+ *      used until the store has an entry.
  *   3. a caller-supplied `fallback` (`'Loading…'`, `'Untitled Case'`).
  *
  * Resolving store-first against a SINGLE synchronously-updated source is what
