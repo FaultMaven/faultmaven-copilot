@@ -149,8 +149,10 @@ describe('LocalAuthClient', () => {
         })
       );
 
-      // Note: auth_state_changed is NOT broadcasted here.
-      // The caller (useAuth) broadcasts after clearing the old session.
+      // Note: auth_state_changed is NOT broadcast, here or by the caller.
+      // storeTokens() has already purged any prior user's residue
+      // (enforceUserDataScope, above); LocalLoginForm then calls onAuthSuccess,
+      // which reloads the panel so it re-initialises against the new credential.
     });
 
     it('never writes a NaN/null refresh_expires_at when the login has no refresh token', async () => {

@@ -69,7 +69,8 @@ export async function initiateDashboardOAuth(): Promise<DashboardOAuthInitiateRe
 
     // Redirect target for identity.launchWebAuthFlow:
     // `https://<extension-id>.chromiumapp.org/` (Chrome) or
-    // `https://<uuid>.extensions.allizom.org/` (Firefox). This is the ONLY
+    // `https://<hash>.extensions.allizom.org/` (Firefox, where <hash> is a
+    // 40-hex digest derived from the add-on id — not a UUID). This is the ONLY
     // target launchWebAuthFlow recognises: it watches the auth window for a
     // navigation matching this URL, and that match is what closes the window
     // and resolves the call. `runtime.getURL('/callback.html')` would never
