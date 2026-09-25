@@ -6,12 +6,12 @@
 
 | Before | After |
 |--------|-------|
-| `<US_DRIVER_LICENSE>` | `[🔒 REDACTED: Driver License]` (yellow badge) |
-| `<PHONE_NUMBER>` | `[🔒 REDACTED: Phone Number]` (yellow badge) |
-| `<EMAIL_ADDRESS>` | `[🔒 REDACTED: Email]` (yellow badge) |
-| `<IP_ADDRESS>` | `[🔒 REDACTED: IP Address]` (yellow badge) |
-| `<PERSON>` | `[🔒 REDACTED: Name]` (yellow badge) |
-| `<NRP>` | `[🔒 REDACTED: ID Number]` (yellow badge) |
+| `<US_DRIVER_LICENSE>` | `[🔒 REDACTED: Driver License]` (badge) |
+| `<PHONE_NUMBER>` | `[🔒 REDACTED: Phone Number]` (badge) |
+| `<EMAIL_ADDRESS>` | `[🔒 REDACTED: Email]` (badge) |
+| `<IP_ADDRESS>` | `[🔒 REDACTED: IP Address]` (badge) |
+| `<PERSON>` | `[🔒 REDACTED: Name]` (badge) |
+| `<NRP>` | `[🔒 REDACTED: ID Number]` (badge) |
 
 ### 2. Footnotes: Before → After
 
@@ -54,22 +54,22 @@ Sentence four. Sentence five. Sentence six. [2]
 ### PIIBadge Component
 ```
 Visual: [🔒 REDACTED: Phone Number]
-Style: Yellow background, dark yellow text, lock icon
+Style: Muted surface badge with border, lock icon
 Hover: "This information has been redacted for privacy: Phone Number"
 ```
 
 ### Source Citation Component
 ```
 Visual: [1]
-Style: Blue superscript badge
+Style: Accent-coloured superscript badge
 Hover: Shows preview card with source details
-Click: Opens full document (if available)
+Click: "View full document →" in the preview (knowledge-base sources, when the host supplies a viewer)
 ```
 
 ## Files to Review
 
-1. **Main Component:** `src/shared/ui/components/InlineSourcesRenderer.tsx`
-2. **Text Processor:** `src/lib/utils/text-processor.ts`
+1. **Main Component:** `packages/copilot-ui/shared/ui/components/InlineSourcesRenderer.tsx`
+2. **Text Processor:** `packages/copilot-ui/lib/utils/text-processor.ts`
 3. **Tests:** `src/test/utils/text-processor.test.ts`
 
 ## How to Verify
@@ -77,7 +77,7 @@ Click: Opens full document (if available)
 1. Load the extension in Chrome
 2. Start a conversation
 3. Check for:
-   - Yellow badges instead of `<TOKEN>` markers
+   - `REDACTED: …` badges instead of `<TOKEN>` markers
    - Fewer [1], [2], [3] markers in text
    - Proper markdown rendering (bold, code, lists)
    - Dark code blocks with syntax highlighting
@@ -87,7 +87,7 @@ Click: Opens full document (if available)
 
 Run tests: `pnpm test text-processor`
 
-Expected: ✅ 15 tests passing
+Expected: all tests in `src/test/utils/text-processor.test.ts` pass
 
 ## Performance
 
