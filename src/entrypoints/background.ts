@@ -51,6 +51,79 @@ class StaleAuthCallbackError extends Error {
   }
 }
 
+/**
+ * The toolbar-icon and panel APIs, as each target actually exposes them.
+ *
+ * `wxt/browser` is the raw `browser`/`chrome` global — there is no polyfill
+ * mapping one target's names onto the other's — and the two builds differ:
+ *
+ *   Chromium MV3: `action` (manifest `action`) + `sidePanel` (`side_panel`)
+ *   Firefox MV2:  `browserAction` (`browser_action`, which WXT emits from the
+ *                 same `action` key) + `sidebarAction` (`sidebar_action`,
+ *                 declared for the Firefox target in wxt.config.ts)
+ *
+ * Declared locally, every member optional, because the Chromium typings claim
+ * `action` and `sidePanel` always exist — which is exactly the assumption that
+ * made an unconditional `browser.action.onClicked` throw during MV2 startup.
+ */
+interface ToolbarButton {
+  onClicked: { addListener(callback: (tab: { windowId?: number }) => void): void };
+}
+
+interface PanelSurfaces {
+  action?: ToolbarButton;
+  browserAction?: ToolbarButton;
+  sidePanel?: { open(options: { windowId: number }): Promise<void> };
+  sidebarAction?: { open(): Promise<void> };
+}
+
+/**
+ * Make the toolbar icon open the panel, using whichever pair of APIs this
+ * browser has, and register nothing when it has no panel to open.
+ *
+ * Feature-detected rather than keyed to a build-target list, like the side-panel
+ * yield: what the handler depends on is whether the methods exist.
+ */
+function registerToolbarPanelOpener(log: ReturnType<typeof createLogger>): void {
+  const surfaces = browser as unknown as PanelSurfaces;
+  const button = surfaces.action ?? surfaces.browserAction;
+  if (!button) return;
+
+  const sidePanel = surfaces.sidePanel;
+  if (sidePanel) {
+    // Window-wide; the per-tab yield registered in main() narrows it.
+    button.onClicked.addListener(async (tab) => {
+      log.info('Toolbar icon clicked, opening side panel');
+      try {
+        if (tab.windowId) {
+          await sidePanel.open({ windowId: tab.windowId });
+        }
+      } catch (error) {
+        log.error('Error opening side panel:', error);
+      }
+    });
+    return;
+  }
+
+  const sidebarAction = surfaces.sidebarAction;
+  if (sidebarAction) {
+    // NOT async, and nothing may be awaited before `open()`: Firefox honours it
+    // only while the user-input handler is still on the stack, and refuses a
+    // call made after an await ("may only be called from a user input handler").
+    button.onClicked.addListener(() => {
+      log.info('Toolbar icon clicked, opening sidebar');
+      sidebarAction.open().catch((error: unknown) => {
+        log.error('Error opening sidebar:', error);
+      });
+    });
+    return;
+  }
+
+  // A toolbar button with no panel API behind it: nothing a click could reveal,
+  // and a handler here could only reach an API that does not exist.
+  log.warn('No side panel or sidebar API; the toolbar icon opens nothing');
+}
+
 export default defineBackground({
   main() {
     const log = createLogger('Background');
@@ -702,7 +775,7 @@ export default defineBackground({
     }
 
     // === Side panel: yield on Dashboard tabs that host their own panel ===
-    // The panel opens window-wide (see the action handler below), so it stays
+    // The panel opens window-wide (see registerToolbarPanelOpener), so it stays
     // up on every tab in the window — including a Dashboard tab that renders
     // the copilot itself, where it is a second copy of the same thing.
     //
@@ -740,18 +813,8 @@ export default defineBackground({
       });
     }
 
-    // === Action Click Handler ===
-    browser.action.onClicked.addListener(async (tab: any) => {
-      log.info("Action clicked, opening side panel...");
-      
-      try {
-        if (tab.windowId) {
-          await browser.sidePanel.open({ windowId: tab.windowId });
-        }
-      } catch (error) {
-        log.error("Error opening side panel:", error);
-      }
-    });
+    // === Toolbar icon: reveal the panel ===
+    registerToolbarPanelOpener(log);
 
     // === Installation Handler ===
     browser.runtime.onInstalled.addListener(async (details: any) => {

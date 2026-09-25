@@ -8,6 +8,12 @@ import { createHash } from 'node:crypto';
 const CHROMIUM_TARGETS = ['chrome', 'edge', 'opera'];
 
 /**
+ * The panel document: Chromium's `side_panel` and Firefox's `sidebar_action`
+ * both point here, so the two targets cannot come to show different pages.
+ */
+const PANEL_PAGE = 'sidepanel_manual.html';
+
+/**
  * Pre-release testing against the public host: OPT-IN store identity.
  *
  * Chrome derives an extension's id from the manifest's `key` (the item's PUBLIC
@@ -189,8 +195,30 @@ export default defineConfig({
       }
     },
     side_panel: {
-      default_path: "sidepanel_manual.html"
+      default_path: PANEL_PAGE
     },
+    // Firefox's counterpart of `side_panel`. WXT strips `side_panel` from the
+    // MV2 output and does not translate it (it emits `sidebar_action` only for
+    // a `sidepanel` ENTRYPOINT, and this panel is declared by hand), so without
+    // this the Firefox build had no surface that showed the panel at all. The
+    // toolbar icon opens it through `sidebarAction.open()` (background.ts,
+    // `registerToolbarPanelOpener`).
+    //
+    // Firefox only: WXT does not strip the key from the Chrome output, and
+    // Chrome does not know it — the same kind of leak `minimum_chrome_version`
+    // is gated against, in the other direction.
+    ...(browser === 'firefox'
+      ? {
+          sidebar_action: {
+            default_panel: PANEL_PAGE,
+            default_title: "__MSG_appName__",
+            default_icon: {
+              "16": "icon/px16-square-dark.png",
+              "32": "icon/px32-square-dark.png"
+            }
+          }
+        }
+      : {}),
     // NOTE: the auth-bridge content script is declared via its WXT entrypoint
     // (src/entrypoints/auth-bridge.content.ts), not here. A previous manifest
     // block gated on process.env.VITE_DASHBOARD_URL was dead — a `VITE_` value
