@@ -20,7 +20,7 @@ export default defineConfig({
     // `exclude` replaces vitest's list wholesale. The previous value did that,
     // and its bare `node_modules/**` matched only the root — a worktree's own
     // nested node_modules was still being walked.
-    exclude: [...configDefaults.exclude, 'e2e/**', '**/.worktrees/**'],
+    exclude: [...configDefaults.exclude, 'e2e/**', '**/.worktrees/**', '**/.claude/worktrees/**'],
   },
   resolve: {
     // None. The suite resolves the shared UI as the hosts do — through the
