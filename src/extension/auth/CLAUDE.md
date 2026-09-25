@@ -19,8 +19,8 @@ is cleared when the configured endpoints change).
   calls `identity.launchWebAuthFlow`, which opens the Dashboard's
   `/auth/authorize` page in a browser-owned window and settles **only** on a
   real navigation to the browser-derived redirect URI
-  (`https://<id>.chromiumapp.org/` on Chromium, `https://<id>.extensions.allizom.org/`
-  on Firefox) — which is why the Dashboard's approve path must navigate rather
+  (`https://<id>.chromiumapp.org/` on Chromium; on Firefox a host derived from
+  the add-on id, `https://<hash>.extensions.allizom.org/`) — which is why the Dashboard's approve path must navigate rather
   than rewrite the address bar. There is no tab watcher; the browser closes the
   window itself. The code is exchanged at `POST /api/v1/auth/oauth/token`, and
   refresh is the RFC 6749 refresh grant on the same endpoint (includes
@@ -108,9 +108,12 @@ the attempt itself.
 the rejection path *and* the success path: a sign-in landing mid-refresh rotates
 the chain, and the success path would otherwise stamp the pre-flight snapshot's
 `session_id` / `user` / `authState.user` over storage the new sign-in just
-re-seeded. The sign-in side holds no lock (`handleStoreAuth`, the OAuth exchange
-and `storeTokens` write storage directly), so the rotation is a single `set()`
-and a sign-in cannot interleave between the credential keys and `authState`.
+re-seeded. **Narrowed, not closed**: this is check-then-act and the sign-in side
+holds no lock (`handleStoreAuth`, the OAuth exchange and `storeTokens` write
+storage directly), so a sign-in landing between the check and the write still
+loses. What the single `set()` buys is only that a sign-in cannot interleave
+*between* the credential keys and `authState` and leave B's tokens paired with
+A's identity (`token-manager.ts`, the success-path CAS comment).
 
 **Reads never destroy.** `getAuthState()` / `isAuthenticated()` /
 `getCurrentUser()` answer a question and nothing else. Repair is
@@ -124,8 +127,8 @@ maps it so startup reads storage once.
 
 ### The three clearing functions
 
-- `authManager.clearAllAuthData()` — **the teardown**: `authState` + case cache
-  + every credential key, both halves even if the first throws. Callers:
+- `authManager.clearAllAuthData()` — **the teardown**: `authState`, the case
+  cache and every credential key, both halves even if the first throws. Callers:
   `logoutAuth()`, `ExtensionApp`'s `onUnauthorized` (what `client.ts
   handleAuthError()` delegates a hard 401 to), options `handleSignOut()`,
   `LocalAuthClient.signOut()`, `reconcileSession()`, and the act-site.

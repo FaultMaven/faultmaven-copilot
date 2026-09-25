@@ -38,32 +38,41 @@ FaultMaven Copilot is a browser extension providing AI-powered troubleshooting a
 The codebase follows a modular, domain-driven structure:
 
 ```
-src/
-├── entrypoints/              # WXT entry points
-│   ├── background.ts         # Service worker (session, auth events)
-│   ├── sidepanel_manual/     # Main Side Panel UI entry
-│   └── auth-bridge.content.ts # Bridge for Dashboard authentication
-├── lib/                      # Core Logic & Infrastructure
-│   ├── api/                  # API Layer
-│   │   ├── services/         # Domain services (auth, case, session, knowledge)
-│   │   ├── client.ts         # Base HTTP client with interceptors
-│   │   └── types/            # API type definitions
-│   ├── auth/                 # Auth logic (OIDC, tokens)
+packages/copilot-ui/          # @faultmaven/copilot-ui — the shared UI package
+├── index.ts                  # The supported entry for a host
+├── contract.ts               # Cross-repo handshake names
+├── shared/
+│   ├── host/adapter.ts       # The HostAdapter contract a host implements
+│   └── ui/
+│       ├── CopilotPanel.tsx  # Root panel component
+│       ├── components/       # Reusable UI atoms/molecules
+│       ├── hooks/            # Custom React Hooks (useMessageSubmission, useCaseManagement, …)
+│       └── layouts/
+├── lib/                      # Core logic
+│   ├── api/                  # client.ts, session-core.ts, services/ (case, session, knowledge, user)
 │   ├── errors/               # Error handling system (classifiers, types)
-│   ├── optimistic/           # Optimistic UI logic (ID generation, conflict resolution)
+│   ├── optimistic/           # Optimistic UI logic (ID generation, pending operations)
 │   ├── session/              # Session management (ClientSessionManager)
-│   ├── state/                # Zustand Stores (slices)
-│   │   ├── store.ts          # Main store configuration
-│   │   └── slices/           # Individual state slices
-│   └── utils/                # Shared utilities (logger, messaging, retry, memory-manager)
-├── shared/                   # UI Components & Hooks
-│   ├── ui/
-│   │   ├── components/       # Reusable UI atoms/molecules
-│   │   ├── hooks/            # Custom React Hooks (useAuth, useMessageSubmission)
-│   │   └── SidePanelApp.tsx  # Root Application Component
-│   └── assets/               # Static assets
-└── config.ts                 # Environment configuration
+│   ├── state/                # Zustand store (store.ts) and slices/
+│   └── utils/                # Shared utilities (logger, retry, memory-manager)
+├── types/                    # case.ts and the generated API types
+└── config.ts                 # Build-time constants
+src/                          # The extension host
+├── entrypoints/              # WXT entry points
+│   ├── background.ts         # Service worker (session, auth events, side-panel yield)
+│   ├── sidepanel_manual/     # Main Side Panel UI entry
+│   ├── options/              # Settings page
+│   └── auth-bridge.content.ts # Bridge for Dashboard authentication
+└── extension/
+    ├── ExtensionApp.tsx      # Mounts CopilotPanel with the extension host
+    ├── messaging.ts          # EventBus (runtime messaging)
+    ├── side-panel-yield.ts
+    ├── auth/                 # Token chain, OAuth, local auth, teardown
+    ├── host/                 # HostAdapter implementation, endpoints, page capture
+    └── components/           # Sign-in and welcome screens
 ```
+
+See [docs/HOST_INDEPENDENT_UI.md](docs/HOST_INDEPENDENT_UI.md) for the boundary between the two trees.
 
 ---
 
@@ -73,7 +82,7 @@ The copilot captures web page content (dashboards, alert pages, status pages) an
 
 ### Capture path
 
-Capture is driven by `shared/ui/hooks/usePageContent.ts`. It first tries `browser.tabs.sendMessage(tabId, { action: "getPageContent" })`, but **no content script listens for that message**, so on a normal page that call rejects and control always falls through to the real path: **programmatic injection** via `browser.scripting.executeScript()` with a fully **inlined** extractor. The extractor must be self-contained — `scripting.executeScript` serializes it, so it takes no imports. (There is no separate `page-content.content.ts` / `lib/utils/html-to-structured-text.ts`; the extraction logic lives inline in `usePageContent.ts`.)
+Capture is driven by `src/extension/host/extension-page-capture.ts`. It first tries `browser.tabs.sendMessage(tabId, { action: "getPageContent" })`, but **no content script listens for that message**, so on a normal page that call rejects and control always falls through to the real path: **programmatic injection** via `browser.scripting.executeScript()` with a fully **inlined** extractor. The extractor must be self-contained — `scripting.executeScript` serializes it, so it takes no imports. (There is no separate `page-content.content.ts` / `lib/utils/html-to-structured-text.ts`; the extraction logic lives inline in `extension-page-capture.ts`.)
 
 ### Extraction
 
@@ -90,7 +99,7 @@ The inlined extractor converts the live DOM to structured markdown. Key features
 
 ### Permission Handling
 
-`activeTab` permission only activates on toolbar icon clicks, NOT side-panel button clicks. When capture is initiated from the side panel, `usePageContent.ts` requests host permission via `browser.permissions.request()` for the tab's origin before injecting the script.
+`activeTab` permission only activates on toolbar icon clicks, NOT side-panel button clicks. When capture is initiated from the side panel, `extension-page-capture.ts` requests host permission via `browser.permissions.request()` for the tab's origin before injecting the script.
 
 ### Backend Integration
 
@@ -124,14 +133,14 @@ We use **Zustand** for global state management, replacing complex prop drilling.
 
 API logic is decoupled from UI components.
 
-### Services (`src/lib/api/services/`)
+### Services (`packages/copilot-ui/lib/api/services/`)
 
 *   `auth-service.ts`: Login, logout, token management.
 *   `case-service.ts`: CRUD for cases, query submission, history fetching.
 *   `session-service.ts`: Session creation and heartbeats.
 *   `knowledge-service.ts`: Knowledge base operations.
 
-### Event Bus (`src/lib/utils/messaging.ts`)
+### Event Bus (`src/extension/messaging.ts`)
 
 A typed **Event Bus** handles asynchronous communication between the Extension Background Script, Content Scripts, and the React UI.
 

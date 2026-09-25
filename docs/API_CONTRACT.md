@@ -64,9 +64,12 @@ to get ready for a spec change that has not merged yet:
    commit now on `main`, regenerate against it, and commit the two together.
 
 Preparing and adopting are separate acts, and only the second is a contract
-change. A branch that merely prepares leaves the pin alone, so `api-types-drift`
-stays **green** on it. Never edit the generated client by hand to make the gate
-look right in either state.
+change. **A branch that has prepared but not adopted is red on
+`api-types-drift`** and stays red until step 3: the job regenerates from the
+*pinned* ref and fails on any diff in `api.generated.ts`, and a prepared branch
+carries types the pin does not yet describe. That red is the expected state of
+a paired PR, not something to clear by editing the generated client — never
+hand-edit it to make the gate look right in either state.
 
 To tell a prepared branch apart from a genuine drift failure, regenerate with
 `--spec` pointed at the core PR's committed spec and diff against the branch's

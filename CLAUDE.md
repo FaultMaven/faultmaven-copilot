@@ -67,14 +67,16 @@ Rules the layout enforces (`src/test/packages/` pins them — `closure-boundary`
   runtime messaging.** Sign-in screens, the token chain, page capture and
   endpoint settings are the extension's (`src/extension/`). The UI asks the host
   for an access token (`session.accessToken()`); it never sees a refresh token.
-- **Nothing in `HostAdapter` is optional-by-undefined**, and `kind` is for copy
-  and telemetry, never for behaviour.
+- **`HostAdapter` has no optional capability or method** — a capability a host
+  lacks is a union arm carrying a reason, or an explicit `null` — and `kind` is
+  for copy and telemetry, never for behaviour.
 
 ## Configuration
 
 - Endpoints are **runtime settings**, not env: `apiBaseUrl` and `dashboardUrl`
   in `browser.storage.local`, Cloud defaults when unset, configured
-  independently (no derivation of one from the other). `src/extension/host/endpoints.ts`;
+  independently (no derivation of one from the other — a one-time migration
+  seed from the legacy `apiEndpoint` key aside). `src/extension/host/endpoints.ts`;
   user-facing model in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 - Build-time knobs are `VITE_*` (`packages/copilot-ui/config.ts`, polling in
   `lib/api/services/case-service.ts`, heartbeat in `lib/state/slices/session-slice.ts`,
@@ -93,12 +95,14 @@ structured object per operation, not `JSON.stringify` and not several lines.
 
 **Cross-context events.** `EventBus` (`src/extension/messaging.ts`) wraps
 `browser.runtime.sendMessage`/`onMessage`. `emit` never reaches the sender's own
-context; `on` returns the unsubscribe. One event type today: `auth_state_changed`.
+context; `on` returns the unsubscribe. `EventType` in `messaging.ts` is the list.
 
 **Chrome vs Firefox.** Feature-detect, never branch on a build-target list:
-Firefox has no `browser.sidePanel` (`background.ts` guards on the API, so the
-MV2 build registers no panel or yield handlers), and its OAuth redirect host is
-`<id>.extensions.allizom.org` rather than `<id>.chromiumapp.org`
+Firefox has no `browser.sidePanel` (`background.ts` registers the side-panel
+yield handlers inside `if (browser.sidePanel)`, so the MV2 build registers none
+of them; the toolbar `action.onClicked` handler sits outside that guard), and
+its OAuth redirect host is derived from the add-on id
+(`<hash>.extensions.allizom.org`) rather than `<id>.chromiumapp.org`
 (`src/extension/auth/dashboard-oauth.ts`). Chromium-only manifest keys (`key`,
 `minimum_chrome_version`) are gated on `CHROMIUM_TARGETS` in `wxt.config.ts`
 because WXT does not strip them from the Firefox output and AMO warns on them.
@@ -120,8 +124,9 @@ mode; `/oauth/token` is not mounted in local mode. Credentials live only in
 `browser.storage.local` under the keys in `src/extension/auth/storage-keys.ts`.
 `TokenManager.assess()` is the one verdict on a credential, TokenManager never
 ends a session, and `authManager.clearAllAuthData()` is the one teardown. The
-full contract is `src/extension/auth/CLAUDE.md` (loads when you touch that
-directory).
+full contract is `src/extension/auth/CLAUDE.md`; `.claude/rules/credential-chain.md`
+points there from the host files that take part (`session-credential.ts`,
+`auth-state.ts`, `ExtensionApp.tsx`, `background.ts`, options `main.tsx`).
 
 **Side-panel yield.** On a Dashboard tab that is *currently showing* its own
 copilot panel, the extension's panel hides; every ambiguous case shows it. Rule

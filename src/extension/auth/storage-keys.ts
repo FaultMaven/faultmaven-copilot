@@ -15,7 +15,7 @@
  * unobservably and the panel goes on rendering a signed-in UI it can no longer
  * authenticate. That makes the spelling an invariant across every teardown
  * path, which is why it lives here instead of being typed out at each one.
- * See src/extension/auth/CLAUDE.md, "Auth teardown".
+ * See src/extension/auth/CLAUDE.md, "Storage keys".
  */
 export const AUTH_STATE_KEY = 'authState';
 

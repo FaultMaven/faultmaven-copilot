@@ -111,13 +111,17 @@ Invariants when touching the mapper:
    via `displayedTurn` (`lib/state/turn-label.ts`, falls back to the clock for
    a server older than 3.5.0). **The clock is what addresses a turn**: `data-turn`
    and `scrollToTurn` stay on it because they are fed `uploaded_at_turn`; label
-   and anchor differ on purpose. Contract 3.7.0 puts `investigation_turn` on
-   evidence and file rows themselves; the `turnLabel` resolver threaded
-   `ChatWindow` → `EnhancedCaseHeader` → `CaseDetails` → `EvidenceDetailsModal`
-   (`investigationTurnFor`) returns `undefined` when the conversation no longer
-   holds the row, and those surfaces then print no turn rather than the other
-   counter. Adopting `TurnResponse.investigation_turn` onto a submitted row is
-   gated on `serverSuppliesInvestigationTurn`.
+   and anchor differ on purpose. Evidence and file surfaces name a turn they do
+   not render, so they take a `turnLabel` resolver threaded `ChatWindow` →
+   `EnhancedCaseHeader` → `CaseDetails` → `EvidenceDetailsModal`, backed by
+   `investigationTurnFor`. **That threading is superseded by contract 3.7.0**
+   (faultmaven#1391), which puts `investigation_turn` on the evidence and file
+   rows themselves; the resolver returns `undefined` once the conversation is
+   trimmed past the row, where the served field always answers. It stays only
+   until those surfaces read the field (and for rows from a server below
+   3.7.0). On `undefined` they print no turn rather than the other counter.
+   Adopting `TurnResponse.investigation_turn` onto a submitted row is gated on
+   `serverSuppliesInvestigationTurn`.
 
 **Message-id reconciliation** (`lib/state/reconcile-message-ids.ts`, #213): an
 incoming backend row matching a local committed row still carrying an `opt_` id
@@ -137,8 +141,8 @@ unreachable for the life of that cache.
 **Delivery.** `getCaseConversation` has one call site, `handleCaseSelect`, so a
 notice is seen only when the case is re-opened. Live push needs a structured
 "background job started" marker on the turn response (none exists; no
-SSE/WebSocket). Re-running the delta merge after each turn is unblocked since
-#213 but not built.
+SSE/WebSocket). Re-running the delta merge after each turn has been unblocked
+since #213 but is not built.
 
 The Dashboard classifies the same rows in `lib/cases/messageAttribution.ts` —
 a parallel copy, not shared code. Change one, look at the other.
@@ -163,12 +167,16 @@ snaps the cut to a turn boundary.
 ## Case titles
 
 `CreateCaseRequest.title` is `string | null` — `null` makes the backend generate
-`Case-MMDD-N`; a string is explicit. Rename is `PUT /api/v1/cases/{id}`;
-LLM generation is `POST /api/v1/cases/{id}/title`. What renders is resolved by
-`selectCaseTitle` (`lib/state/case-title.ts`): store `conversationTitles[caseId]`
-> backend `UserCase.title` > fallback. The store is written synchronously on
-rename/generate and rolled back if the PUT fails; every title read goes through
-this one selector.
+the placeholder `Case-YYMMDD-N` (`isPlaceholderCaseTitle` also accepts the
+older `Case-MMDD-N` form); a string is explicit. Rename is
+`PUT /api/v1/cases/{id}`; LLM generation is `POST /api/v1/cases/{id}/title`.
+What renders is resolved by `selectCaseTitle` (`lib/state/case-title.ts`):
+store `conversationTitles[caseId]` **unless it is a placeholder** > backend
+`UserCase.title` > fallback. A placeholder in the store yields to the backend
+because older builds seeded the store with whatever the backend last reported,
+pinning the placeholder ahead of the real title written later (fm#1069). The
+store is written synchronously on rename/generate and rolled back if the PUT
+fails; every title read goes through this one selector.
 
 ## Case status (`lib/api/services/case-service.ts`)
 
@@ -195,8 +203,9 @@ a resolve proposal.
 
 **Post-terminal card** (`shared/ui/components/ResolutionActionsCard.tsx`) is a
 status banner, not navigation: "Case Resolved" with root cause and stats, or
-"Case Closed" with the `shortLabel` from `CLOSURE_DISPLAY_INFO` (five reasons
-mirroring backend `VALID_CLOSURE_REASONS`; unknown values fall back to `other`).
+"Case Closed" with the `shortLabel` from `CLOSURE_DISPLAY_INFO` (one entry per
+backend `VALID_CLOSURE_REASONS` value, plus an `other` fallback every consumer
+uses for a reason this build does not know).
 **No Dashboard link**: closure and resolution summaries are rendered inline in
 the chat reply at generation time, so a card linking to the Dashboard's Report
 tab for a summary already visible above is noise. Runbooks are user-requested
