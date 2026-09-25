@@ -80,8 +80,7 @@ Rules the layout enforces (`src/test/packages/` pins them — `closure-boundary`
   user-facing model in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 - Build-time knobs are `VITE_*` (`packages/copilot-ui/config.ts`, polling in
   `lib/api/services/case-service.ts`, heartbeat in `lib/state/slices/session-slice.ts`,
-  `VITE_DEBUG` in the logger). `VITE_DASHBOARD_URL` and `VITE_API_URL` are declared
-  in `src/vite-env.d.ts` but read by no source file.
+  `VITE_DEBUG` in the logger).
 - `FM_STORE_KEY=<store item public key> pnpm build` gives an unpacked build the
   **published extension id** — the only OAuth redirect FaultMaven Cloud admits.
   Pass it per invocation; never put it in a dotenv file or a workflow
@@ -98,10 +97,12 @@ structured object per operation, not `JSON.stringify` and not several lines.
 context; `on` returns the unsubscribe. `EventType` in `messaging.ts` is the list.
 
 **Chrome vs Firefox.** Feature-detect, never branch on a build-target list:
-Firefox has no `browser.sidePanel` (`background.ts` registers the side-panel
-yield handlers inside `if (browser.sidePanel)`, so the MV2 build registers none
-of them; the toolbar `action.onClicked` handler sits outside that guard), and
-its OAuth redirect host is derived from the add-on id
+Firefox has no `browser.sidePanel`; `side-panel-yield.ts`'s `panelSurface()`
+feature-detects Chromium's `sidePanel` or Firefox's `sidebarAction` (declared
+for Firefox only) — the MV2 build registers a `browserAction` →
+`sidebarAction.open()` opener and the same per-tab yield, and on Firefox a
+yielded tab shows the `panel_yielded.html` placeholder instead of hiding. Its
+OAuth redirect host is derived from the add-on id
 (`<hash>.extensions.allizom.org`) rather than `<id>.chromiumapp.org`
 (`src/extension/auth/dashboard-oauth.ts`). Chromium-only manifest keys (`key`,
 `minimum_chrome_version`) are gated on `CHROMIUM_TARGETS` in `wxt.config.ts`
