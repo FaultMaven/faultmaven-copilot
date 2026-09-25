@@ -36,15 +36,13 @@ export interface DashboardOAuthInitiateResponse {
 }
 
 /**
- * Get Dashboard URL from browser storage
+ * The Dashboard URL the OAuth flow authorizes against.
  *
- * The extension stores Dashboard URL (not API URL) because:
- * - Users always interact with Dashboard first (for OAuth login)
- * - Dashboard knows how to reach the API backend
- * - Simpler architecture: no URL derivation needed
- *
- * Local deployment: http://127.0.0.1:3333
- * Cloud deployment: https://app.faultmaven.ai
+ * The Dashboard URL and the API URL are stored separately (`dashboardUrl`,
+ * `apiBaseUrl`) and configured independently; neither is derived from the
+ * other. Unset, this is the Cloud Dashboard (https://app.faultmaven.ai); the
+ * Welcome screen's Standalone choice stores http://localhost:3333. See
+ * src/extension/host/endpoints.ts.
  */
 export async function getDashboardUrl(): Promise<string> {
   // Single source of truth is the host's endpoints (the explicit dashboardUrl
@@ -69,7 +67,8 @@ export async function initiateDashboardOAuth(): Promise<DashboardOAuthInitiateRe
 
     // Redirect target for identity.launchWebAuthFlow:
     // `https://<extension-id>.chromiumapp.org/` (Chrome) or
-    // `https://<uuid>.extensions.allizom.org/` (Firefox). This is the ONLY
+    // `https://<hash>.extensions.allizom.org/` (Firefox, where <hash> is a
+    // 40-hex digest derived from the add-on id — not a UUID). This is the ONLY
     // target launchWebAuthFlow recognises: it watches the auth window for a
     // navigation matching this URL, and that match is what closes the window
     // and resolves the call. `runtime.getURL('/callback.html')` would never

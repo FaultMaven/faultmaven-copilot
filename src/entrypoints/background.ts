@@ -11,9 +11,11 @@ import {
 } from '../extension/auth/revoke-refresh-token';
 import { AUTH_STATE_KEY, isUsableDuration, isUsableTimestamp, type CredentialKey } from '../extension/auth/storage-keys';
 import {
+  panelSurface,
   reconcileSidePanelForAllTabs,
   reconcileSidePanelForTab,
   releaseSidePanelForTab,
+  toolbarButton,
   yieldSidePanelForAdvertisedTab,
 } from '../extension/side-panel-yield';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
@@ -49,6 +51,28 @@ class StaleAuthCallbackError extends Error {
     super(message);
     this.name = 'StaleAuthCallbackError';
   }
+}
+
+/**
+ * Make the toolbar icon open the panel, on whichever surface this browser has:
+ * Chromium's side panel, or the Firefox sidebar. With no toolbar button or no
+ * panel surface, register nothing — a handler could only reach a missing API.
+ */
+function registerToolbarPanelOpener(log: ReturnType<typeof createLogger>): void {
+  const button = toolbarButton();
+  const surface = panelSurface();
+  if (!button || !surface) {
+    log.warn('No toolbar button or panel surface; the toolbar icon opens nothing');
+    return;
+  }
+  // NOT async, and nothing is awaited before `open`: the browser honours it
+  // only from inside the click (see PanelSurface).
+  button.onClicked.addListener((tab) => {
+    log.info('Toolbar icon clicked, opening the panel');
+    surface.open(tab).catch((error: unknown) => {
+      log.error('Error opening the panel:', error);
+    });
+  });
 }
 
 export default defineBackground({
@@ -702,7 +726,7 @@ export default defineBackground({
     }
 
     // === Side panel: yield on Dashboard tabs that host their own panel ===
-    // The panel opens window-wide (see the action handler below), so it stays
+    // The panel opens window-wide (see registerToolbarPanelOpener), so it stays
     // up on every tab in the window — including a Dashboard tab that renders
     // the copilot itself, where it is a second copy of the same thing.
     //
@@ -712,10 +736,11 @@ export default defineBackground({
     // Dashboard. A Dashboard with no built-in panel — an older self-hosted
     // image, Cloud before its own ships — never advertises and so is untouched.
     //
-    // Chromium only. Guarded on the API's presence rather than the build target
-    // so the Firefox build, which has no browser.sidePanel at all, registers
-    // nothing and behaves exactly as it does today.
-    if (browser.sidePanel) {
+    // Both surfaces: Chromium's side panel and the Firefox sidebar (which
+    // yields by showing a placeholder on that tab — see side-panel-yield.ts).
+    // Guarded on the API's presence rather than the build target, so a browser
+    // with neither registers nothing.
+    if (panelSurface()) {
       // Per-tab options do not necessarily survive an extension reload, and a
       // tab can have moved off the Dashboard while the worker was evicted.
       reconcileSidePanelForAllTabs();
@@ -740,18 +765,8 @@ export default defineBackground({
       });
     }
 
-    // === Action Click Handler ===
-    browser.action.onClicked.addListener(async (tab: any) => {
-      log.info("Action clicked, opening side panel...");
-      
-      try {
-        if (tab.windowId) {
-          await browser.sidePanel.open({ windowId: tab.windowId });
-        }
-      } catch (error) {
-        log.error("Error opening side panel:", error);
-      }
-    });
+    // === Toolbar icon: reveal the panel ===
+    registerToolbarPanelOpener(log);
 
     // === Installation Handler ===
     browser.runtime.onInstalled.addListener(async (details: any) => {

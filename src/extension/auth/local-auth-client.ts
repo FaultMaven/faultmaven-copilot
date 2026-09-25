@@ -179,8 +179,9 @@ export class LocalAuthClient {
         user_id: tokenResponse.user.user_id
       });
 
-      // Note: Don't broadcast auth_state_changed here.
-      // Caller will broadcast AFTER clearing the old session.
+      // Note: Don't broadcast auth_state_changed here — same as signIn():
+      // storeTokens() has already purged any prior user's residue, and the
+      // caller (LocalLoginForm.onAuthSuccess) reloads the side panel.
 
       return {
         success: true,

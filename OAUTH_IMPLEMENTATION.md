@@ -310,7 +310,10 @@ OAUTH_REQUIRE_HTTPS_REDIRECT=false # Allow chrome-extension:// URLs
 
 **Dashboard:** Uses default config (auto-detects API URL from port 8000 → 5173)
 
-**Extension:** Uses default config (auto-discovers Dashboard URL)
+**Extension:** Choose "Standalone (Self-Hosted)" on the Welcome screen (stores
+`http://localhost:8090` / `http://localhost:3333`), or set the API and Dashboard
+URLs on the Settings page. They are stored separately (`apiBaseUrl`,
+`dashboardUrl`) and neither is derived from the other.
 
 ### Production Mode
 
@@ -323,9 +326,11 @@ OAUTH_REQUIRE_HTTPS_REDIRECT=true  # Enforce HTTPS
 OAUTH_REDIRECT_URI_PATTERNS='["^https://<published-32-char-id>\\.chromiumapp\\.org/?$"]'
 ```
 
-**Dashboard:** Set `VITE_API_URL=https://api.faultmaven.ai`
+**Dashboard:** Set `VITE_API_URL=https://api.faultmaven.ai` (the Dashboard's own
+build variable — see its `.env.example`; the extension has no such variable)
 
-**Extension:** Will auto-discover Dashboard URL from production API URL
+**Extension:** Uses the Cloud endpoints (`https://api.faultmaven.ai`,
+`https://app.faultmaven.ai`) by default; nothing to configure
 
 ## Security Features
 
