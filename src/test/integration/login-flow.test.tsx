@@ -66,9 +66,6 @@ vi.mock('wxt/browser', () => ({
 import { browser } from 'wxt/browser'; // Import the mocked browser
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
-// Mock import.meta.env
-vi.stubGlobal('import', { meta: { env: { VITE_DASHBOARD_URL: 'http://localhost:3333' } } });
-
 describe('SidePanelApp Login Flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
