@@ -105,7 +105,7 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * the ResolutionActionsCard compact banner via `shortLabel`).
  *
  * The real keys mirror VALID_CLOSURE_REASONS in
- * faultmaven/modules/case/domain/models.py exactly (inquiry_only,
+ * faultmaven/modules/case/domain/models/lifecycle.py exactly (inquiry_only,
  * solution_deferred, closed_rca_infeasible, mitigation_sufficient,
  * closed_insufficient_evidence). `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already

@@ -89,8 +89,9 @@ by `messageKind`: `user` → `question` (right bubble), `assistant` → `respons
 and `messageKind` takes `string` rather than the generated `role` union: a role
 added later must never be presented as something a participant said. `system`
 is the channel the backend reports background work on (runbook conversion
-outcome, `milestone_engine._run_runbook_conversion`); those strings live in the
-backend and have been reworded before — cite the function, do not quote them.
+outcome, `RunbookCreator._run_runbook_conversion` in
+`milestone_engine/runbook_creation.py`); those strings live in the backend and
+have been reworded before — cite the function, do not quote them.
 
 Invariants when touching the mapper:
 

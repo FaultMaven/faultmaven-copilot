@@ -29,10 +29,10 @@
  * The placeholder a case is born with when no title was supplied: the backend's
  * `Case-{YYMMDD}-{seq}`, plus the `Case-{MMDD}-{seq}` form it emitted before
  * 2026-01-28 — every case created before that day still carries the 4-digit
- * width. Mirrors `_DEFAULT_CASE_TITLE_RE` in the backend's
- * `modules/case/api/routes.py`; the two must accept the same set, because the
- * backend uses it to decide what it may overwrite and this uses it to decide
- * what it must not trust.
+ * width. Mirrors `DEFAULT_CASE_TITLE_RE` in the backend's
+ * `modules/case/domain/models/evidence.py`; the two must accept the same set,
+ * because the backend uses it to decide what it may overwrite and this uses it
+ * to decide what it must not trust.
  *
  * Anchored on both ends so a real title that merely contains the shape
  * ("Re: Case-260101-1") is never treated as a placeholder.
