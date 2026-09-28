@@ -7,7 +7,8 @@
  * delta fetch. That silence was not cosmetic: `system` is the channel the
  * backend uses to report the outcome of background work it started on the
  * user's behalf, and the runbook-conversion FAILURE notices travel on it too
- * (faultmaven `milestone_engine._run_runbook_conversion`, as of faultmaven#1135):
+ * (faultmaven `RunbookCreator._run_runbook_conversion` in
+ * `milestone_engine/runbook_creation.py`, as of faultmaven#1135):
  *
  *     "Runbook generation failed, so no draft was created for this case. You can
  *      write one yourself in the Dashboard under **Knowledge Base**."

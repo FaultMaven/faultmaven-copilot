@@ -777,8 +777,8 @@ describe('Case Service', () => {
 
   describe('CLOSURE_DISPLAY_INFO', () => {
     // The real keys must mirror backend VALID_CLOSURE_REASONS
-    // (faultmaven/modules/case/domain/models.py) exactly, plus the defensive
-    // 'other' fallback. This is the single source of truth for closure-reason
+    // (faultmaven/modules/case/domain/models/lifecycle.py) exactly, plus the
+    // defensive 'other' fallback. This is the single source of truth for closure-reason
     // display; ResolutionActionsCard and HeaderSummary source their labels here.
     //
     // WHAT THIS DOES AND DOES NOT CATCH. The expected list is a literal in this
