@@ -40,7 +40,7 @@ export const DEFAULT_CASE_LIST_LIMIT = 100;
  * same reason: a menu cannot honour an edge whose precondition is a fact about
  * the case.
  *
- * ``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo pins.
+ * ``investigating`` is refused by every backend since #1608; ``resolved`` is refused since contract 9.0.0.
  *
  * - `investigating` is earned by a confirmed problem statement (Gate 1).
  * - `resolved` is earned by a confirmed root-cause elimination and offered by

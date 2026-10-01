@@ -188,7 +188,7 @@ States: `inquiry`, `investigating`, `resolved` (terminal), `closed` (terminal).
 
 **Only `closed` is ever selectable** (`inquiry` → `closed`, `investigating` →
 `closed`); `investigating` is refused by every backend since fm#1608 and
-`resolved` from contract 9.0.0, which this repo pins. The client still gates the
+`resolved` since contract 9.0.0. The client still gates the
 Close control on `disposition_eligibility.closed === 'ready'`, so `needs_info`,
 `suggests_alternative` and `not_eligible` all suppress it — on a
 resolution-grade case the menu is correctly **empty**. `suggests_alternative` on
