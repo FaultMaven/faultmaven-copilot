@@ -88,9 +88,10 @@ export interface paths {
         };
         /**
          * List All Cases
-         * @description List cases across all users/orgs for a platform-admin (ADR-012 D9).
+         * @description List cases across all users and enterprises for a platform-admin (ADR-012 D9).
          *
-         *     Standalone serves full summaries; cloud serves metadata-only rows. See the
+         *     Standalone serves full summaries; cloud serves metadata-only rows. Under
+         *     multi-tenancy the rows come from the cross-enterprise metadata read. See the
          *     module docstring for why the split falls where it does.
          */
         get: operations["list_all_cases_api_v1_admin_cases_get"];
@@ -392,29 +393,42 @@ export interface paths {
         };
         /**
          * List Users
-         * @description List the users of the operator's own organization.
+         * @description List user accounts for the operator.
          *
-         *     Returns a paginated list with filtering options. Confined to the
-         *     organization the operator's request is bound to (#1318): the page, the
-         *     filters and ``total`` all range over that tenant, so ``total`` is a count of
-         *     it rather than of the deployment. Under single-tenancy the deployment is the
-         *     organization and the listing is unchanged.
+         *     Under ``TENANT_PROVIDER=multi`` the list spans every enterprise: account
+         *     records — who holds an account, in which enterprise, whether it is active —
+         *     are the service's own operational data about its users. Each row says
+         *     whether the operator can administer it (``manageable``): only accounts in
+         *     the operator's own enterprise are, and only those rows carry their
+         *     ``roles``; elsewhere ``roles`` is ``[]`` (not reported). The read is
+         *     recorded in the operator access trail before anything is served. Under
+         *     single-tenancy the deployment is one enterprise and every row is
+         *     manageable.
          *
          *     Query Parameters:
          *         is_active: Filter by active/inactive status
-         *         role: Filter by role (admin, member, viewer)
-         *         search: Search email or full_name (case-insensitive, partial match)
+         *         role: Filter by role (admin, member, viewer); single-tenant only
+         *         search: Search email or full_name (case-insensitive, partial match);
+         *             an empty search filters nothing
+         *         enterprise_id: Only accounts anchored to this enterprise
          *         limit: Max results per page (default 50, max 100)
          *         offset: Pagination offset
          *
          *     Returns:
-         *         AdminUserListResponse with users, total, limit, offset
+         *         AdminUserListResponse with users, total, limit, offset. ``total`` counts
+         *         every match the list ranges over — every enterprise under multi.
          *
          *     Raises:
          *         401 Unauthorized: No valid JWT token
          *         403 Forbidden: Caller is not a platform admin, or carries no
-         *             enterprise to be confined to
-         *         422 Unprocessable Entity: Invalid query parameters
+         *             enterprise to act within
+         *         422 Unprocessable Entity: Invalid query parameters, or a ``role``
+         *             filter on the cross-enterprise list
+         *         500 Internal Server Error: The read failed after the access was
+         *             recorded
+         *         503 Service Unavailable: Under multi, the access could not be
+         *             recorded, or the account store is not composed — refused before
+         *             anything is read
          */
         get: operations["list_users_api_v1_admin_users_get"];
         put?: never;
@@ -4148,6 +4162,8 @@ export interface components {
             organization_id?: string | null;
             /** Resolved At */
             resolved_at: string | null;
+            /** Shared Team Ids */
+            shared_team_ids?: string[];
             /**
              * Source
              * @default copilot
@@ -4188,9 +4204,19 @@ export interface components {
         };
         /**
          * AdminUserListItem
-         * @description User list item for admin endpoints (with full info).
+         * @description One account in the operator's account list.
+         *
+         *     Under ``TENANT_PROVIDER=multi`` the list spans every enterprise; the
+         *     operator administers only the accounts of their own enterprise, which
+         *     ``manageable`` marks.
          */
         AdminUserListItem: {
+            /**
+             * Account Kind
+             * @description 'individual' for a person, 'service' for an integration's service account.
+             * @enum {string}
+             */
+            account_kind: "individual" | "service";
             /**
              * Created At
              * Format: date-time
@@ -4198,7 +4224,10 @@ export interface components {
             created_at: string;
             /** Email */
             email: string;
-            /** Enterprise Id */
+            /**
+             * Enterprise Id
+             * @description The enterprise the account is anchored to.
+             */
             enterprise_id: string;
             /** Full Name */
             full_name: string;
@@ -4208,8 +4237,21 @@ export interface components {
             is_verified: boolean;
             /** Last Login At */
             last_login_at?: string | null;
-            /** Roles */
+            /**
+             * Manageable
+             * @description Whether the operator can administer this account (deactivate, activate, change its roles). True for every account in the operator's own enterprise — every account under single-tenancy. False for an account in another enterprise, which the administration routes answer with 404. Per-target refusals still apply on a manageable row: an operator cannot deactivate or re-role their own account.
+             */
+            manageable: boolean;
+            /**
+             * Roles
+             * @description The account's organization-scoped roles. Reported only for an account the operator can manage (`manageable`); on a row outside the operator's enterprise the list is empty, which means 'not reported', not 'holds no role'.
+             */
             roles: string[];
+            /**
+             * Service Channel
+             * @description Which integration a service account serves (for example 'slack'); null for a person.
+             */
+            service_channel?: string | null;
             /**
              * Updated At
              * Format: date-time
@@ -4221,6 +4263,9 @@ export interface components {
         /**
          * AdminUserListResponse
          * @description Admin user list response with pagination.
+         *
+         *     ``total`` counts every account matching the filters that the list ranges
+         *     over — every enterprise under ``TENANT_PROVIDER=multi``.
          */
         AdminUserListResponse: {
             /** Limit */
@@ -5434,7 +5479,7 @@ export interface components {
             auth_mode: string;
             /**
              * Db Backend
-             * @description 'sqlite' or 'postgresql'
+             * @description 'sqlite' or 'postgresql' — the dialect of the database engine the running process built; 'not initialized' before it has built one
              */
             db_backend: string;
             /**
@@ -5465,7 +5510,7 @@ export interface components {
             rate_limit_enabled: boolean;
             /**
              * Session Storage
-             * @description 'inmemory' or 'redis'
+             * @description 'redis' or 'fakeredis (inmemory)' — the Redis client the session store actually uses, not the configured one; 'not initialized' before the composition root has set it
              */
             session_storage: string;
             /**
@@ -5475,7 +5520,7 @@ export interface components {
             timestamp: string;
             /**
              * Vector Storage
-             * @description 'inmemory' or 'chromadb'
+             * @description What the running process's KB and evidence ChromaDB clients talk to: 'chromadb (server)', 'chromadb (persistent, split: kb + evidence)', 'disabled' when neither was built, or a per-client breakdown when they differ
              */
             vector_storage: string;
         };
@@ -6391,10 +6436,24 @@ export interface components {
          * OperatorAction
          * @description What an operator did that this table has to remember.
          *
-         *     Two are the metadata/content boundary D8/D9 governs. ``LIST`` is ambient
-         *     metadata (ids, org, state, timestamps, counts — never titles).
-         *     ``CONTENT_OPEN`` is tenant content: title, transcript, evidence. Title
-         *     counts as content because it is user free-text and leaks.
+         *     Two are the metadata/content boundary D8/D9 governs. ``CONTENT_OPEN`` is
+         *     tenant content: title, transcript, evidence — data the service holds on a
+         *     customer's behalf, reachable only behind break-glass. Title counts as
+         *     content because it is user free-text and leaks.
+         *
+         *     ``LIST`` is a cross-tenant list of operator metadata, and covers two
+         *     surfaces, told apart by ``details.surface``:
+         *
+         *     * ``"cases"`` — the case list: ids, enterprise, state, timestamps, counts,
+         *       never a title or any other text a user typed into a case.
+         *     * ``"accounts"`` — the account list. It does carry user free-text: each
+         *       account's email address and display name. That is deliberate. Account
+         *       records — who holds an account, in which enterprise, of which kind,
+         *       whether it is active — are the service's own operational data about its
+         *       users, not data it holds on a customer's behalf, which is what case
+         *       content is and why it stays behind break-glass. The operator needs them
+         *       to run the service, and the list carries nothing else: no credential,
+         *       SSO subject, token, preference or role.
          *
          *     ``ROLE_GRANTED`` / ``ROLE_REVOKED`` are not data access — they record
          *     changes to *who is an operator*. They live here because ``platform_admin``
@@ -8140,10 +8199,12 @@ export interface operations {
             query?: {
                 /** @description Filter by active/inactive status */
                 is_active?: boolean | null;
-                /** @description Filter by role (admin, member, viewer) */
+                /** @description Filter by role (admin, member, viewer). Not available on the cross-enterprise list (TENANT_PROVIDER=multi), which reports roles only for the operator's own enterprise: refused there with 422 */
                 role?: string | null;
                 /** @description Search email or full_name (case-insensitive) */
                 search?: string | null;
+                /** @description Only accounts anchored to this enterprise */
+                enterprise_id?: string | null;
                 /** @description Max results per page */
                 limit?: number;
                 /** @description Pagination offset */
