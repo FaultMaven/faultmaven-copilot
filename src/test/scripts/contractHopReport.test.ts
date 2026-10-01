@@ -133,9 +133,9 @@ vitestDescribe('the contract-hop disclosure', () => {
   });
 
   it('orders NUMERICALLY, not lexically', () => {
-    // The real contract is at 9.0.0 today, so 10.x is the next hop that can
-    // exist — and it is the one a lexical comparison gets wrong, placing
-    // '10.0.0' before '9.0.0'. Pinned before it can happen rather than after.
+    // 10.x is where a lexical comparison first goes wrong: it places '10.0.0'
+    // before '9.0.0'. Every two-digit major after it depends on the numeric
+    // ordering this pins.
     const TWO_DIGIT = [
       '# 10.0.0 — MAJOR. The one after nine.',
       '# Its second line.',

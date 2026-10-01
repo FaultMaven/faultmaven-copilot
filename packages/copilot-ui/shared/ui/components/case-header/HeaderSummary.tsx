@@ -77,9 +77,8 @@ export interface CaseActionOption {
  * Both phases offer only ``closed``. ``investigating`` is reached by confirming
  * a problem statement (Gate 1) and ``resolved`` by confirming the resolution
  * the agent proposes once the root cause is confirmed eliminated — neither is
- * something a user picks. (Requesting ``investigating`` is refused by the
- * backend today; requesting ``resolved`` is refused from contract 9.0.0, which
- * this repo pins.)
+ * something a user picks. (Requesting ``investigating`` is refused by every
+ * backend since #1608, and requesting ``resolved`` since contract 9.0.0.)
  *
  * The INQUIRY branch used to inject ``investigating`` unconditionally with
  * ``eligibility: null`` — which meant the one transition with a real content

@@ -24,7 +24,7 @@ const log = createLogger('StatusChangeRequestModal');
 // Only `closed` is reachable from the menu, from either phase. `investigating`
 // is earned by a confirmed problem statement and `resolved` by a confirmed
 // root-cause elimination, so neither is something a user picks and neither
-// needs copy here. (``investigating`` is refused by every backend since #1608; ``resolved`` is refused from contract 9.0.0, which this repo pins.)
+// needs copy here. (``investigating`` is refused by every backend since #1608; ``resolved`` is refused since contract 9.0.0.)
 const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
   inquiry: {
     closed: "Close this case. I don't need further investigation."
