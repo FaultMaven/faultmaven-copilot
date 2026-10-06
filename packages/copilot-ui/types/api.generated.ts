@@ -3507,7 +3507,8 @@ export interface paths {
          *
          *     Args:
          *         session_id: Session identifier
-         *         updates: Dict of fields to update (metadata, timeout_minutes, etc.)
+         *         updates: Fields to update. Only `metadata` (a JSON object, which
+         *             replaces the stored one) may be updated.
          *
          *     Returns:
          *         Updated session information
@@ -3515,7 +3516,8 @@ export interface paths {
          *     Raises:
          *         404: Session not found
          *         403: User not authorized to update this session
-         *         400: Invalid update fields (trying to update case data)
+         *         400: Any field other than `metadata`, or a `metadata` that is not a
+         *             JSON object. Nothing is updated.
          */
         put: operations["update_session_api_v1_sessions__session_id__put"];
         post?: never;
@@ -5655,10 +5657,13 @@ export interface components {
         };
         /**
          * HypothesisState
-         * @description Hypothesis lifecycle state
+         * @description Hypothesis lifecycle state.
+         *
+         *     A hypothesis is formed ACTIVE, and only once the case's reported problem
+         *     has been verified by evidence.
          * @enum {string}
          */
-        HypothesisState: "captured" | "active" | "validated" | "refuted" | "inconclusive" | "retired";
+        HypothesisState: "active" | "validated" | "refuted" | "inconclusive" | "retired";
         /**
          * HypothesisSummary
          * @description Summary of a hypothesis for INVESTIGATING phase UI.
@@ -5689,7 +5694,7 @@ export interface components {
              * @description Why the hypothesis was set aside WITHOUT a verdict. Populated only when status=RETIRED; None otherwise. Carried beside ``refutation_reason`` because without it the Hypotheses tab cannot tell a hypothesis that was TESTED and abandoned from one the engine discarded having never grounded it — and retirement is by far the commoner end (40 retired against 8 refuted in the corpus), so the missing half was the larger one (#1142). The domain model truncates this to 200 characters rather than rejecting it, because the user-retire path writes the user's own message into the field.
              */
             retirement_reason?: string | null;
-            /** @description Status: CAPTURED | ACTIVE | VALIDATED | REFUTED | INCONCLUSIVE | RETIRED */
+            /** @description Status: ACTIVE | VALIDATED | REFUTED | INCONCLUSIVE | RETIRED */
             state: components["schemas"]["HypothesisState"];
             /**
              * Text
@@ -6535,6 +6540,26 @@ export interface components {
         ProblemVerificationData: {
             /** @description Scope of impact (services, users, regions) */
             impact?: components["schemas"]["ImpactData"] | null;
+            /**
+             * Invalidation Finding
+             * @description What showed the reported problem was not present (false alarm).
+             */
+            invalidation_finding?: string | null;
+            /**
+             * Original Problem Statement
+             * @description The statement the investigation opened on, when the evidence has since revised it; null when it was never revised.
+             */
+            original_problem_statement?: string | null;
+            /**
+             * Pending Revision
+             * @description The revised statement awaiting the user's confirmation.
+             */
+            pending_revision?: string | null;
+            /**
+             * Problem Status
+             * @description Where the confirmed problem statement stands against the evidence: unverified | verified | revision_pending (a revised statement awaits the user's confirmation) | invalidated (the reported problem was not present: a false alarm)
+             */
+            problem_status?: string | null;
             /**
              * Severity
              * @description Severity: critical | high | medium | low

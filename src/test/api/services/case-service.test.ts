@@ -826,6 +826,7 @@ describe('Case Service', () => {
 
     it('pins the map to the backend reasons plus the defensive fallback', () => {
       expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
+        'closed_false_alarm',
         'closed_insufficient_evidence',
         'closed_rca_infeasible',
         'closed_restatement_held',

@@ -145,6 +145,11 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
     shortLabel: 'Insufficient Evidence',
     description: 'Closed without establishing the problem or its cause; the honest partial is preserved.',
   },
+  closed_false_alarm: {
+    label: 'False alarm',
+    shortLabel: 'False Alarm',
+    description: 'The evidence showed the reported problem was not present; there was nothing to fix.',
+  },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
     label: 'Other',
