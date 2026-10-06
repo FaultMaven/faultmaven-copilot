@@ -38,13 +38,13 @@ const activeCase = {
  * always held the answer.
  */
 const attachment = (over: Record<string, unknown> = {}) => ({
-  evidence_id: `ev-${Math.random()}`,
+  file_id: `file-${Math.random()}`,
   filename: 'pasted text (turn 3)',
-  data_type: 'logs',
   file_size: 512,
   processing_status: 'completed',
   source_type: 'logs',
   upload_source: 'text_paste',
+  uploaded_at: '2026-08-01T10:00:00Z',
   ...over
 });
 

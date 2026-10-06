@@ -54,7 +54,6 @@ describe('useCaseManagement', () => {
       conversationTitles: {},
       titleSources: {},
       pinnedCases: new Set(),
-      caseEvidence: {},
       sessionId: null
     });
   });

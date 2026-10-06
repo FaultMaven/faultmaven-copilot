@@ -34,7 +34,6 @@ const resetStore = () =>
     conversationTitles: {},
     titleSources: {},
     pinnedCases: new Set<string>(),
-    caseEvidence: {},
     sessionId: null
   });
 

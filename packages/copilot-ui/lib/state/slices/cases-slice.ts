@@ -1,6 +1,5 @@
 import { StateCreator } from 'zustand';
 import {
-  AttachmentResult,
   DEFAULT_CASE_LIST_LIMIT,
   getCase,
   getCaseConversation,
@@ -35,7 +34,6 @@ export interface CasesSlice {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   pinnedCases: Set<string>;
-  caseEvidence: Record<string, AttachmentResult[]>;
 
   // Actions
   setActiveCaseId: (caseId: string | null | undefined) => Promise<void>;
@@ -45,7 +43,6 @@ export interface CasesSlice {
   setTitleSources: (updater: Record<string, 'user' | 'backend' | 'system'> | ((prev: Record<string, 'user' | 'backend' | 'system'>) => Record<string, 'user' | 'backend' | 'system'>)) => void;
   setPinnedCases: (pinned: Set<string>) => void;
   togglePinnedCase: (caseId: string) => void;
-  setCaseEvidence: (updater: Record<string, AttachmentResult[]> | ((prev: Record<string, AttachmentResult[]>) => Record<string, AttachmentResult[]>)) => void;
   handleCaseSelect: (caseId: string) => void;
   refreshActiveCase: (caseId: string) => Promise<void>;
   reconcileActiveCaseState: () => Promise<void>;
@@ -64,7 +61,6 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     conversationTitles: {},
     titleSources: {},
     pinnedCases: new Set(),
-    caseEvidence: {},
 
     setActiveCaseId: async (caseId) => {
       const targetId = caseId || null;
@@ -127,14 +123,6 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         }
         return { pinnedCases: next };
       });
-    },
-
-    setCaseEvidence: (updater) => {
-      if (typeof updater === 'function') {
-        set((state) => ({ caseEvidence: updater(state.caseEvidence) }));
-      } else {
-        set({ caseEvidence: updater });
-      }
     },
 
     handleCaseSelect: (caseId) => {

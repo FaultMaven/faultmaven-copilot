@@ -369,7 +369,7 @@ const ChatWindowComponent = function ChatWindow({
                           );
                         }
                         return (
-                          <span key={att.evidence_id || idx} data-attachment-origin={origin} className="inline-flex items-center gap-1 text-fm-xs text-fm-text-tertiary">
+                          <span key={`${idx}-${att.file_id}`} data-attachment-origin={origin} className="inline-flex items-center gap-1 text-fm-xs text-fm-text-tertiary">
                             {icon}
                             <span>{att.filename}{att.file_size > 0 ? ` (${formatFileSize(att.file_size)})` : ''}</span>
                             {idx < item.attachments!.length - 1 ? <span>,</span> : null}

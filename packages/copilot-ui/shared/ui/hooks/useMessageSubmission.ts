@@ -37,6 +37,7 @@ import {
   predictedInvestigationTurn,
   serverSuppliesInvestigationTurn
 } from '../../../lib/state/turn-label';
+import { sourcesForTurn } from '../../../lib/state/turn-sources';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
@@ -380,6 +381,7 @@ export function useMessageSubmission() {
                 turn_number: response.turn_number,
                 investigation_turn: investigationTurn,
                 suggestedActions: response.suggested_actions ?? null,
+                sources: sourcesForTurn(conv, aiMessageId, response.sources),
                 optimistic: false,
                 loading: false,
                 // A successful (re)submission must clear any error state left by a

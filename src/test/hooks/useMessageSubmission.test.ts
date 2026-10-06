@@ -174,6 +174,66 @@ describe('useMessageSubmission', () => {
     expect(useAppStore.getState().activeCase?.state).toBe('investigating');
   });
 
+  // The KB pre-fetch's citations arrive on TurnResponse.sources; until they were
+  // copied onto the item, InlineSourcesRenderer's citation path never ran.
+  it('carries TurnResponse.sources onto the assistant item', async () => {
+    const { result } = render();
+    const kbSource = {
+      type: 'knowledge_base' as const,
+      content: 'Restart the pod after rotating the secret.',
+      confidence: 0.82,
+      metadata: { document_id: 'doc-1', title: 'Secret rotation runbook', trigger: 'symptom' },
+    };
+
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Based on the runbook, rotate the secret.',
+      turn_number: 1,
+      milestones_completed: [],
+      case_state: 'investigating',
+      progress_made: true,
+      attachments_processed: [],
+      sources: [kbSource],
+    });
+
+    await act(async () => {
+      await result.current.handleQuerySubmit('pods crashloop after deploy');
+    });
+
+    const ai = (useAppStore.getState().conversations['case-123'] || [])
+      .find((i) => i.response === 'Based on the runbook, rotate the secret.');
+    expect(ai?.sources).toEqual([kbSource]);
+  });
+
+  // The backend resends the standing KB context on every turn; only the turn
+  // where it appears or changes records it (lib/state/turn-sources).
+  it('does not record an unchanged KB context again on the next turn', async () => {
+    const { result } = render();
+    const kbSource = {
+      type: 'knowledge_base' as const,
+      content: 'Restart the pod after rotating the secret.',
+      confidence: 0.82,
+      metadata: { document_id: 'doc-1', title: 'Secret rotation runbook' },
+    };
+    const turn = (n: number, text: string) => ({
+      agent_response: text, turn_number: n, milestones_completed: [], case_state: 'investigating',
+      progress_made: true, attachments_processed: [], sources: [kbSource],
+    });
+
+    // Two turns need two id pairs. Earlier tests can leave values queued on
+    // this mock, so reset it rather than append to whatever is there.
+    (OptimisticIdGenerator.generateMessageId as any).mockReset()
+      .mockReturnValueOnce('user-1').mockReturnValueOnce('ai-1')
+      .mockReturnValueOnce('user-2').mockReturnValueOnce('ai-2');
+    (api.submitTurn as any).mockResolvedValueOnce(turn(1, 'First reply.'));
+    await act(async () => { await result.current.handleQuerySubmit('first'); });
+    (api.submitTurn as any).mockResolvedValueOnce(turn(2, 'Second reply.'));
+    await act(async () => { await result.current.handleQuerySubmit('second'); });
+
+    const rows = useAppStore.getState().conversations['case-123'] || [];
+    expect(rows.find((i) => i.response === 'First reply.')?.sources).toEqual([kbSource]);
+    expect(rows.find((i) => i.response === 'Second reply.')?.sources).toBeUndefined();
+  });
+
   it('should create new case if no active case exists', async () => {
     useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
     const { result } = render();

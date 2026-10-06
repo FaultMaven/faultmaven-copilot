@@ -14,7 +14,7 @@
  * user, and therefore no state in which it could render a sign-in screen. The
  * invariant is carried by the type rather than by a branch someone maintains.
  */
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
@@ -388,7 +388,6 @@ function CopilotPanelContent({
       titleSources: {},
       conversations: {},
       pendingOperations: {},
-      caseEvidence: {},
       hasUnsavedNewChat: true,
       activeCaseId: null,
       activeCase: null
@@ -405,7 +404,9 @@ function CopilotPanelContent({
     });
   };
 
-  const handleDocumentView = async (documentId: string) => {
+  // Stable identity: it reaches every assistant row's renderer, which is
+  // memoised, and a fresh closure per render re-renders all of them.
+  const handleDocumentView = useCallback(async (documentId: string) => {
     try {
       const document = await getKnowledgeDocument(documentId);
       setViewingDocument(document);
@@ -414,7 +415,7 @@ function CopilotPanelContent({
       log.error('Failed to load document', { documentId, error });
       showError(error, { operation: 'kb_document_view', metadata: { documentId } });
     }
-  };
+  }, [showError, setViewingDocument, setIsDocumentModalOpen]);
 
   if (initializingCapabilities) {
     return (

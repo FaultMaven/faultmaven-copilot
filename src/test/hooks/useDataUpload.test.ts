@@ -75,8 +75,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
       conversations: { 'case-123': [] },
       titleSources: {},
       conversationTitles: {},
-      pinnedCases: new Set(),
-      caseEvidence: {}
+      pinnedCases: new Set()
     });
   });
 
@@ -119,6 +118,60 @@ describe('useDataUpload — error surfacing regression guard', () => {
     for (const msg of messages) {
       expect(OptimisticIdGenerator.isOptimisticMessage(msg.id)).toBe(true);
     }
+  });
+
+  it('carries TurnResponse.sources onto the assistant item', async () => {
+    const kbSource = {
+      type: 'knowledge_base' as const,
+      content: 'Check the OOMKilled reason in the pod events.',
+      confidence: 0.77,
+      metadata: { document_id: 'doc-2', title: 'OOMKilled triage', trigger: 'symptom' },
+    };
+    (api.submitTurn as any).mockResolvedValue({ ...okTurnResponse, sources: [kbSource] });
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'here are the logs' });
+    });
+
+    const ai = useAppStore.getState().conversations['case-123']
+      .find((m) => m.response === 'Analyzed.');
+    expect(ai?.sources).toEqual([kbSource]);
+  });
+
+  // `attachments_processed` is optional in the contract. The hand-written
+  // TurnResponse made it required, and the hook spread it unguarded.
+  it('commits a turn whose response omits attachments_processed, keeping the local rows', async () => {
+    const withoutAttachments: Record<string, unknown> = { ...okTurnResponse };
+    delete withoutAttachments.attachments_processed;
+    (api.submitTurn as any).mockResolvedValue(withoutAttachments);
+
+    const { result } = render();
+    let outcome: { success: boolean } | undefined;
+    await act(async () => {
+      outcome = await result.current.handleTurnSubmit({ query: '', pastedContent: 'ERROR x', inputType: 'paste' });
+    });
+
+    expect(outcome?.success).toBe(true);
+    const user = useAppStore.getState().conversations['case-123'].find((m) => m.question !== undefined);
+    expect(user?.attachments).toHaveLength(1);
+  });
+
+  // The origin goes in `upload_source`, which `attachmentOrigin()` reads.
+  // `source_type` is the server's data classification, unknown until processed.
+  it.each([
+    ['paste', 'paste'],
+    ['page_capture', 'page_capture'],
+  ] as const)('marks an optimistic %s attachment with upload_source %s', async (inputType, origin) => {
+    (api.submitTurn as any).mockResolvedValue({ ...okTurnResponse, attachments_processed: [] });
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: '', pastedContent: 'ERROR x', inputType });
+    });
+
+    const user = useAppStore.getState().conversations['case-123'].find((m) => m.question !== undefined);
+    expect(user?.attachments?.[0]).toMatchObject({ upload_source: origin, source_type: '' });
   });
 
   it('registers a retryable submit_query pending op when the turn fails', async () => {
@@ -226,8 +279,7 @@ describe('useDataUpload — reaches storage through the host', () => {
       conversations: {},
       titleSources: {},
       conversationTitles: {},
-      pinnedCases: new Set(),
-      caseEvidence: {}
+      pinnedCases: new Set()
     });
   });
 
@@ -262,8 +314,7 @@ describe('useDataUpload — the submitted row\'s investigation turn (#251)', () 
       conversations: { 'case-123': rows as any },
       titleSources: {},
       conversationTitles: {},
-      pinnedCases: new Set(),
-      caseEvidence: {}
+      pinnedCases: new Set()
     });
 
   /** An earlier aside: the clock is at 8, the investigation only at 7. */

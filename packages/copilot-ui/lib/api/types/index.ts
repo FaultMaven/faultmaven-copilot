@@ -90,7 +90,6 @@ export interface APIError {
 // Cases & Messages
 export type { UserCase, UserCaseState, CaseState } from "../../../types/case";
 import { CaseState } from "../../../types/case"; // Import for usage in types
-import type { ProgressTransparencyInfo } from "../../../types/case";
 
 // ============================================================
 // Intent-Based Query System (Clean, No Keyword Matching)
@@ -179,73 +178,27 @@ export interface TurnRequest {
 /**
  * Result of preprocessing a single attachment.
  */
-export interface AttachmentResult {
-  evidence_id: string;
-  filename: string;
-  data_type: string;
-  file_size: number;
-  processing_status: string;
-  /** ISO 8601 timestamp of when the attachment was processed */
-  uploaded_at?: string;
-  /**
-   * Input origin: file_upload | text_paste | page_capture.
-   *
-   * This is the field that actually carries the origin. Read it via
-   * `attachmentOrigin()` rather than directly, so the fallback for rows
-   * predating the current tag values stays in one place.
-   */
-  upload_source?: string;
-  /**
-   * @deprecated NOT the input origin, despite the name and this field's
-   * former doc comment. The backend fills it with the preprocessing DATA
-   * classification (`logs` | `metrics` | `configuration` | `code` | `text` |
-   * `image`) from `uploaded_file.data_type`. It has never carried an origin,
-   * so every comparison against `page_capture` / `text_paste` was dead.
-   * Use `upload_source`.
-   */
-  source_type?: string;
-}
+/**
+ * One processed attachment, aliased to the generated schema like `TurnResponse`.
+ * Read the input origin through `attachmentOrigin()` (it reads `upload_source`);
+ * `source_type` is the preprocessing DATA classification, never the origin.
+ */
+export type AttachmentResult = components['schemas']['AttachmentResult'];
 
 /**
  * Response from POST /cases/{id}/turns.
  */
-export interface TurnResponse {
-  agent_response: string;
-  /**
-   * The MESSAGE clock. Advances on every exchange, asides included, and is
-   * what evidence `uploaded_at_turn` and the conversation anchors are keyed
-   * on — so use it to ADDRESS a turn, not to display one.
-   */
-  turn_number: number;
-  /**
-   * How many of the case's turns so far were investigation work (API contract
-   * 2.7.0 / 3.5.0, FaultMaven/faultmaven#1329). This is what a client shows as
-   * "Turn N": an out-of-band exchange — small talk, trivia, a question about
-   * FaultMaven itself — advances `turn_number` and leaves this alone. Optional
-   * because a server older than 2.7.0 does not send it.
-   */
-  investigation_turn?: number | null;
-  milestones_completed: string[];
-  case_state: CaseState;
-  progress_made: boolean;
-  attachments_processed: AttachmentResult[];
-  suggested_actions?: SuggestedAction[];
-  /**
-   * ‼ ALIASED to the generated schema, not re-declared. This was a CLOSED
-   * object literal with four of the schema's six fields — and unlike the
-   * `types/case.ts` copy there was no intersection to rescue it, so reading
-   * `turnResponse.progress_transparency?.verification_status` was a compile
-   * error on data the server does send. A maintainer hitting that concludes
-   * the field is case-read-only and adds a `getCaseUI()` round-trip after
-   * every turn to fetch a value that already arrived.
-   *
-   * `api-types-drift` cannot see a divergence like this: the job regenerates
-   * and diffs `api.generated.ts` only, so a hand-written mirror in this file
-   * is outside the contract gate by construction. Aliasing is what puts it
-   * back inside.
-   */
-  progress_transparency?: ProgressTransparencyInfo | null;
-}
+/**
+ * ‼ ALIASED to the generated schema, not re-declared. The hand-written copy
+ * this replaces drifted three ways while compiling clean: it omitted `sources`
+ * (so no turn path copied the KB citations and none ever rendered), it made
+ * `attachments_processed` required (the contract makes it optional), and its
+ * `AttachmentResult` named fields the server never sends (`evidence_id`,
+ * `data_type`). `api-types-drift` regenerates and diffs `api.generated.ts`
+ * only, so a mirror in this file sits outside the contract gate by
+ * construction; aliasing is what puts it back inside.
+ */
+export type TurnResponse = components['schemas']['TurnResponse'];
 
 export interface Case {
   case_id: string;
@@ -350,12 +303,12 @@ export enum UserIntent {
  */
 export type SourceType = components['schemas']['SourceType'];
 
-export interface Source {
-  type: SourceType;
-  content: string;
-  confidence?: number;
-  metadata?: Record<string, any>;
-}
+/**
+ * One citation, aliased to the generated schema for the reason `SourceType` is:
+ * the hand-written copy had drifted (no `verification_status`, `confidence` and
+ * `metadata` never null), and a mirror here sits outside the contract gate.
+ */
+export type Source = components['schemas']['Source'];
 
 export interface FileMetadata {
   filename: string;
