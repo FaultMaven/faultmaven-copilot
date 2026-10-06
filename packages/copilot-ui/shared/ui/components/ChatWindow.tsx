@@ -1,8 +1,6 @@
 import React, { useRef, useEffect, memo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CommandValidation,
-  ScopeAssessment,
   UserCaseState,
   getStatusChangeMessage,
   QueryIntent,
@@ -12,11 +10,8 @@ import {
 } from "../../../lib/api";
 import InlineSourcesRenderer from "./InlineSourcesRenderer";
 import MarkdownRenderer from "./MarkdownRenderer";
-import type { ConversationItem as StoreConversationItem } from "../../../lib/optimistic";
+import type { ConversationItem } from "../../../lib/optimistic";
 import { SuggestionCard } from "./SuggestionCard";
-import { CommandValidationDisplay } from "./CommandValidationDisplay";
-import { ProblemDetectedAlert } from "./ProblemDetectedAlert";
-import { ScopeAssessmentDisplay } from "./ScopeAssessmentDisplay";
 // EvidencePanel and EvidenceAnalysisModal removed — the case header's
 // "Evidence" and "Files" sections now provide this functionality in a
 // compact, integrated format.  See case-header/CaseDetails.tsx.
@@ -29,35 +24,13 @@ import type { CaseUIResponse, UserCase } from "../../../types/case";
 
 const log = createLogger('ChatWindow');
 
-/**
- * What this component renders, as an EXTENSION of the store's conversation item
- * rather than a second declaration of it.
- *
- * The two were previously independent copies of the same 24 fields. Because
- * TypeScript is structural, that drift is silent in the direction that matters:
- * a slot added to the store type but not here would be carried by the store,
- * never seen by the renderer, and compile clean — which is exactly the failure
- * this file was changed to fix (#209), one layer up. Adding `notice` had to be
- * done twice; the next slot should not.
- *
- * Only the fields below are genuinely local: response-shape and presentational
- * data that the store's item does not model.
- */
-interface ConversationItem extends StoreConversationItem {
-  confidenceScore?: number | null;
-
-  commandValidation?: CommandValidation | null;
-  problemDetected?: boolean;
-  problemSummary?: string | null;
-  severity?: 'low' | 'medium' | 'high' | 'critical' | null;
-  scopeAssessment?: ScopeAssessment | null;
-
-  /** Set by the optimistic layer; see OptimisticConversationItem. */
-  pendingOperationId?: string;
-}
-
 interface ChatWindowProps {
   // State passed down as props (Single Source of Truth)
+  /**
+   * The store's own item type, not a local copy: a slot added to a separate
+   * declaration here would be carried by the store, never seen by the
+   * renderer, and compile clean (#209).
+   */
   conversation: ConversationItem[];
   activeCase: UserCase | null;
   loading: boolean;
@@ -481,40 +454,11 @@ const ChatWindowComponent = function ChatWindow({
                     <InlineSourcesRenderer
                       content={item.response || ''}
                       sources={item.sources}
-                      evidenceRequests={item.evidenceRequests}
                       onDocumentView={onDocumentView}
                       onConfirmationYes={handleConfirmationYes}
                       onConfirmationNo={handleConfirmationNo}
                       className="break-words text-body"
                     />
-
-                    {/* OODA v3.2.0 Response Format Components */}
-                    {item.problemDetected && item.problemSummary && item.severity && (
-                      <ProblemDetectedAlert
-                        problemSummary={item.problemSummary}
-                        severity={item.severity}
-                      />
-                    )}
-
-                    {item.scopeAssessment && (
-                      <ScopeAssessmentDisplay assessment={item.scopeAssessment} />
-                    )}
-
-                    {/* Investigation Plan */}
-                    {item.plan && (
-                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-accent-border rounded-lg">
-                        <div className="text-finding-title text-fm-accent mb-2 flex items-center gap-2">
-                          📋 Investigation Plan - Step {item.plan.step_number}
-                        </div>
-                        <div className="p-2.5 bg-fm-canvas rounded-md border border-fm-border">
-                          <div className="text-body font-medium text-fm-text-primary mb-1">{item.plan.action}</div>
-                          <div className="text-body text-fm-text-tertiary">{item.plan.description}</div>
-                          {item.plan.estimated_time && (
-                            <div className="text-micro text-fm-text-secondary mt-1.5">Estimated: {item.plan.estimated_time}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
 
                     {/* Suggestions */}
                     {item.suggestedActions && item.suggestedActions.length > 0 && (
@@ -534,89 +478,6 @@ const ChatWindowComponent = function ChatWindow({
                           />
                         ))}
                       </div>
-                    )}
-
-                    {item.commandValidation && (
-                      <CommandValidationDisplay validation={item.commandValidation} />
-                    )}
-
-                    {/* Next Action Hint */}
-                    {item.nextActionHint && (
-                      <div className="mt-3 p-2.5 bg-fm-elevated border border-fm-accent-border rounded-lg">
-                        <div className="text-meta font-semibold text-fm-accent mb-1">💡 Next Action</div>
-                        <div className="text-body text-fm-text-primary">{item.nextActionHint}</div>
-                      </div>
-                    )}
-
-                    {/* New Hypotheses */}
-                    {item.newHypotheses && item.newHypotheses.length > 0 && (
-                      <div className="mt-3 p-3 bg-fm-elevated border border-fm-accent-border rounded-lg">
-                        <div className="text-finding-title text-fm-accent mb-2">🧪 New Hypotheses Generated</div>
-                        <div className="space-y-2">
-                          {item.newHypotheses.map((hypothesis, idx) => (
-                            <div key={idx} className="p-2.5 bg-fm-canvas rounded-md border border-fm-border">
-                              <div className="text-body font-medium text-fm-text-primary mb-1">{hypothesis.statement}</div>
-                              <div className="flex items-center gap-2 text-micro text-fm-text-tertiary mb-1">
-                                <span className="px-1.5 py-0.5 bg-fm-accent-soft rounded font-mono">{hypothesis.category}</span>
-                                <span>Likelihood: {(hypothesis.likelihood * 100).toFixed(0)}%</span>
-                                <span className={`px-1.5 py-0.5 rounded ${hypothesis.state === 'validated' ? 'bg-fm-success-bg text-fm-success' :
-                                  hypothesis.state === 'refuted' ? 'bg-fm-critical-bg text-fm-critical' :
-                                    hypothesis.state === 'testing' ? 'bg-fm-warning-bg text-fm-warning' :
-                                      'bg-fm-surface text-fm-text-tertiary'
-                                  }`}>
-                                  {hypothesis.state}
-                                </span>
-                              </div>
-                              {hypothesis.testing_strategy && (
-                                <div className="text-micro text-fm-text-secondary mt-1">
-                                  <span className="font-medium">Testing:</span> {hypothesis.testing_strategy}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Hypothesis Test Results */}
-                    {item.hypothesisTested && item.testResult && (
-                      <div className={`mt-3 p-3 rounded-lg border ${item.testResult.outcome === 'supports' ? 'bg-fm-elevated border-fm-success-border' :
-                        item.testResult.outcome === 'refutes' ? 'bg-fm-elevated border-fm-critical-border' :
-                          'bg-fm-elevated border-fm-warning-border'
-                        }`}>
-                        <div className={`text-finding-title mb-2 ${item.testResult.outcome === 'supports' ? 'text-fm-success' :
-                          item.testResult.outcome === 'refutes' ? 'text-fm-critical' :
-                            'text-fm-warning'
-                          }`}>
-                          {item.testResult.outcome === 'supports' ? '✅ Hypothesis Supported' :
-                            item.testResult.outcome === 'refutes' ? '❌ Hypothesis Refuted' :
-                              '❓ Inconclusive Test'}
-                        </div>
-                        <div className="space-y-2">
-                          <div className="p-2 bg-fm-canvas rounded-md border border-fm-border">
-                            <div className="text-meta font-medium text-fm-text-tertiary mb-0.5">Tested Hypothesis</div>
-                            <div className="text-body text-fm-text-primary italic">{item.hypothesisTested}</div>
-                          </div>
-                          <div className="p-2 bg-fm-canvas rounded-md border border-fm-border">
-                            <div className="text-meta font-medium text-fm-text-tertiary mb-0.5">Test: {item.testResult.test_description}</div>
-                            <div className="text-body text-fm-text-primary">{item.testResult.evidence_summary}</div>
-                          </div>
-                          <div className="flex items-center gap-2 text-micro">
-                            <span className="font-medium text-fm-text-tertiary">Confidence Impact:</span>
-                            <span className={`px-2 py-0.5 rounded font-mono font-medium ${item.testResult.confidence_impact > 0 ? 'bg-fm-success-bg text-fm-success' :
-                              item.testResult.confidence_impact < 0 ? 'bg-fm-critical-bg text-fm-critical' :
-                                'bg-fm-surface text-fm-text-tertiary'
-                              }`}>
-                              {item.testResult.confidence_impact > 0 ? '+' : ''}{(item.testResult.confidence_impact * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action required indicator */}
-                    {item.requiresAction && (
-                      <div className="mt-1 text-fm-warning text-xs font-medium">⚠️ Action Required</div>
                     )}
 
                   </div>

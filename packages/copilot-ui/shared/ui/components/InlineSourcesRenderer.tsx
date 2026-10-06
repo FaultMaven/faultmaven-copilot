@@ -1,18 +1,16 @@
 import React, { memo, useState, useMemo, useRef, useEffect } from 'react';
-import { Source, EvidenceRequest } from '../../../lib/api';
+import { Source } from '../../../lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
 import { cleanResponseText } from '../../../lib/utils/text-processor';
-import EvidenceRequestCard from './EvidenceRequestCard';
 import { ConfirmationButtons } from './ConfirmationButtons';
 import { MermaidDiagram } from './MermaidDiagram';
 
 interface InlineSourcesRendererProps {
   content: string;
   sources?: Source[];
-  evidenceRequests?: EvidenceRequest[];
   onDocumentView?: (documentId: string) => void;
   onConfirmationYes?: () => void;
   onConfirmationNo?: () => void;
@@ -237,7 +235,6 @@ function processChildrenForPII(children: React.ReactNode): React.ReactNode {
 const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
   content,
   sources = [],
-  evidenceRequests = [],
   onDocumentView,
   onConfirmationYes,
   onConfirmationNo,
@@ -274,21 +271,6 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
             onCancel={onConfirmationNo}
           />
         )}
-
-        {/* Render evidence requests below content */}
-        {evidenceRequests && evidenceRequests.length > 0 && (
-          <div className="mt-4 space-y-3">
-            <div className="text-xs font-semibold text-fm-text-primary uppercase tracking-wide mb-2">
-              Data Requested
-            </div>
-            {evidenceRequests.map((request) => (
-              <EvidenceRequestCard
-                key={request.request_id}
-                request={request}
-              />
-            ))}
-          </div>
-        )}
       </div>
     );
   }
@@ -306,21 +288,6 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
           onConfirm={onConfirmationYes}
           onCancel={onConfirmationNo}
         />
-      )}
-
-      {/* Render evidence requests below content and sources */}
-      {evidenceRequests && evidenceRequests.length > 0 && (
-        <div className="mt-4 space-y-3">
-          <div className="text-xs font-semibold text-fm-text-primary uppercase tracking-wide mb-2">
-            Data Requested
-          </div>
-          {evidenceRequests.map((request) => (
-            <EvidenceRequestCard
-              key={request.request_id}
-              request={request}
-            />
-          ))}
-        </div>
       )}
     </div>
   );
