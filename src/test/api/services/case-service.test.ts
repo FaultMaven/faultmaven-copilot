@@ -783,10 +783,10 @@ describe('Case Service', () => {
     //
     // WHAT THIS DOES AND DOES NOT CATCH. The expected list is a literal in this
     // file, so it pins the map against a deliberate edit — dropping or renaming
-    // a key here fails. It CANNOT detect backend drift: a sixth reason added on
-    // the backend leaves this suite green, because nothing shared crosses the
+    // a key here fails. It CANNOT detect backend drift: a reason added on the
+    // backend leaves this suite green, because nothing shared crosses the
     // repo boundary. `closure_reason` is typed as a bare `string` in
-    // src/lib/api/types/index.ts, and the OpenAPI pipeline is not a dependable
+    // packages/copilot-ui/lib/api/types/index.ts, and the OpenAPI pipeline is not a dependable
     // gate, so there is no artifact to assert against. The real protection is
     // the `other` fallback every consumer now applies, which degrades an
     // unknown reason to a readable row instead of dropping it.
