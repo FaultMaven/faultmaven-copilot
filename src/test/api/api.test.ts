@@ -3,7 +3,6 @@ import {
   createSession,
   heartbeatSession,
   submitTurn,
-  ResponseType,
   TurnResponse,
 } from '@faultmaven/copilot-ui/lib/api';
 
@@ -258,18 +257,6 @@ describe('API Functions', () => {
       expect(classified).toBeInstanceOf(CaseVersionConflictError);
       expect(classified.recovery).toBe('manual_retry');
       expect(classified.userMessage).toMatch(/case state changed/i);
-    });
-  });
-
-  describe('Response Types', () => {
-    it('supports all response types', () => {
-      expect(ResponseType.ANSWER).toBe('ANSWER');
-      expect(ResponseType.PLAN_PROPOSAL).toBe('PLAN_PROPOSAL');
-      expect(ResponseType.CLARIFICATION_REQUEST).toBe('CLARIFICATION_REQUEST');
-      expect(ResponseType.CONFIRMATION_REQUEST).toBe('CONFIRMATION_REQUEST');
-      expect(ResponseType.SOLUTION_READY).toBe('SOLUTION_READY');
-      expect(ResponseType.NEEDS_MORE_DATA).toBe('NEEDS_MORE_DATA');
-      expect(ResponseType.ESCALATION_REQUIRED).toBe('ESCALATION_REQUIRED');
     });
   });
 });

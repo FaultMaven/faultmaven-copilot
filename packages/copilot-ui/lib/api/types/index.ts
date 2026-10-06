@@ -311,29 +311,6 @@ export interface User {
 }
 
 // Evidence & Analysis
-export enum EvidenceCategory {
-  SYMPTOMS = 'symptoms',
-  TIMELINE = 'timeline',
-  CHANGES = 'changes',
-  CONFIGURATION = 'configuration',
-  SCOPE = 'scope',
-  METRICS = 'metrics',
-  ENVIRONMENT = 'environment'
-}
-
-export enum EvidenceStatus {
-  PENDING = 'pending',
-  PARTIAL = 'partial',
-  COMPLETE = 'complete',
-  BLOCKED = 'blocked',
-  OBSOLETE = 'obsolete'
-}
-
-export enum InvestigationMode {
-  ACTIVE_INCIDENT = 'active_incident',
-  POST_MORTEM = 'post_mortem'
-}
-
 export enum CompletenessLevel {
   PARTIAL = 'partial',
   COMPLETE = 'complete',
@@ -361,16 +338,6 @@ export enum UserIntent {
   OFF_TOPIC = 'off_topic'
 }
 
-export enum ResponseType {
-  ANSWER = "ANSWER",
-  PLAN_PROPOSAL = "PLAN_PROPOSAL",
-  CLARIFICATION_REQUEST = "CLARIFICATION_REQUEST",
-  CONFIRMATION_REQUEST = "CONFIRMATION_REQUEST",
-  SOLUTION_READY = "SOLUTION_READY",
-  NEEDS_MORE_DATA = "NEEDS_MORE_DATA",
-  ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
-}
-
 /**
  * Where a citation came from, as the contract publishes it.
  *
@@ -388,37 +355,6 @@ export interface Source {
   content: string;
   confidence?: number;
   metadata?: Record<string, any>;
-}
-
-export interface PlanStep {
-  step_number: number;
-  action: string;
-  description: string;
-  estimated_time?: string;
-  dependencies?: number[];
-  required_tools?: string[];
-}
-
-export interface AcquisitionGuidance {
-  commands: string[];
-  file_locations: string[];
-  ui_locations: string[];
-  alternatives: string[];
-  prerequisites: string[];
-  expected_output?: string | null;
-}
-
-export interface EvidenceRequest {
-  request_id: string;
-  label: string;
-  description: string;
-  category: EvidenceCategory;
-  guidance: AcquisitionGuidance;
-  status: EvidenceStatus;
-  created_at_turn: number;
-  updated_at_turn?: number | null;
-  completeness: number;
-  metadata: Record<string, any>;
 }
 
 export interface FileMetadata {
@@ -505,72 +441,6 @@ export interface SuggestedAction {
    *  resolves any same-turn `new_index_N` placeholders before this
    *  reaches the wire. */
   evidence_need_id?: string;
-}
-
-export interface CommandValidation {
-  command: string;
-  is_safe: boolean;
-  safety_level: 'safe' | 'read_only' | 'caution' | 'dangerous';
-  explanation: string;
-  concerns: string[];
-  safer_alternative?: string | null;
-  conditions_for_safety: string[];
-  should_diagnose_first: boolean;
-}
-
-export interface Hypothesis {
-  statement: string;
-  likelihood: number;
-  supporting_evidence: string[];
-  category: 'configuration' | 'code' | 'infrastructure' | 'dependency' | 'data';
-  testing_strategy: string;
-  state: 'pending' | 'testing' | 'validated' | 'refuted';
-}
-
-export interface TestResult {
-  test_description: string;
-  outcome: 'supports' | 'refutes' | 'inconclusive';
-  confidence_impact: number;
-  evidence_summary: string;
-}
-
-export interface ScopeAssessment {
-  affected_scope: 'all_users' | 'user_subset' | 'specific_users' | 'unknown';
-  affected_components: string[];
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  impact_percentage?: number | null;
-  impact_description?: string | null;
-}
-
-export interface AgentResponse {
-  schema_version?: string;
-  content: string;
-  response_type: ResponseType;
-  session_id: string;
-  case_id?: string | null;
-  likelihood?: number | null;
-  sources?: Source[];
-  plan?: PlanStep | null;
-  estimated_time_to_resolution?: string;
-  next_action_hint?: string | null;
-  view_state?: ViewState | null;
-  metadata?: Record<string, any>;
-  evidence_requests: EvidenceRequest[];
-  investigation_mode: InvestigationMode;
-  case_state: CaseState;
-  suggested_actions?: SuggestedAction[];
-  command_validation?: CommandValidation | null;
-  problem_detected?: boolean;
-  problem_summary?: string | null;
-  severity?: 'low' | 'medium' | 'high' | 'critical' | null;
-  phase_complete?: boolean;
-  should_advance?: boolean;
-  new_hypotheses?: Hypothesis[];
-  hypothesis_tested?: string | null;
-  test_result?: TestResult | null;
-  scope_assessment?: ScopeAssessment | null;
-  timestamp?: string;
-  response_metadata?: Record<string, any>;
 }
 
 export interface UploadedData {

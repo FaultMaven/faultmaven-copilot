@@ -7,14 +7,9 @@
 // Re-export from PendingOperationsManager for convenience
 export type { PendingOperation } from './PendingOperationsManager';
 
-// Import types from API (v3.1.0 evidence-centric)
 import {
   Source,
   SuggestedAction,
-  EvidenceRequest,
-  InvestigationMode,
-  Hypothesis,
-  TestResult,
   AttachmentResult,
 } from '../api';
 
@@ -22,7 +17,7 @@ import { UserCase } from '../../types/case';
 export type { UserCase };
 
 /**
- * Base conversation item interface - matches ChatWindow.tsx (v3.1.0)
+ * One conversation row: what the store holds and ChatWindow renders.
  */
 export interface ConversationItem {
   id: string;
@@ -46,30 +41,8 @@ export interface ConversationItem {
   notice?: string;
   error?: boolean;
   timestamp: string;
-  responseType?: string;
-  likelihood?: number | null;
   sources?: Source[];
-
-  // v3.1.0 Evidence-centric fields
-  evidenceRequests?: EvidenceRequest[];
-  investigationMode?: InvestigationMode;
-
-  // DEPRECATED v3.0.0 fields (kept for backward compatibility)
   suggestedActions?: SuggestedAction[] | null;
-
-  plan?: {
-    step_number: number;
-    action: string;
-    description: string;
-    estimated_time?: string;
-  } | null;
-  nextActionHint?: string | null;
-  requiresAction?: boolean;
-
-  // Hypothesis tracking fields (reconnected features)
-  newHypotheses?: Hypothesis[];
-  hypothesisTested?: string | null;
-  testResult?: TestResult | null;
 
   // File attachments processed in this turn
   attachments?: AttachmentResult[];
