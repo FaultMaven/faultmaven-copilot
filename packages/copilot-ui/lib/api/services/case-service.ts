@@ -105,9 +105,9 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * the ResolutionActionsCard compact banner via `shortLabel`).
  *
  * The real keys mirror VALID_CLOSURE_REASONS in
- * faultmaven/modules/case/domain/models/lifecycle.py exactly (inquiry_only,
- * solution_deferred, closed_rca_infeasible, mitigation_sufficient,
- * closed_insufficient_evidence). `label` is the full
+ * faultmaven/modules/case/domain/models/lifecycle.py exactly; the key-set pin
+ * in src/test/api/services/case-service.test.ts lists them, so this comment
+ * does not. `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already
  * prefixed with "Closed". The 'other' fallback is a defensive default for cases
  * where closure_reason is null/unrecognized (used by HeaderSummary and
@@ -144,6 +144,11 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
     label: 'Insufficient evidence',
     shortLabel: 'Insufficient Evidence',
     description: 'Closed without establishing the problem or its cause; the honest partial is preserved.',
+  },
+  closed_false_alarm: {
+    label: 'False alarm',
+    shortLabel: 'False Alarm',
+    description: 'The evidence showed the reported problem was not present; there was nothing to fix.',
   },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
