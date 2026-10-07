@@ -1,10 +1,11 @@
-import React, { memo, useState, useMemo, useRef, useEffect } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Source } from '../../../lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
 import { cleanResponseText } from '../../../lib/utils/text-processor';
+import { formatSource } from '../../../lib/utils/response-handlers';
 import { ConfirmationButtons } from './ConfirmationButtons';
 import { MermaidDiagram } from './MermaidDiagram';
 
@@ -17,114 +18,88 @@ interface InlineSourcesRendererProps {
   className?: string;
 }
 
-interface SourceCitationProps {
+interface SourcesInContextProps {
+  sources: Source[];
+  onDocumentView?: (documentId: string) => void;
+}
+
+/**
+ * The runbooks the KB pre-fetch put in the model's context for this turn.
+ *
+ * Turn-level on purpose. `TurnResponse.sources` says which runbooks the model
+ * had in front of it, not which sentence each one informed, so a marker pinned
+ * to a paragraph would claim a provenance the data does not carry. A native
+ * `<details>` keeps the list reachable by keyboard and touch, and every source
+ * is listed, whatever shape the reply takes. The turn paths set `sources` only
+ * where that context appears or changes (`lib/state/turn-sources`).
+ */
+const SourcesInContext: React.FC<SourcesInContextProps> = memo(({ sources, onDocumentView }) => (
+  <details className="mt-2 text-xs text-fm-text-tertiary">
+    <summary className="cursor-pointer select-none hover:text-fm-text-secondary">
+      📚 {sources.length === 1 ? '1 runbook' : `${sources.length} runbooks`} in context
+    </summary>
+    <ul className="mt-2 space-y-2">
+      {sources.map((source, index) => (
+        <SourceEntry
+          key={`${index}-${sourceDocumentId(source) ?? ''}`}
+          source={source}
+          index={index}
+          onDocumentView={onDocumentView}
+        />
+      ))}
+    </ul>
+  </details>
+));
+
+SourcesInContext.displayName = 'SourcesInContext';
+
+/** `metadata` is an open object in the contract; read a key only when it is a non-empty string. */
+function metadataString(source: Source, key: string): string | null {
+  const value = source.metadata?.[key];
+  return typeof value === 'string' && value ? value : null;
+}
+
+function sourceDocumentId(source: Source): string | null {
+  return source.type === 'knowledge_base' ? metadataString(source, 'document_id') : null;
+}
+
+interface SourceEntryProps {
   source: Source;
   index: number;
   onDocumentView?: (documentId: string) => void;
 }
 
-const SourceCitation: React.FC<SourceCitationProps> = memo(({ source, index, onDocumentView }) => {
-  const [isHovered, setIsHovered] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState<'left' | 'right'>('left');
-  const tooltipRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLSpanElement>(null);
-
-  // Get source content (handle both content and snippet fields)
-  const sourceContent = source.content || (source as any).snippet || 'No preview available';
-  const sourceTitle = source.metadata?.title || (source as any).name || `Source ${index + 1}`;
-
-  // Extract document ID for viewing
-  const documentId = source.type === 'knowledge_base' && source.metadata?.document_id
-    ? source.metadata.document_id
-    : null;
-
-  // Truncate content for preview
-  const preview = sourceContent.length > 100
-    ? sourceContent.substring(0, 100) + "..."
-    : sourceContent;
-
-  // Calculate optimal tooltip position to prevent viewport overflow
-  useEffect(() => {
-    if (isHovered && tooltipRef.current && triggerRef.current) {
-      const tooltip = tooltipRef.current;
-      const trigger = triggerRef.current;
-      const triggerRect = trigger.getBoundingClientRect();
-      const tooltipRect = tooltip.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-
-      // Calculate if tooltip would overflow on the right side
-      // Add 20px buffer from viewport edge
-      const wouldOverflowRight = triggerRect.left + tooltipRect.width > viewportWidth - 20;
-
-      // Calculate if we have enough space on the left
-      const hasSpaceOnLeft = triggerRect.right - tooltipRect.width > 20;
-
-      // Position to the right (align right edge to trigger) if would overflow and has space on left
-      if (wouldOverflowRight && hasSpaceOnLeft) {
-        setTooltipPosition('right');
-      } else {
-        setTooltipPosition('left');
-      }
-    }
-  }, [isHovered]);
+const SourceEntry: React.FC<SourceEntryProps> = memo(({ source, index, onDocumentView }) => {
+  const { emoji, label, confidence } = formatSource(source);
+  const title = metadataString(source, 'title') ?? `Source ${index + 1}`;
+  const documentId = sourceDocumentId(source);
 
   return (
-    <span
-      ref={triggerRef}
-      className="relative inline-block ml-1"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <sup className="text-xs text-fm-accent cursor-help hover:text-fm-accent font-medium bg-fm-accent-soft px-1 rounded">
-        [{index + 1}]
-      </sup>
-
-      {isHovered && (
-        <div
-          ref={tooltipRef}
-          className={`absolute bottom-full z-50 w-80 mb-2 p-3 bg-fm-surface border border-fm-border rounded-lg shadow-lg ${tooltipPosition === 'right' ? 'right-0' : 'left-0'
-            }`}
-        >
-          <div className="flex items-start justify-between mb-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm font-medium text-white truncate">
-                {sourceTitle}
-              </span>
-              <span className="text-xs text-fm-text-tertiary bg-fm-surface px-1.5 py-0.5 rounded-full flex-shrink-0">
-                {source.type === 'knowledge_base' ? '📚' : '📄'} {source.type.replace('_', ' ')}
-              </span>
-            </div>
-          </div>
-
-          <div className="text-xs text-fm-text-primary leading-relaxed mb-3">
-            <div className="bg-fm-bg rounded p-2 border-l-2 border-fm-accent-border">
-              {preview}
-            </div>
-          </div>
-
-          {documentId && onDocumentView && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDocumentView(documentId);
-                setIsHovered(false);
-              }}
-              className="text-xs text-fm-accent hover:text-fm-accent font-medium"
-            >
-              View full document →
-            </button>
-          )}
-        </div>
+    <li className="rounded-md border border-fm-border bg-fm-surface p-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className="font-medium text-fm-text-primary">{title}</span>
+        <span>{emoji} {label}</span>
+        {confidence && <span className="font-mono">{confidence} relevance</span>}
+        {source.verification_status && <span>· {source.verification_status}</span>}
+      </div>
+      {source.content && (
+        <p className="mt-1 text-fm-text-secondary leading-relaxed">{source.content}</p>
       )}
-    </span>
+      {documentId && onDocumentView && (
+        <button
+          type="button"
+          onClick={() => onDocumentView(documentId)}
+          className="mt-1 font-medium text-fm-accent hover:underline"
+        >
+          Open runbook →
+        </button>
+      )}
+    </li>
   );
 });
 
-SourceCitation.displayName = 'SourceCitation';
+SourceEntry.displayName = 'SourceEntry';
 
-/**
- * PII Badge Component - Renders redacted PII tokens as styled badges
- */
 interface PIIBadgeProps {
   label: string;
 }
@@ -250,37 +225,17 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
     [cleanedContent, hasButtons]
   );
 
-  // If no sources, render plain markdown with PII handling
-  if (!sources || sources.length === 0) {
-    return (
-      <div className={className}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]}
-          components={createMarkdownComponents()}
-          disallowedElements={['script', 'iframe', 'object', 'embed']}
-          unwrapDisallowed
-        >
-          {contentWithoutButtons}
-        </ReactMarkdown>
-
-        {/* Render confirmation buttons if detected */}
-        {hasButtons && onConfirmationYes && onConfirmationNo && (
-          <ConfirmationButtons
-            onConfirm={onConfirmationYes}
-            onCancel={onConfirmationNo}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // Split content into sentences and paragraphs for intelligent source placement
-  const enhancedContent = injectSourceCitations(contentWithoutButtons, sources, onDocumentView);
-
   return (
     <div className={className}>
-      {enhancedContent}
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        components={MARKDOWN_COMPONENTS}
+        disallowedElements={DISALLOWED_ELEMENTS}
+        unwrapDisallowed
+      >
+        {contentWithoutButtons}
+      </ReactMarkdown>
 
       {/* Render confirmation buttons if detected */}
       {hasButtons && onConfirmationYes && onConfirmationNo && (
@@ -289,6 +244,8 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
           onCancel={onConfirmationNo}
         />
       )}
+
+      {sources.length > 0 && <SourcesInContext sources={sources} onDocumentView={onDocumentView} />}
     </div>
   );
 });
@@ -411,73 +368,13 @@ function createMarkdownComponents(): Partial<Components> {
   };
 }
 
-// Function to intelligently inject source citations into content
-function injectSourceCitations(
-  content: string,
-  sources: Source[],
-  onDocumentView?: (documentId: string) => void
-): React.ReactNode {
-  // Create a closure to track citation placement
-  let citationIndex = 0;
-
-  // Get base markdown components
-  const baseComponents = createMarkdownComponents();
-
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
-      components={{
-        ...baseComponents,
-        // Enhance paragraph rendering to include contextual citations AND PII handling
-        p: ({ children }) => {
-          const textContent = extractText(children);
-          const shouldHaveCitation = textContent.length > 40 &&
-            sources.length > 0 &&
-            citationIndex < sources.length &&
-            (textContent.includes('based on') ||
-              textContent.includes('according to') ||
-              textContent.includes('documentation') ||
-              textContent.includes('shows') ||
-              textContent.includes('indicates') ||
-              textContent.toLowerCase().includes('error') ||
-              textContent.toLowerCase().includes('issue') ||
-              textContent.toLowerCase().includes('problem') ||
-              citationIndex === 0); // Always cite first substantive paragraph
-
-          let citation = null;
-          if (shouldHaveCitation) {
-            citation = (
-              <SourceCitation
-                source={sources[citationIndex]}
-                index={citationIndex}
-                onDocumentView={onDocumentView}
-              />
-            );
-            citationIndex++;
-          }
-
-          // Process PII tokens in paragraph text while preserving React elements
-          let processedChildren: React.ReactNode = children;
-          if (textContent.includes('{{REDACTED:')) {
-            processedChildren = processChildrenForPII(children);
-          }
-
-          return (
-            <p className="text-sm text-fm-text-secondary leading-relaxed mb-2">
-              {processedChildren}
-              {citation}
-            </p>
-          );
-        }
-      }}
-      disallowedElements={['script', 'iframe', 'object', 'embed']}
-      unwrapDisallowed
-    >
-      {content}
-    </ReactMarkdown>
-  );
-}
+// Built once. react-markdown uses each entry as an element TYPE, so a fresh
+// function per render makes React unmount and remount every paragraph, code
+// block and Mermaid diagram of every message on each re-render.
+const MARKDOWN_COMPONENTS = createMarkdownComponents();
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeHighlight];
+const DISALLOWED_ELEMENTS = ['script', 'iframe', 'object', 'embed'];
 
 InlineSourcesRenderer.displayName = 'InlineSourcesRenderer';
 

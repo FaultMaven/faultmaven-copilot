@@ -111,7 +111,6 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       conversationTitles: {},
       titleSources: {},
       pendingOperations: {},
-      caseEvidence: {},
       pinnedCases: new Set<string>(),
       activeCaseId: null,
       activeCase: null,

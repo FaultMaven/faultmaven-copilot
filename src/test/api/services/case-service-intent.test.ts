@@ -132,7 +132,7 @@ describe('Intent-Based Turn System', () => {
   describe('File Attachments with Intent', () => {
     it('should include both files and intent in FormData', async () => {
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(
-        mockTurnResponse({ attachments_processed: [{ evidence_id: 'ev_1', filename: 'log.txt', data_type: 'logs_and_errors', file_size: 100, processing_status: 'completed' }] })
+        mockTurnResponse({ attachments_processed: [{ file_id: 'file_1', filename: 'log.txt', file_size: 100, processing_status: 'completed', source_type: 'logs', upload_source: 'file_upload', uploaded_at: '2026-02-22T12:00:00Z' }] })
       );
 
       const mockFile = new File(['log content'], 'log.txt', { type: 'text/plain' });

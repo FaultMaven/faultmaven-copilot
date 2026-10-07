@@ -540,11 +540,13 @@ describe('Case Service', () => {
         progress_made: true,
         is_stuck: false,
         attachments_processed: [{
-          evidence_id: 'ev_abc123',
+          file_id: 'file_abc123',
           filename: 'pasted-content-20260222T120000.txt',
-          data_type: 'logs_and_errors',
           file_size: 1024,
-          processing_status: 'completed'
+          processing_status: 'completed',
+          source_type: 'logs',
+          upload_source: 'paste',
+          uploaded_at: '2026-02-22T12:00:00Z'
         }]
       };
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse(turnResponseData));
@@ -557,7 +559,7 @@ describe('Case Service', () => {
       const body = callArgs[1].body;
       expect(body.get('pasted_content')).toBe('ERROR: Connection refused at port 5432');
       expect(result.attachments_processed).toHaveLength(1);
-      expect(result.attachments_processed[0].evidence_id).toBe('ev_abc123');
+      expect(result.attachments_processed?.[0].file_id).toBe('file_abc123');
     });
 
     it('should submit a turn with query and intent', async () => {

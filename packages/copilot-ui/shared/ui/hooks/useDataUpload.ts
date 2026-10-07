@@ -28,6 +28,7 @@ import {
   predictedInvestigationTurn,
   serverSuppliesInvestigationTurn
 } from '../../../lib/state/turn-label';
+import { sourcesForTurn } from '../../../lib/state/turn-sources';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -66,7 +67,6 @@ export function useDataUpload() {
   const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
   const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversations = useAppStore((state) => state.setConversations);
-  const setCaseEvidence = useAppStore((state) => state.setCaseEvidence);
   const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   /**
@@ -174,9 +174,10 @@ export function useDataUpload() {
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
     // Update optimistic messages with real response data
-    const attachments: AttachmentResult[] = turnResponse.attachments_processed.length > 0
-      ? turnResponse.attachments_processed
-      : localAttachments;
+    // Optional in the contract: a turn the server reports without attachments
+    // keeps the local rows rather than dropping them.
+    const processed = turnResponse.attachments_processed ?? [];
+    const attachments: AttachmentResult[] = processed.length > 0 ? processed : localAttachments;
 
     setConversations(prev => {
       // See useMessageSubmission: `TurnResponse.investigation_turn` exists from
@@ -209,6 +210,7 @@ export function useDataUpload() {
               turn_number: turnResponse.turn_number,
               investigation_turn: investigationTurn,
               suggestedActions: turnResponse.suggested_actions ?? null,
+              sources: sourcesForTurn(rows, aiMessageId, turnResponse.sources),
               optimistic: false,
               loading: false,
               // Clear any error state from a prior failed attempt (#101) so a
@@ -228,16 +230,6 @@ export function useDataUpload() {
         })
       };
     });
-
-    if (turnResponse.attachments_processed.length > 0) {
-      setCaseEvidence(prev => ({
-        ...prev,
-        [targetCaseId]: [
-          ...(prev[targetCaseId] || []),
-          ...turnResponse.attachments_processed
-        ]
-      }));
-    }
 
     setActiveCaseId(targetCaseId);
 
@@ -399,12 +391,13 @@ export function useDataUpload() {
 
       for (const f of payload.files || []) {
         localAttachments.push({
-          evidence_id: '',
+          file_id: '',
           filename: f.name,
-          data_type: '',
           file_size: f.size,
           processing_status: 'pending',
-          source_type: 'file_upload',
+          source_type: '',
+          upload_source: 'file_upload',
+          uploaded_at: new Date().toISOString(),
         });
       }
 
@@ -420,12 +413,14 @@ export function useDataUpload() {
           .replace(/[-:]/g, '').slice(0, 15);
         const isPage = payload.inputType === 'page_capture';
         localAttachments.push({
-          evidence_id: '',
+          file_id: '',
           filename: isPage ? `page-capture-${ts}.txt` : `pasted-content-${ts}.txt`,
-          data_type: '',
           file_size: new TextEncoder().encode(payload.pastedContent).length,
           processing_status: 'pending',
-          source_type: payload.inputType ?? 'text_paste',
+          // Until the server classifies the content, there is no data type.
+          source_type: '',
+          upload_source: isPage ? 'page_capture' : 'paste',
+          uploaded_at: new Date().toISOString(),
         });
       }
 

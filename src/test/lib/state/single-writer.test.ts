@@ -46,7 +46,7 @@ describe('the active-case pointer has a single writer', () => {
     OptimisticIdGenerator.resetCounters();
     useAppStore.setState({
       sessionId: 's1', activeCaseId: null, conversations: {},
-      titleSources: {}, conversationTitles: {}, pinnedCases: new Set(), caseEvidence: {},
+      titleSources: {}, conversationTitles: {}, pinnedCases: new Set(),
     });
   });
 
