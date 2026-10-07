@@ -110,7 +110,7 @@ export function suggestionFromResponse(response: SuggestedActionResponse): Sugge
     label: response.label,
     type: knownSuggestionType(response.type),
     payload: response.payload ?? undefined,
-    body: response.body,
+    body: response.body ?? undefined,
     hints: response.hints ?? undefined,
     intent: forwardableIntent(response.intent),
     evidence_need_id: response.evidence_need_id ?? undefined,

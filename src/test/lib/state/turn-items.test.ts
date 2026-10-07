@@ -134,7 +134,7 @@ describe('applyTurnResponse', () => {
       file_size: 10,
       processing_status: 'pending',
       source_type: 'log',
-      upload_source: 'file',
+      upload_source: 'file_upload',
       uploaded_at: '2026-10-07T10:01:00Z',
     };
     const served: AttachmentResult = { ...local, file_id: 'file_9', processing_status: 'completed' };
@@ -193,6 +193,7 @@ describe('suggestionFromResponse', () => {
     });
 
     expect(action.payload).toBeUndefined();
+    expect(action.body).toBeUndefined();
     expect(action.hints).toBeUndefined();
     expect(action.intent).toBeUndefined();
     expect(action.evidence_need_id).toBeUndefined();
@@ -203,7 +204,7 @@ describe('suggestionFromResponse', () => {
   // would drop them, and the click would stop doing what it offered.
   it('keeps an intent whole: its undeclared keys and an intent type the client does not enumerate', () => {
     const reclassify = { type: 'file_reclassification', file_id: 'file_42', data_type: 'logs_and_errors' };
-    const confirm = { type: 'confirmation', confirmation_value: true, offer: 'gate1:7f3a' };
+    const confirm = { type: 'confirmation', confirmation_value: true, proposal_id: 'gate1:7f3a' };
 
     expect(suggestionFromResponse({ label: 'Logs', type: 'DECIDE', payload: 'Logs', intent: reclassify }).intent)
       .toEqual(reclassify);
@@ -227,8 +228,8 @@ describe('the turn hooks', () => {
     const source = readFileSync(file, 'utf8');
     expect(source).not.toContain('as OptimisticConversationItem');
     expect(source).toContain('applyTurnResponse(');
-    // The mapping lives in one place: a hook reading the response's fields
-    // directly is a second mapping.
-    expect(source).not.toMatch(/\.(suggested_actions|sources|agent_response)\b/);
+    // The mapping lives in one place: a hook naming the response's fields at
+    // all (dot, bracket or destructuring) is writing a second mapping.
+    expect(source).not.toMatch(/\b(suggested_actions|sources|agent_response)\b/);
   });
 });

@@ -408,7 +408,7 @@ export interface SuggestedAction {
    *  click copies. Absent for EVIDENCE/FREE_SPEECH — those carry
    *  everything in label + body/hints and are not clickable. */
   payload?: string;
-  body?: string | null;
+  body?: string;
   hints?: string[];
   /** Sent with the payload when a DECIDE is clicked, verbatim; see `SuggestionIntent`. */
   intent?: SuggestionIntent;
