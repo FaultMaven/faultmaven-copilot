@@ -74,8 +74,9 @@ const Toast: React.FC<ToastProps> = memo(({ activeError, onDismiss }) => {
         transition-all duration-300 ease-in-out
         ${isExiting ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'}
       `}
-      role="alert"
-      aria-live="assertive"
+      // A notice (`info`) is not a failure: announce it without interrupting.
+      role={displayOptions.icon === 'info' ? 'status' : 'alert'}
+      aria-live={displayOptions.icon === 'info' ? 'polite' : 'assertive'}
       aria-atomic="true"
     >
       <div className="flex items-start gap-3">

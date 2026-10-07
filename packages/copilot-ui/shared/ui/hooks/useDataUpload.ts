@@ -19,13 +19,13 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
-import type {} from '../../../lib/errors/types';
+import { DuplicateUploadNotice } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
-import { applyTurnResponse } from '../../../lib/state/turn-items';
+import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -38,6 +38,12 @@ export function useDataUpload() {
   // when this hook unmounts, so a detached poll loop doesn't keep hitting the
   // backend. Aborts are treated as silent cancellations, not upload failures.
   const inFlightControllers = useRef<Set<AbortController>>(new Set());
+
+  // How many times each turn (by its aiMessageId, which is also its
+  // Idempotency-Key) has been sent: by resilientOperation's own retries and by
+  // the failed-operation retry alike. A turn sent more than once can be matched
+  // to its own earlier attempt; see `duplicateUploads`.
+  const sends = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const controllers = inFlightControllers.current;
     return () => {
@@ -94,6 +100,7 @@ export function useDataUpload() {
     try {
       turnResponse = await resilientOperation({
         operation: async () => {
+          sends.current.set(aiMessageId, (sends.current.get(aiMessageId) ?? 0) + 1);
           return await submitTurn(targetCaseId, turnRequest, {
             signal: controller.signal,
             // Stable per-turn key so an ambiguous network failure can be safely
@@ -172,6 +179,10 @@ export function useDataUpload() {
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
+    // The conversation as submitted: `duplicateUploads` labels an original's
+    // turn from the rows that were committed before this one.
+    const submitted = useAppStore.getState().conversations[targetCaseId];
+
     setConversations(prev => ({
       ...prev,
       [targetCaseId]: applyTurnResponse(
@@ -181,6 +192,15 @@ export function useDataUpload() {
         { emptyResponseText: 'Data uploaded and processed successfully.' }
       ),
     }));
+
+    // Uploads whose content the case already held: the server stored nothing
+    // new for them, and a re-upload must not read as new data.
+    const resent = (sends.current.get(aiMessageId) ?? 0) > 1;
+    sends.current.delete(aiMessageId);
+    const duplicates = duplicateUploads(turnResponse, submitted, { resent });
+    if (duplicates.length > 0) {
+      showError(new DuplicateUploadNotice(duplicates));
+    }
 
     setActiveCaseId(targetCaseId);
 

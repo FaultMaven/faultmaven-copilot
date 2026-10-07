@@ -4,6 +4,8 @@
  * Base error class for all user-facing errors in FaultMaven Copilot
  * Extends Error with user-friendly messaging and recovery strategies
  */
+import type { AttachmentOrigin } from '../api/formatters';
+
 type StackTraceCapturer = {
   captureStackTrace?: (targetObject: object, constructorOpt?: unknown) => void;
 };
@@ -60,6 +62,7 @@ export type ErrorCategory =
   | 'rate_limit'
   | 'billing'
   | 'optimistic_rollback'
+  | 'notice'                   // Not a failure: something the user should know (DuplicateUploadNotice)
   | 'unknown';
 
 /**
@@ -72,7 +75,8 @@ export type RecoveryStrategy =
   | 'auto_retry_with_delay'    // Auto-retry after fixed delay
   | 'rollback_and_retry'       // Rollback optimistic update + allow retry
   | 'show_modal'               // Show blocking modal
-  | 'graceful_degradation';    // Disable feature, continue
+  | 'graceful_degradation'     // Disable feature, continue
+  | 'none';                    // Nothing to recover: a notice, not a failure
 
 /**
  * Context about where/when error occurred
@@ -479,6 +483,75 @@ export class QuotaExhaustedError extends UserFacingError {
       icon: 'warning'
     };
   }
+}
+
+/** One upload whose content the case already holds: the server stored nothing new for it. */
+export interface DuplicateUpload {
+  /** The name it was submitted under, which need not be the original's: the match is by content. */
+  filename: string;
+  /** How it arrived (`attachmentOrigin`): a pasted text or page capture has no name the user chose. */
+  origin: AttachmentOrigin;
+  /** The turn the original arrived on, as the conversation labels it; absent when this client cannot say. */
+  turn?: number;
+}
+
+/**
+ * Not a failure: an upload whose content the case already holds
+ * (`AttachmentResult.duplicate_of`, a per-case content-hash match). The server
+ * stored nothing new for it and asks clients for a non-blocking notice, so that
+ * a re-upload does not read as new data. It rides the toast channel as an
+ * `info` toast that dismisses itself, and the handler logs a `notice` at info.
+ *
+ * It speaks only for the uploads it names: the same submission can also carry
+ * new files, a paste or a question that were stored.
+ */
+export class DuplicateUploadNotice extends UserFacingError {
+  readonly userTitle = 'Already in the case';
+  readonly userMessage: string;
+  readonly userAction: string;
+  readonly category: ErrorCategory = 'notice';
+  readonly recovery: RecoveryStrategy = 'none';
+
+  constructor(duplicates: readonly DuplicateUpload[]) {
+    super(`Duplicate upload: ${duplicates.map((d) => d.filename).join(', ')}`);
+    this.userMessage = duplicateUploadMessage(duplicates);
+    this.userAction = duplicates.length === 1
+      ? 'Nothing new was stored for it.'
+      : 'Nothing new was stored for them.';
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 6000,
+      dismissible: true,
+      icon: 'info'
+    };
+  }
+}
+
+/**
+ * Says what matched without claiming the original had the same NAME: the
+ * server matches on content, so `renamed.log` can match `app.log`. A paste or
+ * capture is named by what it is; its filename was minted by the client.
+ */
+function duplicateUploadMessage(duplicates: readonly DuplicateUpload[]): string {
+  if (duplicates.length === 1) {
+    const [{ filename, origin, turn }] = duplicates;
+    const from = turn === undefined ? '' : `, from turn ${turn}`;
+    switch (origin) {
+      case 'text_paste':
+        return `This pasted text matches content the case already has${from}.`;
+      case 'page_capture':
+        return `This page capture matches content the case already has${from}.`;
+      default:
+        return `${filename} matches a file the case already has${from}.`;
+    }
+  }
+  const named = duplicates.map(({ filename, origin }) =>
+    origin === 'text_paste' ? 'the pasted text' : origin === 'page_capture' ? 'the page capture' : filename
+  );
+  return `${duplicates.length} of these uploads match content the case already has: ${named.join(', ')}.`;
 }
 
 /**

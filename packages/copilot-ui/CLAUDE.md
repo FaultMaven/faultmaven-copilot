@@ -55,6 +55,21 @@ used to perform. **Never clamp the wait and retry anyway** (fm#985 item 9).
 provider is out of credits): no auto-retry, no retry button, the user's input is
 preserved.
 
+`DuplicateUploadNotice` is not a failure: category `notice`, recovery `none`,
+an `info` toast that dismisses itself, is announced politely (`role="status"`),
+gives way first when the toasts are full, and is logged at info, never error.
+The upload hook shows it for uploads whose content the case already held
+(`AttachmentResult.duplicate_of`). `duplicateUploads` (`lib/state/turn-items.ts`)
+recognises the two matches that are not that, exactly rather than from turn
+numbers. A RESENT turn reports nothing, because the server commits an uploaded
+file before the turn can fail and replays only a successful response, so a
+resend matches its own first attempt; the hook counts sends per turn. A second
+copy within one submission names a sibling's new `file_id`. The text says what
+matched by content, never that the original had the same name, and says
+"nothing new" only of what matched. `duplicate_turn` is the message clock, so
+the turn is printed through `investigationTurnFor` over COMMITTED rows, and left
+out when none labels it.
+
 **Reading an error body: always `errorBodyText`** (`lib/errors/error-body.ts`).
 The backend answers in two shapes — `{ detail }` from every FastAPI handler, and
 `{ error, message, retry_after }` with **no `detail`** from the protection

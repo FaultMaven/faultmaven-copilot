@@ -1,6 +1,9 @@
+import { attachmentOrigin } from '../api/formatters';
 import type { SuggestedAction, SuggestionIntent, SuggestionType, TurnResponse } from '../api';
+import type { DuplicateUpload } from '../errors/types';
 import type { OptimisticConversationItem } from '../optimistic';
-import { serverSuppliesInvestigationTurn } from './turn-label';
+import { isCommittedMessage } from '../utils/memory-manager';
+import { investigationTurnFor, serverSuppliesInvestigationTurn } from './turn-label';
 import { rowsBefore, sourcesToShow } from './turn-sources';
 
 type SuggestedActionResponse = NonNullable<TurnResponse['suggested_actions']>[number];
@@ -134,4 +137,53 @@ function forwardableIntent(intent: SuggestedActionResponse['intent']): Suggestio
   const { type } = intent;
   // An empty type is no type: the request would carry no `intent_type`.
   return typeof type === 'string' && type !== '' ? { ...intent, type } : undefined;
+}
+
+/**
+ * The attachments of `response` whose content the case already held before
+ * this submission: the server matched them (`duplicate_of`) and stored nothing
+ * new.
+ *
+ * Not every match is one, and both exceptions are recognised exactly rather
+ * than inferred from turn numbers:
+ *
+ * - **A resend** (`resent`): the server commits an uploaded file before the
+ *   turn can fail, so that a retry dedups against it, and replays only a
+ *   successful response. A turn sent more than once therefore matches its own
+ *   earlier attempt, so a resend reports nothing. A genuine re-upload in a
+ *   resend goes unreported; a missing notice costs nothing, a false one tells
+ *   the user they repeated themselves.
+ * - **A second copy within this submission**: the first copy is stored under a
+ *   new `file_id`, and the second's `duplicate_of` names it.
+ *
+ * `rows` is the conversation as submitted, BEFORE `applyTurnResponse`.
+ * `duplicate_turn` is the MESSAGE clock (the original's `uploaded_at_turn`), so
+ * each is given the turn the conversation PRINTS for it, read from committed
+ * rows only. A failed or in-flight row's label is a prediction. When no
+ * committed row labels that turn, the turn is left out rather than printed as
+ * the other counter (see `investigationTurnFor`).
+ */
+export function duplicateUploads(
+  response: TurnResponse,
+  rows: readonly OptimisticConversationItem[] | undefined,
+  { resent }: { resent: boolean }
+): DuplicateUpload[] {
+  if (resent) return [];
+  const attachments = response.attachments_processed ?? [];
+  const storedNow = new Set(attachments.filter((a) => !a.duplicate_of).map((a) => a.file_id));
+  const history = (rows ?? []).filter(isCommittedMessage);
+
+  const duplicates: DuplicateUpload[] = [];
+  for (const attachment of attachments) {
+    if (!attachment.duplicate_of || storedNow.has(attachment.duplicate_of)) continue;
+    const original = attachment.duplicate_turn;
+    const turn = typeof original === 'number' ? investigationTurnFor(original, history) : undefined;
+    const origin = attachmentOrigin(attachment);
+    duplicates.push(
+      turn === undefined
+        ? { filename: attachment.filename, origin }
+        : { filename: attachment.filename, origin, turn }
+    );
+  }
+  return duplicates;
 }
