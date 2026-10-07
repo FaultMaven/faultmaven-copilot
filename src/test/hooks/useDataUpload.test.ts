@@ -205,6 +205,21 @@ describe('useDataUpload — error surfacing regression guard', () => {
 
       expect(useAppStore.getState().refreshSessions).toBeGreaterThan(before);
     });
+  });
+
+  // An attachment as the server reports a content match: the stored file's id
+  // twice, and the clock turn the original arrived on.
+  const duplicateOf = (duplicate_turn: number) => ({
+    file_id: 'file_1',
+    filename: 'app.log',
+    file_size: 10,
+    processing_status: 'duplicate',
+    source_type: 'log',
+    upload_source: 'file_upload',
+    uploaded_at: '2026-10-07T10:05:00Z',
+    duplicate_of: 'file_1',
+    duplicate_turn,
+  });
 
   // #306: the contract asks for a non-blocking notice when an upload duplicates
   // a file the case already holds; nothing new was stored for it.
@@ -220,17 +235,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
     (api.submitTurn as any).mockResolvedValue({
       ...okTurnResponse,
       turn_number: 4,
-      attachments_processed: [{
-        file_id: 'file_1',
-        filename: 'app.log',
-        file_size: 10,
-        processing_status: 'completed',
-        source_type: 'log',
-        upload_source: 'file_upload',
-        uploaded_at: '2026-10-07T10:05:00Z',
-        duplicate_of: 'file_1',
-        duplicate_turn: 3,
-      }],
+      attachments_processed: [duplicateOf(3)],
     });
 
     const { result } = render();
@@ -242,6 +247,36 @@ describe('useDataUpload — error surfacing regression guard', () => {
     const [notice] = mockShowError.mock.calls[0];
     expect(notice).toBeInstanceOf(DuplicateUploadNotice);
     expect(notice.userMessage).toBe('app.log was already uploaded on turn 2.');
+  });
+
+  // The server commits an uploaded file before the turn can fail and replays
+  // only a successful response, so the retry is matched to the failed first
+  // attempt's own file. That is not a re-upload.
+  it('shows no notice when a retried upload matches its own failed first attempt', async () => {
+    useAppStore.setState({
+      conversations: {
+        'case-123': [
+          { id: 'msg_1', question: 'logs', timestamp: '2026-10-07T10:00:00Z', optimistic: false, turn_number: 3, investigation_turn: 2 },
+        ],
+      },
+    });
+    (api.submitTurn as any)
+      .mockRejectedValueOnce(Object.assign(new Error('Service unavailable'), { status: 503 }))
+      .mockResolvedValueOnce({ ...okTurnResponse, turn_number: 4, attachments_processed: [duplicateOf(4)] });
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: '', pastedContent: 'ERROR x', inputType: 'paste' });
+    });
+    const opId = useAppStore.getState().getFailedOperationsForUser()[0].id;
+    await act(async () => {
+      await useAppStore.getState().handleUserRetry(opId, vi.fn());
+    });
+
+    expect((api.submitTurn as any).mock.calls).toHaveLength(2);
+    expect(useAppStore.getState().getFailedOperationsForUser()).toHaveLength(0);
+    const notices = mockShowError.mock.calls.filter(([shown]) => shown instanceof DuplicateUploadNotice);
+    expect(notices).toEqual([]);
   });
 
   it('shows no notice for an upload that is new', async () => {

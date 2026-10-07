@@ -1,6 +1,7 @@
 import type { SuggestedAction, SuggestionIntent, SuggestionType, TurnResponse } from '../api';
 import type { DuplicateUpload } from '../errors/types';
 import type { OptimisticConversationItem } from '../optimistic';
+import { isCommittedMessage } from '../utils/memory-manager';
 import { investigationTurnFor, serverSuppliesInvestigationTurn } from './turn-label';
 import { rowsBefore, sourcesToShow } from './turn-sources';
 
@@ -138,25 +139,60 @@ function forwardableIntent(intent: SuggestedActionResponse['intent']): Suggestio
 }
 
 /**
- * The attachments of `response` the server matched to a file the case already
- * holds (`duplicate_of`): it stored nothing new for them.
+ * The attachments of `response` that re-upload a file from an EARLIER turn of
+ * the case: the server matched them by content (`duplicate_of`) and stored
+ * nothing new.
+ *
+ * `rows` is the conversation as submitted, BEFORE `applyTurnResponse`, and
+ * `userRowId` is this submission's user row, which still carries its predicted
+ * turn number there.
+ *
+ * Not every match is a re-upload. The server commits an attachment's file as
+ * soon as it is processed, before the turn can fail, so that a retry dedups
+ * against it instead of storing a second copy, and only a successful response
+ * is replayed. A retried upload is therefore matched to ITS OWN failed first
+ * attempt, and a second copy of the same content in one submission to the
+ * first. Both originals sit on a turn after every turn this client holds as
+ * committed, and at or after this submission's predicted turn. A genuine
+ * re-upload's original sits at or before the former and before the latter. So
+ * a match counts only when both hold:
+ *
+ * - at or before the newest COMMITTED row before this submission. Failed rows
+ *   are excluded: their turn numbers are predictions, not turns the server used.
+ * - before this submission's predicted turn, which was fixed when it was first
+ *   sent. That excludes rows a later fetch merged in after the failed attempt.
+ *
+ * With no committed row before this submission, or no `duplicate_turn`, nothing
+ * shows the original came earlier, and the match is not reported. A missing
+ * notice costs nothing; a false one tells the user they repeated themselves.
  *
  * `duplicate_turn` is the MESSAGE clock (the original's `uploaded_at_turn`), so
- * each is given the turn the conversation PRINTS for it, read from `rows`; when
- * this client holds no row for that turn the turn is left out rather than
- * printed as the other counter (see `investigationTurnFor`).
+ * each is given the turn the conversation PRINTS for it. When no loaded row
+ * labels it, the turn is left out rather than printed as the other counter
+ * (see `investigationTurnFor`).
  */
 export function duplicateUploads(
   response: TurnResponse,
-  rows: readonly OptimisticConversationItem[] | undefined
+  rows: readonly OptimisticConversationItem[] | undefined,
+  userRowId: string
 ): DuplicateUpload[] {
-  return (response.attachments_processed ?? [])
-    .filter((attachment) => attachment.duplicate_of)
-    .map((attachment) => {
-      const turn =
-        typeof attachment.duplicate_turn === 'number'
-          ? investigationTurnFor(attachment.duplicate_turn, rows)
-          : undefined;
-      return turn === undefined ? { filename: attachment.filename } : { filename: attachment.filename, turn };
-    });
+  if (!rows) return [];
+  const submittedAt = rows.find((row) => row.id === userRowId)?.turn_number;
+  let lastCommittedTurn: number | undefined;
+  for (const row of rowsBefore(rows, userRowId)) {
+    if (isCommittedMessage(row) && typeof row.turn_number === 'number') {
+      lastCommittedTurn = Math.max(lastCommittedTurn ?? row.turn_number, row.turn_number);
+    }
+  }
+  if (submittedAt === undefined || lastCommittedTurn === undefined) return [];
+
+  const duplicates: DuplicateUpload[] = [];
+  for (const attachment of response.attachments_processed ?? []) {
+    const original = attachment.duplicate_turn;
+    if (!attachment.duplicate_of || typeof original !== 'number') continue;
+    if (original > lastCommittedTurn || original >= submittedAt) continue;
+    const turn = investigationTurnFor(original, rows);
+    duplicates.push(turn === undefined ? { filename: attachment.filename } : { filename: attachment.filename, turn });
+  }
+  return duplicates;
 }

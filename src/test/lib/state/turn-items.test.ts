@@ -230,36 +230,73 @@ describe('duplicateUploads', () => {
     uploaded_at: '2026-10-07T10:01:00Z',
     ...overrides,
   });
+  // How the server reports a match: the stored file's id, and the turn it arrived on.
+  const duplicateOf = (duplicate_turn: number | null) =>
+    attachment({ filename: 'old.log', processing_status: 'duplicate', file_id: 'file_1', duplicate_of: 'file_1', duplicate_turn });
+  // `rows()` as submitted: committed history up to clock 3 (labelled turn 2),
+  // then this submission's user row on its predicted clock 4.
+  const reupload = (...attachments: AttachmentResult[]) =>
+    duplicateUploads(turn({ attachments_processed: attachments }), rows(), IDS.user);
 
   it('names nothing when every attachment is new', () => {
-    expect(duplicateUploads(turn({ attachments_processed: [attachment({})] }), rows())).toEqual([]);
-    expect(duplicateUploads(turn({ attachments_processed: undefined }), rows())).toEqual([]);
+    expect(reupload(attachment({}))).toEqual([]);
+    expect(duplicateUploads(turn({ attachments_processed: undefined }), rows(), IDS.user)).toEqual([]);
   });
 
   // `duplicate_turn` is the message clock. The committed row on clock 3 is
   // investigation turn 2, which is what the conversation prints for it.
-  it('gives a duplicate the turn the conversation prints, not the clock', () => {
-    const response = turn({
-      attachments_processed: [
-        attachment({}),
-        attachment({ filename: 'old.log', duplicate_of: 'file_1', duplicate_turn: 3 }),
-      ],
-    });
-
-    expect(duplicateUploads(response, rows())).toEqual([{ filename: 'old.log', turn: 2 }]);
+  it('gives a re-upload the turn the conversation prints, not the clock', () => {
+    expect(reupload(attachment({}), duplicateOf(3))).toEqual([{ filename: 'old.log', turn: 2 }]);
   });
 
-  it('leaves the turn out when this client holds no row that labels it', () => {
-    const unloaded = turn({
-      attachments_processed: [attachment({ filename: 'old.log', duplicate_of: 'file_1', duplicate_turn: 1 })],
-    });
-    const unnumbered = turn({
-      attachments_processed: [attachment({ filename: 'old.log', duplicate_of: 'file_1', duplicate_turn: null })],
-    });
+  it('leaves the turn out when no loaded row labels it', () => {
+    expect(reupload(duplicateOf(1))).toEqual([{ filename: 'old.log' }]);
+  });
 
-    expect(duplicateUploads(unloaded, rows())).toEqual([{ filename: 'old.log' }]);
-    expect(duplicateUploads(unnumbered, rows())).toEqual([{ filename: 'old.log' }]);
-    expect(duplicateUploads(unloaded, undefined)).toEqual([{ filename: 'old.log' }]);
+  // The server commits an uploaded file before the turn can fail, and replays
+  // only a successful response, so a retry matches its own first attempt: on
+  // this submission's clock (4), or later if the failure advanced the clock.
+  it("does not call a retry's match against its own failed attempt a re-upload", () => {
+    expect(reupload(duplicateOf(4))).toEqual([]);
+    expect(reupload(duplicateOf(5))).toEqual([]);
+  });
+
+  // An earlier turn that failed keeps its rows, numbered by prediction. Its
+  // clock is not a turn the server used, so it does not make a later turn's
+  // match look earlier.
+  it("does not count a failed turn's predicted number as history", () => {
+    const withFailedTurn: OptimisticConversationItem[] = [
+      { id: 'msg_committed', response: 'Earlier reply.', timestamp: 't0', optimistic: false, turn_number: 3, investigation_turn: 2 },
+      { id: 'opt_msg_failed_user', question: 'First try', timestamp: 't1', optimistic: true, turn_number: 4 },
+      { id: 'opt_msg_failed_ai', response: 'Network error', timestamp: 't1', optimistic: false, error: true, failed: true, turn_number: 4 },
+      { id: IDS.user, question: 'What now?', timestamp: 't2', optimistic: true, turn_number: 5 },
+      { id: IDS.assistant, response: '', timestamp: 't2', optimistic: true, loading: true, turn_number: 5 },
+    ];
+    const response = turn({ attachments_processed: [duplicateOf(4)] });
+
+    expect(duplicateUploads(response, withFailedTurn, IDS.user)).toEqual([]);
+  });
+
+  // A fetch can merge newer committed rows in ahead of a submission that is
+  // waiting for its retry. The submission's own predicted turn still bounds it.
+  it('bounds a match by the turn this submission was sent on', () => {
+    const merged: OptimisticConversationItem[] = [
+      { id: 'msg_committed', response: 'Earlier reply.', timestamp: 't0', optimistic: false, turn_number: 3 },
+      { id: 'msg_elsewhere', response: 'From another device.', timestamp: 't1', optimistic: false, turn_number: 6 },
+      { id: IDS.user, question: 'What now?', timestamp: 't0', optimistic: true, turn_number: 4 },
+      { id: IDS.assistant, response: '', timestamp: 't0', optimistic: true, loading: true, turn_number: 4 },
+    ];
+    const response = turn({ attachments_processed: [duplicateOf(4), duplicateOf(3)] });
+
+    expect(duplicateUploads(response, merged, IDS.user)).toEqual([{ filename: 'old.log' }]);
+  });
+
+  it('reports nothing when it cannot tell the original came earlier', () => {
+    expect(reupload(duplicateOf(null))).toEqual([]);
+    expect(duplicateUploads(turn({ attachments_processed: [duplicateOf(3)] }), undefined, IDS.user)).toEqual([]);
+    // A new case: no committed history before this submission.
+    const fresh = rows().filter((row) => row.id !== 'msg_committed');
+    expect(duplicateUploads(turn({ attachments_processed: [duplicateOf(3)] }), fresh, IDS.user)).toEqual([]);
   });
 });
 

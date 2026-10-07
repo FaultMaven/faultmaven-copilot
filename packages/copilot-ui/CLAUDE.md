@@ -57,10 +57,16 @@ preserved.
 
 `DuplicateUploadNotice` is not a failure: category `notice`, recovery `none`,
 an `info` toast that dismisses itself, and the handler logs a `notice` at info
-level, never error. The upload hook shows it when `AttachmentResult.duplicate_of`
-says the server stored nothing new. `duplicate_turn` is the message clock, so the
-notice prints the turn through `investigationTurnFor`, and no turn at all when
-that returns `undefined`.
+level, never error. The upload hook shows it for a RE-UPLOAD: an attachment the
+server matched (`AttachmentResult.duplicate_of`) to a file from an earlier turn.
+Not every match is one: the server commits an uploaded file before the turn can
+fail and replays only a successful response, so a retried upload matches its own
+failed first attempt. `duplicateUploads` (`lib/state/turn-items.ts`) counts a
+match only when its `duplicate_turn` is at or before the newest committed row
+before the submission, and before the submission's predicted turn. Otherwise it
+reports nothing: a false notice is worse than a missing one. `duplicate_turn` is
+the message clock, so the notice prints the turn through `investigationTurnFor`,
+and no turn at all when that returns `undefined`.
 
 **Reading an error body: always `errorBodyText`** (`lib/errors/error-body.ts`).
 The backend answers in two shapes — `{ detail }` from every FastAPI handler, and

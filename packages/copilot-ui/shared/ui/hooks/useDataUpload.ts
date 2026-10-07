@@ -172,6 +172,10 @@ export function useDataUpload() {
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
+    // The conversation as submitted: `duplicateUploads` reads this submission's
+    // predicted turn, which the commit below replaces with the server's.
+    const submitted = useAppStore.getState().conversations[targetCaseId];
+
     setConversations(prev => ({
       ...prev,
       [targetCaseId]: applyTurnResponse(
@@ -182,9 +186,9 @@ export function useDataUpload() {
       ),
     }));
 
-    // Files the server matched to ones the case already holds: it stored
-    // nothing new for them, and a re-upload must not read as new data.
-    const duplicates = duplicateUploads(turnResponse, useAppStore.getState().conversations[targetCaseId]);
+    // Files re-uploaded from an earlier turn: the server stored nothing new for
+    // them, and a re-upload must not read as new data.
+    const duplicates = duplicateUploads(turnResponse, submitted, userMessageId);
     if (duplicates.length > 0) {
       showError(new DuplicateUploadNotice(duplicates));
     }
