@@ -167,4 +167,38 @@ describe('SuggestionCard — DECIDE/RUN click encoding', () => {
     fireEvent.click(row);
     expect(onClick).not.toHaveBeenCalled();
   });
+
+  // #305: a type this build does not know is narrowed to UNRECOGNIZED. It shows
+  // what the agent said and offers nothing to click, even with a payload: a
+  // click could send a message the user never chose.
+  it('renders an UNRECOGNIZED suggestion as plain text that cannot be clicked', () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <SuggestionCard
+        action={_action({ label: 'Compare dashboards', type: 'UNRECOGNIZED', payload: 'compare', body: 'Grafana vs logs' })}
+        isCurrentTurn
+        onClickableSuggestion={onClick}
+      />,
+    );
+    expect(screen.getByText('Compare dashboards')).toBeInTheDocument();
+    expect(screen.getByText(/Grafana vs logs/)).toBeInTheDocument();
+    const row = container.firstChild as HTMLElement;
+    expect(row.getAttribute('role')).toBe(null);
+    fireEvent.click(row);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('DECIDE click forwards the intent the server attached, whole', () => {
+    const onClick = vi.fn();
+    const intent = { type: 'file_reclassification', file_id: 'file_42', data_type: 'logs_and_errors' };
+    render(
+      <SuggestionCard
+        action={_action({ label: 'Logs', type: 'DECIDE', payload: 'Treat it as logs', intent })}
+        isCurrentTurn
+        onClickableSuggestion={onClick}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(onClick).toHaveBeenCalledWith('Treat it as logs', 'DECIDE', intent);
+  });
 });

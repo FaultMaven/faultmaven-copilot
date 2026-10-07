@@ -174,6 +174,59 @@ describe('useMessageSubmission', () => {
     expect(useAppStore.getState().activeCase?.state).toBe('investigating');
   });
 
+  // #305: the suggestions go through the one builder both turn paths share.
+  it("narrows the turn's suggestions, keeping each intent whole", async () => {
+    const { result } = render();
+    const reclassify = { type: 'file_reclassification', file_id: 'file_42', data_type: 'logs_and_errors' };
+
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Which kind of file is this?',
+      turn_number: 1,
+      milestones_completed: [],
+      case_state: 'inquiry',
+      progress_made: false,
+      suggested_actions: [
+        { label: 'Logs', type: 'DECIDE', payload: 'Treat it as logs', intent: reclassify },
+        { label: 'Compare dashboards', type: 'COMPARE', body: 'Grafana vs logs' },
+      ],
+    });
+
+    await act(async () => {
+      await result.current.handleQuerySubmit('here is a file');
+    });
+
+    const ai = (useAppStore.getState().conversations['case-123'] || [])
+      .find((i) => i.response === 'Which kind of file is this?');
+    expect(ai?.suggestedActions?.map((a) => a.type)).toEqual(['DECIDE', 'UNRECOGNIZED']);
+    expect(ai?.suggestedActions?.[0].intent).toEqual(reclassify);
+  });
+
+  // The server routes a clicked suggestion on its intent's own type and keys,
+  // including ones the client does not enumerate, so the request carries it
+  // exactly as the server sent it.
+  it("sends a clicked suggestion's intent verbatim", async () => {
+    const { result } = render();
+    const reclassify = { type: 'file_reclassification', file_id: 'file_42', data_type: 'logs_and_errors' };
+
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Reprocessed as logs.',
+      turn_number: 2,
+      milestones_completed: [],
+      case_state: 'inquiry',
+      progress_made: true,
+    });
+
+    await act(async () => {
+      await result.current.handleQuerySubmit('Treat it as logs', reclassify);
+    });
+
+    expect(api.submitTurn).toHaveBeenCalledWith(
+      'case-123',
+      expect.objectContaining({ intentType: 'file_reclassification', intentData: reclassify }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
   // The KB pre-fetch's citations arrive on TurnResponse.sources; until they were
   // copied onto the item, InlineSourcesRenderer's citation path never ran.
   it('carries TurnResponse.sources onto the assistant item', async () => {

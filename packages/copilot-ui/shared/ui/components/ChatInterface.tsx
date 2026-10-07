@@ -2,7 +2,7 @@ import React from 'react';
 import { ChatWindow } from './ChatWindow';
 import { UnifiedInputBar, TurnPayload } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
-import { UserCase } from '../../../lib/api';
+import { UserCase, TurnIntent } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('ChatInterface');
@@ -14,7 +14,7 @@ interface ChatInterfaceProps {
   loading: boolean;
   submitting: boolean;
   sessionId: string | null;
-  onQuerySubmit: (query: string) => Promise<void>;
+  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<void>;
   onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
   failedOperations: PendingOperation[];
   onRetryFailedOperation: (opId: string) => void;

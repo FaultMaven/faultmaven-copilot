@@ -24,11 +24,8 @@ import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
-import {
-  predictedInvestigationTurn,
-  serverSuppliesInvestigationTurn
-} from '../../../lib/state/turn-label';
-import { rowsBefore, sourcesToShow } from '../../../lib/state/turn-sources';
+import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
+import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -85,7 +82,6 @@ export function useDataUpload() {
     turnRequest: TurnRequest,
     userMessageId: string,
     aiMessageId: string,
-    localAttachments: AttachmentResult[],
   ): Promise<{ success: boolean; message: string }> => {
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight must not let the success handler write the response back
@@ -136,7 +132,7 @@ export function useDataUpload() {
         ...prev,
         [targetCaseId]: (prev[targetCaseId] || []).map(item =>
           item.id === aiMessageId
-            ? { ...item, response: chatError, optimistic: false, loading: false, error: true, failed: true } as OptimisticConversationItem
+            ? { ...item, response: chatError, optimistic: false, loading: false, error: true, failed: true }
             : item
         )
       }));
@@ -158,6 +154,8 @@ export function useDataUpload() {
       return { success: false, message: '' };
     }
 
+    // Set when this turn moved the case to a new state; see the refresh below.
+    let caseStateChanged = false;
     if (turnResponse.case_state) {
       setActiveCase((prev: UserCase | null) => {
         if (prev && prev.state !== turnResponse.case_state) {
@@ -165,6 +163,7 @@ export function useDataUpload() {
             oldStatus: prev.state,
             newStatus: turnResponse.case_state
           });
+          caseStateChanged = true;
           return { ...prev, state: turnResponse.case_state as UserCase['state'] };
         }
         return prev;
@@ -173,63 +172,15 @@ export function useDataUpload() {
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
-    // Update optimistic messages with real response data
-    // Optional in the contract: a turn the server reports without attachments
-    // keeps the local rows rather than dropping them.
-    const processed = turnResponse.attachments_processed ?? [];
-    const attachments: AttachmentResult[] = processed.length > 0 ? processed : localAttachments;
-
-    setConversations(prev => {
-      // See useMessageSubmission: `TurnResponse.investigation_turn` exists from
-      // contract 2.7.0 and the per-row field only from 3.5.0, so adopting the
-      // response's value against a server in between numbers one conversation
-      // two ways.
-      const rows = prev[targetCaseId] || [];
-      const investigationTurn = serverSuppliesInvestigationTurn(rows)
-        ? turnResponse.investigation_turn ?? null
-        : null;
-      return {
-        ...prev,
-        [targetCaseId]: rows.map(item => {
-          if (item.id === userMessageId) {
-            return {
-              ...item,
-              attachments: attachments.length > 0 ? attachments : undefined,
-              turn_number: turnResponse.turn_number,
-              // See useMessageSubmission: the case's investigation turn as of
-              // THIS turn is the label for this row and only this row.
-              investigation_turn: investigationTurn,
-              optimistic: false,
-              originalId: userMessageId,
-            } as OptimisticConversationItem;
-          }
-          if (item.id === aiMessageId) {
-            return {
-              ...item,
-              response: turnResponse.agent_response || "Data uploaded and processed successfully.",
-              turn_number: turnResponse.turn_number,
-              investigation_turn: investigationTurn,
-              suggestedActions: turnResponse.suggested_actions ?? null,
-              sources: sourcesToShow(turnResponse.sources, rowsBefore(rows, aiMessageId)),
-              optimistic: false,
-              loading: false,
-              // Clear any error state from a prior failed attempt (#101) so a
-              // successful resubmit doesn't render red / get dropped from persist.
-              error: false,
-              failed: false,
-              errorMessage: undefined,
-              originalId: aiMessageId,
-              metadata: {
-                milestones_completed: turnResponse.milestones_completed,
-                progress_made: turnResponse.progress_made,
-                attachments_processed: turnResponse.attachments_processed,
-              },
-            } as OptimisticConversationItem;
-          }
-          return item;
-        })
-      };
-    });
+    setConversations(prev => ({
+      ...prev,
+      [targetCaseId]: applyTurnResponse(
+        prev[targetCaseId] || [],
+        { user: userMessageId, assistant: aiMessageId },
+        turnResponse,
+        { emptyResponseText: 'Data uploaded and processed successfully.' }
+      ),
+    }));
 
     setActiveCaseId(targetCaseId);
 
@@ -243,7 +194,13 @@ export function useDataUpload() {
     // what kept an upload-driven case — the user types nothing and attaches a
     // 40MB log — unnamed forever (fm#1069). Refetch so the server's title reaches
     // the sidebar.
-    triggerRefreshSessions();
+    //
+    // Skipped when the turn changed case_state, as in useMessageSubmission:
+    // SidePanelApp's transition effect then refreshes the list itself, and both
+    // would spend two list GETs to answer one question.
+    if (!caseStateChanged) {
+      triggerRefreshSessions();
+    }
 
     return { success: true, message: "" };
   };
@@ -485,7 +442,7 @@ export function useDataUpload() {
           }));
         },
         retryFn: async () => {
-          await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, localAttachments);
+          await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId);
         },
         createdAt: Date.now(),
       };
@@ -494,7 +451,7 @@ export function useDataUpload() {
       // Step 5: Submit the turn and reconcile on success. Self-manages the
       // pending op (complete on success, fail-without-rollback on failure) and
       // returns the { success, message } contract UnifiedInputBar expects.
-      return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, localAttachments);
+      return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId);
 
     } catch (error) {
       log.error('Turn submission error:', error);

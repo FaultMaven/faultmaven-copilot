@@ -129,8 +129,20 @@ incoming backend row matching a local committed row still carrying an `opt_` id
 on **turn number AND slot** adopts that row's identity instead of appending a
 duplicate; an ambiguous `(turn, slot)` is refused. **Slot matching is
 load-bearing** — a notice shares a turn with the exchange it landed during but
-never its slot. `useMessageSubmission` takes the backend `turn_number` for the
+never its slot. A committed turn takes the backend `turn_number` for the
 **user** row too, not a `highestTurn + 1` prediction.
+
+**Committing a turn** (`lib/state/turn-items.ts`, #305). Both turn paths
+(`useMessageSubmission`, `useDataUpload`) turn a `TurnResponse` into rows
+through `applyTurnResponse` and nothing else. The rows are typed, never cast
+(`as OptimisticConversationItem` is what let `sources` reach neither path until
+#298); `src/test/lib/state/turn-items.test.ts` fails if a hook grows its own
+mapping. `suggestionFromResponse` narrows each suggestion: a `type` this build
+does not know becomes `UNRECOGNIZED` (plain text, never clickable). A
+suggestion's `intent` is kept **whole** and sent back verbatim on click: core
+routes on keys and intent types this client does not declare (an offer key,
+`file_reclassification`'s `file_id`), so it is never rebuilt from known fields
+or checked against `IntentType`.
 
 **Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
 persisted `conversations` map and `useDataRecovery` discards a mismatch

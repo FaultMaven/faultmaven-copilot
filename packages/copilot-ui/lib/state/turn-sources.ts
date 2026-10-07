@@ -19,9 +19,9 @@ import type { ConversationItem } from '../optimistic';
  * nothing on either server: a turn whose prompt carried no KB context answers
  * `[]` while the context still stands.
  *
- * The live turn paths (`useMessageSubmission`, `useDataUpload`) and the history
- * mapper (`cases-slice`) all call this, so a conversation read back from the
- * server shows the list exactly where the live turn did.
+ * The live turn paths (both through `applyTurnResponse`, `lib/state/turn-items`)
+ * and the history mapper (`cases-slice`) all call this, so a conversation read
+ * back from the server shows the list exactly where the live turn did.
  */
 export function sourcesToShow(
   sources: Source[] | null | undefined,
