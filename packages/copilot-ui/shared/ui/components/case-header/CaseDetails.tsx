@@ -26,6 +26,7 @@
 import React, { useState, useEffect } from 'react';
 import type {
   CaseUIResponse,
+  ProblemVerification,
   UploadedFileMetadata,
   UploadedFileDetailsResponse,
   UserCase,
@@ -102,6 +103,99 @@ interface UploadedFileWithEvidence extends UploadedFileMetadata {
 }
 
 // ==================== Sub-components ====================
+
+interface ProblemStatementProps {
+  /** The statement in force (`problem_statement`, or the case description). */
+  statement: string;
+  /** Sent on INVESTIGATING only; RESOLVED and CLOSED responses carry none. */
+  verification: ProblemVerification | null | undefined;
+}
+
+/**
+ * One line of the Problem row. Each line truncates on its own: DetailRow's
+ * `truncate` cannot reach into a block child (`text-overflow` is not inherited),
+ * so without it a long statement is cut off with no ellipsis. The full text is
+ * on hover.
+ */
+const ProblemLine: React.FC<{ className?: string; text: string }> = ({ className = '', text }) => (
+  <span className={`block truncate ${className}`} title={text}>
+    {text}
+  </span>
+);
+
+/**
+ * The Problem row's value, read against where the statement stands
+ * (`problem_verification.problem_status`, a `ProblemStatus` since contract
+ * 11.2.0). Without it the row stated the problem as fact in every state,
+ * including an open case whose evidence showed the problem never occurred.
+ *
+ * - `invalidated`: struck through, with the finding that showed it was not
+ *   present (the case stays open until the user accepts the close or disputes
+ *   the finding).
+ * - `revision_pending`: the statement in force, plus the revised wording the
+ *   chat is asking the user to confirm.
+ * - `original_problem_statement`, in any status: where the statement started,
+ *   when a revision or an edit has since changed it.
+ *
+ * Anything else, or no verification at all, renders the statement as before.
+ */
+const ProblemStatement: React.FC<ProblemStatementProps> = ({ statement, verification }) => {
+  const status = verification?.problem_status ?? null;
+  const original = verification?.original_problem_statement?.trim();
+  const originally = original ? (
+    <ProblemLine className="text-fm-xs text-fm-text-tertiary" text={`Originally reported as: ${original}`} />
+  ) : null;
+
+  switch (status) {
+    case 'invalidated': {
+      const finding = verification?.invalidation_finding?.trim();
+      return (
+        <>
+          <ProblemLine className="line-through text-fm-text-tertiary" text={statement} />
+          <ProblemLine
+            className="text-fm-xs text-fm-warning"
+            text={finding ? `Not present: ${finding}` : 'The evidence shows this problem was not present.'}
+          />
+          {originally}
+        </>
+      );
+    }
+    case 'revision_pending': {
+      const revision = verification?.pending_revision?.trim();
+      return (
+        <>
+          <ProblemLine text={statement} />
+          <ProblemLine
+            className="text-fm-xs text-fm-text-tertiary"
+            text={
+              revision
+                ? `Revision awaiting your confirmation: ${revision}`
+                : 'A revised statement awaits your confirmation.'
+            }
+          />
+          {originally}
+        </>
+      );
+    }
+    case 'verified':
+    case 'unverified':
+    case null:
+      break;
+    default: {
+      // Unreachable while `ProblemStatus` has these four values: a value the
+      // contract adds fails to compile here first. At runtime (a server newer
+      // than this build) it renders like a status with no note of its own.
+      const unhandled: never = status;
+      void unhandled;
+    }
+  }
+  return (
+    <>
+      <ProblemLine text={statement} />
+      {originally}
+    </>
+  );
+};
 
 interface MilestoneMapProps {
   milestones: MilestoneSpec[];
@@ -273,7 +367,15 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
         : undefined;
     const confirmed = fromCaseData || activeCase?.description?.trim();
     if (confirmed) {
-      problemRow = <DetailRow label="Problem">{confirmed}</DetailRow>;
+      // The verification judges the statement the server sent. The cached
+      // `activeCase.description` fallback can be older, so it gets no status.
+      const verification =
+        fromCaseData && isCaseInvestigating(caseData) ? caseData.problem_verification : null;
+      problemRow = (
+        <DetailRow label="Problem">
+          <ProblemStatement statement={confirmed} verification={verification} />
+        </DetailRow>
+      );
     }
   }
 
