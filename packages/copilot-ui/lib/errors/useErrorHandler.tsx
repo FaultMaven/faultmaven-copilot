@@ -126,8 +126,8 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (displayOptions.displayType === 'toast') {
         const toasts = newErrors.filter(e => e.displayOptions.displayType === 'toast' && !e.dismissed);
         if (toasts.length > MAX_TOASTS) {
-          // Dismiss oldest toast
-          const oldestToast = toasts[0];
+          // Dismiss the oldest toast. A notice gives way first, so it never pushes out a real error.
+          const oldestToast = toasts.find(e => e.error.category === 'notice') ?? toasts[0];
           return newErrors.map(e =>
             e.id === oldestToast.id ? { ...e, dismissed: true } : e
           );

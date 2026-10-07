@@ -246,7 +246,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
     expect(mockShowError).toHaveBeenCalledTimes(1);
     const [notice] = mockShowError.mock.calls[0];
     expect(notice).toBeInstanceOf(DuplicateUploadNotice);
-    expect(notice.userMessage).toBe('app.log was already uploaded on turn 2.');
+    expect(notice.userMessage).toBe('app.log matches a file the case already has, from turn 2.');
   });
 
   // The server commits an uploaded file before the turn can fail and replays

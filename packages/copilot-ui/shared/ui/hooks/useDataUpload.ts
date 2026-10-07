@@ -38,6 +38,12 @@ export function useDataUpload() {
   // when this hook unmounts, so a detached poll loop doesn't keep hitting the
   // backend. Aborts are treated as silent cancellations, not upload failures.
   const inFlightControllers = useRef<Set<AbortController>>(new Set());
+
+  // How many times each turn (by its aiMessageId, which is also its
+  // Idempotency-Key) has been sent: by resilientOperation's own retries and by
+  // the failed-operation retry alike. A turn sent more than once can be matched
+  // to its own earlier attempt; see `duplicateUploads`.
+  const sends = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const controllers = inFlightControllers.current;
     return () => {
@@ -94,6 +100,7 @@ export function useDataUpload() {
     try {
       turnResponse = await resilientOperation({
         operation: async () => {
+          sends.current.set(aiMessageId, (sends.current.get(aiMessageId) ?? 0) + 1);
           return await submitTurn(targetCaseId, turnRequest, {
             signal: controller.signal,
             // Stable per-turn key so an ambiguous network failure can be safely
@@ -172,8 +179,8 @@ export function useDataUpload() {
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
 
-    // The conversation as submitted: `duplicateUploads` reads this submission's
-    // predicted turn, which the commit below replaces with the server's.
+    // The conversation as submitted: `duplicateUploads` labels an original's
+    // turn from the rows that were committed before this one.
     const submitted = useAppStore.getState().conversations[targetCaseId];
 
     setConversations(prev => ({
@@ -186,9 +193,11 @@ export function useDataUpload() {
       ),
     }));
 
-    // Files re-uploaded from an earlier turn: the server stored nothing new for
-    // them, and a re-upload must not read as new data.
-    const duplicates = duplicateUploads(turnResponse, submitted, userMessageId);
+    // Uploads whose content the case already held: the server stored nothing
+    // new for them, and a re-upload must not read as new data.
+    const resent = (sends.current.get(aiMessageId) ?? 0) > 1;
+    sends.current.delete(aiMessageId);
+    const duplicates = duplicateUploads(turnResponse, submitted, { resent });
     if (duplicates.length > 0) {
       showError(new DuplicateUploadNotice(duplicates));
     }
