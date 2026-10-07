@@ -2,10 +2,11 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ErrorHandlerProvider, useErrorHandler } from '@faultmaven/copilot-ui/lib/errors/useErrorHandler';
-import { RateLimitError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { DuplicateUploadNotice, RateLimitError } from '@faultmaven/copilot-ui/lib/errors/types';
 
+const log = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
+  createLogger: () => log
 }));
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -21,6 +22,7 @@ const statusError = (status: number, message = 'boom') => {
 describe('useErrorHandler', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.clearAllMocks();
   });
   afterEach(() => {
     vi.runOnlyPendingTimers();
@@ -88,5 +90,41 @@ describe('useErrorHandler', () => {
     act(() => { vi.advanceTimersByTime(60_000); });
 
     expect(result.current.errors.filter(e => !e.dismissed)).toHaveLength(1);
+  });
+
+  // #306: a duplicate upload is reported to the user, but it is not a failure.
+  it('shows a duplicate-upload notice as an info toast that dismisses itself, logged at info', () => {
+    const { result } = renderHook(() => useErrorHandler(), { wrapper });
+
+    act(() => { result.current.showError(new DuplicateUploadNotice([{ filename: 'app.log', turn: 2 }])); });
+
+    const [shown] = result.current.errors;
+    expect(shown.displayOptions).toMatchObject({ displayType: 'toast', icon: 'info', dismissible: true });
+    expect(shown.displayOptions.duration).toBeGreaterThan(0);
+    expect(log.info).toHaveBeenCalledWith('Notice shown', expect.objectContaining({ category: 'notice' }));
+    expect(log.error).not.toHaveBeenCalled();
+
+    act(() => { vi.advanceTimersByTime(shown.displayOptions.duration ?? 0); });
+    expect(result.current.errors.filter(e => !e.dismissed)).toHaveLength(0);
+  });
+
+  it('still logs a real error at error level', () => {
+    const { result } = renderHook(() => useErrorHandler(), { wrapper });
+
+    act(() => { result.current.showError(statusError(500, 'server down')); });
+
+    expect(log.error).toHaveBeenCalledWith('Error shown', expect.objectContaining({ category: 'server' }));
+  });
+});
+
+describe('DuplicateUploadNotice', () => {
+  it.each([
+    [[{ filename: 'app.log', turn: 2 }], 'app.log was already uploaded on turn 2.'],
+    [[{ filename: 'app.log' }], 'app.log was already uploaded.'],
+    [[{ filename: 'a.log', turn: 1 }, { filename: 'b.log' }], '2 files were already uploaded: a.log, b.log.'],
+  ])('says which uploads added nothing: %j', (duplicates, message) => {
+    const notice = new DuplicateUploadNotice(duplicates);
+    expect(notice.userMessage).toBe(message);
+    expect(notice.userAction).toBe('Nothing new was added to the case.');
   });
 });

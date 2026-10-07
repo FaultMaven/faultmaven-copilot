@@ -1,6 +1,7 @@
 import type { SuggestedAction, SuggestionIntent, SuggestionType, TurnResponse } from '../api';
+import type { DuplicateUpload } from '../errors/types';
 import type { OptimisticConversationItem } from '../optimistic';
-import { serverSuppliesInvestigationTurn } from './turn-label';
+import { investigationTurnFor, serverSuppliesInvestigationTurn } from './turn-label';
 import { rowsBefore, sourcesToShow } from './turn-sources';
 
 type SuggestedActionResponse = NonNullable<TurnResponse['suggested_actions']>[number];
@@ -134,4 +135,28 @@ function forwardableIntent(intent: SuggestedActionResponse['intent']): Suggestio
   const { type } = intent;
   // An empty type is no type: the request would carry no `intent_type`.
   return typeof type === 'string' && type !== '' ? { ...intent, type } : undefined;
+}
+
+/**
+ * The attachments of `response` the server matched to a file the case already
+ * holds (`duplicate_of`): it stored nothing new for them.
+ *
+ * `duplicate_turn` is the MESSAGE clock (the original's `uploaded_at_turn`), so
+ * each is given the turn the conversation PRINTS for it, read from `rows`; when
+ * this client holds no row for that turn the turn is left out rather than
+ * printed as the other counter (see `investigationTurnFor`).
+ */
+export function duplicateUploads(
+  response: TurnResponse,
+  rows: readonly OptimisticConversationItem[] | undefined
+): DuplicateUpload[] {
+  return (response.attachments_processed ?? [])
+    .filter((attachment) => attachment.duplicate_of)
+    .map((attachment) => {
+      const turn =
+        typeof attachment.duplicate_turn === 'number'
+          ? investigationTurnFor(attachment.duplicate_turn, rows)
+          : undefined;
+      return turn === undefined ? { filename: attachment.filename } : { filename: attachment.filename, turn };
+    });
 }

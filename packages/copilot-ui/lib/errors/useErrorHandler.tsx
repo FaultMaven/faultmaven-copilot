@@ -137,15 +137,21 @@ export const ErrorHandlerProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return newErrors;
     });
 
-    // Log error for debugging
-    log.error('Error shown', {
+    // Log error for debugging. A notice is not a failure: at error level, every
+    // re-upload of a file the case already has would be reported as one.
+    const shown = {
       id: errorId,
       category: userFacingError.category,
       userTitle: userFacingError.userTitle,
       displayType: displayOptions.displayType,
       originalError: userFacingError.originalError,
       context: userFacingError.context
-    });
+    };
+    if (userFacingError.category === 'notice') {
+      log.info('Notice shown', shown);
+    } else {
+      log.error('Error shown', shown);
+    }
 
     return errorId;
   }, []);

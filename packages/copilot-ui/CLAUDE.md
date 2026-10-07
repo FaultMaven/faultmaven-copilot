@@ -55,6 +55,13 @@ used to perform. **Never clamp the wait and retry anyway** (fm#985 item 9).
 provider is out of credits): no auto-retry, no retry button, the user's input is
 preserved.
 
+`DuplicateUploadNotice` is not a failure: category `notice`, recovery `none`,
+an `info` toast that dismisses itself, and the handler logs a `notice` at info
+level, never error. The upload hook shows it when `AttachmentResult.duplicate_of`
+says the server stored nothing new. `duplicate_turn` is the message clock, so the
+notice prints the turn through `investigationTurnFor`, and no turn at all when
+that returns `undefined`.
+
 **Reading an error body: always `errorBodyText`** (`lib/errors/error-body.ts`).
 The backend answers in two shapes — `{ detail }` from every FastAPI handler, and
 `{ error, message, retry_after }` with **no `detail`** from the protection

@@ -60,6 +60,7 @@ export type ErrorCategory =
   | 'rate_limit'
   | 'billing'
   | 'optimistic_rollback'
+  | 'notice'                   // Not a failure: something the user should know (DuplicateUploadNotice)
   | 'unknown';
 
 /**
@@ -72,7 +73,8 @@ export type RecoveryStrategy =
   | 'auto_retry_with_delay'    // Auto-retry after fixed delay
   | 'rollback_and_retry'       // Rollback optimistic update + allow retry
   | 'show_modal'               // Show blocking modal
-  | 'graceful_degradation';    // Disable feature, continue
+  | 'graceful_degradation'     // Disable feature, continue
+  | 'none';                    // Nothing to recover: a notice, not a failure
 
 /**
  * Context about where/when error occurred
@@ -479,6 +481,52 @@ export class QuotaExhaustedError extends UserFacingError {
       icon: 'warning'
     };
   }
+}
+
+/** One upload the server matched to a file the case already holds. */
+export interface DuplicateUpload {
+  filename: string;
+  /** The turn the original arrived on, as the conversation labels it; absent when this client cannot say. */
+  turn?: number;
+}
+
+/**
+ * Not a failure: an upload duplicated a file the case already holds
+ * (`AttachmentResult.duplicate_of`, a per-case content-hash match). The server
+ * stored nothing new and asks clients for a non-blocking notice, so that a
+ * re-upload does not read as new data. It rides the toast channel as an `info`
+ * toast that dismisses itself, and the handler logs a `notice` at info level.
+ */
+export class DuplicateUploadNotice extends UserFacingError {
+  readonly userTitle = 'Already uploaded';
+  readonly userMessage: string;
+  readonly userAction = 'Nothing new was added to the case.';
+  readonly category: ErrorCategory = 'notice';
+  readonly recovery: RecoveryStrategy = 'none';
+
+  constructor(duplicates: readonly DuplicateUpload[]) {
+    super(`Duplicate upload: ${duplicates.map((d) => d.filename).join(', ')}`);
+    this.userMessage = duplicateUploadMessage(duplicates);
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 6000,
+      dismissible: true,
+      icon: 'info'
+    };
+  }
+}
+
+function duplicateUploadMessage(duplicates: readonly DuplicateUpload[]): string {
+  if (duplicates.length === 1) {
+    const [{ filename, turn }] = duplicates;
+    return turn === undefined
+      ? `${filename} was already uploaded.`
+      : `${filename} was already uploaded on turn ${turn}.`;
+  }
+  return `${duplicates.length} files were already uploaded: ${duplicates.map((d) => d.filename).join(', ')}.`;
 }
 
 /**

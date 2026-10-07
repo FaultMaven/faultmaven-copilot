@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { applyTurnResponse, suggestionFromResponse } from '@faultmaven/copilot-ui/lib/state/turn-items';
+import { applyTurnResponse, duplicateUploads, suggestionFromResponse } from '@faultmaven/copilot-ui/lib/state/turn-items';
 import type { AttachmentResult, TurnResponse } from '@faultmaven/copilot-ui/lib/api';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 
@@ -216,6 +216,50 @@ describe('suggestionFromResponse', () => {
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { file_id: 'f' } }).intent).toBeUndefined();
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { type: 3 } }).intent).toBeUndefined();
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { type: '', file_id: 'f' } }).intent).toBeUndefined();
+  });
+});
+
+describe('duplicateUploads', () => {
+  const attachment = (overrides: Partial<AttachmentResult>): AttachmentResult => ({
+    file_id: 'file_9',
+    filename: 'app.log',
+    file_size: 10,
+    processing_status: 'completed',
+    source_type: 'log',
+    upload_source: 'file_upload',
+    uploaded_at: '2026-10-07T10:01:00Z',
+    ...overrides,
+  });
+
+  it('names nothing when every attachment is new', () => {
+    expect(duplicateUploads(turn({ attachments_processed: [attachment({})] }), rows())).toEqual([]);
+    expect(duplicateUploads(turn({ attachments_processed: undefined }), rows())).toEqual([]);
+  });
+
+  // `duplicate_turn` is the message clock. The committed row on clock 3 is
+  // investigation turn 2, which is what the conversation prints for it.
+  it('gives a duplicate the turn the conversation prints, not the clock', () => {
+    const response = turn({
+      attachments_processed: [
+        attachment({}),
+        attachment({ filename: 'old.log', duplicate_of: 'file_1', duplicate_turn: 3 }),
+      ],
+    });
+
+    expect(duplicateUploads(response, rows())).toEqual([{ filename: 'old.log', turn: 2 }]);
+  });
+
+  it('leaves the turn out when this client holds no row that labels it', () => {
+    const unloaded = turn({
+      attachments_processed: [attachment({ filename: 'old.log', duplicate_of: 'file_1', duplicate_turn: 1 })],
+    });
+    const unnumbered = turn({
+      attachments_processed: [attachment({ filename: 'old.log', duplicate_of: 'file_1', duplicate_turn: null })],
+    });
+
+    expect(duplicateUploads(unloaded, rows())).toEqual([{ filename: 'old.log' }]);
+    expect(duplicateUploads(unnumbered, rows())).toEqual([{ filename: 'old.log' }]);
+    expect(duplicateUploads(unloaded, undefined)).toEqual([{ filename: 'old.log' }]);
   });
 });
 

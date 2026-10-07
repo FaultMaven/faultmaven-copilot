@@ -19,13 +19,13 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
-import type {} from '../../../lib/errors/types';
+import { DuplicateUploadNotice } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
-import { applyTurnResponse } from '../../../lib/state/turn-items';
+import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -181,6 +181,13 @@ export function useDataUpload() {
         { emptyResponseText: 'Data uploaded and processed successfully.' }
       ),
     }));
+
+    // Files the server matched to ones the case already holds: it stored
+    // nothing new for them, and a re-upload must not read as new data.
+    const duplicates = duplicateUploads(turnResponse, useAppStore.getState().conversations[targetCaseId]);
+    if (duplicates.length > 0) {
+      showError(new DuplicateUploadNotice(duplicates));
+    }
 
     setActiveCaseId(targetCaseId);
 
