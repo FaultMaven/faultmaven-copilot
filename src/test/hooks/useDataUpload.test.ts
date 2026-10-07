@@ -249,10 +249,11 @@ describe('useDataUpload — error surfacing regression guard', () => {
     expect(notice.userMessage).toBe('app.log matches a file the case already has, from turn 2.');
   });
 
-  // The server commits an uploaded file before the turn can fail and replays
-  // only a successful response, so the retry is matched to the failed first
-  // attempt's own file. That is not a re-upload.
-  it('shows no notice when a retried upload matches its own failed first attempt', async () => {
+  // A file is committed only with the turn that carried it, so a failed turn
+  // leaves nothing and a resend is a fresh upload. A match on the resend is a
+  // real one: the notice is the signal that the file already landed (the
+  // faultmaven#1882 window, where a turn commits but the client saw an error).
+  const failThenResend = async (resendAttachments: unknown[]) => {
     useAppStore.setState({
       conversations: {
         'case-123': [
@@ -262,7 +263,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
     });
     (api.submitTurn as any)
       .mockRejectedValueOnce(Object.assign(new Error('Service unavailable'), { status: 503 }))
-      .mockResolvedValueOnce({ ...okTurnResponse, turn_number: 4, attachments_processed: [duplicateOf(4)] });
+      .mockResolvedValueOnce({ ...okTurnResponse, turn_number: 4, attachments_processed: resendAttachments });
 
     const { result } = render();
     await act(async () => {
@@ -272,10 +273,27 @@ describe('useDataUpload — error surfacing regression guard', () => {
     await act(async () => {
       await useAppStore.getState().handleUserRetry(opId, vi.fn());
     });
-
     expect((api.submitTurn as any).mock.calls).toHaveLength(2);
     expect(useAppStore.getState().getFailedOperationsForUser()).toHaveLength(0);
-    const notices = mockShowError.mock.calls.filter(([shown]) => shown instanceof DuplicateUploadNotice);
+    return mockShowError.mock.calls.filter(([shown]) => shown instanceof DuplicateUploadNotice);
+  };
+
+  it('shows the notice when a resent upload matches a file the case already has', async () => {
+    const notices = await failThenResend([duplicateOf(3)]);
+    expect(notices).toHaveLength(1);
+    expect(notices[0][0].userMessage).toBe('app.log matches a file the case already has, from turn 2.');
+  });
+
+  it('shows no notice when a resent upload is new to the case', async () => {
+    const notices = await failThenResend([{
+      file_id: 'file_2',
+      filename: 'app.log',
+      file_size: 10,
+      processing_status: 'completed',
+      source_type: 'log',
+      upload_source: 'file_upload',
+      uploaded_at: '2026-10-07T10:05:00Z',
+    }]);
     expect(notices).toEqual([]);
   });
 
@@ -364,6 +382,69 @@ describe('useDataUpload — error surfacing regression guard', () => {
     expect(aiItem.error).toBe(true);
     expect(aiItem.failed).toBe(true);
     expect(aiItem.response).toBeTruthy();
+  });
+
+  describe('a failed turn names the files it did not add', () => {
+    const file = (name: string) => new File(['x'], name, { type: 'text/plain' });
+    const failWith = async (payload: Parameters<ReturnType<typeof useDataUpload>['handleTurnSubmit']>[0]) => {
+      (api.submitTurn as any).mockRejectedValue(Object.assign(new Error('Request timeout'), { status: 504 }));
+      const { result } = render();
+      await act(async () => {
+        await result.current.handleTurnSubmit(payload);
+      });
+      const state = useAppStore.getState();
+      const [op] = state.getFailedOperationsForUser();
+      const bubble = (state.conversations['case-123'][1] as any).response as string;
+      return { op, info: state.getErrorMessageForOperation(op), bubble };
+    };
+
+    it('names both files, says they were not added, and keeps Retry', async () => {
+      const { op, info, bubble } = await failWith({ query: 'why?', files: [file('app.log'), file('db.log')] });
+      expect(info.title).toBe('Failed to Send Message');
+      expect(info.recoveryHint).toBe(
+        'Your message and 2 files (app.log, db.log) were not added to the case. Retry sends them again.'
+      );
+      expect(bubble).toContain('Your message and 2 files (app.log, db.log) were not added to the case.');
+      expect(typeof op.retryFn).toBe('function');
+    });
+
+    it('uses the singular for one file', async () => {
+      const { info, bubble } = await failWith({ query: 'why?', files: [file('app.log')] });
+      expect(info.recoveryHint).toBe(
+        'Your message and 1 file (app.log) were not added to the case. Retry sends them again.'
+      );
+      expect(bubble).toContain('app.log');
+    });
+
+    it('truncates a long list', async () => {
+      const { info } = await failWith({ files: ['a', 'b', 'c', 'd', 'e'].map(n => file(`${n}.log`)) });
+      expect(info.recoveryHint).toBe(
+        '5 files (a.log, b.log, c.log and 2 more) were not added to the case. Retry sends them again.'
+      );
+    });
+
+    it('names pasted text by what it is, not its minted filename', async () => {
+      const { info } = await failWith({ pastedContent: 'ERROR x', inputType: 'paste' });
+      expect(info.recoveryHint).toBe('The pasted text was not added to the case. Retry sends it again.');
+    });
+
+    it('keeps the message-only copy for a turn with no attachments', async () => {
+      const { info, bubble } = await failWith({ query: 'diagnose this' });
+      expect(info.recoveryHint).toBe('Your message was not sent. Try sending it again or check your connection.');
+      expect(bubble).not.toContain('not added to the case');
+    });
+
+    it('resends the same files with the same Idempotency-Key', async () => {
+      const files = [file('app.log')];
+      const { op } = await failWith({ query: 'why?', files });
+      (api.submitTurn as any).mockResolvedValueOnce(okTurnResponse);
+      await act(async () => {
+        await useAppStore.getState().handleUserRetry(op.id, vi.fn());
+      });
+      const calls = (api.submitTurn as any).mock.calls;
+      expect(calls[1][1].files).toBe(files);
+      expect(calls[1][2].idempotencyKey).toBe(calls[0][2].idempotencyKey);
+    });
   });
 
   it('retry re-sends the same turn (stable Idempotency-Key) and clears the failure', async () => {

@@ -3,6 +3,7 @@ import { pendingOpsManager, PendingOperation } from '../../../lib/optimistic';
 import { createLogger } from '../../../lib/utils/logger';
 import type { ErrorContext } from '../../../lib/errors/types';
 import type { StoreState } from '../store';
+import { unsentAttachmentsNotice } from '../unsent-attachments';
 
 const log = createLogger('PendingOpsSlice');
 
@@ -82,7 +83,12 @@ export const createPendingOpsSlice: StateCreator<StoreState, [], [], PendingOpsS
         return {
           title: 'Failed to Send Message',
           message: baseError,
-          recoveryHint: 'Your message was not sent. Try sending it again or check your connection.'
+          // A turn that carried attachments names them: the user must know the
+          // files did not land and that Retry sends them again.
+          recoveryHint:
+            unsentAttachmentsNotice(operation.optimisticData?.attachments, {
+              hasQuery: !!operation.optimisticData?.hasQuery,
+            }) ?? 'Your message was not sent. Try sending it again or check your connection.'
         };
       case 'update_title':
         return {

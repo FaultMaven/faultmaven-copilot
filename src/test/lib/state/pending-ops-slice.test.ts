@@ -59,6 +59,21 @@ describe('pending-ops-slice', () => {
       );
     });
 
+    it('names the attachments of a failed turn, and keeps the message-only copy otherwise', () => {
+      const { getErrorMessageForOperation } = useAppStore.getState();
+      const op = (optimisticData: unknown) => ({ type: 'submit_query', optimisticData } as any);
+
+      expect(getErrorMessageForOperation(op({ hasQuery: true, attachments: [{ name: 'a.log', isFile: true }] })).recoveryHint).toBe(
+        'Your message and 1 file (a.log) were not added to the case. Retry sends them again.'
+      );
+      expect(getErrorMessageForOperation(op({ hasQuery: true, attachments: [] })).recoveryHint).toBe(
+        'Your message was not sent. Try sending it again or check your connection.'
+      );
+      expect(getErrorMessageForOperation(op(undefined)).recoveryHint).toBe(
+        'Your message was not sent. Try sending it again or check your connection.'
+      );
+    });
+
     it('surfaces the operation error as the message when present', () => {
       const msg = useAppStore
         .getState()
