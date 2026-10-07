@@ -212,9 +212,10 @@ describe('suggestionFromResponse', () => {
       .toEqual(confirm);
   });
 
-  it('drops an intent with no string type, which the request could not name', () => {
+  it('drops an intent with no usable type, which the request could not name', () => {
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { file_id: 'f' } }).intent).toBeUndefined();
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { type: 3 } }).intent).toBeUndefined();
+    expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { type: '', file_id: 'f' } }).intent).toBeUndefined();
   });
 });
 
@@ -224,8 +225,12 @@ describe('the turn hooks', () => {
     'packages/copilot-ui/shared/ui/hooks/useDataUpload.ts',
   ];
 
+  // Comments may name the fields; code may not.
+  const code = (file: string) =>
+    readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
   it.each(HOOKS)('%s builds rows without a cast and commits a turn through applyTurnResponse', (file) => {
-    const source = readFileSync(file, 'utf8');
+    const source = code(file);
     expect(source).not.toContain('as OptimisticConversationItem');
     expect(source).toContain('applyTurnResponse(');
     // The mapping lives in one place: a hook naming the response's fields at

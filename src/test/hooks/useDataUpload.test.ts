@@ -162,6 +162,50 @@ describe('useDataUpload — error surfacing regression guard', () => {
     expect(ai?.sources).toEqual([kbSource]);
   });
 
+  // Parity with useMessageSubmission: a state change makes SidePanelApp's
+  // transition effect refresh the case list itself, so the post-turn refresh
+  // stands down rather than asking for the same list twice.
+  describe('the post-turn case-list refresh', () => {
+    const inquiryCase = {
+      case_id: 'case-123',
+      title: 'Test',
+      state: 'inquiry' as const,
+      created_at: '2026-01-01T00:00:00Z',
+      owner_id: 'u1',
+      enterprise_id: 'e1',
+      closure_reason: null,
+      closed_at: null,
+      message_count: 0,
+    };
+
+    it('does not refetch twice when the turn also changed case state', async () => {
+      useAppStore.setState({ activeCase: inquiryCase });
+      const before = useAppStore.getState().refreshSessions;
+      (api.submitTurn as any).mockResolvedValue({ ...okTurnResponse, case_state: 'investigating' });
+
+      const { result } = render();
+      await act(async () => {
+        await result.current.handleTurnSubmit({ query: 'here are the logs' });
+      });
+
+      expect(useAppStore.getState().activeCase?.state).toBe('investigating');
+      expect(useAppStore.getState().refreshSessions).toBe(before);
+    });
+
+    it('refetches when the state did not change, so a server-set title reaches the sidebar', async () => {
+      useAppStore.setState({ activeCase: inquiryCase });
+      const before = useAppStore.getState().refreshSessions;
+      (api.submitTurn as any).mockResolvedValue({ ...okTurnResponse, case_state: 'inquiry' });
+
+      const { result } = render();
+      await act(async () => {
+        await result.current.handleTurnSubmit({ query: 'here are the logs' });
+      });
+
+      expect(useAppStore.getState().refreshSessions).toBeGreaterThan(before);
+    });
+  });
+
   // `attachments_processed` is optional in the contract. The hand-written
   // TurnResponse made it required, and the hook spread it unguarded.
   it('commits a turn whose response omits attachments_processed, keeping the local rows', async () => {

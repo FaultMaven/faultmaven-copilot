@@ -154,6 +154,8 @@ export function useDataUpload() {
       return { success: false, message: '' };
     }
 
+    // Set when this turn moved the case to a new state; see the refresh below.
+    let caseStateChanged = false;
     if (turnResponse.case_state) {
       setActiveCase((prev: UserCase | null) => {
         if (prev && prev.state !== turnResponse.case_state) {
@@ -161,6 +163,7 @@ export function useDataUpload() {
             oldStatus: prev.state,
             newStatus: turnResponse.case_state
           });
+          caseStateChanged = true;
           return { ...prev, state: turnResponse.case_state as UserCase['state'] };
         }
         return prev;
@@ -191,7 +194,13 @@ export function useDataUpload() {
     // what kept an upload-driven case — the user types nothing and attaches a
     // 40MB log — unnamed forever (fm#1069). Refetch so the server's title reaches
     // the sidebar.
-    triggerRefreshSessions();
+    //
+    // Skipped when the turn changed case_state, as in useMessageSubmission:
+    // SidePanelApp's transition effect then refreshes the list itself, and both
+    // would spend two list GETs to answer one question.
+    if (!caseStateChanged) {
+      triggerRefreshSessions();
+    }
 
     return { success: true, message: "" };
   };

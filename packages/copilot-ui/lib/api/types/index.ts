@@ -164,8 +164,8 @@ export interface QueryIntent {
  * reclassification targets) and types it does not enumerate
  * (`file_reclassification`), and the backend routes the click on them. So it is
  * never rebuilt from known fields or checked against `IntentType`: either would
- * drop what the server needs. The one requirement is a string `type`; without
- * it the request carries no `intent_type` and the server ignores the rest.
+ * drop what the server needs. The one requirement is a non-empty string `type`;
+ * without it the request carries no `intent_type` and the server ignores the rest.
  */
 export type SuggestionIntent = { type: string } & { [key: string]: unknown };
 

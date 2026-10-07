@@ -132,5 +132,6 @@ function knownSuggestionType(type: string): SuggestionType {
 function forwardableIntent(intent: SuggestedActionResponse['intent']): SuggestionIntent | undefined {
   if (!intent) return undefined;
   const { type } = intent;
-  return typeof type === 'string' ? { ...intent, type } : undefined;
+  // An empty type is no type: the request would carry no `intent_type`.
+  return typeof type === 'string' && type !== '' ? { ...intent, type } : undefined;
 }
