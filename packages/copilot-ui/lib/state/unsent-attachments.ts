@@ -9,12 +9,16 @@
  *
  * The client does not always KNOW the file did not land. A network drop after
  * the request was sent, a client-side timeout, or an async-poll timeout all end
- * without an HTTP response, and the turn may have committed regardless. Those
- * failures say "may not have been added"; only a received HTTP error status
- * (4xx/5xx, a 504 included) says "were not added".
+ * without an HTTP response, and the turn may have committed regardless. So do a
+ * 502 and a 504: a gateway answers them while the API may still be running the
+ * turn. Those failures say "may not have been added"; any other received HTTP
+ * error status says "were not added".
  */
 import { ErrorClassifier } from '../errors/classifier';
 import { NetworkError, TimeoutError } from '../errors/types';
+
+/** Statuses a gateway answers on the API's behalf; the turn may still commit. */
+const GATEWAY_STATUSES = new Set([502, 504]);
 
 /** Names listed before the rest are summarised as "and N more". */
 const MAX_NAMES_LISTED = 3;
@@ -42,16 +46,18 @@ export interface UnsentTurn {
 
 /**
  * Whether a failure leaves it unknown if the turn committed. Classified once,
- * here: a received HTTP error status is definite (even a 504, which the
- * classifier files under timeouts); without one, a network or timeout error is
- * ambiguous. Anything else (a client-side rejection before sending) is definite.
+ * here. A gateway status (502, 504) is ambiguous: the proxy gave up on the API,
+ * which may still commit the turn. Any other received HTTP error status is
+ * definite. Without a status, a network or timeout error is ambiguous, and
+ * anything else (a client-side rejection before sending) is definite.
  */
 export function isAmbiguousFailure(error: unknown): boolean {
   const classified = ErrorClassifier.classify(error);
   // The retry layer hands over an already classified error; the HTTP status
   // lives on the error it wraps.
   const cause = classified.originalError ?? classified;
-  if (typeof (cause as { status?: unknown }).status === 'number') return false;
+  const status = (cause as { status?: unknown }).status;
+  if (typeof status === 'number') return GATEWAY_STATUSES.has(status);
   return classified instanceof NetworkError || classified instanceof TimeoutError;
 }
 

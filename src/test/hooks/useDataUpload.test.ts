@@ -388,7 +388,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
     const file = (name: string) => new File(['x'], name, { type: 'text/plain' });
     const failWith = async (
       payload: Parameters<ReturnType<typeof useDataUpload>['handleTurnSubmit']>[0],
-      failure: Error = Object.assign(new Error('Request timeout'), { status: 504 }),
+      failure: Error = Object.assign(new Error('Internal error'), { status: 500 }),
     ) => {
       (api.submitTurn as any).mockRejectedValue(failure);
       const { result } = render();
@@ -431,7 +431,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
       expect(info.recoveryHint).toBe('1 file (app.log) was not added to the case. Retry sends it again.');
     });
 
-    it.each([500, 409, 504])('is definite for an HTTP %i (a response arrived)', async (status) => {
+    it.each([500, 409, 503])('is definite for an HTTP %i (the API answered)', async (status) => {
       const { info } = await failWith({ query: 'why?', files: [file('a.log')] }, Object.assign(new Error('boom'), { status }));
       expect(info.recoveryHint).toBe('Your message and 1 file (a.log) were not added to the case. Retry sends them again.');
     });
@@ -439,7 +439,9 @@ describe('useDataUpload — error surfacing regression guard', () => {
     it.each([
       ['a fetch TypeError', () => new TypeError('Failed to fetch')],
       ['an async-poll timeout', () => new Error('Async turn polling timed out after 90s')],
-    ])('says "may not have been added" for %s (no HTTP response)', async (_name, make) => {
+      ['a gateway 504', () => Object.assign(new Error('Gateway Timeout'), { status: 504 })],
+      ['a gateway 502', () => Object.assign(new Error('Bad Gateway'), { status: 502 })],
+    ])('says "may not have been added" for %s (the API may still commit)', async (_name, make) => {
       const { info, bubble } = await failWith({ query: 'why?', files: [file('a.log')] }, make());
       expect(info.recoveryHint).toBe(
         'Your message and 1 file (a.log) may not have been added to the case. Retry sends them again.'
