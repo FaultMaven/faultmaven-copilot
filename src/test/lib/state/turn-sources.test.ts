@@ -32,10 +32,25 @@ describe('sourcesForTurn', () => {
     expect(sourcesForTurn(conv, 'ai', [kb('b')])).toEqual([kb('b')]);
   });
 
-  it('records an empty list when a context shown earlier is gone', () => {
+  // A turn whose prompt carried no KB context (a greeting, an aside) answers
+  // with [] while the context still stands (contract 11.2.0).
+  it('records nothing for an empty list, even after a context was shown', () => {
     const conv = [row('r1', [kb('a')]), row('ai')];
-    expect(sourcesForTurn(conv, 'ai', [])).toEqual([]);
-    expect(sourcesForTurn(conv, 'ai', undefined)).toEqual([]);
+    expect(sourcesForTurn(conv, 'ai', [])).toBeUndefined();
+    expect(sourcesForTurn(conv, 'ai', undefined)).toBeUndefined();
+  });
+
+  it('does not show the standing context again on the turn after an aside', () => {
+    // The two turns as the turn paths run them: the aside's result is stored
+    // on its row, then the next turn compares against the conversation.
+    const asideSources = sourcesForTurn([row('r1', [kb('a')]), row('aside')], 'aside', []);
+    const conv = [row('r1', [kb('a')]), row('aside', asideSources), row('ai')];
+    expect(sourcesForTurn(conv, 'ai', [kb('a')])).toBeUndefined();
+  });
+
+  it('skips an empty list an earlier rule recorded', () => {
+    const conv = [row('r1', [kb('a')]), row('r2', []), row('ai')];
+    expect(sourcesForTurn(conv, 'ai', [kb('a')])).toBeUndefined();
   });
 
   it('records nothing when there was no context and still is none', () => {
