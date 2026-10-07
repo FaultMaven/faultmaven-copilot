@@ -6284,7 +6284,7 @@ export interface components {
             message_id: string;
             /**
              * Metadata
-             * @description Sources, tools used, etc.
+             * @description Tools used and other per-turn detail.
              */
             metadata?: {
                 [key: string]: unknown;
@@ -6294,6 +6294,11 @@ export interface components {
              * @enum {string}
              */
             role: "user" | "assistant" | "system";
+            /**
+             * Sources
+             * @description On an assistant row: the knowledge-base runbooks that turn's prompt carried, exactly as the live `TurnResponse.sources` returned them, `new_this_turn` included. Null on a row whose prompt carried none (and on every user or system row).
+             */
+            sources?: components["schemas"]["Source"][] | null;
             /**
              * Token Count
              * @description Number of tokens in content
@@ -6534,6 +6539,17 @@ export interface components {
             tenant_daily_turn_cap: number;
         };
         /**
+         * ProblemStatus
+         * @description Where the confirmed problem statement stands against the evidence.
+         *
+         *     The single source of truth for "is the problem verified":
+         *     ``InvestigationProgress.symptom_verified`` is derived from it and never
+         *     stored. Every transition is written by
+         *     ``faultmaven.core.investigation.problem_status`` — nothing else assigns it.
+         * @enum {string}
+         */
+        ProblemStatus: "unverified" | "verified" | "revision_pending" | "invalidated";
+        /**
          * ProblemVerificationData
          * @description Problem verification details for INVESTIGATING phase.
          */
@@ -6555,11 +6571,8 @@ export interface components {
              * @description The revised statement awaiting the user's confirmation.
              */
             pending_revision?: string | null;
-            /**
-             * Problem Status
-             * @description Where the confirmed problem statement stands against the evidence: unverified | verified | revision_pending (a revised statement awaits the user's confirmation) | invalidated (the reported problem was not present: a false alarm)
-             */
-            problem_status?: string | null;
+            /** @description Where the confirmed problem statement stands against the evidence: unverified | verified | revision_pending (a revised statement awaits the user's confirmation) | invalidated (the reported problem was not present: a false alarm) */
+            problem_status?: components["schemas"]["ProblemStatus"] | null;
             /**
              * Severity
              * @description Severity: critical | high | medium | low
@@ -7176,6 +7189,11 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * New This Turn
+             * @description For a knowledge-base source in a turn's `sources`: true when this runbook excerpt was not in the prompt of the case's previous turn that carried knowledge-base context. That context stands in every prompt from the turn it is fetched until the next fetch replaces it, so a client shows the list where something is new rather than under every answer. Null on any other source.
+             */
+            new_this_turn?: boolean | null;
             type: components["schemas"]["SourceType"];
             /** Verification Reason */
             verification_reason?: string | null;
@@ -7427,7 +7445,7 @@ export interface components {
             progress_transparency?: components["schemas"]["ProgressTransparencyInfo"] | null;
             /**
              * Sources
-             * @description Knowledge the engine put in front of the model for this turn: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED). Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when nothing was pre-fetched — including when the push is disabled. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary.
+             * @description Knowledge the engine put in front of the model for this turn: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED) that the prompt the model answered from actually carried, after the section budget. A pre-fetch that fires while the turn's response is applied first reaches the NEXT turn's prompt, and is listed there. The context stands in every prompt until a pre-fetch replaces it, so it repeats turn to turn; `new_this_turn` marks the excerpts the previous turn's prompt did not carry. Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when nothing was pre-fetched — including when the push is disabled. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary.
              */
             sources?: components["schemas"]["Source"][];
             /** Suggested Actions */

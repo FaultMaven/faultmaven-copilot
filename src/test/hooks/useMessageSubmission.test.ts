@@ -183,6 +183,7 @@ describe('useMessageSubmission', () => {
       content: 'Restart the pod after rotating the secret.',
       confidence: 0.82,
       metadata: { document_id: 'doc-1', title: 'Secret rotation runbook', trigger: 'symptom' },
+      new_this_turn: true,
     };
 
     (api.submitTurn as any).mockResolvedValue({
@@ -204,8 +205,8 @@ describe('useMessageSubmission', () => {
     expect(ai?.sources).toEqual([kbSource]);
   });
 
-  // The backend resends the standing KB context on every turn; only the turn
-  // where it appears or changes records it (lib/state/turn-sources).
+  // The server resends the standing context on every turn and marks it
+  // `new_this_turn` only on the turn it arrives (contract 11.2.0).
   it('does not record an unchanged KB context again on the next turn', async () => {
     const { result } = render();
     const kbSource = {
@@ -213,10 +214,12 @@ describe('useMessageSubmission', () => {
       content: 'Restart the pod after rotating the secret.',
       confidence: 0.82,
       metadata: { document_id: 'doc-1', title: 'Secret rotation runbook' },
+      new_this_turn: true,
     };
-    const turn = (n: number, text: string) => ({
+    const turn = (n: number, text: string, isNew: boolean) => ({
       agent_response: text, turn_number: n, milestones_completed: [], case_state: 'investigating',
-      progress_made: true, attachments_processed: [], sources: [kbSource],
+      progress_made: true, attachments_processed: [],
+      sources: [{ ...kbSource, new_this_turn: isNew }],
     });
 
     // Two turns need two id pairs. Earlier tests can leave values queued on
@@ -224,9 +227,9 @@ describe('useMessageSubmission', () => {
     (OptimisticIdGenerator.generateMessageId as any).mockReset()
       .mockReturnValueOnce('user-1').mockReturnValueOnce('ai-1')
       .mockReturnValueOnce('user-2').mockReturnValueOnce('ai-2');
-    (api.submitTurn as any).mockResolvedValueOnce(turn(1, 'First reply.'));
+    (api.submitTurn as any).mockResolvedValueOnce(turn(1, 'First reply.', true));
     await act(async () => { await result.current.handleQuerySubmit('first'); });
-    (api.submitTurn as any).mockResolvedValueOnce(turn(2, 'Second reply.'));
+    (api.submitTurn as any).mockResolvedValueOnce(turn(2, 'Second reply.', false));
     await act(async () => { await result.current.handleQuerySubmit('second'); });
 
     const rows = useAppStore.getState().conversations['case-123'] || [];

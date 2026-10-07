@@ -31,7 +31,7 @@ interface SourcesInContextProps {
  * to a paragraph would claim a provenance the data does not carry. A native
  * `<details>` keeps the list reachable by keyboard and touch, and every source
  * is listed, whatever shape the reply takes. The turn paths set `sources` only
- * where that context appears or changes (`lib/state/turn-sources`).
+ * where that context arrives or changes (`lib/state/turn-sources`).
  */
 const SourcesInContext: React.FC<SourcesInContextProps> = memo(({ sources, onDocumentView }) => (
   <details className="mt-2 text-xs text-fm-text-tertiary">
