@@ -107,7 +107,8 @@ interface UploadedFileWithEvidence extends UploadedFileMetadata {
 interface ProblemStatementProps {
   /** The statement in force (`problem_statement`, or the case description). */
   statement: string;
-  /** Sent on INVESTIGATING only; RESOLVED and CLOSED responses carry none. */
+  /** Sent on INVESTIGATING, RESOLVED and CLOSED (the terminal response since
+   *  contract 11.3.0); absent from an older server's terminal response. */
   verification: ProblemVerification | null | undefined;
 }
 
@@ -127,11 +128,12 @@ const ProblemLine: React.FC<{ className?: string; text: string }> = ({ className
  * The Problem row's value, read against where the statement stands
  * (`problem_verification.problem_status`, a `ProblemStatus` since contract
  * 11.2.0). Without it the row stated the problem as fact in every state,
- * including an open case whose evidence showed the problem never occurred.
+ * including a case whose evidence showed the problem never occurred. Open and
+ * ended cases read the same way (the terminal response carries it since 11.3.0).
  *
  * - `invalidated`: struck through, with the finding that showed it was not
- *   present (the case stays open until the user accepts the close or disputes
- *   the finding).
+ *   present: a false alarm, open until the user accepts the close or disputes
+ *   the finding, and after it is closed.
  * - `revision_pending`: the statement in force, plus the revised wording the
  *   chat is asking the user to confirm.
  * - `original_problem_statement`, in any status: where the statement started,
@@ -369,8 +371,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     if (confirmed) {
       // The verification judges the statement the server sent. The cached
       // `activeCase.description` fallback can be older, so it gets no status.
-      const verification =
-        fromCaseData && isCaseInvestigating(caseData) ? caseData.problem_verification : null;
+      const verification = fromCaseData ? caseData.problem_verification : null;
       problemRow = (
         <DetailRow label="Problem">
           <ProblemStatement statement={confirmed} verification={verification} />
