@@ -505,7 +505,11 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
   let artifactsRow: React.ReactNode = null;
   {
     let evidence = 0;
+    // Two different measures, so two labels: while investigating, how many
+    // hypotheses are being tested now; once the case ends, how many were
+    // worked on. Under one label the number read as a drop at resolution.
     let hypotheses = 0;
+    let hypothesesLabel: (n: number) => string = () => '';
     let durationMin = 0;
     let hasSolution = false;
     let hasSummary = false;
@@ -514,11 +518,15 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
 
     if (isCaseInvestigating(caseData)) {
       evidence = caseData.progress.total_evidence ?? 0;
-      hypotheses = caseData.active_hypotheses?.length ?? 0;
+      // The server's count of ACTIVE hypotheses. Not `active_hypotheses`,
+      // which is the top five by likelihood in any state (refuted included).
+      hypotheses = caseData.progress.active_hypotheses ?? 0;
+      hypothesesLabel = (n) => `${n} active hypothes${n === 1 ? 'is' : 'es'}`;
     } else if (isCaseResolved(caseData) || isCaseClosed(caseData)) {
       const rs = caseData.resolution_summary;
       evidence = rs?.evidence_collected ?? 0;
       hypotheses = rs?.hypotheses_tested ?? 0;
+      hypothesesLabel = (n) => `${n} hypothes${n === 1 ? 'is' : 'es'} tested`;
       durationMin = rs?.total_duration_minutes ?? 0;
 
       // solution_applied exists only on RESOLVED responses.
@@ -596,8 +604,7 @@ export const CaseDetails: React.FC<CaseDetailsProps> = ({
     if (hasSolution) items.push('1 solution');
     if (evidence > 0) items.push(`${evidence} evidence`);
     // Depth signals — investigation shape, not outputs.
-    if (hypotheses > 0)
-      items.push(`${hypotheses} hypothes${hypotheses === 1 ? 'is' : 'es'}`);
+    if (hypotheses > 0) items.push(hypothesesLabel(hypotheses));
     if (durationMin > 0) items.push(formatDuration(durationMin));
 
     if (items.length > 0) {
