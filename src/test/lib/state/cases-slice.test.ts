@@ -120,6 +120,40 @@ describe('cases-slice', () => {
       expect(conv.map((m: any) => m.id)).toEqual(['real-1', 'real-2']);
     });
 
+    // Contract 11.2.0: history returns each assistant row's KB context as
+    // `Message.sources`; the row keeps it where the server marks something new,
+    // the same rule the live turn used, so a fresh load shows the list where
+    // the live conversation did.
+    it('carries the KB context onto the history row where it arrived', async () => {
+      const kb = (isNew: boolean) => ({
+        type: 'knowledge_base',
+        content: 'Rotate the secret, then restart the pods.',
+        confidence: 0.8,
+        metadata: { document_id: 'doc-1', title: 'Secret rotation runbook' },
+        new_this_turn: isNew,
+      });
+      (api.getCaseConversation as any).mockResolvedValue({
+        messages: [
+          { message_id: 'm-1-u', role: 'user', content: 'pods crashloop', turn_number: 1 },
+          { message_id: 'm-1-a', role: 'assistant', content: 'check the secret', turn_number: 1, sources: [kb(true)] },
+          { message_id: 'm-2-u', role: 'user', content: 'rotated it', turn_number: 2 },
+          { message_id: 'm-2-a', role: 'assistant', content: 'now restart', turn_number: 2, sources: [kb(false)] },
+          { message_id: 'm-3-a', role: 'assistant', content: 'done?', turn_number: 3, sources: null },
+        ]
+      });
+
+      useAppStore.getState().handleCaseSelect('case-kb');
+      await new Promise((r) => setTimeout(r, 0));
+
+      const byId = Object.fromEntries(
+        useAppStore.getState().conversations['case-kb'].map((m: any) => [m.id, m])
+      );
+      expect(byId['m-1-a'].sources).toEqual([kb(true)]);
+      expect(byId['m-2-a'].sources).toBeUndefined();
+      expect(byId['m-3-a'].sources).toBeUndefined();
+      expect(byId['m-1-u'].sources).toBeUndefined();
+    });
+
     it('carries the row\'s investigation turn, which it cannot derive itself (#251)', async () => {
       // The label ChatWindow prints. It has to come off the row: this client
       // caps a persisted conversation to a recent SUFFIX

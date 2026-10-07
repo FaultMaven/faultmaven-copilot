@@ -18,6 +18,7 @@ import { isCommittedMessage } from '../../../lib/utils/memory-manager';
 import { selectCaseTitle } from '../case-title';
 import { messageKind } from '../message-kind';
 import { reconcileOptimisticIds } from '../reconcile-message-ids';
+import { sourcesToShow } from '../turn-sources';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
 
@@ -269,7 +270,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
                 originalId: msg.message_id,
                 question: kind === 'user' ? msg.content : undefined,
                 response: kind === 'assistant' ? msg.content : undefined,
-                notice: kind === 'notice' ? msg.content : undefined
+                notice: kind === 'notice' ? msg.content : undefined,
+                // The KB context that turn's prompt carried, on the row where
+                // it arrived (contract 11.2.0) — the rule the live turn used.
+                sources: kind === 'assistant' ? sourcesToShow(msg.sources) : undefined
               };
             });
           if (incoming.length > 0) {

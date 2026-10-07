@@ -126,6 +126,7 @@ describe('useDataUpload — error surfacing regression guard', () => {
       content: 'Check the OOMKilled reason in the pod events.',
       confidence: 0.77,
       metadata: { document_id: 'doc-2', title: 'OOMKilled triage', trigger: 'symptom' },
+      new_this_turn: true,
     };
     (api.submitTurn as any).mockResolvedValue({ ...okTurnResponse, sources: [kbSource] });
 
