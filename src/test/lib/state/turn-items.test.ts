@@ -292,6 +292,24 @@ describe('duplicateUploads', () => {
 
   // The server stores the first copy under a new file_id, and the second copy's
   // `duplicate_of` names it: the case did not hold it before this submission.
+  // Both fields are on the message clock. An older server stamps a failed
+  // attempt's file with the turn number the retry then takes.
+  it('skips a match on this very turn: it is the failed attempt, not held data', () => {
+    expect(duplicateUploads(turn({ turn_number: 4, attachments_processed: [duplicateOf(4)] }), rows())).toEqual([]);
+  });
+
+  it('reports a match on an earlier turn', () => {
+    expect(duplicateUploads(turn({ turn_number: 4, attachments_processed: [duplicateOf(3)] }), rows())).toEqual([
+      { filename: 'renamed.log', origin: 'file_upload', turn: 2 },
+    ]);
+  });
+
+  // faultmaven#1882: turn 3 committed with its file while the client saw an
+  // error; the retry runs as turn 4 and truly matches the committed upload.
+  it('reports the retry of a turn that committed (duplicate_turn N, response N+1)', () => {
+    expect(duplicateUploads(turn({ turn_number: 4, attachments_processed: [duplicateOf(3)] }), rows())).toHaveLength(1);
+  });
+
   it('does not report a second copy of something this same submission stored', () => {
     const first = attachment({ file_id: 'file_new' });
     const second = duplicateOf(4, { file_id: 'file_new', duplicate_of: 'file_new' });

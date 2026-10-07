@@ -62,11 +62,20 @@ describe('pending-ops-slice', () => {
     it('names the attachments of a failed turn, and keeps the message-only copy otherwise', () => {
       const { getErrorMessageForOperation } = useAppStore.getState();
       const op = (optimisticData: unknown) => ({ type: 'submit_query', optimisticData } as any);
+      const unsent = (extra = {}) => ({
+        unsent: { hasQuery: true, attachments: [{ name: 'a.log', isFile: true }], ...extra },
+      });
 
-      expect(getErrorMessageForOperation(op({ hasQuery: true, attachments: [{ name: 'a.log', isFile: true }] })).recoveryHint).toBe(
+      expect(getErrorMessageForOperation(op(unsent())).recoveryHint).toBe(
         'Your message and 1 file (a.log) were not added to the case. Retry sends them again.'
       );
-      expect(getErrorMessageForOperation(op({ hasQuery: true, attachments: [] })).recoveryHint).toBe(
+      expect(getErrorMessageForOperation(op(unsent({ ambiguous: true }))).recoveryHint).toBe(
+        'Your message and 1 file (a.log) may not have been added to the case. Retry sends them again.'
+      );
+      expect(getErrorMessageForOperation(op(unsent({ hasQuery: false }))).recoveryHint).toBe(
+        '1 file (a.log) was not added to the case. Retry sends it again.'
+      );
+      expect(getErrorMessageForOperation(op({ unsent: { hasQuery: true, attachments: [] } })).recoveryHint).toBe(
         'Your message was not sent. Try sending it again or check your connection.'
       );
       expect(getErrorMessageForOperation(op(undefined)).recoveryHint).toBe(

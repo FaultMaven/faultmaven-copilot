@@ -86,9 +86,7 @@ export const createPendingOpsSlice: StateCreator<StoreState, [], [], PendingOpsS
           // A turn that carried attachments names them: the user must know the
           // files did not land and that Retry sends them again.
           recoveryHint:
-            unsentAttachmentsNotice(operation.optimisticData?.attachments, {
-              hasQuery: !!operation.optimisticData?.hasQuery,
-            }) ?? 'Your message was not sent. Try sending it again or check your connection.'
+            unsentAttachmentsNotice(operation.optimisticData?.unsent) ?? 'Your message was not sent. Try sending it again or check your connection.'
         };
       case 'update_title':
         return {

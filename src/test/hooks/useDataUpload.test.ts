@@ -386,8 +386,11 @@ describe('useDataUpload — error surfacing regression guard', () => {
 
   describe('a failed turn names the files it did not add', () => {
     const file = (name: string) => new File(['x'], name, { type: 'text/plain' });
-    const failWith = async (payload: Parameters<ReturnType<typeof useDataUpload>['handleTurnSubmit']>[0]) => {
-      (api.submitTurn as any).mockRejectedValue(Object.assign(new Error('Request timeout'), { status: 504 }));
+    const failWith = async (
+      payload: Parameters<ReturnType<typeof useDataUpload>['handleTurnSubmit']>[0],
+      failure: Error = Object.assign(new Error('Request timeout'), { status: 504 }),
+    ) => {
+      (api.submitTurn as any).mockRejectedValue(failure);
       const { result } = render();
       await act(async () => {
         await result.current.handleTurnSubmit(payload);
@@ -421,6 +424,38 @@ describe('useDataUpload — error surfacing regression guard', () => {
       expect(info.recoveryHint).toBe(
         '5 files (a.log, b.log, c.log and 2 more) were not added to the case. Retry sends them again.'
       );
+    });
+
+    it('says a file-only turn without the message wording (generated query is not the user\'s)', async () => {
+      const { info } = await failWith({ query: 'Analyze this file.', queryIsGenerated: true, files: [file('app.log')] });
+      expect(info.recoveryHint).toBe('1 file (app.log) was not added to the case. Retry sends it again.');
+    });
+
+    it.each([500, 409, 504])('is definite for an HTTP %i (a response arrived)', async (status) => {
+      const { info } = await failWith({ query: 'why?', files: [file('a.log')] }, Object.assign(new Error('boom'), { status }));
+      expect(info.recoveryHint).toBe('Your message and 1 file (a.log) were not added to the case. Retry sends them again.');
+    });
+
+    it.each([
+      ['a fetch TypeError', () => new TypeError('Failed to fetch')],
+      ['an async-poll timeout', () => new Error('Async turn polling timed out after 90s')],
+    ])('says "may not have been added" for %s (no HTTP response)', async (_name, make) => {
+      const { info, bubble } = await failWith({ query: 'why?', files: [file('a.log')] }, make());
+      expect(info.recoveryHint).toBe(
+        'Your message and 1 file (a.log) may not have been added to the case. Retry sends them again.'
+      );
+      expect(bubble).toContain('may not have been added to the case');
+    });
+
+    it('keeps the notice in the bubble and the banner when the retry fails again', async () => {
+      const { op } = await failWith({ query: 'why?', files: [file('a.log'), file('b.log')] });
+      await act(async () => {
+        await useAppStore.getState().handleUserRetry(op.id, vi.fn());
+      });
+      const state = useAppStore.getState();
+      const [again] = state.getFailedOperationsForUser();
+      expect(state.getErrorMessageForOperation(again).recoveryHint).toContain('2 files (a.log, b.log) were not added');
+      expect((state.conversations['case-123'][1] as any).response).toContain('2 files (a.log, b.log) were not added');
     });
 
     it('names pasted text by what it is, not its minted filename', async () => {

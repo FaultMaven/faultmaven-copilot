@@ -19,8 +19,12 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
-import { unsentAttachmentsNotice, type UnsentAttachment } from '../../../lib/state/unsent-attachments';
-import { DuplicateUploadNotice } from '../../../lib/errors/types';
+import {
+  unsentAttachmentsNotice,
+  isAmbiguousFailure,
+  type UnsentTurn,
+} from '../../../lib/state/unsent-attachments';
+import { DuplicateUploadNotice, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
@@ -84,7 +88,7 @@ export function useDataUpload() {
     turnRequest: TurnRequest,
     userMessageId: string,
     aiMessageId: string,
-    unsent: UnsentAttachment[] = [],
+    unsent: UnsentTurn = { attachments: [], hasQuery: false },
   ): Promise<{ success: boolean; message: string }> => {
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight must not let the success handler write the response back
@@ -133,7 +137,8 @@ export function useDataUpload() {
       // A turn that carried attachments also says which did not land: the
       // server commits a file only with its turn, so none of them did (bar
       // FaultMaven/faultmaven#1882, where the retry's duplicate notice corrects it).
-      const notAdded = unsentAttachmentsNotice(unsent, { hasQuery: !!turnRequest.query });
+      unsent.ambiguous = isAmbiguousFailure(error);
+      const notAdded = unsentAttachmentsNotice(unsent);
       const formatted = formatErrorForChat(ErrorClassifier.classify(error));
       const chatError = notAdded ? `${formatted}\n\n${notAdded}` : formatted;
       setConversations(prev => ({
@@ -364,12 +369,15 @@ export function useDataUpload() {
 
       // What a failure of this turn must name: the files (by name) and any
       // generated content (by what it is, not its minted filename).
-      const unsent: UnsentAttachment[] = [
-        ...(payload.files || []).map(f => ({ name: f.name, isFile: true })),
-      ];
+      // `hasQuery` is text the USER typed, not the question the input bar
+      // generates for a file-only turn.
+      const unsent: UnsentTurn = {
+        attachments: (payload.files || []).map(f => ({ name: f.name, isFile: true })),
+        hasQuery: !!payload.query?.trim() && !payload.queryIsGenerated,
+      };
       if (payload.pastedContent?.trim()) {
-        unsent.push({
-          name: payload.inputType === 'page_capture' ? 'the captured page' : 'the pasted text',
+        unsent.attachments.push({
+          name: payload.inputType === 'page_capture' ? PAGE_CAPTURE_LABEL : PASTED_TEXT_LABEL,
           isFile: false,
         });
       }
@@ -463,7 +471,7 @@ export function useDataUpload() {
         id: aiMessageId,
         type: 'submit_query',
         status: 'pending',
-        optimisticData: { caseId: targetCaseId, query: userQuestion, hasQuery: !!turnRequest.query, attachments: unsent },
+        optimisticData: { caseId: targetCaseId, query: userQuestion, unsent },
         rollbackFn: () => {
           setConversations(prev => ({
             ...prev,

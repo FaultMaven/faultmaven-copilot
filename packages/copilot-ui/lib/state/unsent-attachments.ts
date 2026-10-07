@@ -2,14 +2,19 @@
  * What a failed turn says about the attachments it carried.
  *
  * The server commits an uploaded file only with the turn that carried it, so a
- * failed turn leaves nothing on the case. The user must be told which files did
- * not land, and that Retry sends them again. One known exception remains on the
- * server (FaultMaven/faultmaven#1882): a turn can commit and still return an
- * error. A retry then reports the file as already on the case, which corrects
- * this notice. Every surface that renders the
- * failure (the failed-operation banner, the failed assistant bubble) takes its
- * wording from here so they cannot disagree.
+ * turn that failed with an HTTP error status left nothing on the case. The user
+ * must be told which files did not land, and that Retry sends them again. Every
+ * surface that renders the failure (the failed-operation banner, the failed
+ * assistant bubble) takes its wording from here so they cannot disagree.
+ *
+ * The client does not always KNOW the file did not land. A network drop after
+ * the request was sent, a client-side timeout, or an async-poll timeout all end
+ * without an HTTP response, and the turn may have committed regardless. Those
+ * failures say "may not have been added"; only a received HTTP error status
+ * (4xx/5xx, a 504 included) says "were not added".
  */
+import { ErrorClassifier } from '../errors/classifier';
+import { NetworkError, TimeoutError } from '../errors/types';
 
 /** Names listed before the rest are summarised as "and N more". */
 const MAX_NAMES_LISTED = 3;
@@ -23,15 +28,42 @@ export interface UnsentAttachment {
 }
 
 /**
+ * What a turn's failure state needs to word itself. One object per turn, shared
+ * by reference between the pending operation (the banner) and the failure
+ * handler (the bubble), so both read the same facts.
+ */
+export interface UnsentTurn {
+  attachments: UnsentAttachment[];
+  /** The user typed text of their own (not the auto-generated question). */
+  hasQuery: boolean;
+  /** The failure carried no HTTP response, so the turn may have committed. */
+  ambiguous?: boolean;
+}
+
+/**
+ * Whether a failure leaves it unknown if the turn committed. Classified once,
+ * here: a received HTTP error status is definite (even a 504, which the
+ * classifier files under timeouts); without one, a network or timeout error is
+ * ambiguous. Anything else (a client-side rejection before sending) is definite.
+ */
+export function isAmbiguousFailure(error: unknown): boolean {
+  const classified = ErrorClassifier.classify(error);
+  // The retry layer hands over an already classified error; the HTTP status
+  // lives on the error it wraps.
+  const cause = classified.originalError ?? classified;
+  if (typeof (cause as { status?: unknown }).status === 'number') return false;
+  return classified instanceof NetworkError || classified instanceof TimeoutError;
+}
+
+/**
  * The sentence that tells the user what a failed turn did not add to the case,
  * or `null` for a turn that carried no attachments (the caller keeps its
  * message-only copy).
  */
-export function unsentAttachmentsNotice(
-  attachments: readonly UnsentAttachment[] | undefined,
-  { hasQuery }: { hasQuery: boolean }
-): string | null {
-  if (!attachments || attachments.length === 0) return null;
+export function unsentAttachmentsNotice(turn: UnsentTurn | undefined): string | null {
+  const attachments = turn?.attachments;
+  if (!turn || !attachments || attachments.length === 0) return null;
+  const { hasQuery, ambiguous } = turn;
 
   const allFiles = attachments.every((a) => a.isFile);
   const noun = allFiles ? (attachments.length === 1 ? 'file' : 'files') : (attachments.length === 1 ? 'attachment' : 'attachments');
@@ -44,5 +76,6 @@ export function unsentAttachmentsNotice(
   const lead = hasQuery ? `Your message and ${subject}` : subject.charAt(0).toUpperCase() + subject.slice(1);
   const verb = hasQuery || attachments.length > 1 ? 'were' : 'was';
   const them = attachments.length === 1 && !hasQuery ? 'it' : 'them';
-  return `${lead} ${verb} not added to the case. Retry sends ${them} again.`;
+  const outcome = ambiguous ? 'may not have been added' : `${verb} not added`;
+  return `${lead} ${outcome} to the case. Retry sends ${them} again.`;
 }

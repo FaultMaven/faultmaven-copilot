@@ -144,17 +144,23 @@ function forwardableIntent(intent: SuggestedActionResponse['intent']): Suggestio
  * this submission: the server matched them (`duplicate_of`) and stored nothing
  * new.
  *
- * Not every match is one, and the exception is recognised exactly rather than
- * inferred from turn numbers:
+ * Not every match is one. Both exceptions are recognised exactly:
  *
  * - **A second copy within this submission**: the first copy is stored under a
  *   new `file_id`, and the second's `duplicate_of` names it.
  *
- * A resent turn is not an exception: a file is committed only with the turn
- * that carried it, so a retry after a failed turn is a fresh upload and never
- * matches its own failed attempt. A match on a resend is therefore a real one.
- * (It is also the only signal that a file landed when a turn committed but the
- * client showed an error.)
+ * - **A match on this very turn** (`duplicate_turn === turn_number`, both on
+ *   the message clock): an older server stamps a failed attempt's file with the
+ *   turn number the retry then takes, so the match is the failed attempt, not
+ *   data the case already held. A current server never reports it, except for
+ *   the second copy within a submission, which is excluded above.
+ *
+ * A resent turn is otherwise not an exception: a file is committed only with
+ * the turn that carried it, so a retry after a failed turn is a fresh upload
+ * and a match on it is real. That includes the window where a turn committed
+ * but the client saw an error: the retry runs as the next turn, so the match
+ * names an EARLIER one, and the notice is the only signal the file landed.
+ *
  *
  * `rows` is the conversation as submitted, BEFORE `applyTurnResponse`.
  * `duplicate_turn` is the MESSAGE clock (the original's `uploaded_at_turn`), so
@@ -174,6 +180,7 @@ export function duplicateUploads(
   const duplicates: DuplicateUpload[] = [];
   for (const attachment of attachments) {
     if (!attachment.duplicate_of || storedNow.has(attachment.duplicate_of)) continue;
+    if (attachment.duplicate_turn === response.turn_number) continue;
     const original = attachment.duplicate_turn;
     const turn = typeof original === 'number' ? investigationTurnFor(original, history) : undefined;
     const origin = attachmentOrigin(attachment);
