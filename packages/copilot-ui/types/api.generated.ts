@@ -5299,7 +5299,7 @@ export interface components {
              * @description Confirmed problem statement carried over from INQUIRY (sourced from case.description).
              */
             problem_statement?: string | null;
-            /** @description Where the problem statement stood when the case ended, as on the INVESTIGATING response: a case closed as `closed_false_alarm` carries `invalidated` with its `invalidation_finding`, and a statement a revision or an edit changed carries `original_problem_statement`. */
+            /** @description Where the problem statement stood when the case ended, as on the INVESTIGATING response: a case closed as `closed_false_alarm` carries `invalidated` with its `invalidation_finding`, and a statement a revision or an edit changed carries `original_problem_statement`. Null for a case closed from INQUIRY, which confirmed no statement. */
             problem_verification?: components["schemas"]["ProblemVerificationData"] | null;
             /**
              * Reports Available
