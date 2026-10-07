@@ -2,9 +2,9 @@
  * #296 — the Problem row reads `problem_verification.problem_status`.
  *
  * Before this the row stated the problem as fact in every state, including an
- * open case whose evidence showed the problem never occurred (a false alarm the
- * user has not yet closed). The fields arrive on INVESTIGATING only; RESOLVED
- * and CLOSED responses carry no `problem_verification`.
+ * case whose evidence showed the problem never occurred. The fields arrive on
+ * INVESTIGATING and, since contract 11.3.0 (#1874), on RESOLVED and CLOSED too,
+ * so a closed false alarm keeps saying so.
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
@@ -178,15 +178,45 @@ describe('CaseDetails — the Problem row against problem_status (#296)', () => 
     expect(screen.queryByText(/Not present/)).toBeNull();
   });
 
-  it('reads no verification on a resolved case, which carries none', () => {
-    renderProblem({
-      ...investigating(null),
-      state: 'resolved',
-      problem_verification: { problem_status: 'invalidated', invalidation_finding: 'ignored' },
+  const terminal = (state: 'resolved' | 'closed', problemVerification: Record<string, unknown> | null) => {
+    const { problem_verification: _unused, ...rest } = investigating(null);
+    void _unused;
+    return {
+      ...rest,
+      state,
       resolution_summary: { hypotheses_tested: 0 },
-    });
+      ...(problemVerification === null ? {} : { problem_verification: problemVerification }),
+    };
+  };
+
+  it('keeps a closed false alarm struck through, with the finding (#1874)', () => {
+    renderProblem(
+      terminal('closed', {
+        problem_status: 'invalidated',
+        invalidation_finding: 'Memory never exceeded 60% of the limit.',
+      })
+    );
+
+    expect(screen.getByText(STATEMENT).className).toContain('line-through');
+    expect(screen.getByText('Not present: Memory never exceeded 60% of the limit.')).toBeInTheDocument();
+  });
+
+  it('shows where a resolved case\'s revised statement started (#1874)', () => {
+    renderProblem(
+      terminal('resolved', { problem_status: 'verified', original_problem_statement: 'Checkout is slow' })
+    );
 
     expect(screen.getByText(STATEMENT).className).not.toContain('line-through');
-    expect(screen.queryByText(/Not present/)).toBeNull();
+    expect(screen.getByText('Originally reported as: Checkout is slow')).toBeInTheDocument();
   });
+
+  it.each(['resolved', 'closed'] as const)(
+    'renders a %s case from a server older than 11.3.0 as before',
+    (state) => {
+      renderProblem(terminal(state, null));
+
+      expect(screen.getByText(STATEMENT).className).not.toContain('line-through');
+      expect(screen.queryByText(/Not present|awaiting your confirmation|Originally reported/)).toBeNull();
+    }
+  );
 });
