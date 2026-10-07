@@ -3,7 +3,10 @@
  *
  * The server commits an uploaded file only with the turn that carried it, so a
  * failed turn leaves nothing on the case. The user must be told which files did
- * not land, and that Retry sends them again. Every surface that renders the
+ * not land, and that Retry sends them again. One known exception remains on the
+ * server (FaultMaven/faultmaven#1882): a turn can commit and still return an
+ * error. A retry then reports the file as already on the case, which corrects
+ * this notice. Every surface that renders the
  * failure (the failed-operation banner, the failed assistant bubble) takes its
  * wording from here so they cannot disagree.
  */

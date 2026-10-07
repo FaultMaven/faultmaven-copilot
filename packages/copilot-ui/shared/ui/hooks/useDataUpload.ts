@@ -131,7 +131,8 @@ export function useDataUpload() {
       // bubble (parity with useMessageSubmission) so the failure is visible in
       // context, not just an empty red bubble beside the banner.
       // A turn that carried attachments also says which did not land: the
-      // server commits a file only with its turn, so none of them did.
+      // server commits a file only with its turn, so none of them did (bar
+      // FaultMaven/faultmaven#1882, where the retry's duplicate notice corrects it).
       const notAdded = unsentAttachmentsNotice(unsent, { hasQuery: !!turnRequest.query });
       const formatted = formatErrorForChat(ErrorClassifier.classify(error));
       const chatError = notAdded ? `${formatted}\n\n${notAdded}` : formatted;
