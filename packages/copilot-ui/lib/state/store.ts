@@ -69,11 +69,19 @@ export type StoreState = AppSlice & AuthSlice & SessionSlice & CasesSlice & Pend
  * cache written by an older build was the alternative and is worse: a recovered
  * mid-list row would append at the END, out of order.
  *
- * Bump this whenever a change alters WHICH backend rows reach the store, or what
- * the store may assume about the rows it already holds. Both invalidate the
- * prefix assumption the offset depends on.
+ * v5 discards caches written before history rows carried `sources` (API
+ * contract 11.2.0, #300): the KB context a turn's prompt carried, on the row
+ * where it arrived. Same reason as v4 — a cached row is never re-read, so
+ * without the bump a conversation loaded before this build never shows its
+ * runbooks, while the same case on a fresh device does.
+ *
+ * Bump this whenever a change alters WHICH backend rows reach the store, what
+ * the store may assume about the rows it already holds, or which fields a row
+ * read from the backend carries. The first two invalidate the prefix
+ * assumption the offset depends on; the third leaves cached rows without a
+ * field the delta fetch never goes back for.
  */
-export const CONVERSATION_CACHE_VERSION = 4;
+export const CONVERSATION_CACHE_VERSION = 5;
 
 /** Storage key holding {@link CONVERSATION_CACHE_VERSION} for the persisted map. */
 export const CONVERSATION_CACHE_VERSION_KEY = 'conversationCacheVersion';
