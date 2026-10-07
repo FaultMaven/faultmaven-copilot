@@ -1,4 +1,5 @@
 import type { Source } from '../api';
+import type { ConversationItem } from '../optimistic';
 
 /**
  * Which `sources` to store on an assistant row.
@@ -11,10 +12,46 @@ import type { Source } from '../api';
  * something in it is new: the list shows where the context arrives or changes,
  * not under every answer, and is not persisted once per row.
  *
+ * A self-hosted core older than 11.2.0 sends `sources` with no flag at all.
+ * For that server the row keeps the list where it differs from the last list
+ * an earlier row kept (`earlier`, the rows before this one) — the rule this
+ * client used before the server said what was new. An empty list keeps
+ * nothing on either server: a turn whose prompt carried no KB context answers
+ * `[]` while the context still stands.
+ *
  * The live turn paths (`useMessageSubmission`, `useDataUpload`) and the history
  * mapper (`cases-slice`) all call this, so a conversation read back from the
  * server shows the list exactly where the live turn did.
  */
-export function sourcesToShow(sources: Source[] | null | undefined): Source[] | undefined {
-  return sources?.some((source) => source.new_this_turn === true) ? sources : undefined;
+export function sourcesToShow(
+  sources: Source[] | null | undefined,
+  earlier: readonly ConversationItem[] = []
+): Source[] | undefined {
+  if (!sources || sources.length === 0) return undefined;
+  if (sources.some((source) => typeof source.new_this_turn === 'boolean')) {
+    return sources.some((source) => source.new_this_turn === true) ? sources : undefined;
+  }
+  let recorded: readonly Source[] = [];
+  for (let i = earlier.length - 1; i >= 0; i--) {
+    const kept = earlier[i].sources;
+    if (kept && kept.length > 0) {
+      recorded = kept;
+      break;
+    }
+  }
+  return sameSources(recorded, sources) ? undefined : sources;
+}
+
+/** The rows before `itemId` — the ones a turn's row is compared against. */
+export function rowsBefore<T extends { id: string }>(rows: readonly T[], itemId: string): readonly T[] {
+  const at = rows.findIndex((row) => row.id === itemId);
+  return at === -1 ? rows : rows.slice(0, at);
+}
+
+function sourceKey(source: Source): string {
+  return `${source.type}|${String(source.metadata?.document_id ?? '')}|${source.content}`;
+}
+
+function sameSources(a: readonly Source[], b: readonly Source[]): boolean {
+  return a.length === b.length && a.every((source, i) => sourceKey(source) === sourceKey(b[i]));
 }

@@ -136,8 +136,10 @@ never its slot. `useMessageSubmission` takes the backend `turn_number` for the
 persisted `conversations` map and `useDataRecovery` discards a mismatch
 (lossless: committed messages live on the backend; titles, pins and id-mappings
 untouched). **Bump it whenever a change alters which backend rows reach the
-store** — the offset rule above makes rows dropped by an older build
-unreachable for the life of that cache.
+store, or which fields a row read from the backend carries** — the offset rule
+above makes rows dropped by an older build unreachable for the life of that
+cache, and the delta fetch never re-reads a cached row for a new field (v4
+`investigation_turn`, v5 `sources`).
 
 **Delivery.** `getCaseConversation` has one call site, `handleCaseSelect`, so a
 notice is seen only when the case is re-opened. Live push needs a structured

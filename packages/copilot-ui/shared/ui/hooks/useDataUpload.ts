@@ -28,7 +28,7 @@ import {
   predictedInvestigationTurn,
   serverSuppliesInvestigationTurn
 } from '../../../lib/state/turn-label';
-import { sourcesToShow } from '../../../lib/state/turn-sources';
+import { rowsBefore, sourcesToShow } from '../../../lib/state/turn-sources';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
@@ -210,7 +210,7 @@ export function useDataUpload() {
               turn_number: turnResponse.turn_number,
               investigation_turn: investigationTurn,
               suggestedActions: turnResponse.suggested_actions ?? null,
-              sources: sourcesToShow(turnResponse.sources),
+              sources: sourcesToShow(turnResponse.sources, rowsBefore(rows, aiMessageId)),
               optimistic: false,
               loading: false,
               // Clear any error state from a prior failed attempt (#101) so a

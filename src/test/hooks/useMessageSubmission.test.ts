@@ -237,6 +237,34 @@ describe('useMessageSubmission', () => {
     expect(rows.find((i) => i.response === 'Second reply.')?.sources).toBeUndefined();
   });
 
+  // A self-hosted core older than 11.2.0 resends the context with no flag; the
+  // row keeps it only where it differs from what an earlier row kept.
+  it('keeps an unflagged context once against a server older than 11.2.0', async () => {
+    const { result } = render();
+    const kbSource = {
+      type: 'knowledge_base' as const,
+      content: 'Restart the pod after rotating the secret.',
+      confidence: 0.82,
+      metadata: { document_id: 'doc-1', title: 'Secret rotation runbook' },
+    };
+    const turn = (n: number, text: string) => ({
+      agent_response: text, turn_number: n, milestones_completed: [], case_state: 'investigating',
+      progress_made: true, attachments_processed: [], sources: [kbSource],
+    });
+
+    (OptimisticIdGenerator.generateMessageId as any).mockReset()
+      .mockReturnValueOnce('user-1').mockReturnValueOnce('ai-1')
+      .mockReturnValueOnce('user-2').mockReturnValueOnce('ai-2');
+    (api.submitTurn as any).mockResolvedValueOnce(turn(1, 'First reply.'));
+    await act(async () => { await result.current.handleQuerySubmit('first'); });
+    (api.submitTurn as any).mockResolvedValueOnce(turn(2, 'Second reply.'));
+    await act(async () => { await result.current.handleQuerySubmit('second'); });
+
+    const rows = useAppStore.getState().conversations['case-123'] || [];
+    expect(rows.find((i) => i.response === 'First reply.')?.sources).toEqual([kbSource]);
+    expect(rows.find((i) => i.response === 'Second reply.')?.sources).toBeUndefined();
+  });
+
   it('should create new case if no active case exists', async () => {
     useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
     const { result } = render();

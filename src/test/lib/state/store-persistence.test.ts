@@ -225,6 +225,13 @@ describe('CONVERSATION_CACHE_VERSION', () => {
     expect(CONVERSATION_CACHE_VERSION).toBeGreaterThan(3);
   });
 
+  it('rejects caches written before history rows carried their KB sources (contract 11.2.0)', () => {
+    // Same property as #251: a cached row is never re-read, so a conversation
+    // loaded before history carried `sources` would never show its runbooks,
+    // while the same case on a fresh device does.
+    expect(CONVERSATION_CACHE_VERSION).toBeGreaterThan(4);
+  });
+
   it('is stamped with the conversations it describes, and cleared with them', () => {
     // The version must never outlive the map it refers to: a stale stamp on an
     // absent cache would let the next build trust conversations it did not write.
