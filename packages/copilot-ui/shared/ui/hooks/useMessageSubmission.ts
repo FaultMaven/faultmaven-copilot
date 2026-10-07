@@ -9,7 +9,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   submitTurn,
   TurnRequest,
-  QueryIntent,
+  TurnIntent,
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
@@ -33,11 +33,8 @@ import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
-import {
-  predictedInvestigationTurn,
-  serverSuppliesInvestigationTurn
-} from '../../../lib/state/turn-label';
-import { rowsBefore, sourcesToShow } from '../../../lib/state/turn-sources';
+import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
+import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useMessageSubmission');
@@ -196,7 +193,7 @@ export function useMessageSubmission() {
     caseId: string,
     userMessageId: string,
     aiMessageId: string,
-    intent?: QueryIntent
+    intent?: TurnIntent
   ) => {
     const controller = new AbortController();
     inFlightControllers.current.add(controller);
@@ -303,7 +300,7 @@ export function useMessageSubmission() {
                     optimistic: false,
                     loading: false,
                     failed: true
-                  } as OptimisticConversationItem;
+                  };
                 }
                 return item;
               })
@@ -334,74 +331,10 @@ export function useMessageSubmission() {
         return;
       }
 
-      setConversations(prev => {
-        const conv = prev[caseId] || [];
-        // `TurnResponse.investigation_turn` shipped in contract 2.7.0 and the
-        // per-row `Message.investigation_turn` only in 3.5.0, so against a
-        // server in between one channel answers and the other does not.
-        // Taking the label from both numbers ONE conversation two ways: the
-        // history falls back to the clock while this row takes the
-        // investigation count, so it can repeat the number above it and then
-        // change when the panel is reopened. If no row here carries the field,
-        // the server does not send it — leave this row on the clock with its
-        // neighbours.
-        const adoptFromResponse = serverSuppliesInvestigationTurn(conv);
-        const investigationTurn = adoptFromResponse
-          ? response.investigation_turn ?? null
-          : null;
-        return {
-          ...prev,
-          [caseId]: conv.map(item => {
-            if (item.id === userMessageId) {
-              return {
-                ...item,
-                optimistic: false,
-                // The local turn_number was a PREDICTION (`highestTurn + 1`
-                // below); take the backend's, as the agent item already does.
-                // A user message and its agent reply share a turn_number by
-                // backend design, so both rows land on the same real value.
-                // Without this the user row keeps a number that is merely
-                // usually right, and the id reconciliation in the delta merge
-                // (#213) — which matches on turn AND slot — silently misses it
-                // whenever the prediction was off, putting back the duplicate
-                // it exists to prevent.
-                turn_number: response.turn_number,
-                // The label the row will keep (#251). `TurnResponse` reports
-                // the case's investigation turn AS OF this turn, so it is the
-                // right value for this row and only this row — which is also
-                // what the row will be given when it is re-read from
-                // `/messages` later, so the number does not move on reload.
-                investigation_turn: investigationTurn,
-                originalId: userMessageId
-              } as OptimisticConversationItem;
-            } else if (item.id === aiMessageId) {
-              return {
-                ...item,
-                response: response.agent_response,
-                turn_number: response.turn_number,
-                investigation_turn: investigationTurn,
-                suggestedActions: response.suggested_actions ?? null,
-                sources: sourcesToShow(response.sources, rowsBefore(conv, aiMessageId)),
-                optimistic: false,
-                loading: false,
-                // A successful (re)submission must clear any error state left by a
-                // prior failed attempt (#101): otherwise the AI item renders in
-                // error styling and isCommittedMessage drops it from persistence.
-                error: false,
-                failed: false,
-                errorMessage: undefined,
-                originalId: aiMessageId,
-                metadata: {
-                  milestones_completed: response.milestones_completed,
-                  progress_made: response.progress_made,
-                  attachments_processed: response.attachments_processed,
-                }
-              } as OptimisticConversationItem;
-            }
-            return item;
-          })
-        };
-      });
+      setConversations(prev => ({
+        ...prev,
+        [caseId]: applyTurnResponse(prev[caseId] || [], { user: userMessageId, assistant: aiMessageId }, response),
+      }));
 
       pendingOpsManager.complete(aiMessageId);
       log.info('Message submission completed and UI updated');
@@ -432,7 +365,7 @@ export function useMessageSubmission() {
     }
   };
 
-  const handleQuerySubmit = async (query: string, intent?: QueryIntent) => {
+  const handleQuerySubmit = async (query: string, intent?: TurnIntent) => {
     if (!query.trim()) return;
 
     if (submitting) {
@@ -532,7 +465,7 @@ export function useMessageSubmission() {
       failed: false,
       pendingOperationId: userMessageId,
       originalId: userMessageId
-    } as OptimisticConversationItem;
+    };
 
     const aiWorkingMessage: OptimisticConversationItem = {
       id: aiMessageId,
@@ -547,7 +480,7 @@ export function useMessageSubmission() {
       failed: false,
       pendingOperationId: aiMessageId,
       originalId: aiMessageId
-    } as OptimisticConversationItem;
+    };
 
     setConversations(prev => ({
       ...prev,

@@ -120,6 +120,28 @@ describe('useDataUpload — error surfacing regression guard', () => {
     }
   });
 
+  // #305: the suggestions go through the one builder both turn paths share.
+  it("narrows the turn's suggestions, keeping each intent whole", async () => {
+    const reclassify = { type: 'file_reclassification', file_id: 'file_42', data_type: 'logs_and_errors' };
+    (api.submitTurn as any).mockResolvedValue({
+      ...okTurnResponse,
+      suggested_actions: [
+        { label: 'Logs', type: 'DECIDE', payload: 'Treat it as logs', intent: reclassify },
+        { label: 'Compare dashboards', type: 'COMPARE', body: 'Grafana vs logs' },
+      ],
+    });
+
+    const { result } = render();
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'here are the logs' });
+    });
+
+    const ai = useAppStore.getState().conversations['case-123']
+      .find((m) => m.response === 'Analyzed.');
+    expect(ai?.suggestedActions?.map((a) => a.type)).toEqual(['DECIDE', 'UNRECOGNIZED']);
+    expect(ai?.suggestedActions?.[0].intent).toEqual(reclassify);
+  });
+
   it('carries TurnResponse.sources onto the assistant item', async () => {
     const kbSource = {
       type: 'knowledge_base' as const,

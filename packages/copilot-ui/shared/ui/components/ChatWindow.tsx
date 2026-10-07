@@ -4,6 +4,7 @@ import {
   UserCaseState,
   getStatusChangeMessage,
   QueryIntent,
+  TurnIntent,
   IntentType,
   formatFileSize,
   attachmentOrigin,
@@ -42,7 +43,7 @@ interface ChatWindowProps {
   className?: string;
 
   // Action callbacks
-  onQuerySubmit: (query: string, intent?: QueryIntent) => void;
+  onQuerySubmit: (query: string, intent?: TurnIntent) => void;
   onDocumentView?: (documentId: string) => void;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
 }

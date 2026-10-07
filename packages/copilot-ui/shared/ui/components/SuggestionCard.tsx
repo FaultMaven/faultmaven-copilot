@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import type { SuggestedAction, ClickableSuggestionType, QueryIntent } from '../../../lib/api/types';
+import type { SuggestedAction, ClickableSuggestionType, SuggestionIntent } from '../../../lib/api/types';
 
 // =============================================================================
 // Public Interface
@@ -10,7 +10,7 @@ export interface SuggestionCardProps {
   /** Whether this suggestion belongs to the current (latest) turn */
   isCurrentTurn?: boolean;
   disabled?: boolean;
-  onClickableSuggestion?: (payload: string, type: ClickableSuggestionType, intent?: QueryIntent) => void;
+  onClickableSuggestion?: (payload: string, type: ClickableSuggestionType, intent?: SuggestionIntent) => void;
 }
 
 export function SuggestionCard({
@@ -19,9 +19,12 @@ export function SuggestionCard({
   disabled = false,
   onClickableSuggestion,
 }: SuggestionCardProps) {
-  const isClickableType = action.type === 'DECIDE' || action.type === 'RUN';
+  // Clickable by name: every other type, including UNRECOGNIZED, is plain text.
+  const clickableType: ClickableSuggestionType | null =
+    action.type === 'DECIDE' || action.type === 'RUN' ? action.type : null;
+  const isClickableType = clickableType !== null;
   const isClickable = isClickableType && isCurrentTurn && !disabled;
-  const isCommand = action.type === 'RUN';
+  const isCommand = clickableType === 'RUN';
   // Phase 6 visual linkage: EVIDENCE-type suggestions that derive from a
   // persistent open need carry a backend-resolved evidence_need_id. The
   // visual signal is minimal — bullet recolored to the accent token + a
@@ -32,16 +35,16 @@ export function SuggestionCard({
 
   const handleClick = useCallback(() => {
     // payload exists only on the clickable types (DECIDE/RUN).
-    if (!isClickable || !action.payload) return;
+    if (!isClickable || clickableType === null || !action.payload) return;
 
-    if (action.type === 'RUN') {
+    if (clickableType === 'RUN') {
       navigator.clipboard.writeText(action.payload);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
 
-    onClickableSuggestion?.(action.payload, action.type as ClickableSuggestionType, action.intent);
-  }, [isClickable, action.payload, action.type, action.intent, onClickableSuggestion]);
+    onClickableSuggestion?.(action.payload, clickableType, action.intent);
+  }, [isClickable, clickableType, action.payload, action.intent, onClickableSuggestion]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && isClickable) {

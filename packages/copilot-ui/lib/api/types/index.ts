@@ -154,6 +154,24 @@ export interface QueryIntent {
   confirmation_value?: boolean;
 }
 
+/**
+ * An intent the SERVER attached to a suggestion, forwarded verbatim when the
+ * suggestion is clicked: `type` becomes `intent_type` and the whole object
+ * `intent_data` (`useMessageSubmission`).
+ *
+ * Deliberately not a `QueryIntent`. Core's intents carry keys this client does
+ * not declare (the offer key a confirmation names, the `file_id` a
+ * reclassification targets) and types it does not enumerate
+ * (`file_reclassification`), and the backend routes the click on them. So it is
+ * never rebuilt from known fields or checked against `IntentType`: either would
+ * drop what the server needs. The one requirement is a string `type`; without
+ * it the request carries no `intent_type` and the server ignores the rest.
+ */
+export type SuggestionIntent = { type: string } & { [key: string]: unknown };
+
+/** What a turn submission may carry: an intent this client minted, or one a suggestion forwards. */
+export type TurnIntent = QueryIntent | SuggestionIntent;
+
 // ============================================================
 // Unified Turn System (POST /cases/{id}/turns)
 // Replaces /queries and /data endpoints
@@ -369,10 +387,20 @@ export interface EvidenceProvided {
 // follows from it: DECIDE (clickable — click sends payload as the user's
 // message), RUN (clickable — click copies payload command to clipboard),
 // EVIDENCE / FREE_SPEECH (informational, never clickable).
-export type SuggestionType = 'DECIDE' | 'RUN' | 'EVIDENCE' | 'FREE_SPEECH';
+//
+// The contract types `SuggestedActionResponse.type` as a bare string, so a
+// value this build does not know is narrowed to UNRECOGNIZED by
+// `suggestionFromResponse` (`lib/state/turn-items`) and rendered like EVIDENCE:
+// label and body as plain text, never clickable. Dropping it would hide what
+// the agent said; making it clickable could send a message the user never chose.
+export type SuggestionType = 'DECIDE' | 'RUN' | 'EVIDENCE' | 'FREE_SPEECH' | 'UNRECOGNIZED';
 /** The clickable subset — these carry a payload. */
 export type ClickableSuggestionType = Extract<SuggestionType, 'DECIDE' | 'RUN'>;
 
+/**
+ * A suggestion as the panel holds it: `SuggestedActionResponse` narrowed by
+ * `suggestionFromResponse`, the one place a turn's suggestions are built.
+ */
 export interface SuggestedAction {
   label: string;
   type: SuggestionType;
@@ -382,12 +410,8 @@ export interface SuggestedAction {
   payload?: string;
   body?: string | null;
   hints?: string[];
-  icon?: string | null;
-  metadata?: Record<string, any>;
-  /** Optional intent metadata — when present, frontend sends this as QueryIntent
-   *  alongside the payload. Bridges DECIDE suggestions with deterministic
-   *  intent routing (e.g., transition confirmations use IntentType.CONFIRMATION). */
-  intent?: QueryIntent;
+  /** Sent with the payload when a DECIDE is clicked, verbatim; see `SuggestionIntent`. */
+  intent?: SuggestionIntent;
   /** For EVIDENCE-type suggestions: the persistent EvidenceNeed this
    *  suggestion derives from. Format: `eneed_xxxxxxxxxxxx`. Used for
    *  visual linkage (highlight, dismiss, group by need). Backend already
