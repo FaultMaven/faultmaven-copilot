@@ -26,9 +26,11 @@ import { INPUT_LIMITS } from '../layouts/constants';
  * never reached the server (no session, case creation failed): the composer
  * keeps the staged input so sending again needs no re-pick. A turn that WAS sent
  * and failed keeps its own Retry through the pending operation, so it reports
- * `sent: true` (or omits the field) and the composer clears as before.
+ * `sent: true`, and the composer clears everything.
  */
-export type TurnSubmitResult = { success: boolean; message: string; sent?: boolean };
+export type QuerySubmitResult = { sent: boolean };
+
+export type TurnSubmitResult = { success: boolean; message: string; sent: boolean };
 
 /**
  * Payload for submissions with attachments (files, pasted data, page content).
@@ -54,7 +56,11 @@ export interface UnifiedInputBarProps {
   submitting?: boolean;
 
   // Callbacks
-  onQuerySubmit: (query: string) => void;
+  /**
+   * A query-only submission. When it resolves `{ sent: false }` (no case could
+   * be created, no session) the typed text is put back in the box.
+   */
+  onQuerySubmit: (query: string) => void | Promise<QuerySubmitResult | void>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
 
   // Configuration
@@ -231,8 +237,17 @@ export function UnifiedInputBar({
       }
 
       setValidationError(null);
-      onQuerySubmit(query);
+      const pending = onQuerySubmit(query);
       setInput("");
+      // Restore the text if the submission never reached the server, unless the
+      // user has already started typing something else.
+      Promise.resolve(pending)
+        .then((outcome) => {
+          if (outcome && outcome.sent === false) {
+            setInput((current) => (current === '' ? query : current));
+          }
+        })
+        .catch((error) => log.error('Query submission rejected', error));
       return;
     }
 
@@ -276,19 +291,23 @@ export function UnifiedInputBar({
 
     // A submission that never reached the server (`sent === false`) keeps the
     // staged input: the user was told what was not sent and sends it again
-    // without re-picking. A turn that WAS sent and failed has its own Retry, so
-    // its staged file/page still clear.
+    // without re-picking.
     let keepStaged = false;
     try {
       const result = await onTurnSubmit(payload);
       if (result.success) {
         clearAllStagedState();
       } else {
-        keepStaged = result.sent === false;
+        keepStaged = !result.sent;
+        // A turn that WAS sent and failed has its own Retry in the banner; a
+        // composer still holding its text would invite a second, text-only send.
+        if (result.sent) clearAllStagedState();
         log.warn('Turn submission failed', { message: result.message });
       }
     } catch (error) {
       log.error('Unexpected error during turn submission', error);
+      // Unknown whether it was sent: never discard the user's input.
+      keepStaged = true;
     } finally {
       setIsUploadingData(false);
       if (!keepStaged) {

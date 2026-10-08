@@ -21,10 +21,11 @@ import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
 import {
   unsentAttachmentsNotice,
+  notSentError,
   isAmbiguousFailure,
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
-import { DuplicateUploadNotice, TurnNotSentError, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
+import { DuplicateUploadNotice, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
@@ -35,20 +36,6 @@ import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
 
-/** What the user is told when a submission never reached a case. */
-function notSentError(unsent: UnsentTurn, reason: string, cause?: unknown): TurnNotSentError {
-  const notice = unsentAttachmentsNotice(unsent, { kept: true });
-  const detail = cause !== undefined ? ErrorClassifier.classify(cause).userMessage : reason;
-  const message = notice
-    ? `${notice} ${detail}`
-    : `${unsent.hasQuery ? 'Your message was' : 'Nothing was'} not sent. ${detail}`;
-  return new TurnNotSentError(
-    message,
-    'Your input is still in the message box.',
-    cause instanceof Error ? cause : undefined,
-  );
-}
-
 export function useDataUpload() {
   const [loading, setLoading] = useState(false);
   const { showError } = useError();
@@ -57,6 +44,13 @@ export function useDataUpload() {
   // when this hook unmounts, so a detached poll loop doesn't keep hitting the
   // backend. Aborts are treated as silent cancellations, not upload failures.
   const inFlightControllers = useRef<Set<AbortController>>(new Set());
+
+  // The Idempotency-Key of a case creation that failed AMBIGUOUSLY (no HTTP
+  // response, or a gateway status): the case may exist. The user's resend
+  // reuses it, so the backend replays that create (same principal, same body,
+  // 2xx cached for an hour) instead of making a second case. Cleared on
+  // success, on a definite failure, and when the session changes.
+  const pendingCaseKey = useRef<{ key: string; epoch: number } | null>(null);
 
   useEffect(() => {
     const controllers = inFlightControllers.current;
@@ -141,7 +135,7 @@ export function useDataUpload() {
       // mark the upload failed and don't surface an error for a turn nobody is
       // waiting on.
       if (controller.signal.aborted) {
-        return { success: false, message: '' };
+        return { success: false, message: '', sent: true };
       }
       // Mark the AI item failed WITHOUT rolling back: keeping both messages lets
       // the failed-operation banner offer a retry instead of the turn silently
@@ -166,7 +160,7 @@ export function useDataUpload() {
       const message = error instanceof Error ? error.message : 'Turn submission failed';
       pendingOpsManager.fail(aiMessageId, message, false);
       showError(error, { operation: 'turn_submit' });
-      return { success: false, message };
+      return { success: false, message, sent: true };
     } finally {
       inFlightControllers.current.delete(controller);
     }
@@ -178,7 +172,7 @@ export function useDataUpload() {
     // conversation the logout purge just cleared.
     if (epoch !== getEpoch()) {
       log.info('Session changed during turn submission — discarding success writes', { caseId: targetCaseId });
-      return { success: false, message: '' };
+      return { success: false, message: '', sent: true };
     }
 
     // Set when this turn moved the case to a new state; see the refresh below.
@@ -240,7 +234,7 @@ export function useDataUpload() {
       triggerRefreshSessions();
     }
 
-    return { success: true, message: "" };
+    return { success: true, message: "", sent: true };
   };
 
   /**
@@ -265,11 +259,17 @@ export function useDataUpload() {
       });
     }
 
+    // Set immediately before the turn is handed to submitTurnInBackground. A
+    // throw before that point means nothing was sent: the catch below tells the
+    // user and removes whatever optimistic rows were already drawn.
+    let dispatched = false;
+    let optimisticRows: { caseId: string; userId: string; aiId: string } | null = null;
+
     try {
       setLoading(true);
 
       if (!sessionId) {
-        showError(notSentError(unsent, 'Please log in first.'));
+        showError(notSentError(unsent, 'You are signed out.', undefined, { signIn: true }));
         return {
           success: false,
           message: "Please log in first",
@@ -297,12 +297,14 @@ export function useDataUpload() {
       if (!targetCaseId) {
         log.info('No active case, creating case via /api/v1/cases');
 
+        let caseIdempotencyKey = '';
         try {
           // Stable key for this logical case creation so an ambiguous network
           // failure can be auto-retried without the backend creating a second
           // case. Generated once, OUTSIDE the retry closure, so every retry of
           // this attempt reuses it.
-          const caseIdempotencyKey = crypto.randomUUID();
+          const held = pendingCaseKey.current;
+          caseIdempotencyKey = held && held.epoch === epoch ? held.key : crypto.randomUUID();
           const caseData = await resilientOperation({
             operation: () => createCase(
               {
@@ -319,6 +321,7 @@ export function useDataUpload() {
             idempotent: true,
           });
 
+          pendingCaseKey.current = null;
           const newCaseId = caseData.case_id;
           if (!newCaseId) {
             throw new Error('Backend response missing case_id');
@@ -361,7 +364,9 @@ export function useDataUpload() {
           // Nothing reached the server: say what was not sent. A failure that
           // carries no HTTP response may still have created the case, and the
           // notice words that ambiguity the same way a failed turn does.
-          unsent.ambiguous = isAmbiguousFailure(error);
+          pendingCaseKey.current = isAmbiguousFailure(error) && caseIdempotencyKey
+            ? { key: caseIdempotencyKey, epoch }
+            : null;
           showError(notSentError(unsent, 'The case could not be created.', error));
           return {
             success: false,
@@ -483,6 +488,7 @@ export function useDataUpload() {
         ...prev,
         [targetCaseId!]: [...(prev[targetCaseId!] || []), optimisticUserMessage, optimisticAiMessage]
       }));
+      optimisticRows = { caseId: targetCaseId!, userId: userMessageId, aiId: aiMessageId };
 
       // Step 4: Register a pending operation so a failed turn keeps a retry
       // affordance in the failed-operation banner (parity with
@@ -513,16 +519,30 @@ export function useDataUpload() {
       // Step 5: Submit the turn and reconcile on success. Self-manages the
       // pending op (complete on success, fail-without-rollback on failure) and
       // returns the { success, message } contract UnifiedInputBar expects.
+      dispatched = true;
       return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, unsent);
 
     } catch (error) {
       log.error('Turn submission error:', error);
-      showError(error, { operation: 'turn_submit' });
-
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Turn submission failed'
-      };
+      const message = error instanceof Error ? error.message : 'Turn submission failed';
+      if (dispatched) {
+        showError(error, { operation: 'turn_submit' });
+        return { success: false, message, sent: true };
+      }
+      // Nothing was sent. Remove the optimistic pair (and its pending op) so no
+      // orphan "Working..." row is left, and keep the composer.
+      const rows = optimisticRows as { caseId: string; userId: string; aiId: string } | null;
+      if (rows) {
+        pendingOpsManager.remove(rows.aiId);
+        setConversations(prev => ({
+          ...prev,
+          [rows.caseId]: (prev[rows.caseId] || []).filter(
+            item => item.id !== rows.userId && item.id !== rows.aiId
+          )
+        }));
+      }
+      showError(notSentError(unsent, 'Something went wrong before it could be sent.', error));
+      return { success: false, message, sent: false };
     } finally {
       setLoading(false);
     }

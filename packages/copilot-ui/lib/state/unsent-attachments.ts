@@ -15,7 +15,7 @@
  * error status says "were not added".
  */
 import { ErrorClassifier } from '../errors/classifier';
-import { NetworkError, TimeoutError } from '../errors/types';
+import { NetworkError, TimeoutError, TurnNotSentError } from '../errors/types';
 
 /** Statuses a gateway answers on the API's behalf; the turn may still commit. */
 const GATEWAY_STATUSES = new Set([502, 504]);
@@ -69,11 +69,11 @@ export function isAmbiguousFailure(error: unknown): boolean {
 export function unsentAttachmentsNotice(
   turn: UnsentTurn | undefined,
   /**
-   * The turn never left the composer (case creation failed, no session), so
-   * there is no Retry button: the input is still staged and sending again is
-   * the retry.
+   * The submission never left the browser (no session, case creation failed):
+   * the attachments definitely were not sent, whatever became of the case, and
+   * there is no case to say "added to".
    */
-  options: { kept?: boolean } = {},
+  options: { beforeSend?: boolean } = {},
 ): string | null {
   const attachments = turn?.attachments;
   if (!turn || !attachments || attachments.length === 0) return null;
@@ -91,8 +91,31 @@ export function unsentAttachmentsNotice(
   const verb = hasQuery || attachments.length > 1 ? 'were' : 'was';
   const them = attachments.length === 1 && !hasQuery ? 'it' : 'them';
   const outcome = ambiguous ? 'may not have been added' : `${verb} not added`;
-  if (options.kept) {
-    return `${lead} ${outcome} to the case. ${them === 'it' ? 'It is' : 'They are'} still in the message box; send again to retry.`;
+  if (options.beforeSend) {
+    return `${lead} ${verb} not sent.`;
   }
   return `${lead} ${outcome} to the case. Retry sends ${them} again.`;
+}
+
+/**
+ * What the user is told when a submission never reached a case. The input never
+ * left the browser, so the wording is definite whatever became of the case; the
+ * composer still holds it.
+ */
+export function notSentError(
+  unsent: UnsentTurn,
+  reason: string,
+  cause?: unknown,
+  options: { signIn?: boolean } = {},
+): TurnNotSentError {
+  const classified = cause !== undefined ? ErrorClassifier.classify(cause) : undefined;
+  const signIn = options.signIn || classified?.category === 'authentication';
+  const notice = unsentAttachmentsNotice(unsent, { beforeSend: true })
+    ?? (unsent.hasQuery ? 'Your message was not sent.' : 'Your submission was not sent.');
+  const detail = classified ? classified.userMessage : reason;
+  return new TurnNotSentError(
+    `${notice} ${detail} Your input is still in the message box.`,
+    signIn ? 'Sign in first, then send again.' : 'Send again to retry.',
+    cause instanceof Error ? cause : undefined,
+  );
 }

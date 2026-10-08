@@ -35,7 +35,7 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
 
   beforeEach(() => {
     mockQuerySubmit = vi.fn();
-    mockTurnSubmit = vi.fn().mockResolvedValue({ success: true, message: '' });
+    mockTurnSubmit = vi.fn().mockResolvedValue({ success: true, message: '', sent: true });
   });
 
   function renderBar() {
@@ -214,15 +214,51 @@ describe('UnifiedInputBar — what stays staged when a submission fails (#312)',
   });
 
   it('clears everything on success', async () => {
-    const turn = vi.fn().mockResolvedValue({ success: true, message: '' });
+    const turn = vi.fn().mockResolvedValue({ success: true, message: '', sent: true });
     await stage(turn);
     await waitFor(() => expect(screen.queryByText('app.log')).not.toBeInTheDocument());
     expect(screen.getByLabelText(/Type your message/i)).toHaveValue('');
   });
 
-  it('still clears the staged file when a sent turn failed (it has its own Retry)', async () => {
-    const turn = vi.fn().mockResolvedValue({ success: false, message: 'Internal error' });
+  it('clears the file AND the text when a sent turn failed (it has its own Retry)', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: false, message: 'Internal error', sent: true });
     await stage(turn);
     await waitFor(() => expect(screen.queryByText('app.log')).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('');
+  });
+
+  describe('a query-only submission', () => {
+    const renderQuery = (onQuerySubmit: any) => {
+      render(
+        <UnifiedInputBar onQuerySubmit={onQuerySubmit} onTurnSubmit={vi.fn()} />,
+        { wrapper: hostWrapper(createStubHost().host) }
+      );
+      const box = screen.getByLabelText(/Type your message/i);
+      fireEvent.change(box, { target: { value: 'why is it down?' } });
+      fireEvent.keyDown(box, { key: 'Enter', shiftKey: false });
+      return box;
+    };
+
+    it('puts the text back when it never reached the server', async () => {
+      const box = renderQuery(vi.fn().mockResolvedValue({ sent: false }));
+      await waitFor(() => expect(box).toHaveValue('why is it down?'));
+    });
+
+    it('does not restore the text when it was sent', async () => {
+      const box = renderQuery(vi.fn().mockResolvedValue({ sent: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(box).toHaveValue('');
+    });
+
+    it('does not overwrite what the user typed in the meantime', async () => {
+      let settle!: (v: { sent: boolean }) => void;
+      const box = renderQuery(vi.fn().mockReturnValue(new Promise((r) => { settle = r; })));
+      fireEvent.change(box, { target: { value: 'something else' } });
+      settle({ sent: false });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(box).toHaveValue('something else');
+    });
   });
 });
