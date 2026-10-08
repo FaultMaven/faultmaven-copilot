@@ -60,11 +60,14 @@ an `info` toast that dismisses itself, is announced politely (`role="status"`),
 gives way first when the toasts are full, and is logged at info, never error.
 The upload hook shows it for uploads whose content the case already held
 (`AttachmentResult.duplicate_of`). `duplicateUploads` (`lib/state/turn-items.ts`)
-recognises the two matches that are not that, exactly rather than from turn
-numbers. A RESENT turn reports nothing, because the server commits an uploaded
-file before the turn can fail and replays only a successful response, so a
-resend matches its own first attempt; the hook counts sends per turn. A second
-copy within one submission names a sibling's new `file_id`. The text says what
+recognises the one match that is not that: a second copy within one submission
+names a sibling's new `file_id`. A RESENT turn is not an exception: a file is
+committed only with the turn that carried it, so a retry is a fresh upload and a
+match on it is real (and the only signal that a file landed when a turn
+committed but the client showed an error). A failed turn that carried
+attachments names them (`unsentAttachmentsNotice`, `lib/state/unsent-attachments.ts`,
+used by the failed-operation banner and the failed assistant bubble): they were
+not added to the case, and Retry sends them again ("may not have been added" when no HTTP response arrived, since the turn may have committed: `isAmbiguousFailure`). A match whose `duplicate_turn` equals the response's `turn_number` is an older server reporting the failed attempt, and is skipped. The text says what
 matched by content, never that the original had the same name, and says
 "nothing new" only of what matched. `duplicate_turn` is the message clock, so
 the turn is printed through `investigationTurnFor` over COMMITTED rows, and left

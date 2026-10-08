@@ -31,6 +31,8 @@ export interface TurnPayload {
   files?: File[];
   /** Explicit input origin so the backend can set correct source_metadata */
   inputType?: 'file' | 'page_capture' | 'paste';
+  /** `query` was generated for a turn the user typed no text for. */
+  queryIsGenerated?: boolean;
   /** Source URL for page_capture inputs */
   sourceUrl?: string;
 }
@@ -236,6 +238,7 @@ export function UnifiedInputBar({
       payload.pastedContent = query;
       payload.inputType = 'paste';
       payload.query = generateAutoQuery({ hasFile: false, hasPage: false, hasPasted: true, selectedFile: null, capturedPageUrl: null });
+      payload.queryIsGenerated = true;
     } else {
       // Normal: textarea text is the query
       if (hasQuery) {
@@ -243,6 +246,7 @@ export function UnifiedInputBar({
       } else {
         // No user query — auto-generate one
         payload.query = generateAutoQuery({ hasFile, hasPage, hasPasted, selectedFile, capturedPageUrl });
+        payload.queryIsGenerated = true;
       }
 
       // Assemble pasted content (only one source active per turn)

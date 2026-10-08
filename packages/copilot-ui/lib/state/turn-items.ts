@@ -144,17 +144,23 @@ function forwardableIntent(intent: SuggestedActionResponse['intent']): Suggestio
  * this submission: the server matched them (`duplicate_of`) and stored nothing
  * new.
  *
- * Not every match is one, and both exceptions are recognised exactly rather
- * than inferred from turn numbers:
+ * Not every match is one. Both exceptions are recognised exactly:
  *
- * - **A resend** (`resent`): the server commits an uploaded file before the
- *   turn can fail, so that a retry dedups against it, and replays only a
- *   successful response. A turn sent more than once therefore matches its own
- *   earlier attempt, so a resend reports nothing. A genuine re-upload in a
- *   resend goes unreported; a missing notice costs nothing, a false one tells
- *   the user they repeated themselves.
  * - **A second copy within this submission**: the first copy is stored under a
  *   new `file_id`, and the second's `duplicate_of` names it.
+ *
+ * - **A match on this very turn** (`duplicate_turn === turn_number`, both on
+ *   the message clock): an older server stamps a failed attempt's file with the
+ *   turn number the retry then takes, so the match is the failed attempt, not
+ *   data the case already held. A current server never reports it, except for
+ *   the second copy within a submission, which is excluded above.
+ *
+ * A resent turn is otherwise not an exception: a file is committed only with
+ * the turn that carried it, so a retry after a failed turn is a fresh upload
+ * and a match on it is real. That includes the window where a turn committed
+ * but the client saw an error: the retry runs as the next turn, so the match
+ * names an EARLIER one, and the notice is the only signal the file landed.
+ *
  *
  * `rows` is the conversation as submitted, BEFORE `applyTurnResponse`.
  * `duplicate_turn` is the MESSAGE clock (the original's `uploaded_at_turn`), so
@@ -165,10 +171,8 @@ function forwardableIntent(intent: SuggestedActionResponse['intent']): Suggestio
  */
 export function duplicateUploads(
   response: TurnResponse,
-  rows: readonly OptimisticConversationItem[] | undefined,
-  { resent }: { resent: boolean }
+  rows: readonly OptimisticConversationItem[] | undefined
 ): DuplicateUpload[] {
-  if (resent) return [];
   const attachments = response.attachments_processed ?? [];
   const storedNow = new Set(attachments.filter((a) => !a.duplicate_of).map((a) => a.file_id));
   const history = (rows ?? []).filter(isCommittedMessage);
@@ -176,6 +180,7 @@ export function duplicateUploads(
   const duplicates: DuplicateUpload[] = [];
   for (const attachment of attachments) {
     if (!attachment.duplicate_of || storedNow.has(attachment.duplicate_of)) continue;
+    if (attachment.duplicate_turn === response.turn_number) continue;
     const original = attachment.duplicate_turn;
     const turn = typeof original === 'number' ? investigationTurnFor(original, history) : undefined;
     const origin = attachmentOrigin(attachment);

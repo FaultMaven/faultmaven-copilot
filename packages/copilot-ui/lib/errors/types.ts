@@ -535,6 +535,10 @@ export class DuplicateUploadNotice extends UserFacingError {
  * server matches on content, so `renamed.log` can match `app.log`. A paste or
  * capture is named by what it is; its filename was minted by the client.
  */
+/** How generated content is named where its minted filename would mislead. */
+export const PASTED_TEXT_LABEL = 'the pasted text';
+export const PAGE_CAPTURE_LABEL = 'the page capture';
+
 function duplicateUploadMessage(duplicates: readonly DuplicateUpload[]): string {
   if (duplicates.length === 1) {
     const [{ filename, origin, turn }] = duplicates;
@@ -549,7 +553,7 @@ function duplicateUploadMessage(duplicates: readonly DuplicateUpload[]): string 
     }
   }
   const named = duplicates.map(({ filename, origin }) =>
-    origin === 'text_paste' ? 'the pasted text' : origin === 'page_capture' ? 'the page capture' : filename
+    origin === 'text_paste' ? PASTED_TEXT_LABEL : origin === 'page_capture' ? PAGE_CAPTURE_LABEL : filename
   );
   return `${duplicates.length} of these uploads match content the case already has: ${named.join(', ')}.`;
 }

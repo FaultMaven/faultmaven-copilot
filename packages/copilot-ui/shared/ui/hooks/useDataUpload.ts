@@ -19,7 +19,12 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
-import { DuplicateUploadNotice } from '../../../lib/errors/types';
+import {
+  unsentAttachmentsNotice,
+  isAmbiguousFailure,
+  type UnsentTurn,
+} from '../../../lib/state/unsent-attachments';
+import { DuplicateUploadNotice, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
@@ -39,11 +44,6 @@ export function useDataUpload() {
   // backend. Aborts are treated as silent cancellations, not upload failures.
   const inFlightControllers = useRef<Set<AbortController>>(new Set());
 
-  // How many times each turn (by its aiMessageId, which is also its
-  // Idempotency-Key) has been sent: by resilientOperation's own retries and by
-  // the failed-operation retry alike. A turn sent more than once can be matched
-  // to its own earlier attempt; see `duplicateUploads`.
-  const sends = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const controllers = inFlightControllers.current;
     return () => {
@@ -88,6 +88,7 @@ export function useDataUpload() {
     turnRequest: TurnRequest,
     userMessageId: string,
     aiMessageId: string,
+    unsent: UnsentTurn = { attachments: [], hasQuery: false },
   ): Promise<{ success: boolean; message: string }> => {
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight must not let the success handler write the response back
@@ -100,7 +101,6 @@ export function useDataUpload() {
     try {
       turnResponse = await resilientOperation({
         operation: async () => {
-          sends.current.set(aiMessageId, (sends.current.get(aiMessageId) ?? 0) + 1);
           return await submitTurn(targetCaseId, turnRequest, {
             signal: controller.signal,
             // Stable per-turn key so an ambiguous network failure can be safely
@@ -134,7 +134,13 @@ export function useDataUpload() {
       // vanishing from the conversation. Render the formatted error INTO the
       // bubble (parity with useMessageSubmission) so the failure is visible in
       // context, not just an empty red bubble beside the banner.
-      const chatError = formatErrorForChat(ErrorClassifier.classify(error));
+      // A turn that carried attachments also says which did not land: the
+      // server commits a file only with its turn, so none of them did (bar
+      // FaultMaven/faultmaven#1882, where the retry's duplicate notice corrects it).
+      unsent.ambiguous = isAmbiguousFailure(error);
+      const notAdded = unsentAttachmentsNotice(unsent);
+      const formatted = formatErrorForChat(ErrorClassifier.classify(error));
+      const chatError = notAdded ? `${formatted}\n\n${notAdded}` : formatted;
       setConversations(prev => ({
         ...prev,
         [targetCaseId]: (prev[targetCaseId] || []).map(item =>
@@ -195,9 +201,7 @@ export function useDataUpload() {
 
     // Uploads whose content the case already held: the server stored nothing
     // new for them, and a re-upload must not read as new data.
-    const resent = (sends.current.get(aiMessageId) ?? 0) > 1;
-    sends.current.delete(aiMessageId);
-    const duplicates = duplicateUploads(turnResponse, submitted, { resent });
+    const duplicates = duplicateUploads(turnResponse, submitted);
     if (duplicates.length > 0) {
       showError(new DuplicateUploadNotice(duplicates));
     }
@@ -363,6 +367,21 @@ export function useDataUpload() {
       const userMessageId = OptimisticIdGenerator.generateMessageId();
       const aiMessageId = OptimisticIdGenerator.generateMessageId();
 
+      // What a failure of this turn must name: the files (by name) and any
+      // generated content (by what it is, not its minted filename).
+      // `hasQuery` is text the USER typed, not the question the input bar
+      // generates for a file-only turn.
+      const unsent: UnsentTurn = {
+        attachments: (payload.files || []).map(f => ({ name: f.name, isFile: true })),
+        hasQuery: !!payload.query?.trim() && !payload.queryIsGenerated,
+      };
+      if (payload.pastedContent?.trim()) {
+        unsent.attachments.push({
+          name: payload.inputType === 'page_capture' ? PAGE_CAPTURE_LABEL : PASTED_TEXT_LABEL,
+          isFile: false,
+        });
+      }
+
       // Build local attachments list for immediate display (optimistic, before server responds)
       const localAttachments: AttachmentResult[] = [];
 
@@ -452,7 +471,7 @@ export function useDataUpload() {
         id: aiMessageId,
         type: 'submit_query',
         status: 'pending',
-        optimisticData: { caseId: targetCaseId, query: userQuestion },
+        optimisticData: { caseId: targetCaseId, query: userQuestion, unsent },
         rollbackFn: () => {
           setConversations(prev => ({
             ...prev,
@@ -462,7 +481,7 @@ export function useDataUpload() {
           }));
         },
         retryFn: async () => {
-          await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId);
+          await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, unsent);
         },
         createdAt: Date.now(),
       };
@@ -471,7 +490,7 @@ export function useDataUpload() {
       // Step 5: Submit the turn and reconcile on success. Self-manages the
       // pending op (complete on success, fail-without-rollback on failure) and
       // returns the { success, message } contract UnifiedInputBar expects.
-      return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId);
+      return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, unsent);
 
     } catch (error) {
       log.error('Turn submission error:', error);
