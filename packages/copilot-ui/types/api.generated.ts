@@ -4587,12 +4587,8 @@ export interface components {
             document_type: string;
             /** File */
             file: string;
-            /**
-             * Scope
-             * @default personal
-             * @enum {string}
-             */
-            scope: "personal" | "team" | "global";
+            /** @default personal */
+            scope: components["schemas"]["KnowledgeScope"];
             /** Source Url */
             source_url?: string | null;
             /** Tags */
@@ -5705,27 +5701,6 @@ export interface components {
             text: string;
         };
         /**
-         * ImpactData
-         * @description Impact assessment for problem scope.
-         */
-        ImpactData: {
-            /**
-             * Affected Regions
-             * @description List of affected geographical regions
-             */
-            affected_regions?: string[] | null;
-            /**
-             * Affected Services
-             * @description List of affected services
-             */
-            affected_services?: string[] | null;
-            /**
-             * Affected Users
-             * @description User impact description (e.g., 'All users in US region')
-             */
-            affected_users?: string | null;
-        };
-        /**
          * InquiryResponseData
          * @description Nested inquiry data for INQUIRY phase response.
          */
@@ -5962,6 +5937,24 @@ export interface components {
              */
             verification_status: ("verified" | "community" | "experimental") | null;
         };
+        /**
+         * KnowledgeScope
+         * @description ``scope``: the KB tier, which is also a knowledge item's visibility.
+         *
+         *     One vocabulary, not two: a runbook's frontmatter ``scope`` is the tier its
+         *     knowledge item is published at. Stored in ``knowledge_items.scope`` and
+         *     ``conversion_jobs.scope``, whose CHECKs are built from this. Compare
+         *     against members (``KnowledgeScope.PERSONAL``), not string literals.
+         *
+         *     Values:
+         *         GLOBAL: Platform-wide built-in runbooks (FaultMaven-shipped only).
+         *         TEAM: Shared to one or more teams via the share table (``resource_shares``
+         *             rows; the scope enum is the derived convenience — ``team`` ⟺ at least
+         *             one share row, maintained by the KB write path). ADR-013 §D4.
+         *         PERSONAL: Visible only to one user (requires owner_id).
+         * @enum {string}
+         */
+        KnowledgeScope: "global" | "team" | "personal";
         /**
          * LLMConfigResponse
          * @description LLM configuration and provider status response.
@@ -6556,8 +6549,6 @@ export interface components {
          * @description Problem verification details for INVESTIGATING and terminal cases.
          */
         ProblemVerificationData: {
-            /** @description Scope of impact (services, users, regions) */
-            impact?: components["schemas"]["ImpactData"] | null;
             /**
              * Invalidation Finding
              * @description What showed the reported problem was not present (false alarm).
@@ -6577,21 +6568,19 @@ export interface components {
             problem_status?: components["schemas"]["ProblemStatus"] | null;
             /**
              * Severity
-             * @description Severity: critical | high | medium | low
+             * @description Severity the user's problem confirmation gave, as the case record holds it: critical | high | medium | low; null when not assessed. Urgency never substitutes for it.
              */
             severity?: string | null;
-            /** @description When the problem occurred and its temporal pattern */
-            temporal_state?: components["schemas"]["TemporalStateData"] | null;
+            /**
+             * Temporal State
+             * @description Whether the problem was ongoing or historical, as reported when the investigation opened (Gate 1); null when not reported.
+             */
+            temporal_state?: ("ongoing" | "historical") | null;
             /**
              * Urgency Level
-             * @description Urgency: critical | high | medium | low | unknown
+             * @description Business-impact urgency the investigation opened with, as the case record holds it: critical | high | medium | low; null when not assessed.
              */
             urgency_level?: string | null;
-            /**
-             * User Impact
-             * @description Human-readable user impact summary
-             */
-            user_impact?: string | null;
         };
         /**
          * ProgressTransparencyInfo
@@ -6917,13 +6906,15 @@ export interface components {
              * @description Root cause identifier
              */
             root_cause_id: string;
-            /**
-             * Severity
-             * @description Severity: critical | high | medium | low
-             */
-            severity: string;
         };
-        /** RunbookCreateRequest */
+        /**
+         * RunbookCreateRequest
+         * @description A runbook authored field by field (the dashboard's Create form).
+         *
+         *     The closed vocabularies are typed with the taxonomy enums, so the request
+         *     schema publishes the allowed values and an off-vocabulary value is a 422
+         *     here rather than a draft that fails validation (#1886).
+         */
         RunbookCreateRequest: {
             /** Applicability */
             applicability: string;
@@ -6934,23 +6925,17 @@ export interface components {
             causes: string;
             /** Diagnostic Steps */
             diagnostic_steps: string;
-            /**
-             * Difficulty
-             * @default intermediate
-             */
-            difficulty: string;
-            /** Domain */
-            domain: string;
+            /** @default intermediate */
+            difficulty: components["schemas"]["RunbookDifficulty"];
+            domain: components["schemas"]["RunbookDomain"];
             /** Prevention */
             prevention: string;
-            /** Scope */
-            scope: string;
+            scope: components["schemas"]["KnowledgeScope"];
             /** Service */
             service: string;
-            /** Severity */
-            severity: string;
+            severity: components["schemas"]["RunbookSeverity"];
             /** Symptom Class */
-            symptom_class: string[];
+            symptom_class: components["schemas"]["SymptomClass"][];
             /** Symptom Recognition */
             symptom_recognition: string;
             /** Tags */
@@ -6960,6 +6945,18 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * RunbookDifficulty
+         * @description ``difficulty`` (optional): the expertise a runbook assumes.
+         * @enum {string}
+         */
+        RunbookDifficulty: "beginner" | "intermediate" | "advanced" | "expert";
+        /**
+         * RunbookDomain
+         * @description ``domain``: the engineering vertical a runbook belongs to.
+         * @enum {string}
+         */
+        RunbookDomain: "database" | "networking" | "compute" | "application" | "security" | "storage" | "messaging";
         /**
          * RunbookMetadata
          * @description Metadata for runbook reports supporting dual sources.
@@ -7006,6 +7003,14 @@ export interface components {
              */
             tags?: string[];
         };
+        /**
+         * RunbookSeverity
+         * @description ``severity``: the impact level a runbook addresses.
+         *
+         *     Stored in ``conversion_drafts.severity``, whose CHECK is built from this.
+         * @enum {string}
+         */
+        RunbookSeverity: "critical" | "high" | "medium" | "low" | "info";
         /**
          * RunbookSource
          * @description Origin of runbook content
@@ -7248,6 +7253,15 @@ export interface components {
             type: string;
         };
         /**
+         * SymptomClass
+         * @description ``symptom_class``: the controlled failure-mode vocabulary.
+         *
+         *     A list field in frontmatter; every item must be one of these. Long-tail
+         *     symptoms go in the free-text ``tags`` instead (spec §Taxonomy Design Rules).
+         * @enum {string}
+         */
+        SymptomClass: "auth_failure" | "connection_refused" | "cpu_saturation" | "crash_loop" | "data_loss" | "deployment_failure" | "disk_full" | "image_pull_failure" | "latency" | "node_failure" | "oom" | "replication_lag" | "scheduling_failure" | "service_unavailable" | "throughput_degradation" | "timeout";
+        /**
          * TeamCreateRequest
          * @description What it takes to create a team: a name, and optionally a description.
          *
@@ -7293,27 +7307,6 @@ export interface components {
             name: string;
             /** Team Id */
             team_id: string;
-        };
-        /**
-         * TemporalStateData
-         * @description Temporal information about problem occurrence.
-         */
-        TemporalStateData: {
-            /**
-             * Last Occurrence At
-             * @description Most recent occurrence of the problem
-             */
-            last_occurrence_at?: string | null;
-            /**
-             * Started At
-             * @description When the problem started
-             */
-            started_at?: string | null;
-            /**
-             * State
-             * @description Temporal state: ongoing | historical | intermittent
-             */
-            state?: string | null;
         };
         /**
          * TitleResponse
