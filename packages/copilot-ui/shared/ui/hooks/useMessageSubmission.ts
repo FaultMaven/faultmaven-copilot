@@ -15,7 +15,8 @@ import {
 } from '../../../lib/api';
 import type { UserCase } from '../../../types/case';
 import {
-  CaseVersionConflictError
+  CaseVersionConflictError,
+  TurnReplayUnavailableError
 } from '../../../lib/errors/types';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import {
@@ -28,6 +29,7 @@ import {
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
+import { keyedTurnRetryPolicy } from '../../../lib/utils/keyed-turn-retry';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
@@ -257,6 +259,9 @@ export function useMessageSubmission() {
         // stable Idempotency-Key (aiMessageId), so the backend replays the cached
         // response for a resend instead of committing a second turn.
         idempotent: true,
+        // A keyed turn also recovers a lost response (client timeout, gateway
+        // 504) and waits out TURN_IN_PROGRESS, under one wall-clock deadline.
+        ...keyedTurnRetryPolicy(),
         onError: (error, attempt) => {
           log.warn(`Submission attempt ${attempt} failed`, error);
         },
@@ -270,6 +275,15 @@ export function useMessageSubmission() {
           log.error('All submission attempts failed', error);
 
           const classified = ErrorClassifier.classify(error);
+          if (classified instanceof TurnReplayUnavailableError) {
+            // The turn committed; only its reply cannot be served. Nothing to
+            // retry and nothing failed: read the turn back from the case.
+            log.warn('Committed turn could not be replayed; reloading the case', { caseId });
+            pendingOpsManager.complete(aiMessageId);
+            useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
+            showError(classified);
+            return;
+          }
           if (classified instanceof CaseVersionConflictError) {
             log.warn('Case version conflict on turn submission', {
               caseId,

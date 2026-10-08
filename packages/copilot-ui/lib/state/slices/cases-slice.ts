@@ -45,6 +45,18 @@ export interface CasesSlice {
   setPinnedCases: (pinned: Set<string>) => void;
   togglePinnedCase: (caseId: string) => void;
   handleCaseSelect: (caseId: string) => void;
+  /**
+   * Read the case's messages past the committed local rows and merge them
+   * (reconcile, dedup, turn floor). `handleCaseSelect` is its usual caller;
+   * `reloadCommittedTurn` is the other.
+   */
+  fetchConversationDelta: (caseId: string) => void;
+  /**
+   * A turn committed but its reply could not be served
+   * (`IDEMPOTENCY_REPLAY_UNAVAILABLE`): drop its local rows and read the turn
+   * back from the case instead.
+   */
+  reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => void;
   refreshActiveCase: (caseId: string) => Promise<void>;
   reconcileActiveCaseState: () => Promise<void>;
 }
@@ -157,6 +169,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       // ChatWindow /ui sync copies only `state`).
       void get().refreshActiveCase(caseId);
 
+      get().fetchConversationDelta(caseId);
+    },
+
+    fetchConversationDelta: (caseId) => {
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
@@ -359,6 +375,28 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         })
         .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))
         .finally(() => inFlightDeltaFetches.delete(caseId));
+    },
+
+    reloadCommittedTurn: (caseId, rowIds) => {
+      // The local pair cannot be filled (there is no reply to fill it with)
+      // and must not stay beside the backend copy the fetch below appends: the
+      // turn committed, so the case's own rows are the turn. Neither row was
+      // committed locally, so the delta offset does not move.
+      const drop = new Set(rowIds);
+      set((state) => {
+        const rows = state.conversations[caseId];
+        if (!rows || !rows.some((row) => drop.has(row.id))) return state;
+        return {
+          conversations: {
+            ...state.conversations,
+            [caseId]: rows.filter((row) => !drop.has(row.id))
+          }
+        };
+      });
+      // `refreshActiveCase` reads the case row only (state, closure), never
+      // its messages, so the messages come from the delta fetch.
+      void get().refreshActiveCase(caseId);
+      get().fetchConversationDelta(caseId);
     },
 
     refreshActiveCase: async (caseId) => {

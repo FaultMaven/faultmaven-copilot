@@ -10,6 +10,9 @@ import {
   ValidationError,
   RateLimitError,
   CaseVersionConflictError,
+  TurnInProgressError,
+  IdempotencyKeyReuseError,
+  TurnReplayUnavailableError,
   QuotaExhaustedError,
   OptimisticUpdateError,
   UnknownError,
@@ -114,7 +117,27 @@ export class ErrorClassifier {
         return new ValidationError(error.message, this.extractFieldErrors(error), error, context);
 
       case 409: {
-        // Case version conflict — backend OCC rejected the save because
+        // The turn route's idempotency step (contract 12.2.0) answers three
+        // 409s of its own, told apart by `x-error-code`. Each means something
+        // different from a version conflict, and only one of them is retried.
+        if (errorCode === 'TURN_IN_PROGRESS') {
+          const seconds = this.retryAfterSeconds(error);
+          return new TurnInProgressError(
+            error.message,
+            seconds === undefined ? undefined : seconds * 1000,
+            error,
+            context
+          );
+        }
+        if (errorCode === 'IDEMPOTENCY_KEY_REUSE') {
+          return new IdempotencyKeyReuseError(error.message, error, context);
+        }
+        if (errorCode === 'IDEMPOTENCY_REPLAY_UNAVAILABLE') {
+          return new TurnReplayUnavailableError(error.message, error, context);
+        }
+
+        // Case version conflict (`CASE_VERSION_CONFLICT`, and the unlabelled
+        // 409 a terminal case answers with) — backend OCC rejected the save because
         // another writer updated the case while this turn was in flight.
         // The response carries x-expected-version / x-actual-version
         // headers on HttpError so we can surface the version drift if
@@ -211,6 +234,25 @@ export class ErrorClassifier {
            message.includes('required field') ||
            message.includes('must be') ||
            error.name === 'ValidationError';
+  }
+
+  /**
+   * `Retry-After` in seconds as the API client carried it, or nothing.
+   *
+   * `authenticatedFetch` puts it on `error.retryAfter` for every non-OK
+   * response; `createHttpErrorFromResponse` snapshots the header instead.
+   * Unlike `extractRetryAfter` this has no default: the caller decides what an
+   * absent header means.
+   */
+  private static retryAfterSeconds(error: Error): number | undefined {
+    const carried = (error as Error & { retryAfter?: unknown }).retryAfter;
+    if (typeof carried === 'number' && Number.isFinite(carried)) return carried;
+    const header = (error as HttpError).headers?.['retry-after'];
+    if (header !== undefined) {
+      const seconds = parseInt(header, 10);
+      if (!isNaN(seconds)) return seconds;
+    }
+    return undefined;
   }
 
   /**

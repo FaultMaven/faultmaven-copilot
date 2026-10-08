@@ -363,3 +363,50 @@ describe('authenticatedFetch — protection-shaped error bodies (fm#994)', () =>
     });
   });
 });
+
+describe('authenticatedFetch — non-OK signals (contract 12.2.0)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer live-token' });
+  });
+
+  const respond = (status: number, headers: Record<string, string>) =>
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status,
+      headers: new Headers(headers),
+      json: async () => ({ detail: 'refused' }),
+    } as any);
+
+  it('carries Retry-After (seconds) and x-error-code on a 409 TURN_IN_PROGRESS', async () => {
+    respond(409, { 'x-error-code': 'TURN_IN_PROGRESS', 'Retry-After': '42' });
+    await expect(authenticatedFetch('/api/v1/cases/c1/turns')).rejects.toMatchObject({
+      status: 409,
+      retryAfter: 42,
+      headers: { 'x-error-code': 'TURN_IN_PROGRESS' },
+    });
+  });
+
+  it('carries the version pair of a CASE_VERSION_CONFLICT', async () => {
+    respond(409, {
+      'x-error-code': 'CASE_VERSION_CONFLICT',
+      'x-expected-version': '4',
+      'x-actual-version': '5',
+    });
+    await expect(authenticatedFetch('/api/v1/cases/c1/turns')).rejects.toMatchObject({
+      headers: {
+        'x-error-code': 'CASE_VERSION_CONFLICT',
+        'x-expected-version': '4',
+        'x-actual-version': '5',
+      },
+    });
+  });
+
+  it('sets no retryAfter when the header is absent', async () => {
+    respond(504, {});
+    const error = await authenticatedFetch('/api/v1/cases/c1/turns').catch((e) => e);
+    expect(error.status).toBe(504);
+    expect(error.retryAfter).toBeUndefined();
+    expect(error.headers).toBeUndefined();
+  });
+});

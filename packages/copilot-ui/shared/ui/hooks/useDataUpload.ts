@@ -16,6 +16,7 @@ import {
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
+import { keyedTurnRetryPolicy } from '../../../lib/utils/keyed-turn-retry';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
@@ -25,7 +26,12 @@ import {
   isAmbiguousFailure,
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
-import { DuplicateUploadNotice, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
+import {
+  DuplicateUploadNotice,
+  PASTED_TEXT_LABEL,
+  PAGE_CAPTURE_LABEL,
+  TurnReplayUnavailableError,
+} from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
@@ -128,7 +134,10 @@ export function useDataUpload() {
         // Safe to auto-retry an ambiguous network failure: the request carries a
         // stable Idempotency-Key (aiMessageId), so the backend replays the cached
         // response for a resend instead of committing a second turn.
-        idempotent: true
+        idempotent: true,
+        // A keyed turn also recovers a lost response (client timeout, gateway
+        // 504) and waits out TURN_IN_PROGRESS, under one wall-clock deadline.
+        ...keyedTurnRetryPolicy(),
       });
     } catch (error) {
       // Caller-initiated cancellation (hook unmounted): return silently. Don't
@@ -136,6 +145,17 @@ export function useDataUpload() {
       // waiting on.
       if (controller.signal.aborted) {
         return { success: false, message: '', sent: true };
+      }
+      const classified = ErrorClassifier.classify(error);
+      if (classified instanceof TurnReplayUnavailableError) {
+        // The turn committed (its files with it); only its reply cannot be
+        // served. Nothing failed and there is nothing to retry: read the turn
+        // back from the case.
+        log.warn('Committed turn could not be replayed; reloading the case', { caseId: targetCaseId });
+        pendingOpsManager.complete(aiMessageId);
+        useAppStore.getState().reloadCommittedTurn(targetCaseId, [userMessageId, aiMessageId]);
+        showError(classified);
+        return { success: true, message: '', sent: true };
       }
       // Mark the AI item failed WITHOUT rolling back: keeping both messages lets
       // the failed-operation banner offer a retry instead of the turn silently
@@ -147,7 +167,7 @@ export function useDataUpload() {
       // FaultMaven/faultmaven#1882, where the retry's duplicate notice corrects it).
       unsent.ambiguous = isAmbiguousFailure(error);
       const notAdded = unsentAttachmentsNotice(unsent);
-      const formatted = formatErrorForChat(ErrorClassifier.classify(error));
+      const formatted = formatErrorForChat(classified);
       const chatError = notAdded ? `${formatted}\n\n${notAdded}` : formatted;
       setConversations(prev => ({
         ...prev,

@@ -213,11 +213,12 @@ export async function createHttpErrorFromResponse(response: Response): Promise<H
 
   // Snapshot relevant signal headers so callers don't need the live
   // Response object after this point. The backend uses lowercase
-  // names (x-error-code, x-expected-version, x-actual-version).
+  // names (x-error-code, x-expected-version, x-actual-version); `retry-after`
+  // is what a 409 TURN_IN_PROGRESS waits on (contract 12.2.0).
   // Guard against test mocks that omit `headers` entirely.
   const headers: Record<string, string> = {};
   if (response.headers && typeof response.headers.get === 'function') {
-    for (const name of ['x-error-code', 'x-expected-version', 'x-actual-version']) {
+    for (const name of ['x-error-code', 'x-expected-version', 'x-actual-version', 'retry-after']) {
       const value = response.headers.get(name);
       if (value !== null) headers[name] = value;
     }
