@@ -521,15 +521,16 @@ export class TurnInProgressError extends UserFacingError implements ServerDirect
 /**
  * 409 `x-error-code: IDEMPOTENCY_KEY_REUSE` (contract 12.2.0): this
  * `Idempotency-Key` already named a DIFFERENT turn on this case. The key is
- * minted per turn (`aiMessageId`), so this is a client defect, never something
- * a retry can fix: the same key gets the same refusal. No automatic retry.
+ * minted per turn (`aiMessageId`), so this is a client defect: the same key
+ * gets the same refusal, so there is no automatic retry. The manual Retry is a
+ * new logical turn and goes out under a fresh key (`rotateIdempotencyKey`).
  */
 export class IdempotencyKeyReuseError extends UserFacingError {
   readonly userTitle = 'Message Not Sent';
   readonly userMessage = "This message couldn't be sent: its request ID was already used for a different message.";
-  readonly userAction = 'Send it again as a new message.';
+  readonly userAction = 'Retry sends it as a new message.';
   readonly category: ErrorCategory = 'validation';
-  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+  readonly recovery: RecoveryStrategy = 'manual_retry';
 
   getDisplayOptions(): ErrorDisplayOptions {
     return {
@@ -546,12 +547,15 @@ export class IdempotencyKeyReuseError extends UserFacingError {
  * turn DID commit, but the server can no longer serve its stored response (a
  * deploy changed the schema between the commit and this retry). Running it
  * again is the one wrong answer, so there is no retry; the turn's rows are
- * read back from the case instead (`cases-slice.reloadCommittedTurn`).
+ * read back from the case instead (`cases-slice.reloadCommittedTurn`), and the
+ * local pair is dropped only once that read has merged.
  */
 export class TurnReplayUnavailableError extends UserFacingError {
   readonly userTitle = 'Reply Unavailable';
   readonly userMessage = "Your message was saved, but its reply can't be shown.";
-  readonly userAction = 'Reload the case to see it.';
+  readonly userAction = 'Its reply is being loaded from the case.';
+  /** What the turn's bubble says until the reload lands, and after one that failed. */
+  readonly bubbleText = "Your message was saved, but its reply can't be shown. Reload the case to see it.";
   readonly category: ErrorCategory = 'server';
   readonly recovery: RecoveryStrategy = 'graceful_degradation';
 

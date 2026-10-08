@@ -49,14 +49,25 @@ export interface CasesSlice {
    * Read the case's messages past the committed local rows and merge them
    * (reconcile, dedup, turn floor). `handleCaseSelect` is its usual caller;
    * `reloadCommittedTurn` is the other.
+   *
+   * Resolves `true` once the merge has landed, `false` when it did not (the
+   * fetch failed, the session changed, the case has no backend id yet).
+   * `replacing` names local rows the fetched rows stand in for: they are
+   * dropped in the same write as the merge, and only if it lands. A call with
+   * `replacing` never skips a fetch already in flight (which may have started
+   * before the rows it needs existed): it runs a fresh one after it.
    */
-  fetchConversationDelta: (caseId: string) => void;
+  fetchConversationDelta: (
+    caseId: string,
+    options?: { replacing?: readonly string[] }
+  ) => Promise<boolean>;
   /**
    * A turn committed but its reply could not be served
    * (`IDEMPOTENCY_REPLAY_UNAVAILABLE`): drop its local rows and read the turn
-   * back from the case instead.
+   * back from the case instead. Resolves as `fetchConversationDelta` does; on
+   * `false` the local rows stay.
    */
-  reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => void;
+  reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => Promise<boolean>;
   refreshActiveCase: (caseId: string) => Promise<void>;
   reconcileActiveCaseState: () => Promise<void>;
 }
@@ -65,7 +76,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
   // Cases with a delta fetch currently in flight — guards against a double-click /
   // rapid A→B→A firing two fetches for the same case with the same offset (which
   // would append the same rows twice and PERSIST the duplicates).
-  const inFlightDeltaFetches = new Set<string>();
+  const inFlightDeltaFetches = new Map<string, Promise<boolean>>();
 
   return {
     activeCaseId: null,
@@ -169,22 +180,30 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       // ChatWindow /ui sync copies only `state`).
       void get().refreshActiveCase(caseId);
 
-      get().fetchConversationDelta(caseId);
+      void get().fetchConversationDelta(caseId);
     },
 
-    fetchConversationDelta: (caseId) => {
+    fetchConversationDelta: (caseId, options = {}) => {
+      const drop = new Set(options.replacing ?? []);
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
 
       if (isOptimisticId(resolvedCaseId)) {
         log.debug('Optimistic case not yet reconciled, using local data', { caseId });
-        return;
+        return Promise.resolve(false);
       }
 
-      if (inFlightDeltaFetches.has(caseId)) {
+      const inFlight = inFlightDeltaFetches.get(caseId);
+      if (inFlight) {
+        if (drop.size > 0) {
+          // The fetch in flight may have been sent before the rows this caller
+          // needs were committed, so its answer cannot stand in for them.
+          log.debug('Delta fetch in flight for case; chaining a fresh one', { caseId });
+          return inFlight.then(() => get().fetchConversationDelta(caseId, options));
+        }
         log.debug('Delta fetch already in flight for case; skipping', { caseId });
-        return;
+        return inFlight;
       }
 
       // Offset is a LOWER-BOUND fetch hint, not a correctness boundary. It counts
@@ -211,12 +230,11 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       // must not merge the ended session's messages back into a purged store.
       const epoch = getEpoch();
 
-      inFlightDeltaFetches.add(caseId);
-      getCaseConversation(resolvedCaseId, { offset })
-        .then(data => {
+      const fetched = getCaseConversation(resolvedCaseId, { offset })
+        .then((data): boolean => {
           if (epoch !== getEpoch()) {
             log.info('Session changed during delta fetch — discarding conversation delta', { caseId });
-            return;
+            return false;
           }
           // Every retained row populates exactly one content slot, chosen by
           // `messageKind`: `question`, `response`, or `notice`. No row is
@@ -292,11 +310,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
                 sources: kind === 'assistant' ? sourcesToShow(msg.sources) : undefined
               };
             });
-          if (incoming.length > 0) {
+          if (incoming.length > 0 || drop.size > 0) {
             let appended = 0;
             let reconciledCount = 0;
             set((state) => {
-              const stored = state.conversations[caseId] || [];
+              const held = state.conversations[caseId] || [];
+              // The rows the fetched ones stand in for go in this same write.
+              const stored = drop.size > 0 ? held.filter((row) => !drop.has(row.id)) : held;
+              const dropped = stored.length !== held.length;
 
               // Give locally-minted turns their backend identity BEFORE dedup
               // (#213). `useMessageSubmission` mints `opt_msg_*` ids and
@@ -336,7 +357,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
               // `existing !== stored` means a row adopted a backend id, which is
               // a state change even when nothing new is appended — returning
               // `state` here would discard it.
-              if (fresh.length === 0 && existing === stored) return state;
+              if (fresh.length === 0 && existing === stored && !dropped) return state;
               appended = fresh.length;
               reconciledCount = adopted.size;
 
@@ -372,31 +393,27 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
               });
             }
           }
+          return true;
         })
-        .catch(err => log.error('Failed to fetch conversation delta', { caseId, offset, err }))
+        .catch((err): boolean => {
+          log.error('Failed to fetch conversation delta', { caseId, offset, err });
+          return false;
+        })
         .finally(() => inFlightDeltaFetches.delete(caseId));
+      inFlightDeltaFetches.set(caseId, fetched);
+      return fetched;
     },
 
     reloadCommittedTurn: (caseId, rowIds) => {
-      // The local pair cannot be filled (there is no reply to fill it with)
-      // and must not stay beside the backend copy the fetch below appends: the
-      // turn committed, so the case's own rows are the turn. Neither row was
-      // committed locally, so the delta offset does not move.
-      const drop = new Set(rowIds);
-      set((state) => {
-        const rows = state.conversations[caseId];
-        if (!rows || !rows.some((row) => drop.has(row.id))) return state;
-        return {
-          conversations: {
-            ...state.conversations,
-            [caseId]: rows.filter((row) => !drop.has(row.id))
-          }
-        };
-      });
       // `refreshActiveCase` reads the case row only (state, closure), never
       // its messages, so the messages come from the delta fetch.
       void get().refreshActiveCase(caseId);
-      get().fetchConversationDelta(caseId);
+      // The local pair cannot be filled (there is no reply to fill it with)
+      // and must not stay beside the backend copy the fetch appends: the turn
+      // committed, so the case's own rows are the turn. It is dropped in the
+      // merge's own write, so a failed read leaves the user's message where it
+      // was. Neither row was committed locally, so the offset does not move.
+      return get().fetchConversationDelta(caseId, { replacing: rowIds });
     },
 
     refreshActiveCase: async (caseId) => {

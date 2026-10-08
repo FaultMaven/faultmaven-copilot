@@ -16,9 +16,13 @@ import {
 import { resilientOperation } from '@faultmaven/copilot-ui/lib/utils/resilient-operation';
 import {
   KEYED_TURN_DEADLINE_MS,
+  idempotencyKeyFor,
   keyedTurnRetryPolicy,
+  rotateIdempotencyKey,
   turnTimeoutKind,
 } from '@faultmaven/copilot-ui/lib/utils/keyed-turn-retry';
+import { createHttpErrorFromResponse } from '@faultmaven/copilot-ui/lib/errors/http-error';
+import { isAmbiguousFailure, unsentAttachmentsNotice } from '@faultmaven/copilot-ui/lib/state/unsent-attachments';
 
 vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -76,12 +80,12 @@ describe('ErrorClassifier — the 409s of contract 12.2.0, by x-error-code', () 
     expect((classified as TurnInProgressError).retryAfterMs).toBe(7000);
   });
 
-  it('IDEMPOTENCY_KEY_REUSE → IdempotencyKeyReuseError, never retried', () => {
+  it('IDEMPOTENCY_KEY_REUSE → IdempotencyKeyReuseError: a manual Retry, never an automatic one', () => {
     const classified = ErrorClassifier.classify(
       httpError(409, { 'x-error-code': 'IDEMPOTENCY_KEY_REUSE' }),
     );
     expect(classified).toBeInstanceOf(IdempotencyKeyReuseError);
-    expect(classified.recovery).toBe('graceful_degradation');
+    expect(classified.recovery).toBe('manual_retry');
   });
 
   it('IDEMPOTENCY_REPLAY_UNAVAILABLE → TurnReplayUnavailableError, never retried', () => {
@@ -90,7 +94,10 @@ describe('ErrorClassifier — the 409s of contract 12.2.0, by x-error-code', () 
     );
     expect(classified).toBeInstanceOf(TurnReplayUnavailableError);
     expect(classified.recovery).toBe('graceful_degradation');
-    expect(classified.userAction.toLowerCase()).toContain('reload the case');
+    // The toast says the reload is under way; the bubble keeps "reload" for
+    // when it does not land.
+    expect(classified.userAction).toBe('Its reply is being loaded from the case.');
+    expect((classified as TurnReplayUnavailableError).bubbleText).toContain('Reload the case to see it.');
   });
 
   it('CASE_VERSION_CONFLICT keeps today’s mapping, versions included', () => {
@@ -127,12 +134,13 @@ describe('ErrorClassifier — the 409s of contract 12.2.0, by x-error-code', () 
 });
 
 describe('turnTimeoutKind — the 504 split', () => {
-  it('tells a client timeout, a gateway 504 and a REQUEST_TIMEOUT 504 apart', () => {
+  it('tells a client timeout, an uncoded gateway 504 and a coded 504 apart', () => {
     expect(turnTimeoutKind(clientTimeout())).toBe('client');
     expect(turnTimeoutKind(httpError(504))).toBe('gateway');
-    expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }, 30))).toBe(
-      'request_timeout',
-    );
+    expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }, 30))).toBe('server_timeout');
+    expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 30))).toBe('server_timeout');
+    // A code this build does not know is not a gateway's 504.
+    expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'SOMETHING_NEW' }))).toBeNull();
     expect(turnTimeoutKind(httpError(408))).toBeNull();
     expect(turnTimeoutKind(httpError(500))).toBeNull();
   });
@@ -196,6 +204,37 @@ describe('resilientOperation with the keyed-turn policy', () => {
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
+  it('retries a 504 LLM_TIMEOUT at most once (each retry is a new LLM run)', async () => {
+    const operation = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValue(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 30));
+    const caught = run(operation).catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    expect(await caught).toBeInstanceOf(TimeoutError);
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('one retry in all across REQUEST_TIMEOUT and LLM_TIMEOUT', async () => {
+    const operation = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 30))
+      .mockRejectedValue(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }, 30));
+    const caught = run(operation).catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    await caught;
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('a 504 with an unknown code keeps today’s behaviour: no automatic retry', async () => {
+    const operation = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValue(httpError(504, { 'x-error-code': 'SOMETHING_NEW' }));
+    const caught = run(operation).catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    expect(await caught).toBeInstanceOf(TimeoutError);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the old attempt count for everything else (a network failure: 3 attempts)', async () => {
     const operation = vi.fn<() => Promise<string>>().mockRejectedValue(new TypeError('Failed to fetch'));
     const caught = run(operation).catch((e: unknown) => e);
@@ -242,5 +281,44 @@ describe('resilientOperation with the keyed-turn policy', () => {
     // 650 s, and a seventh would start at 660 s, which the deadline refuses.
     expect(operation).toHaveBeenCalledTimes(6);
     expect(failedAt - started).toBe(650_000);
+  });
+});
+
+describe('createHttpErrorFromResponse keeps Retry-After', () => {
+  it('snapshots retry-after, so a TURN_IN_PROGRESS thrown from it waits the server’s seconds', async () => {
+    const response = {
+      status: 409,
+      statusText: 'Conflict',
+      headers: new Headers({ 'x-error-code': 'TURN_IN_PROGRESS', 'Retry-After': '7' }),
+      json: async () => ({ detail: 'still running' }),
+    } as unknown as Response;
+    const error = await createHttpErrorFromResponse(response);
+    expect(error.headers?.['retry-after']).toBe('7');
+    expect((ErrorClassifier.classify(error) as TurnInProgressError).retryAfterMs).toBe(7000);
+  });
+});
+
+describe('a TURN_IN_PROGRESS that outlasted the deadline is ambiguous', () => {
+  it('says the files "may not have been added"', () => {
+    const error = ErrorClassifier.classify(httpError(409, { 'x-error-code': 'TURN_IN_PROGRESS' }, 3));
+    expect(isAmbiguousFailure(error)).toBe(true);
+    const notice = unsentAttachmentsNotice({
+      attachments: [{ name: 'app.log', isFile: true }],
+      hasQuery: false,
+      ambiguous: isAmbiguousFailure(error),
+    });
+    expect(notice).toContain('may not have been added');
+    // A definite 409 stays definite.
+    expect(isAmbiguousFailure(httpError(409, { 'x-error-code': 'IDEMPOTENCY_KEY_REUSE' }))).toBe(false);
+  });
+});
+
+describe('a key refused as reused is rotated', () => {
+  it('the turn id is its key until rotated; then the fresh key sticks', () => {
+    expect(idempotencyKeyFor('opt_msg_1_9')).toBe('opt_msg_1_9');
+    const fresh = rotateIdempotencyKey('opt_msg_1_9');
+    expect(fresh).not.toBe('opt_msg_1_9');
+    expect(fresh).toMatch(/^[A-Za-z0-9_-]{8,255}$/);
+    expect(idempotencyKeyFor('opt_msg_1_9')).toBe(fresh);
   });
 });

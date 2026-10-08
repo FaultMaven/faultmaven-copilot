@@ -14,6 +14,14 @@ type SuggestedActionResponse = NonNullable<TurnResponse['suggested_actions']>[nu
 export interface TurnRowIds {
   user: string;
   assistant: string;
+  /**
+   * Every row id the conversation held when the turn was first SENT. A row
+   * that was already there cannot be the server's copy of this turn, whatever
+   * its turn number says: `POST /cases` with an `initial_message` stamps that
+   * message `turn_number: 1` while `current_turn` stays 0, so the first turn
+   * commits as turn 1 too.
+   */
+  presentAtSend: ReadonlySet<string>;
 }
 
 export interface ApplyTurnOptions {
@@ -119,11 +127,13 @@ export function applyTurnResponse(
  * response's own number, not the client's prediction), keyed by the slot of
  * the optimistic row each one duplicates.
  *
- * Only committed rows with a backend id qualify, and only in a slot whose
- * optimistic row is present to take it over. A slot with more than one
- * candidate is ambiguous and left alone, as `reconcileOptimisticIds` refuses
- * one: the duplicate stays rather than an id landing on the wrong row. A
- * notice shares a turn with its exchange but never a slot, so it is untouched.
+ * Only committed rows with a backend id qualify that arrived AFTER the turn
+ * was sent (`presentAtSend`), and only in a slot whose optimistic row is
+ * present to take it over. A turn commits atomically (#1882), so a genuine
+ * copy always brings BOTH rows: the copy is adopted only when each slot has
+ * exactly one candidate, and otherwise nothing changes — the duplicate stays
+ * rather than a row of another turn being swallowed. A notice shares a turn
+ * with its exchange but never a slot, so it is untouched.
  */
 function backendCopiesOfTurn(
   rows: readonly OptimisticConversationItem[],
@@ -134,15 +144,19 @@ function backendCopiesOfTurn(
   const candidates = new Map<'question' | 'response', OptimisticConversationItem[]>();
   for (const row of rows) {
     if (row.id === ids.user || row.id === ids.assistant) continue;
+    if (ids.presentAtSend.has(row.id)) continue;
     if (isOptimisticId(row.id) || !isCommittedMessage(row) || row.turn_number !== turn) continue;
     const slot = slotOf(row);
     if (slot !== 'question' && slot !== 'response') continue;
     if (!present.has(slot === 'question' ? ids.user : ids.assistant)) continue;
     candidates.set(slot, [...(candidates.get(slot) ?? []), row]);
   }
+  const question = candidates.get('question') ?? [];
+  const reply = candidates.get('response') ?? [];
   const copies = new Map<'question' | 'response', OptimisticConversationItem>();
-  for (const [slot, found] of candidates) {
-    if (found.length === 1) copies.set(slot, found[0]);
+  if (question.length === 1 && reply.length === 1) {
+    copies.set('question', question[0]);
+    copies.set('response', reply[0]);
   }
   return copies;
 }

@@ -39,7 +39,8 @@ export interface ResilientOperationOptions<T> {
    * counted only the sleeps would let a request that hangs to its own timeout
    * spend nothing of it. No retry is started once the elapsed time plus the
    * server-directed wait before it would reach the bound; an attempt already
-   * running is not cut short (its own request timeout bounds it).
+   * running is not cut short (its own request timeout bounds it), so the worst
+   * case is about `deadlineMs` + one request timeout.
    *
    * Applied before `retryOptions.shouldRetry`, so an override cannot outlive it.
    */

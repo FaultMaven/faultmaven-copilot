@@ -15,7 +15,7 @@ import { applyTurnResponse, duplicateUploads, suggestionFromResponse } from '@fa
 import type { AttachmentResult, TurnResponse } from '@faultmaven/copilot-ui/lib/api';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 
-const IDS = { user: 'opt_msg_user', assistant: 'opt_msg_ai' };
+const IDS = { user: 'opt_msg_user', assistant: 'opt_msg_ai', presentAtSend: new Set<string>() };
 
 function turn(overrides: Partial<TurnResponse> = {}): TurnResponse {
   return {
@@ -355,13 +355,18 @@ describe('applyTurnResponse — a backend copy of the turn already merged', () =
   const notice: OptimisticConversationItem = {
     id: 'msg_n7', notice: 'Runbook conversion queued.', timestamp: '2026-10-07T10:01:06Z', optimistic: false, turn_number: 7,
   };
-  const pair = (turnNumber = 7): OptimisticConversationItem[] => [
-    { id: IDS.user, question: 'What now?', timestamp: '2026-10-07T10:01:00Z', optimistic: true, turn_number: turnNumber },
-    { id: IDS.assistant, response: '', timestamp: '2026-10-07T10:01:00Z', optimistic: true, loading: true, turn_number: turnNumber },
-  ];
+  const userRow = (turnNumber = 7): OptimisticConversationItem => (
+    { id: IDS.user, question: 'What now?', timestamp: '2026-10-07T10:01:00Z', optimistic: true, turn_number: turnNumber }
+  );
+  const aiRow = (turnNumber = 7): OptimisticConversationItem => (
+    { id: IDS.assistant, response: '', timestamp: '2026-10-07T10:01:00Z', optimistic: true, loading: true, turn_number: turnNumber }
+  );
+  const pair = (turnNumber = 7) => [userRow(turnNumber), aiRow(turnNumber)];
+  /** The ids the conversation held when the turn was sent. */
+  const sentWith = (...present: string[]) => ({ ...IDS, presentAtSend: new Set(present) });
 
   it('drops the copy and gives the pair its identity; a notice of the same turn stays', () => {
-    const out = applyTurnResponse([committed, copyQ, copyA, notice, ...pair()], IDS, turn());
+    const out = applyTurnResponse([committed, copyQ, copyA, notice, ...pair()], sentWith('msg_committed'), turn());
     expect(out.map((r) => r.id)).toEqual(['msg_committed', 'msg_n7', 'msg_u7', 'msg_a7']);
     expect(out[2]).toMatchObject({ question: 'What now? (server copy)', originalId: 'msg_u7', optimistic: false });
     expect(out[3]).toMatchObject({ response: 'Reply.', originalId: 'msg_a7', loading: false });
@@ -369,18 +374,56 @@ describe('applyTurnResponse — a backend copy of the turn already merged', () =
 
   it('matches on the RESPONSE turn, not the prediction', () => {
     // Predicted 5, committed 7: the copy at 7 is still this turn.
-    const out = applyTurnResponse([committed, copyQ, copyA, ...pair(5)], IDS, turn());
+    const out = applyTurnResponse([committed, copyQ, copyA, ...pair(5)], sentWith('msg_committed'), turn());
     expect(out.map((r) => r.id)).toEqual(['msg_committed', 'msg_u7', 'msg_a7']);
   });
 
   it('leaves rows of another turn alone', () => {
-    const out = applyTurnResponse([committed, copyQ, copyA, ...pair(8)], IDS, turn({ turn_number: 8 }));
+    const out = applyTurnResponse([committed, copyQ, copyA, ...pair(8)], sentWith(), turn({ turn_number: 8 }));
     expect(out.map((r) => r.id)).toEqual(['msg_committed', 'msg_u7', 'msg_a7', IDS.user, IDS.assistant]);
   });
 
-  it('refuses an ambiguous slot rather than guessing', () => {
+  it('a full pair of another turn is not this turn’s copy', () => {
+    // Both slots matched, merged after the send: only the turn number tells.
+    const out = applyTurnResponse([copyQ, copyA, ...pair(8)], sentWith(), turn({ turn_number: 8 }));
+    expect(out.map((r) => r.id)).toEqual(['msg_u7', 'msg_a7', IDS.user, IDS.assistant]);
+  });
+
+  it('refuses an ambiguous slot, and then adopts nothing', () => {
     const second: OptimisticConversationItem = { ...copyQ, id: 'msg_u7b' };
-    const out = applyTurnResponse([copyQ, second, copyA, ...pair()], IDS, turn());
-    expect(out.map((r) => r.id)).toEqual(['msg_u7', 'msg_u7b', IDS.user, 'msg_a7']);
+    const out = applyTurnResponse([copyQ, second, copyA, ...pair()], sentWith(), turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_u7', 'msg_u7b', 'msg_a7', IDS.user, IDS.assistant]);
+  });
+
+  // `POST /cases` with an `initial_message` stamps that row `turn_number: 1`
+  // while `current_turn` stays 0, so the case's first turn commits as turn 1
+  // too. The initial message is not this turn's copy: the user's question must
+  // survive under its own text.
+  it("never takes the case's initial message for the first turn's copy (regression)", () => {
+    const initial: OptimisticConversationItem = {
+      id: 'msg_initial', question: 'The case was opened with this.', timestamp: '2026-10-07T09:59:00Z', optimistic: false, turn_number: 1,
+    };
+    const out = applyTurnResponse([initial, ...pair(2)], sentWith('msg_initial'), turn({ turn_number: 1 }));
+    expect(out.map((r) => r.id)).toEqual(['msg_initial', IDS.user, IDS.assistant]);
+    expect(out[0].question).toBe('The case was opened with this.');
+    expect(out[1].question).toBe('What now?');
+  });
+
+  it('a row present when the turn was sent is never the copy, even with both slots matched', () => {
+    const out = applyTurnResponse([copyQ, copyA, ...pair()], sentWith('msg_u7', 'msg_a7'), turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_u7', 'msg_a7', IDS.user, IDS.assistant]);
+  });
+
+  it('one slot alone is not a copy: a turn commits both rows at once', () => {
+    // Merged after the send (so not excluded by presentAtSend), but alone.
+    const out = applyTurnResponse([copyQ, ...pair()], sentWith(), turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_u7', IDS.user, IDS.assistant]);
+    expect(out[1].question).toBe('What now?');
+  });
+
+  it('takes no copy for a slot whose optimistic row is absent', () => {
+    const out = applyTurnResponse([copyQ, copyA, aiRow()], sentWith(), turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_u7', 'msg_a7', IDS.assistant]);
+    expect(out[0].question).toBe('What now? (server copy)');
   });
 });

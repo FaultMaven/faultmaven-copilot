@@ -16,6 +16,8 @@ import {
 import type { UserCase } from '../../../types/case';
 import {
   CaseVersionConflictError,
+  IdempotencyKeyReuseError,
+  TurnInProgressError,
   TurnReplayUnavailableError
 } from '../../../lib/errors/types';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
@@ -29,7 +31,11 @@ import {
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
-import { keyedTurnRetryPolicy } from '../../../lib/utils/keyed-turn-retry';
+import {
+  idempotencyKeyFor,
+  keyedTurnRetryPolicy,
+  rotateIdempotencyKey
+} from '../../../lib/utils/keyed-turn-retry';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
 import { createLogger } from '../../../lib/utils/logger';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
@@ -197,6 +203,7 @@ export function useMessageSubmission() {
     caseId: string,
     userMessageId: string,
     aiMessageId: string,
+    presentAtSend: ReadonlySet<string>,
     intent?: TurnIntent
   ) => {
     const controller = new AbortController();
@@ -225,7 +232,9 @@ export function useMessageSubmission() {
             // aiMessageId is stable across every retry of this turn (the auto-retry
             // closure captures it; the manual-retry onRetry re-passes it), so it is
             // the natural per-turn Idempotency-Key — the backend dedupes a resend.
-            idempotencyKey: aiMessageId,
+            // ...unless an IDEMPOTENCY_KEY_REUSE refusal rotated it: the retry of a
+            // changed request is a new logical turn (`idempotencyKeyFor`).
+            idempotencyKey: idempotencyKeyFor(aiMessageId),
           });
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 
@@ -277,12 +286,27 @@ export function useMessageSubmission() {
           const classified = ErrorClassifier.classify(error);
           if (classified instanceof TurnReplayUnavailableError) {
             // The turn committed; only its reply cannot be served. Nothing to
-            // retry and nothing failed: read the turn back from the case.
+            // retry and nothing failed: read the turn back from the case. The
+            // bubble says so until the read lands, and keeps saying so if the
+            // read fails (the pair is dropped only when the merge lands).
             log.warn('Committed turn could not be replayed; reloading the case', { caseId });
             pendingOpsManager.complete(aiMessageId);
-            useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
+            setConversations(prev => ({
+              ...prev,
+              [caseId]: (prev[caseId] || []).map(item =>
+                item.id === aiMessageId
+                  ? { ...item, response: classified.bubbleText, optimistic: false, loading: false, error: true, failed: false }
+                  : item
+              )
+            }));
+            void useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
             showError(classified);
             return;
+          }
+          if (classified instanceof IdempotencyKeyReuseError) {
+            // The same key can only meet the same 409: the Retry below is a new
+            // logical turn and goes out under a fresh one.
+            rotateIdempotencyKey(aiMessageId);
           }
           if (classified instanceof CaseVersionConflictError) {
             log.warn('Case version conflict on turn submission', {
@@ -325,12 +349,18 @@ export function useMessageSubmission() {
 
           const plan = getRecoveryPlan(error, {
             onRetry: async () => {
-              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, intent);
+              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, presentAtSend, intent);
             },
             onLogout: () => {}
           });
 
-          if (plan.strategy === 'manual_retry' || plan.strategy === 'retry_with_backoff') {
+          // A TurnInProgressError that outlasted the deadline still says what to
+          // do next ("Retry in a moment to get its reply"): show it whole.
+          if (
+            plan.strategy === 'manual_retry' ||
+            plan.strategy === 'retry_with_backoff' ||
+            classified instanceof TurnInProgressError
+          ) {
              showError(error);
           } else {
              showError(error.userMessage);
@@ -349,7 +379,11 @@ export function useMessageSubmission() {
 
       setConversations(prev => ({
         ...prev,
-        [caseId]: applyTurnResponse(prev[caseId] || [], { user: userMessageId, assistant: aiMessageId }, response),
+        [caseId]: applyTurnResponse(
+          prev[caseId] || [],
+          { user: userMessageId, assistant: aiMessageId, presentAtSend },
+          response
+        ),
       }));
 
       pendingOpsManager.complete(aiMessageId);
@@ -502,6 +536,13 @@ export function useMessageSubmission() {
       originalId: aiMessageId
     };
 
+    // The rows already there when the turn is sent: none of them can be the
+    // server's copy of it (`TurnRowIds.presentAtSend`). Taken once, at the
+    // first send, so a manual retry still recognises a copy merged since.
+    const presentAtSend: ReadonlySet<string> = new Set(
+      (useAppStore.getState().conversations[targetCaseId] || []).map(item => item.id)
+    );
+
     setConversations(prev => ({
       ...prev,
       [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiWorkingMessage]
@@ -527,14 +568,14 @@ export function useMessageSubmission() {
       },
       retryFn: async () => {
         log.debug('Retrying message submission');
-        await submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, intent);
+        await submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, presentAtSend, intent);
       },
       createdAt: Date.now()
     };
 
     pendingOpsManager.add(pendingOperation);
 
-    submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, intent);
+    submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, presentAtSend, intent);
     return { sent: true };
   };
 

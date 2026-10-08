@@ -16,9 +16,11 @@ import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import {
   TimeoutError,
+  TurnInProgressError,
   TurnReplayUnavailableError,
   UserFacingError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
+import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
 
@@ -66,6 +68,9 @@ const TURN_RESPONSE = {
 };
 
 const replay = () => wire(200, TURN_RESPONSE, { 'X-Idempotency-Replayed': 'true' });
+const replayUnavailable = () =>
+  wire(409, { detail: 'committed; reload the case' }, { 'x-error-code': 'IDEMPOTENCY_REPLAY_UNAVAILABLE' });
+const later = <T,>(ms: number, value: () => T) => new Promise<T>((resolve) => setTimeout(() => resolve(value()), ms));
 const inProgress = (retryAfter: string) =>
   wire(409, { detail: 'A turn with this Idempotency-Key is still running' }, {
     'x-error-code': 'TURN_IN_PROGRESS',
@@ -91,7 +96,7 @@ const CASE_ROW = {
 type TurnHandler = () => Promise<WireResponse>;
 
 /** Routes the wire: turn POSTs to `turns` in order; reads to fixed answers. */
-function routeWire(turns: TurnHandler[], messages: unknown[] = BACKEND_ROWS) {
+function routeWire(turns: TurnHandler[], messages: unknown[] | TurnHandler = BACKEND_ROWS) {
   let next = 0;
   fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) => {
     if (url === TURNS_URL && init.method === 'POST') {
@@ -100,6 +105,7 @@ function routeWire(turns: TurnHandler[], messages: unknown[] = BACKEND_ROWS) {
       return handler();
     }
     if (url.startsWith(`${BASE}/api/v1/cases/${CASE}/messages`)) {
+      if (typeof messages === 'function') return messages();
       return Promise.resolve(wire(200, { messages, total_count: messages.length }));
     }
     if (url === `${BASE}/api/v1/cases/${CASE}`) {
@@ -108,6 +114,11 @@ function routeWire(turns: TurnHandler[], messages: unknown[] = BACKEND_ROWS) {
     return Promise.reject(new Error(`unrouted ${init.method ?? 'GET'} ${url}`));
   });
 }
+
+const messageGets = () =>
+  (fetchWithTimeout.mock.calls as [string, RequestInit][]).filter(([url]) =>
+    url.startsWith(`${BASE}/api/v1/cases/${CASE}/messages`),
+  );
 
 const turnPosts = (): [string, RequestInit][] =>
   (fetchWithTimeout.mock.calls as [string, RequestInit][]).filter(
@@ -133,6 +144,9 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    // A module singleton that outlives a render.
+    pendingOpsManager.clear();
     stub = createStubHost();
     setHostStore(stub.store);
     setApiTransport({
@@ -246,12 +260,15 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
         wire(409, { detail: 'committed; reload the case' }, { 'x-error-code': 'IDEMPOTENCY_REPLAY_UNAVAILABLE' }),
     ]);
     const refreshActiveCase = vi.spyOn(useAppStore.getState(), 'refreshActiveCase');
+    const complete = vi.spyOn(pendingOpsManager, 'complete');
 
     await submit();
     await advance(5000);
 
     expect(turnPosts()).toHaveLength(1);
     expect(refreshActiveCase).toHaveBeenCalledWith(CASE);
+    // The turn committed: its pending op is done, not failed (no Retry).
+    expect(complete).toHaveBeenCalledWith(keyOf(turnPosts()[0][1]));
     expect(mockShowError).toHaveBeenCalledTimes(1);
     expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TurnReplayUnavailableError);
     // The local pair gave way to the committed rows: one copy, backend ids.
@@ -331,16 +348,126 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       async () =>
         wire(409, { detail: 'committed; reload the case' }, { 'x-error-code': 'IDEMPOTENCY_REPLAY_UNAVAILABLE' }),
     ]);
+    const complete = vi.spyOn(pendingOpsManager, 'complete');
     const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
     let outcome: { success: boolean; sent: boolean } | undefined;
     await act(async () => {
       outcome = await result.current.handleTurnSubmit({ query: 'why is the pool exhausted?' });
     });
     await advance(10);
+    expect(complete).toHaveBeenCalledWith(keyOf(turnPosts()[0][1]));
 
     expect(outcome).toMatchObject({ success: true, sent: true });
     expect(turnPosts()).toHaveLength(1);
     expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TurnReplayUnavailableError);
     expect(rows().map((r) => r.id)).toEqual(['msg_u1', 'msg_a1']);
+  });
+  it('504 LLM_TIMEOUT: retried once, not to the deadline (each retry is a new LLM run)', async () => {
+    routeWire([
+      async () => wire(504, { detail: 'The AI provider timed out.' }, { 'x-error-code': 'LLM_TIMEOUT', 'Retry-After': '30' }),
+    ]);
+    await submit();
+    await advance(700_000);
+    expect(turnPosts()).toHaveLength(2);
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TimeoutError);
+  });
+
+  it('a final TURN_IN_PROGRESS shows its whole message, Retry advice included', async () => {
+    routeWire([async () => inProgress('60')]);
+    await submit();
+    await advance(700_000);
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    const shown = mockShowError.mock.calls[0][0];
+    expect(shown).toBeInstanceOf(TurnInProgressError);
+    expect((shown as TurnInProgressError).userAction).toBe('Retry in a moment to get its reply.');
+  });
+
+  it('IDEMPOTENCY_KEY_REUSE: no automatic retry; the manual Retry goes out under a FRESH key', async () => {
+    routeWire([
+      async () => wire(409, { detail: 'key reused' }, { 'x-error-code': 'IDEMPOTENCY_KEY_REUSE' }),
+      async () => replay(),
+    ]);
+    await submit();
+    await advance(5000);
+    expect(turnPosts()).toHaveLength(1);
+    const firstKey = keyOf(turnPosts()[0][1]);
+
+    await act(async () => {
+      await pendingOpsManager.retry(firstKey);
+    });
+    const posts = turnPosts();
+    expect(posts).toHaveLength(2);
+    expect(keyOf(posts[1][1])).not.toBe(firstKey);
+    expect(keyOf(posts[1][1])).toMatch(/^[A-Za-z0-9_-]{8,255}$/);
+    expect(formOf(posts[1][1])).toEqual(formOf(posts[0][1]));
+    expect(responses().map((r) => r.response)).toEqual(['The pool is exhausted.']);
+  });
+
+  it('IDEMPOTENCY_REPLAY_UNAVAILABLE with a delta fetch already in flight: a fresh fetch is chained, not skipped', async () => {
+    // The fetch in flight was sent before the turn committed and answers
+    // without it; only the chained one can see it.
+    let gets = 0;
+    routeWire(
+      [() => later(100, replayUnavailable)],
+      () => {
+        gets += 1;
+        const rowsNow = gets === 1 ? [] : BACKEND_ROWS;
+        return later(gets === 1 ? 1000 : 10, () => wire(200, { messages: rowsNow, total_count: rowsNow.length }));
+      },
+    );
+    await submit();
+    act(() => {
+      useAppStore.getState().handleCaseSelect(CASE);
+    });
+    await advance(2000);
+
+    expect(messageGets()).toHaveLength(2);
+    expect(rows().map((r) => r.id)).toEqual(['msg_u1', 'msg_a1']);
+  });
+
+  it('IDEMPOTENCY_REPLAY_UNAVAILABLE whose read fails: the message stays, saying the turn was saved', async () => {
+    routeWire([async () => replayUnavailable()], () => Promise.reject(new TypeError('Failed to fetch')));
+    await submit();
+    await advance(5000);
+
+    expect(messageGets().length).toBeGreaterThan(0);
+    expect(questions().map((r) => r.question)).toEqual(['why is the pool exhausted?']);
+    const ai = responses()[0];
+    expect(ai.response).toBe(new TurnReplayUnavailableError('x').bubbleText);
+    expect(ai.loading).toBe(false);
+    expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TurnReplayUnavailableError);
+  });
+
+  it('upload path: a final TURN_IN_PROGRESS says the file "may not have been added"', async () => {
+    routeWire([async () => inProgress('60')]);
+    const file = new File(['ERROR x'], 'app.log', { type: 'text/plain' });
+    const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      const pending = result.current.handleTurnSubmit({ query: '', files: [file], inputType: 'file', queryIsGenerated: true });
+      await vi.advanceTimersByTimeAsync(700_000);
+      await pending;
+    });
+    const failed = rows().find((r) => r.failed);
+    expect(failed?.response).toContain('may not have been added');
+    expect(failed?.response).not.toContain('was not added');
+  });
+  it('upload path: IDEMPOTENCY_KEY_REUSE, then the banner Retry goes out under a FRESH key', async () => {
+    routeWire([
+      async () => wire(409, { detail: 'key reused' }, { 'x-error-code': 'IDEMPOTENCY_KEY_REUSE' }),
+      async () => replay(),
+    ]);
+    const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      await result.current.handleTurnSubmit({ query: 'why is the pool exhausted?' });
+    });
+    expect(turnPosts()).toHaveLength(1);
+    const firstKey = keyOf(turnPosts()[0][1]);
+
+    await act(async () => {
+      await pendingOpsManager.retry(firstKey);
+    });
+    expect(turnPosts()).toHaveLength(2);
+    expect(keyOf(turnPosts()[1][1])).not.toBe(firstKey);
   });
 });

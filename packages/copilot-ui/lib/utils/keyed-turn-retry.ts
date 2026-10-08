@@ -13,10 +13,13 @@
  * - nothing committed → the turn runs, once.
  *
  * That is what makes a lost response safe to recover WITHOUT the user: a client
- * `TimeoutError` or a gateway 504 (no `x-error-code`) on a keyed turn is
- * retried under the deadline below. A 504 `REQUEST_TIMEOUT` is the server's own
- * answer that the turn exhausted its ceiling and nothing committed: the same
- * input would most likely exhaust it again, so it is retried at most ONCE.
+ * `TimeoutError` or a gateway 504 (no `x-error-code`: a proxy answered, the API
+ * may still commit) on a keyed turn is retried under the deadline below. A
+ * CODED 504 is the API's own answer that nothing committed —
+ * `REQUEST_TIMEOUT` (the turn exhausted its ceiling) or `LLM_TIMEOUT` (the
+ * provider timed out) — so every retry of it is a new LLM run of the same
+ * input: it is retried at most ONCE, across both codes. A 504 with a code this
+ * build does not know keeps the default decision (no automatic retry).
  *
  * Everything else keeps the decision it has without this policy
  * (`defaultRetryDecision`) and the attempt count it had (`DEFAULT_MAX_ATTEMPTS`),
@@ -38,16 +41,22 @@ import { defaultRetryDecision, type ResilientOperationOptions } from './resilien
  * server ceiling (`AGENT_REQUEST_TIMEOUT` 120 s) and its bounded maximum (600 s)
  * plus the commit reserve, but per-provider ceiling overrides are unbounded, so
  * no client number can be "longer than any turn". It counts time inside each
- * request too (`resilientOperation`'s `deadlineMs`); the 300 s request timeout
- * (`lib/api/client.ts`) is unchanged, so an attempt started before the deadline
- * may still run to that timeout.
+ * request too (`resilientOperation`'s `deadlineMs`).
+ *
+ * It bounds STARTING a retry, not the last attempt: the 300 s request timeout
+ * (`lib/api/client.ts`) is unchanged and an attempt started just before the
+ * deadline runs to it, so the worst case is about deadline + one request
+ * timeout, ~960 s. The late attempt is deliberately not capped.
  */
 export const KEYED_TURN_DEADLINE_MS = 660_000;
 
 /** The attempt count every other recovery keeps (`resilientOperation`'s default). */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
-type TurnTimeout = 'client' | 'gateway' | 'request_timeout';
+/** The coded 504s that say nothing committed: retried once, together. */
+const NOTHING_COMMITTED_504_CODES: ReadonlySet<string> = new Set(['REQUEST_TIMEOUT', 'LLM_TIMEOUT']);
+
+type TurnTimeout = 'client' | 'gateway' | 'server_timeout';
 
 /** Which kind of timeout a raw submit error is, if it is one. */
 export function turnTimeoutKind(error: unknown): TurnTimeout | null {
@@ -55,7 +64,8 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
   const status = (error as Error & { status?: unknown }).status;
   if (status === 504) {
     const code = (error as HttpError).headers?.['x-error-code'];
-    return code === 'REQUEST_TIMEOUT' ? 'request_timeout' : 'gateway';
+    if (code === undefined) return 'gateway';
+    return NOTHING_COMMITTED_504_CODES.has(code) ? 'server_timeout' : null;
   }
   if (typeof status !== 'number' && error.name === 'TimeoutError') return 'client';
   return null;
@@ -69,7 +79,7 @@ export function keyedTurnRetryPolicy(): Pick<
   ResilientOperationOptions<unknown>,
   'retryOptions' | 'deadlineMs'
 > {
-  let requestTimeoutRetried = false;
+  let serverTimeoutRetried = false;
   let otherRetries = 0;
 
   return {
@@ -82,9 +92,9 @@ export function keyedTurnRetryPolicy(): Pick<
           case 'client':
           case 'gateway':
             return true;
-          case 'request_timeout':
-            if (requestTimeoutRetried) return false;
-            requestTimeoutRetried = true;
+          case 'server_timeout':
+            if (serverTimeoutRetried) return false;
+            serverTimeoutRetried = true;
             return true;
           case null:
             break;
@@ -102,4 +112,27 @@ export function keyedTurnRetryPolicy(): Pick<
       },
     },
   };
+}
+
+/**
+ * The `Idempotency-Key` a turn is sent under: its stable id, unless a
+ * `IDEMPOTENCY_KEY_REUSE` refusal rotated it.
+ *
+ * The server refuses a key it already holds for a DIFFERENT request, so a
+ * same-key retry can only meet the same 409. The changed request is a new
+ * logical turn and takes a fresh key; every later retry of it reuses that one.
+ */
+const rotatedKeys = new Map<string, string>();
+let rotations = 0;
+
+export function idempotencyKeyFor(turnId: string): string {
+  return rotatedKeys.get(turnId) ?? turnId;
+}
+
+/** Give the turn a fresh key after an `IDEMPOTENCY_KEY_REUSE` (in-grammar: `[A-Za-z0-9_-]`). */
+export function rotateIdempotencyKey(turnId: string): string {
+  rotations += 1;
+  const key = `${turnId}_r${rotations}`;
+  rotatedKeys.set(turnId, key);
+  return key;
 }

@@ -303,7 +303,7 @@ export async function authenticatedFetch(
         if (Object.keys(signals).length > 0) error.headers = signals;
         // Retry-After in seconds, on every non-OK as on the 429 above: a 409
         // TURN_IN_PROGRESS names the seconds left on the running turn, and a
-        // 504 REQUEST_TIMEOUT carries one too (contract 12.2.0).
+        // coded 504 (REQUEST_TIMEOUT, LLM_TIMEOUT) carries one too.
         const retryAfter = response.headers.get('Retry-After');
         const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : NaN;
         if (Number.isFinite(retryAfterSeconds)) error.retryAfter = retryAfterSeconds;
