@@ -338,3 +338,49 @@ describe('the turn hooks', () => {
     expect(source).not.toMatch(/\b(suggested_actions|sources|agent_response)\b/);
   });
 });
+
+// A delta fetch while the turn was in flight appended the server's copy of it
+// beside the optimistic pair (the merge's reconciliation skips in-flight rows).
+// The response's own turn number identifies the copy (faultmaven#1888).
+describe('applyTurnResponse — a backend copy of the turn already merged', () => {
+  const committed: OptimisticConversationItem = {
+    id: 'msg_committed', response: 'Earlier reply.', timestamp: '2026-10-07T10:00:00Z', optimistic: false, turn_number: 6,
+  };
+  const copyQ: OptimisticConversationItem = {
+    id: 'msg_u7', question: 'What now? (server copy)', timestamp: '2026-10-07T10:01:00Z', optimistic: false, turn_number: 7,
+  };
+  const copyA: OptimisticConversationItem = {
+    id: 'msg_a7', response: 'Reply.', timestamp: '2026-10-07T10:01:05Z', optimistic: false, turn_number: 7,
+  };
+  const notice: OptimisticConversationItem = {
+    id: 'msg_n7', notice: 'Runbook conversion queued.', timestamp: '2026-10-07T10:01:06Z', optimistic: false, turn_number: 7,
+  };
+  const pair = (turnNumber = 7): OptimisticConversationItem[] => [
+    { id: IDS.user, question: 'What now?', timestamp: '2026-10-07T10:01:00Z', optimistic: true, turn_number: turnNumber },
+    { id: IDS.assistant, response: '', timestamp: '2026-10-07T10:01:00Z', optimistic: true, loading: true, turn_number: turnNumber },
+  ];
+
+  it('drops the copy and gives the pair its identity; a notice of the same turn stays', () => {
+    const out = applyTurnResponse([committed, copyQ, copyA, notice, ...pair()], IDS, turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_committed', 'msg_n7', 'msg_u7', 'msg_a7']);
+    expect(out[2]).toMatchObject({ question: 'What now? (server copy)', originalId: 'msg_u7', optimistic: false });
+    expect(out[3]).toMatchObject({ response: 'Reply.', originalId: 'msg_a7', loading: false });
+  });
+
+  it('matches on the RESPONSE turn, not the prediction', () => {
+    // Predicted 5, committed 7: the copy at 7 is still this turn.
+    const out = applyTurnResponse([committed, copyQ, copyA, ...pair(5)], IDS, turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_committed', 'msg_u7', 'msg_a7']);
+  });
+
+  it('leaves rows of another turn alone', () => {
+    const out = applyTurnResponse([committed, copyQ, copyA, ...pair(8)], IDS, turn({ turn_number: 8 }));
+    expect(out.map((r) => r.id)).toEqual(['msg_committed', 'msg_u7', 'msg_a7', IDS.user, IDS.assistant]);
+  });
+
+  it('refuses an ambiguous slot rather than guessing', () => {
+    const second: OptimisticConversationItem = { ...copyQ, id: 'msg_u7b' };
+    const out = applyTurnResponse([copyQ, second, copyA, ...pair()], IDS, turn());
+    expect(out.map((r) => r.id)).toEqual(['msg_u7', 'msg_u7b', IDS.user, 'msg_a7']);
+  });
+});

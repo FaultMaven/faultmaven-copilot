@@ -3,6 +3,8 @@ import type { SuggestedAction, SuggestionIntent, SuggestionType, TurnResponse } 
 import type { DuplicateUpload } from '../errors/types';
 import type { OptimisticConversationItem } from '../optimistic';
 import { isCommittedMessage } from '../utils/memory-manager';
+import { isOptimisticId } from '../utils/data-integrity';
+import { slotOf } from './reconcile-message-ids';
 import { investigationTurnFor, serverSuppliesInvestigationTurn } from './turn-label';
 import { rowsBefore, sourcesToShow } from './turn-sources';
 
@@ -32,11 +34,25 @@ export interface ApplyTurnOptions {
  * checks every field against the item and the generated `TurnResponse`.
  */
 export function applyTurnResponse(
-  rows: readonly OptimisticConversationItem[],
+  allRows: readonly OptimisticConversationItem[],
   ids: TurnRowIds,
   response: TurnResponse,
   options: ApplyTurnOptions = {}
 ): OptimisticConversationItem[] {
+  // A delta fetch that ran while this turn was in flight (the panel reopened,
+  // the case switched away and back) may already hold the server's copy of
+  // it: the reconciliation in the merge skips rows still in flight, so the
+  // copy was appended beside the optimistic pair. Filling the pair would show
+  // the turn twice. The copy IS this turn, so the pair adopts its identity.
+  const copies = backendCopiesOfTurn(allRows, ids, response.turn_number);
+  const rows = copies.size === 0
+    ? allRows
+    : allRows.filter((row) => ![...copies.values()].includes(row));
+  const adopt = (slot: 'question' | 'response', fallback: Partial<OptimisticConversationItem>) => {
+    const copy = copies.get(slot);
+    return copy ? { id: copy.id, originalId: copy.id, [slot]: copy[slot] } : fallback;
+  };
+
   // `TurnResponse.investigation_turn` shipped in contract 2.7.0 and the per-row
   // `Message.investigation_turn` only in 3.5.0, so against a server in between
   // one channel answers and the other does not. Taking the label from both
@@ -72,7 +88,7 @@ export function applyTurnResponse(
         turn_number: response.turn_number,
         investigation_turn: investigationTurn,
         optimistic: false,
-        originalId: ids.user,
+        ...adopt('question', { originalId: ids.user }),
       };
     }
     if (item.id === ids.assistant) {
@@ -91,11 +107,44 @@ export function applyTurnResponse(
         error: false,
         failed: false,
         errorMessage: undefined,
-        originalId: ids.assistant,
+        ...adopt('response', { originalId: ids.assistant }),
       };
     }
     return item;
   });
+}
+
+/**
+ * The rows a delta fetch already brought in for the turn `turn` (the
+ * response's own number, not the client's prediction), keyed by the slot of
+ * the optimistic row each one duplicates.
+ *
+ * Only committed rows with a backend id qualify, and only in a slot whose
+ * optimistic row is present to take it over. A slot with more than one
+ * candidate is ambiguous and left alone, as `reconcileOptimisticIds` refuses
+ * one: the duplicate stays rather than an id landing on the wrong row. A
+ * notice shares a turn with its exchange but never a slot, so it is untouched.
+ */
+function backendCopiesOfTurn(
+  rows: readonly OptimisticConversationItem[],
+  ids: TurnRowIds,
+  turn: number
+): Map<'question' | 'response', OptimisticConversationItem> {
+  const present = new Set(rows.map((row) => row.id));
+  const candidates = new Map<'question' | 'response', OptimisticConversationItem[]>();
+  for (const row of rows) {
+    if (row.id === ids.user || row.id === ids.assistant) continue;
+    if (isOptimisticId(row.id) || !isCommittedMessage(row) || row.turn_number !== turn) continue;
+    const slot = slotOf(row);
+    if (slot !== 'question' && slot !== 'response') continue;
+    if (!present.has(slot === 'question' ? ids.user : ids.assistant)) continue;
+    candidates.set(slot, [...(candidates.get(slot) ?? []), row]);
+  }
+  const copies = new Map<'question' | 'response', OptimisticConversationItem>();
+  for (const [slot, found] of candidates) {
+    if (found.length === 1) copies.set(slot, found[0]);
+  }
+  return copies;
 }
 
 /**
