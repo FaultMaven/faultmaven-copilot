@@ -22,6 +22,15 @@ const log = createLogger('UnifiedInputBar');
 import { INPUT_LIMITS } from '../layouts/constants';
 
 /**
+ * What a turn submission reports to the composer. `sent: false` means the turn
+ * never reached the server (no session, case creation failed): the composer
+ * keeps the staged input so sending again needs no re-pick. A turn that WAS sent
+ * and failed keeps its own Retry through the pending operation, so it reports
+ * `sent: true` (or omits the field) and the composer clears as before.
+ */
+export type TurnSubmitResult = { success: boolean; message: string; sent?: boolean };
+
+/**
  * Payload for submissions with attachments (files, pasted data, page content).
  * Sent via the unified /turns endpoint.
  */
@@ -46,7 +55,7 @@ export interface UnifiedInputBarProps {
 
   // Callbacks
   onQuerySubmit: (query: string) => void;
-  onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
+  onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
 
   // Configuration
   maxLength?: number;
@@ -265,23 +274,31 @@ export function UnifiedInputBar({
       }
     }
 
+    // A submission that never reached the server (`sent === false`) keeps the
+    // staged input: the user was told what was not sent and sends it again
+    // without re-picking. A turn that WAS sent and failed has its own Retry, so
+    // its staged file/page still clear.
+    let keepStaged = false;
     try {
       const result = await onTurnSubmit(payload);
       if (result.success) {
         clearAllStagedState();
       } else {
+        keepStaged = result.sent === false;
         log.warn('Turn submission failed', { message: result.message });
       }
     } catch (error) {
       log.error('Unexpected error during turn submission', error);
     } finally {
       setIsUploadingData(false);
-      // Always clear file/page state to prevent stuck UI
-      setSelectedFile(null);
-      setCapturedPageUrl(null);
-      setCapturedPageContent("");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      if (!keepStaged) {
+        // Clear file/page state to prevent stuck UI
+        setSelectedFile(null);
+        setCapturedPageUrl(null);
+        setCapturedPageContent("");
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     }
   };

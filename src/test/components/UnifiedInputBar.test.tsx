@@ -190,3 +190,39 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     expect(mockTurnSubmit).not.toHaveBeenCalled();
   });
 });
+
+describe('UnifiedInputBar — what stays staged when a submission fails (#312)', () => {
+  const stage = async (mockTurnSubmit: any) => {
+    render(
+      <UnifiedInputBar onQuerySubmit={vi.fn()} onTurnSubmit={mockTurnSubmit} />,
+      { wrapper: hostWrapper(createStubHost().host) }
+    );
+    const file = new File(['boom'], 'app.log', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('File input'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/Type your message/i), { target: { value: 'why?' } });
+    await waitFor(() => expect(screen.getByText('app.log')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+  };
+
+  it('keeps the file and the text when the submission never reached the server', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: false, message: 'Server error', sent: false });
+    await stage(turn);
+    await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled());
+    expect(screen.getByText('app.log')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('why?');
+  });
+
+  it('clears everything on success', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: true, message: '' });
+    await stage(turn);
+    await waitFor(() => expect(screen.queryByText('app.log')).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('');
+  });
+
+  it('still clears the staged file when a sent turn failed (it has its own Retry)', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: false, message: 'Internal error' });
+    await stage(turn);
+    await waitFor(() => expect(screen.queryByText('app.log')).not.toBeInTheDocument());
+  });
+});

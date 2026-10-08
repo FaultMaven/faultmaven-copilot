@@ -66,7 +66,15 @@ export function isAmbiguousFailure(error: unknown): boolean {
  * or `null` for a turn that carried no attachments (the caller keeps its
  * message-only copy).
  */
-export function unsentAttachmentsNotice(turn: UnsentTurn | undefined): string | null {
+export function unsentAttachmentsNotice(
+  turn: UnsentTurn | undefined,
+  /**
+   * The turn never left the composer (case creation failed, no session), so
+   * there is no Retry button: the input is still staged and sending again is
+   * the retry.
+   */
+  options: { kept?: boolean } = {},
+): string | null {
   const attachments = turn?.attachments;
   if (!turn || !attachments || attachments.length === 0) return null;
   const { hasQuery, ambiguous } = turn;
@@ -83,5 +91,8 @@ export function unsentAttachmentsNotice(turn: UnsentTurn | undefined): string | 
   const verb = hasQuery || attachments.length > 1 ? 'were' : 'was';
   const them = attachments.length === 1 && !hasQuery ? 'it' : 'them';
   const outcome = ambiguous ? 'may not have been added' : `${verb} not added`;
+  if (options.kept) {
+    return `${lead} ${outcome} to the case. ${them === 'it' ? 'It is' : 'They are'} still in the message box; send again to retry.`;
+  }
   return `${lead} ${outcome} to the case. Retry sends ${them} again.`;
 }

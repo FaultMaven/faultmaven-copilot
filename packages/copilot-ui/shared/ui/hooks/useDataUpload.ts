@@ -24,9 +24,9 @@ import {
   isAmbiguousFailure,
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
-import { DuplicateUploadNotice, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
+import { DuplicateUploadNotice, TurnNotSentError, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
-import type { TurnPayload } from '../components/UnifiedInputBar';
+import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
@@ -34,6 +34,20 @@ import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-ite
 import { useError } from '../../../lib/errors';
 
 const log = createLogger('useDataUpload');
+
+/** What the user is told when a submission never reached a case. */
+function notSentError(unsent: UnsentTurn, reason: string, cause?: unknown): TurnNotSentError {
+  const notice = unsentAttachmentsNotice(unsent, { kept: true });
+  const detail = cause !== undefined ? ErrorClassifier.classify(cause).userMessage : reason;
+  const message = notice
+    ? `${notice} ${detail}`
+    : `${unsent.hasQuery ? 'Your message was' : 'Nothing was'} not sent. ${detail}`;
+  return new TurnNotSentError(
+    message,
+    'Your input is still in the message box.',
+    cause instanceof Error ? cause : undefined,
+  );
+}
 
 export function useDataUpload() {
   const [loading, setLoading] = useState(false);
@@ -89,7 +103,7 @@ export function useDataUpload() {
     userMessageId: string,
     aiMessageId: string,
     unsent: UnsentTurn = { attachments: [], hasQuery: false },
-  ): Promise<{ success: boolean; message: string }> => {
+  ): Promise<TurnSubmitResult> => {
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight must not let the success handler write the response back
     // into a purged store (issue #132).
@@ -235,14 +249,31 @@ export function useDataUpload() {
    */
   const handleTurnSubmit = async (
     payload: TurnPayload
-  ): Promise<{ success: boolean; message: string }> => {
+  ): Promise<TurnSubmitResult> => {
+    // What a failure of this turn must name: the files (by name) and any
+    // generated content (by what it is, not its minted filename).
+    // `hasQuery` is text the USER typed, not the question the input bar
+    // generates for a file-only turn.
+    const unsent: UnsentTurn = {
+      attachments: (payload.files || []).map(f => ({ name: f.name, isFile: true })),
+      hasQuery: !!payload.query?.trim() && !payload.queryIsGenerated,
+    };
+    if (payload.pastedContent?.trim()) {
+      unsent.attachments.push({
+        name: payload.inputType === 'page_capture' ? PAGE_CAPTURE_LABEL : PASTED_TEXT_LABEL,
+        isFile: false,
+      });
+    }
+
     try {
       setLoading(true);
 
       if (!sessionId) {
+        showError(notSentError(unsent, 'Please log in first.'));
         return {
           success: false,
-          message: "Please log in first"
+          message: "Please log in first",
+          sent: false,
         };
       }
 
@@ -297,7 +328,7 @@ export function useDataUpload() {
           // than re-seeding activeCase / faultmaven_current_case post-logout.
           if (epoch !== getEpoch()) {
             log.info('Session changed during case creation — discarding new case', { newCaseId });
-            return { success: false, message: '' };
+            return { success: false, message: '', sent: false };
           }
 
           targetCaseId = newCaseId;
@@ -327,15 +358,22 @@ export function useDataUpload() {
           log.info('Case created:', targetCaseId);
         } catch (error) {
           log.error('Failed to create case:', error);
+          // Nothing reached the server: say what was not sent. A failure that
+          // carries no HTTP response may still have created the case, and the
+          // notice words that ambiguity the same way a failed turn does.
+          unsent.ambiguous = isAmbiguousFailure(error);
+          showError(notSentError(unsent, 'The case could not be created.', error));
           return {
             success: false,
-            message: error instanceof Error ? error.message : 'Failed to create case'
+            message: error instanceof Error ? error.message : 'Failed to create case',
+            sent: false,
           };
         }
       }
 
       if (!targetCaseId) {
-        return { success: false, message: 'No active case' };
+        showError(notSentError(unsent, 'There is no active case.'));
+        return { success: false, message: 'No active case', sent: false };
       }
 
       // Step 2: Build TurnRequest from payload
@@ -366,21 +404,6 @@ export function useDataUpload() {
       const messageTimestamp = new Date().toISOString();
       const userMessageId = OptimisticIdGenerator.generateMessageId();
       const aiMessageId = OptimisticIdGenerator.generateMessageId();
-
-      // What a failure of this turn must name: the files (by name) and any
-      // generated content (by what it is, not its minted filename).
-      // `hasQuery` is text the USER typed, not the question the input bar
-      // generates for a file-only turn.
-      const unsent: UnsentTurn = {
-        attachments: (payload.files || []).map(f => ({ name: f.name, isFile: true })),
-        hasQuery: !!payload.query?.trim() && !payload.queryIsGenerated,
-      };
-      if (payload.pastedContent?.trim()) {
-        unsent.attachments.push({
-          name: payload.inputType === 'page_capture' ? PAGE_CAPTURE_LABEL : PASTED_TEXT_LABEL,
-          isFile: false,
-        });
-      }
 
       // Build local attachments list for immediate display (optimistic, before server responds)
       const localAttachments: AttachmentResult[] = [];

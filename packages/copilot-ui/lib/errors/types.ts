@@ -609,3 +609,31 @@ export class UnknownError extends UserFacingError {
     };
   }
 }
+
+/**
+ * A submission that never reached a case (case creation failed, no session).
+ * The composer still holds the user's input; this says what was not sent.
+ * Persistent, because the user must be aware and send it again.
+ */
+export class TurnNotSentError extends UserFacingError {
+  readonly userTitle = 'Not sent';
+  readonly userMessage: string;
+  readonly userAction: string;
+  readonly category: ErrorCategory = 'server';
+  readonly recovery: RecoveryStrategy = 'manual_retry';
+
+  constructor(userMessage: string, userAction: string, originalError?: Error) {
+    super(userMessage, originalError);
+    this.userMessage = userMessage;
+    this.userAction = userAction;
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 0,
+      dismissible: true,
+      icon: 'error'
+    };
+  }
+}

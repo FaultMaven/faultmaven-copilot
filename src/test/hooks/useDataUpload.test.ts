@@ -694,3 +694,88 @@ describe('useDataUpload — the submitted row\'s investigation turn (#251)', () 
     }
   });
 });
+
+describe('useDataUpload — a submission that never reached a case says what was not sent (#312)', () => {
+  const file = (name: string) => new File(['x'], name, { type: 'text/plain' });
+  let stub: ReturnType<typeof createStubHost>;
+  const render = () =>
+    renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stub = createStubHost();
+    setHostStore(stub.store);
+    pendingOpsManager.clear();
+    OptimisticIdGenerator.resetCounters();
+    useAppStore.setState({
+      sessionId: 'session-123',
+      activeCaseId: null,
+      conversations: {},
+      titleSources: {},
+      conversationTitles: {},
+      pinnedCases: new Set(),
+    });
+  });
+
+  const submit = async (payload: Parameters<ReturnType<typeof useDataUpload>['handleTurnSubmit']>[0]) => {
+    const { result } = render();
+    let outcome: Awaited<ReturnType<typeof result.current.handleTurnSubmit>> | undefined;
+    await act(async () => {
+      outcome = await result.current.handleTurnSubmit(payload);
+    });
+    return outcome!;
+  };
+
+  it('a 500 on case creation names the file, says it was not added, and reports sent: false', async () => {
+    (api.createCase as any).mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+    const outcome = await submit({ files: [file('app.log')], query: 'Analyze this file.', queryIsGenerated: true });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    const shown = mockShowError.mock.calls[0][0] as { userMessage: string; userAction: string };
+    expect(shown.userMessage).toContain('1 file (app.log) was not added to the case.');
+    expect(shown.userMessage).not.toContain('may not have been');
+    expect(shown.userMessage).toContain('still in the message box');
+    expect(shown.userAction).toBe('Your input is still in the message box.');
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  it('a network error on case creation says the file may not have been added', async () => {
+    (api.createCase as any).mockRejectedValue(new TypeError('Failed to fetch'));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    const shown = mockShowError.mock.calls[0][0] as { userMessage: string };
+    expect(shown.userMessage).toContain('Your message and 1 file (app.log) may not have been added to the case.');
+  });
+
+  it('no session tells the user and reports sent: false', async () => {
+    useAppStore.setState({ sessionId: null });
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)
+      .toContain('app.log');
+    expect(api.createCase).not.toHaveBeenCalled();
+  });
+
+  it('a text-only submission that cannot create a case still says it was not sent', async () => {
+    (api.createCase as any).mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+    const outcome = await submit({ query: 'why is it down?' });
+
+    expect(outcome.sent).toBe(false);
+    expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)
+      .toContain('Your message was not sent.');
+  });
+
+  it('a turn that was sent and failed does not report sent: false (it keeps its own Retry)', async () => {
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    (api.submitTurn as any).mockRejectedValue(Object.assign(new Error('Internal error'), { status: 500 }));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.sent).not.toBe(false);
+    expect(useAppStore.getState().getFailedOperationsForUser()).toHaveLength(1);
+  });
+});
