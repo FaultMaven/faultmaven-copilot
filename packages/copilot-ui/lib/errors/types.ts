@@ -309,6 +309,25 @@ export class ValidationError extends UserFacingError {
 }
 
 /**
+ * An error that carries the server's own answer to "when may I ask again".
+ *
+ * `resilientOperation` waits out `retryAfterMs` before an automatic retry of
+ * any classified error that exposes one (`hasServerDirectedWait`), instead of
+ * keying the wait on one error class. Whether the retry happens at all is the
+ * error's `recovery`, decided before the wait.
+ */
+export interface ServerDirectedWait {
+  readonly retryAfterMs: number;
+}
+
+export function hasServerDirectedWait(
+  error: UserFacingError
+): error is UserFacingError & ServerDirectedWait {
+  const wait = (error as Partial<ServerDirectedWait>).retryAfterMs;
+  return typeof wait === 'number' && Number.isFinite(wait);
+}
+
+/**
  * The longest server-directed wait this client will sit through on its own.
  *
  * The protection middleware's `Retry-After` is measured and deliberately
@@ -355,7 +374,7 @@ export function describeWait(ms: number): string {
 /**
  * Rate limiting error (429)
  */
-export class RateLimitError extends UserFacingError {
+export class RateLimitError extends UserFacingError implements ServerDirectedWait {
   readonly userTitle = 'Too Many Requests';
   readonly userMessage = "You're sending requests too quickly.";
   readonly userAction: string;
@@ -450,6 +469,102 @@ export class CaseVersionConflictError extends UserFacingError {
           // Will be set by error handler
         }
       }]
+    };
+  }
+}
+
+/** Bounds on the wait a `TURN_IN_PROGRESS` 409 asks for, and the wait when it names none. */
+export const TURN_IN_PROGRESS_MIN_WAIT_MS = 1_000;
+export const TURN_IN_PROGRESS_MAX_WAIT_MS = 60_000;
+export const TURN_IN_PROGRESS_DEFAULT_WAIT_MS = 2_000;
+
+/**
+ * 409 `x-error-code: TURN_IN_PROGRESS` (contract 12.2.0): a turn sent under
+ * this `Idempotency-Key` is still running on the server. Nothing is wrong with
+ * the request; the answer is to send the SAME request with the SAME key again
+ * once the first has finished, and that retry replays the committed turn.
+ *
+ * `Retry-After` is the seconds left on the server's claim, which can be most
+ * of a turn's ceiling. It is clamped to [1, 60] s so the panel asks again at
+ * least once a minute, and 2 s stands in when the header is missing. How long
+ * the panel keeps asking is the keyed-turn deadline
+ * (`lib/utils/keyed-turn-retry.ts`), not this class.
+ *
+ * The copy is what the user reads once the panel has stopped asking: the turn
+ * may still commit, and a retry under the same key then returns its reply.
+ */
+export class TurnInProgressError extends UserFacingError implements ServerDirectedWait {
+  readonly userTitle = 'Still Working';
+  readonly userMessage = 'FaultMaven is still working on this message.';
+  readonly userAction = 'Retry in a moment to get its reply.';
+  readonly category: ErrorCategory = 'timeout';
+  readonly recovery: RecoveryStrategy = 'auto_retry_with_delay';
+  readonly retryAfterMs: number;
+
+  constructor(message: string, retryAfterMs?: number, originalError?: Error, context?: ErrorContext) {
+    super(message, originalError, context);
+    this.retryAfterMs = retryAfterMs === undefined || !Number.isFinite(retryAfterMs)
+      ? TURN_IN_PROGRESS_DEFAULT_WAIT_MS
+      : Math.min(Math.max(retryAfterMs, TURN_IN_PROGRESS_MIN_WAIT_MS), TURN_IN_PROGRESS_MAX_WAIT_MS);
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 10000,
+      dismissible: true,
+      icon: 'warning'
+    };
+  }
+}
+
+/**
+ * 409 `x-error-code: IDEMPOTENCY_KEY_REUSE` (contract 12.2.0): this
+ * `Idempotency-Key` already named a DIFFERENT turn on this case. The key is
+ * minted per turn (`aiMessageId`), so this is a client defect: the same key
+ * gets the same refusal, so there is no automatic retry. The manual Retry is a
+ * new logical turn and goes out under a fresh key (`rotateIdempotencyKey`).
+ */
+export class IdempotencyKeyReuseError extends UserFacingError {
+  readonly userTitle = 'Message Not Sent';
+  readonly userMessage = "This message couldn't be sent: its request ID was already used for a different message.";
+  readonly userAction = 'Retry sends it as a new message.';
+  readonly category: ErrorCategory = 'validation';
+  readonly recovery: RecoveryStrategy = 'manual_retry';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 0,
+      dismissible: true,
+      icon: 'error'
+    };
+  }
+}
+
+/**
+ * 409 `x-error-code: IDEMPOTENCY_REPLAY_UNAVAILABLE` (contract 12.2.0): the
+ * turn DID commit, but the server can no longer serve its stored response (a
+ * deploy changed the schema between the commit and this retry). Running it
+ * again is the one wrong answer, so there is no retry; the turn's rows are
+ * read back from the case instead (`cases-slice.reloadCommittedTurn`), and the
+ * local pair is dropped only once that read has merged.
+ */
+export class TurnReplayUnavailableError extends UserFacingError {
+  readonly userTitle = 'Reply Unavailable';
+  readonly userMessage = "Your message was saved, but its reply can't be shown.";
+  readonly userAction = 'Its reply is being loaded from the case.';
+  /** What the turn's bubble says until the reload lands, and after one that failed. */
+  readonly bubbleText = "Your message was saved, but its reply can't be shown. Reload the case to see it.";
+  readonly category: ErrorCategory = 'server';
+  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 10000,
+      dismissible: true,
+      icon: 'info'
     };
   }
 }

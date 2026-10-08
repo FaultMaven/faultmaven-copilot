@@ -16,6 +16,11 @@ import {
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
 import { queryClient } from '../../../lib/api/query-client';
 import { resilientOperation } from '../../../lib/utils/resilient-operation';
+import {
+  idempotencyKeyFor,
+  keyedTurnRetryPolicy,
+  rotateIdempotencyKey,
+} from '../../../lib/utils/keyed-turn-retry';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import { createLogger } from '../../../lib/utils/logger';
@@ -25,7 +30,13 @@ import {
   isAmbiguousFailure,
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
-import { DuplicateUploadNotice, PASTED_TEXT_LABEL, PAGE_CAPTURE_LABEL } from '../../../lib/errors/types';
+import {
+  DuplicateUploadNotice,
+  PASTED_TEXT_LABEL,
+  PAGE_CAPTURE_LABEL,
+  IdempotencyKeyReuseError,
+  TurnReplayUnavailableError,
+} from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
@@ -96,6 +107,7 @@ export function useDataUpload() {
     turnRequest: TurnRequest,
     userMessageId: string,
     aiMessageId: string,
+    presentAtSend: ReadonlySet<string>,
     unsent: UnsentTurn = { attachments: [], hasQuery: false },
   ): Promise<TurnSubmitResult> => {
     // Capture the session epoch before the turn round-trip. A logout while the
@@ -112,8 +124,9 @@ export function useDataUpload() {
           return await submitTurn(targetCaseId, turnRequest, {
             signal: controller.signal,
             // Stable per-turn key so an ambiguous network failure can be safely
-            // retried without submitting a second turn (backend dedupes).
-            idempotencyKey: aiMessageId,
+            // retried without submitting a second turn (backend dedupes), unless
+            // an IDEMPOTENCY_KEY_REUSE refusal rotated it (`idempotencyKeyFor`).
+            idempotencyKey: idempotencyKeyFor(aiMessageId),
           });
         },
         context: {
@@ -128,7 +141,10 @@ export function useDataUpload() {
         // Safe to auto-retry an ambiguous network failure: the request carries a
         // stable Idempotency-Key (aiMessageId), so the backend replays the cached
         // response for a resend instead of committing a second turn.
-        idempotent: true
+        idempotent: true,
+        // A keyed turn also recovers a lost response (client timeout, gateway
+        // 504) and waits out TURN_IN_PROGRESS, under one wall-clock deadline.
+        ...keyedTurnRetryPolicy(),
       });
     } catch (error) {
       // Caller-initiated cancellation (hook unmounted): return silently. Don't
@@ -136,6 +152,31 @@ export function useDataUpload() {
       // waiting on.
       if (controller.signal.aborted) {
         return { success: false, message: '', sent: true };
+      }
+      const classified = ErrorClassifier.classify(error);
+      if (classified instanceof TurnReplayUnavailableError) {
+        // The turn committed (its files with it); only its reply cannot be
+        // served. Nothing failed and there is nothing to retry: read the turn
+        // back from the case. The bubble says so until the read lands, and
+        // keeps saying so if it fails (the pair goes only when the merge lands).
+        log.warn('Committed turn could not be replayed; reloading the case', { caseId: targetCaseId });
+        pendingOpsManager.complete(aiMessageId);
+        setConversations(prev => ({
+          ...prev,
+          [targetCaseId]: (prev[targetCaseId] || []).map(item =>
+            item.id === aiMessageId
+              ? { ...item, response: classified.bubbleText, optimistic: false, loading: false, error: true, failed: false }
+              : item
+          )
+        }));
+        void useAppStore.getState().reloadCommittedTurn(targetCaseId, [userMessageId, aiMessageId]);
+        showError(classified);
+        return { success: true, message: '', sent: true };
+      }
+      if (classified instanceof IdempotencyKeyReuseError) {
+        // The same key can only meet the same 409: the banner's Retry is a new
+        // logical turn and goes out under a fresh one.
+        rotateIdempotencyKey(aiMessageId);
       }
       // Mark the AI item failed WITHOUT rolling back: keeping both messages lets
       // the failed-operation banner offer a retry instead of the turn silently
@@ -147,7 +188,7 @@ export function useDataUpload() {
       // FaultMaven/faultmaven#1882, where the retry's duplicate notice corrects it).
       unsent.ambiguous = isAmbiguousFailure(error);
       const notAdded = unsentAttachmentsNotice(unsent);
-      const formatted = formatErrorForChat(ErrorClassifier.classify(error));
+      const formatted = formatErrorForChat(classified);
       const chatError = notAdded ? `${formatted}\n\n${notAdded}` : formatted;
       setConversations(prev => ({
         ...prev,
@@ -201,7 +242,7 @@ export function useDataUpload() {
       ...prev,
       [targetCaseId]: applyTurnResponse(
         prev[targetCaseId] || [],
-        { user: userMessageId, assistant: aiMessageId },
+        { user: userMessageId, assistant: aiMessageId, presentAtSend },
         turnResponse,
         { emptyResponseText: 'Data uploaded and processed successfully.' }
       ),
@@ -484,6 +525,13 @@ export function useDataUpload() {
         loading: true,
       };
 
+      // The rows already there when the turn is sent: none of them can be the
+      // server's copy of it (`TurnRowIds.presentAtSend`). Taken once, at the
+      // first send, so the banner's Retry still recognises a copy merged since.
+      const presentAtSend: ReadonlySet<string> = new Set(
+        (useAppStore.getState().conversations[targetCaseId!] || []).map(item => item.id)
+      );
+
       setConversations(prev => ({
         ...prev,
         [targetCaseId!]: [...(prev[targetCaseId!] || []), optimisticUserMessage, optimisticAiMessage]
@@ -510,7 +558,7 @@ export function useDataUpload() {
           }));
         },
         retryFn: async () => {
-          await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, unsent);
+          await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, presentAtSend, unsent);
         },
         createdAt: Date.now(),
       };
@@ -520,7 +568,7 @@ export function useDataUpload() {
       // pending op (complete on success, fail-without-rollback on failure) and
       // returns the { success, message } contract UnifiedInputBar expects.
       dispatched = true;
-      return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, unsent);
+      return await submitTurnInBackground(targetCaseId!, turnRequest, userMessageId, aiMessageId, presentAtSend, unsent);
 
     } catch (error) {
       log.error('Turn submission error:', error);

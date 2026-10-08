@@ -1,6 +1,6 @@
 
 import { ErrorClassifier } from '../errors/classifier';
-import { RateLimitError, UserFacingError, ErrorContext } from '../errors/types';
+import { hasServerDirectedWait, UserFacingError, ErrorContext } from '../errors/types';
 import { retryWithBackoff, RetryOptions } from './retry';
 
 export interface ResilientOperationOptions<T> {
@@ -30,6 +30,60 @@ export interface ResilientOperationOptions<T> {
    * already non-retryable via the recovery-strategy map below.)
    */
   idempotent?: boolean;
+
+  /**
+   * Wall-clock bound on the whole operation, in ms from the first attempt.
+   *
+   * Counts the time spent INSIDE each request as well as the waits between
+   * them, measured with `Date.now()` like `POLL_MAX_TOTAL_MS`: a bound that
+   * counted only the sleeps would let a request that hangs to its own timeout
+   * spend nothing of it. No retry is started once the elapsed time plus the
+   * server-directed wait before it would reach the bound; an attempt already
+   * running is not cut short (its own request timeout bounds it), so the worst
+   * case is about `deadlineMs` + one request timeout.
+   *
+   * Applied before `retryOptions.shouldRetry`, so an override cannot outlive it.
+   */
+  deadlineMs?: number;
+}
+
+/**
+ * The retry decision for a classified error, from its recovery strategy.
+ *
+ * Exported so a `retryOptions.shouldRetry` override can COMPOSE with it: an
+ * override replaces this decision entirely (including the non-idempotent
+ * network rule), so one that only wants to add cases must call this for the
+ * rest.
+ */
+export function defaultRetryDecision(
+  classifiedError: UserFacingError,
+  options: { idempotent: boolean }
+): boolean {
+  // Non-idempotent writes must NOT auto-retry an ambiguous network failure:
+  // the request may already have reached the server and committed, so a
+  // retry would duplicate it (e.g. a second turn / a second case). Surface
+  // it instead — the user gets a manual retry affordance and can see whether
+  // it landed.
+  if (!options.idempotent && classifiedError.category === 'network') {
+    return false;
+  }
+
+  // Use the recovery strategy from the error
+  switch (classifiedError.recovery) {
+    case 'retry_with_backoff':
+    case 'auto_retry_with_delay':
+      return true;
+
+    case 'manual_retry':
+    case 'user_fix_required':
+    case 'show_modal':
+    case 'graceful_degradation':
+    case 'rollback_and_retry':
+      return false;
+
+    default:
+      return false;
+  }
 }
 
 /**
@@ -38,7 +92,8 @@ export interface ResilientOperationOptions<T> {
 export async function resilientOperation<T>(
   options: ResilientOperationOptions<T>
 ): Promise<T> {
-  const { operation, context, retryOptions = {}, onError, onFailure, idempotent = true } = options;
+  const { operation, context, retryOptions = {}, onError, onFailure, idempotent = true, deadlineMs } = options;
+  const startedAt = Date.now();
 
   const performOperation = async () => {
     return await operation();
@@ -61,38 +116,20 @@ export async function resilientOperation<T>(
           onError(classifiedError, attempt);
         }
 
+        // The wall-clock bound comes first: nothing below may outlive it.
+        if (deadlineMs !== undefined) {
+          const wait = hasServerDirectedWait(classifiedError) ? classifiedError.retryAfterMs : 0;
+          if (Date.now() - startedAt + wait >= deadlineMs) {
+            return false;
+          }
+        }
+
         // Check explicit retry options first
         if (retryOptions.shouldRetry) {
           return retryOptions.shouldRetry(error, attempt);
         }
 
-        // Non-idempotent writes must NOT auto-retry an ambiguous network failure:
-        // the request may already have reached the server and committed, so a
-        // retry would duplicate it (e.g. a second turn / a second case). Surface
-        // it instead — the user gets a manual retry affordance and can see whether
-        // it landed.
-        if (!idempotent && classifiedError.category === 'network') {
-          return false;
-        }
-
-        // Use the recovery strategy from the error
-        const strategy = classifiedError.recovery;
-        
-        switch (strategy) {
-          case 'retry_with_backoff':
-          case 'auto_retry_with_delay':
-            return true;
-          
-          case 'manual_retry':
-          case 'user_fix_required':
-          case 'show_modal':
-          case 'graceful_degradation':
-          case 'rollback_and_retry':
-            return false;
-            
-          default:
-            return false;
-        }
+        return defaultRetryDecision(classifiedError, { idempotent });
       },
       
       onRetry: async (error, attempt, delay) => {
@@ -100,20 +137,21 @@ export async function resilientOperation<T>(
           await retryOptions.onRetry(error, attempt, delay);
         }
 
-        // Honor Retry-After for rate-limit responses. The classifier surfaces the
-        // server's window as `retryAfterMs` on the RateLimitError. retryWithBackoff
+        // Honor Retry-After for any classified error that carries the server's
+        // wait as `retryAfterMs` (`ServerDirectedWait`: a 429's RateLimitError,
+        // a 409 TURN_IN_PROGRESS's TurnInProgressError). retryWithBackoff
         // sleeps `delay` (generic exponential backoff, ~1–2s) after this callback,
         // so wait only the remainder beyond it — otherwise a 429 carrying a 60s
         // window is retried after ~1s and simply burns its bounded attempts.
         //
         // The wait is honored as given. Whether it is worth sitting on at all
-        // was already decided upstream by RateLimitError.recovery: a wait past
-        // MAX_AUTO_RETRY_WAIT_MS is `manual_retry`, which the switch above
+        // was already decided upstream by the error's recovery: a 429 wait past
+        // MAX_AUTO_RETRY_WAIT_MS is `manual_retry`, which the decision above
         // declines, so nothing that reaches here carries a window this client
         // is unwilling to wait out. Clamping it again here would only shorten
         // an honest wait into a guaranteed refusal.
         const classified = ErrorClassifier.classify(error, context);
-        if (classified instanceof RateLimitError) {
+        if (hasServerDirectedWait(classified)) {
           const retryAfterMs = classified.retryAfterMs;
           if (retryAfterMs > delay) {
             await new Promise(resolve => setTimeout(resolve, retryAfterMs - delay));

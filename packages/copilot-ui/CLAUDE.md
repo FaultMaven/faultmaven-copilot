@@ -26,7 +26,23 @@ This file holds the rules that constrain code *inside* the package.
   sleeps, so a stalled poll made the ceiling unbounded.
 - `resilientOperation` (`lib/utils/resilient-operation.ts`): non-idempotent
   writes pass `idempotent: false` and are not auto-retried on `network`
-  failures (an ambiguous POST may already have committed).
+  failures (an ambiguous POST may already have committed). `deadlineMs` is a
+  wall-clock bound counting in-request time (the `POLL_MAX_TOTAL_MS` rule); a
+  `retryOptions.shouldRetry` override replaces the default decision, so one
+  that adds cases calls `defaultRetryDecision` for the rest.
+- **Keyed turns** (`lib/utils/keyed-turn-retry.ts`, contract 12.2.0). Both turn
+  paths send `Idempotency-Key = idempotencyKeyFor(aiMessageId)` and pass
+  `keyedTurnRetryPolicy()`: a client `TimeoutError` or an UNCODED (gateway) 504
+  is retried with the same key under `KEYED_TURN_DEADLINE_MS`, a coded 504 that
+  says nothing committed (`REQUEST_TIMEOUT`, `LLM_TIMEOUT`) at most once in all,
+  a 409 `TURN_IN_PROGRESS` after its `Retry-After`; a 504 with an unknown code
+  and everything else keep their default decision and attempt count. The retry
+  replays a committed turn (200, `X-Idempotency-Replayed`), so it is reconciled
+  like a first answer. 660 s is a policy number (how long the panel waits for
+  one turn) bounding the START of a retry: the 300 s request timeout is
+  unchanged, so the worst case is about deadline + one request timeout, ~960 s.
+  After `IDEMPOTENCY_KEY_REUSE` the manual Retry is a new logical turn and goes
+  out under a fresh key (`rotateIdempotencyKey`).
 
 ## Errors (`lib/errors/`)
 
@@ -36,8 +52,21 @@ This file holds the rules that constrain code *inside* the package.
 show_modal · `PermissionError` graceful_degradation · `NetworkError`
 retry_with_backoff · `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
-`QuotaExhaustedError` graceful_degradation · `OptimisticUpdateError`
-rollback_and_retry · `RateLimitError` derived (below).
+`QuotaExhaustedError`, `TurnReplayUnavailableError` graceful_degradation ·
+`IdempotencyKeyReuseError` manual_retry (under a fresh key) ·
+`TurnInProgressError` auto_retry_with_delay ·
+`OptimisticUpdateError` rollback_and_retry · `RateLimitError` derived (below).
+
+**A 409 is told apart by `x-error-code`** (contract 12.2.0): `TURN_IN_PROGRESS`
+→ `TurnInProgressError` (`Retry-After` clamped to [1, 60] s, 2 s when absent);
+`IDEMPOTENCY_KEY_REUSE` → `IdempotencyKeyReuseError` (a client defect, never
+auto-retried; the manual Retry rotates the key); `IDEMPOTENCY_REPLAY_UNAVAILABLE`
+→ `TurnReplayUnavailableError` (the turn committed: the bubble says it was
+saved, and `reloadCommittedTurn` reads it back, dropping the local pair only in
+the write that merges the read, so a failed read loses nothing); `CASE_VERSION_CONFLICT` and the unlabelled 409 → `CaseVersionConflictError`.
+`authenticatedFetch` carries `retryAfter` (seconds) on every non-OK, and
+`resilientOperation` waits out any error implementing `ServerDirectedWait`
+(`hasServerDirectedWait`), not one class.
 
 **`RateLimitError` recovery is derived, not fixed.** The protection
 middleware's `Retry-After` is measured and uncapped (seconds for a per-minute
@@ -67,7 +96,7 @@ match on it is real (and the only signal that a file landed when a turn
 committed but the client showed an error). A failed turn that carried
 attachments names them (`unsentAttachmentsNotice`, `lib/state/unsent-attachments.ts`,
 used by the failed-operation banner and the failed assistant bubble): they were
-not added to the case, and Retry sends them again ("may not have been added" when no HTTP response arrived, since the turn may have committed: `isAmbiguousFailure`). A match whose `duplicate_turn` equals the response's `turn_number` is an older server reporting the failed attempt, and is skipped. The text says what
+not added to the case, and Retry sends them again ("may not have been added" when no HTTP response arrived, or a 409 TURN_IN_PROGRESS outlasted the deadline, since the turn may have committed: `isAmbiguousFailure`). A match whose `duplicate_turn` equals the response's `turn_number` is an older server reporting the failed attempt, and is skipped. The text says what
 matched by content, never that the original had the same name, and says
 "nothing new" only of what matched. `duplicate_turn` is the message clock, so
 the turn is printed through `investigationTurnFor` over COMMITTED rows, and left
@@ -95,7 +124,8 @@ and is reconciled to the real id via `idMappingManager`. If the create fails the
 optimistic active-case id is rolled back; both submit paths resolve a stale
 `opt_case_*` (via the mapping, or a fresh real case) before POSTing a turn. Only
 **case** ids are swapped; a message keeps its `opt_msg_*` id until the delta
-fetch reconciles it (below). Pending operations carry `retryFn`/`rollbackFn`.
+fetch reconciles it (below), or until its turn's response finds the server's
+copy already merged (`applyTurnResponse`, below). Pending operations carry `retryFn`/`rollbackFn`.
 
 ## Transcript rows (`lib/state/message-kind.ts`, `cases-slice.handleCaseSelect`)
 
@@ -171,8 +201,23 @@ above makes rows dropped by an older build unreachable for the life of that
 cache, and the delta fetch never re-reads a cached row for a new field (v4
 `investigation_turn`, v5 `sources`).
 
-**Delivery.** `getCaseConversation` has one call site, `handleCaseSelect`, so a
-notice is seen only when the case is re-opened. Live push needs a structured
+**A copy merged while the turn was in flight** (faultmaven#1888). The
+reconciliation skips in-flight rows, so a delta fetch during a keyed turn's wait
+(panel reopened, case switched back) appends the server's copy beside the
+loading pair. `applyTurnResponse` drops that copy and gives the pair its
+identity, matching on the RESPONSE's `turn_number` (never the prediction) and
+slot. Two guards: a row present when the turn was first sent
+(`TurnRowIds.presentAtSend`) is never the copy, and both slots must have exactly
+one candidate (a turn commits atomically, #1882), or nothing changes.
+`POST /cases` with an `initial_message` stamps that row turn 1 while
+`current_turn` stays 0, so the first turn also commits as turn 1.
+
+**Delivery.** `getCaseConversation` has one call site, `fetchConversationDelta`
+(called by `handleCaseSelect`, and by `reloadCommittedTurn` after
+`IDEMPOTENCY_REPLAY_UNAVAILABLE`), so a notice is seen only when the case is
+re-opened. It resolves whether its merge landed; a call that replaces rows
+chains a fresh fetch after one in flight instead of skipping (the one in flight
+may predate the commit). Live push needs a structured
 "background job started" marker on the turn response (none exists; no
 SSE/WebSocket). Re-running the delta merge after each turn has been unblocked
 since #213 but is not built.

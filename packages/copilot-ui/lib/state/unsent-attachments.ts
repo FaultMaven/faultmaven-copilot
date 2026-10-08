@@ -15,7 +15,7 @@
  * error status says "were not added".
  */
 import { ErrorClassifier } from '../errors/classifier';
-import { NetworkError, TimeoutError, TurnNotSentError } from '../errors/types';
+import { NetworkError, TimeoutError, TurnInProgressError, TurnNotSentError } from '../errors/types';
 
 /** Statuses a gateway answers on the API's behalf; the turn may still commit. */
 const GATEWAY_STATUSES = new Set([502, 504]);
@@ -48,11 +48,15 @@ export interface UnsentTurn {
  * Whether a failure leaves it unknown if the turn committed. Classified once,
  * here. A gateway status (502, 504) is ambiguous: the proxy gave up on the API,
  * which may still commit the turn. Any other received HTTP error status is
- * definite. Without a status, a network or timeout error is ambiguous, and
+ * definite, except a 409 TURN_IN_PROGRESS, which says the turn is still
+ * running. Without a status, a network or timeout error is ambiguous, and
  * anything else (a client-side rejection before sending) is definite.
  */
 export function isAmbiguousFailure(error: unknown): boolean {
   const classified = ErrorClassifier.classify(error);
+  // A 409 TURN_IN_PROGRESS is a received status, but its whole content is
+  // that the turn is still running and may yet commit (contract 12.2.0).
+  if (classified instanceof TurnInProgressError) return true;
   // The retry layer hands over an already classified error; the HTTP status
   // lives on the error it wraps.
   const cause = classified.originalError ?? classified;

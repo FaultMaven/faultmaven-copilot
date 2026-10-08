@@ -291,11 +291,22 @@ export async function authenticatedFetch(
       error.status = response.status;
       error.response = { data: errorData };
       // Preserve the backend's typed error code so the classifier can map it
-      // independently of status (e.g. x-error-code: QUOTA_EXHAUSTED → billing).
+      // independently of status (e.g. x-error-code: QUOTA_EXHAUSTED → billing),
+      // and the version pair a CASE_VERSION_CONFLICT carries.
       // Guard against responses/mocks that omit a real Headers object.
       if (response.headers && typeof response.headers.get === 'function') {
-        const errCode = response.headers.get('x-error-code');
-        if (errCode) error.headers = { 'x-error-code': errCode };
+        const signals: Record<string, string> = {};
+        for (const name of ['x-error-code', 'x-expected-version', 'x-actual-version']) {
+          const value = response.headers.get(name);
+          if (value) signals[name] = value;
+        }
+        if (Object.keys(signals).length > 0) error.headers = signals;
+        // Retry-After in seconds, on every non-OK as on the 429 above: a 409
+        // TURN_IN_PROGRESS names the seconds left on the running turn, and a
+        // coded 504 (REQUEST_TIMEOUT, LLM_TIMEOUT) carries one too.
+        const retryAfter = response.headers.get('Retry-After');
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : NaN;
+        if (Number.isFinite(retryAfterSeconds)) error.retryAfter = retryAfterSeconds;
       }
       throw error;
     }
