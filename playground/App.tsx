@@ -152,8 +152,11 @@ export default function App() {
               /* null disables ChatWindow's only network query. */
               sessionId={null}
               hasUnsavedNewChat={false}
-              onQuerySubmit={async (query: string) => echo(query)}
-              onTurnSubmit={async () => ({ success: true, message: 'stub host: nothing sent' })}
+              onQuerySubmit={async (query: string) => {
+                echo(query);
+                return { sent: true };
+              }}
+              onTurnSubmit={async () => ({ success: true, message: 'stub host: nothing sent', sent: true })}
               failedOperations={[] as PendingOperation[]}
               onRetryFailedOperation={() => {}}
               onDismissFailedOperation={() => {}}

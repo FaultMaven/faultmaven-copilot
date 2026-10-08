@@ -18,7 +18,7 @@ import { createLogger } from '../../../lib/utils/logger';
 const log = createLogger('ContentArea');
 import type { UserCase, TurnIntent } from '../../../lib/api';
 import type { OptimisticConversationItem } from '../../../lib/optimistic';
-import type { TurnPayload } from '../components/UnifiedInputBar';
+import type { TurnPayload, TurnSubmitResult, QuerySubmitResult } from '../components/UnifiedInputBar';
 
 export interface ContentAreaProps {
   // Active view (chat-only, no KB tabs)
@@ -39,8 +39,8 @@ export interface ContentAreaProps {
   // Chat callbacks
   /** Render the transcript without a way to add to it. */
   readOnly?: boolean;
-  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<void>;
-  onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
+  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<QuerySubmitResult>;
+  onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   onDocumentView?: (documentId: string) => void;
   onNewChat: () => void;
   onRetryFailedOperation: (operationId: string) => void;

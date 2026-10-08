@@ -353,6 +353,33 @@ describe('useMessageSubmission', () => {
     expect(useAppStore.getState().activeCaseId).toBe('real-case-id');
   });
 
+  it('a failed case creation reports sent: false with a "not sent" toast; a sent query reports sent: true (#312)', async () => {
+    useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+    const { result } = render();
+    (OptimisticIdGenerator.generateCaseId as any).mockReturnValue('opt_case_test');
+    (api.createCase as any).mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+
+    let outcome: any;
+    await act(async () => { outcome = await result.current.handleQuerySubmit('test query'); });
+
+    expect(outcome).toEqual({ sent: false });
+    const shown = mockShowError.mock.calls[0][0] as { userMessage: string };
+    expect(shown.userMessage).toContain('Your message was not sent.');
+    expect(shown.userMessage).toContain('still in the message box');
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  it('a query that is dispatched reports sent: true (#312)', async () => {
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'ok', turn_number: 1, milestones_completed: [], case_state: 'inquiry',
+      progress_made: false, is_stuck: false, attachments_processed: []
+    });
+    const { result } = render();
+    let outcome: any;
+    await act(async () => { outcome = await result.current.handleQuerySubmit('hello'); });
+    expect(outcome).toEqual({ sent: true });
+  });
+
   it('should handle API errors gracefully', async () => {
     const { result } = render();
 

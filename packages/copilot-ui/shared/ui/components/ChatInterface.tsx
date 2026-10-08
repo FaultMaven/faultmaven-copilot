@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChatWindow } from './ChatWindow';
-import { UnifiedInputBar, TurnPayload } from './UnifiedInputBar';
+import { UnifiedInputBar, TurnPayload, TurnSubmitResult, QuerySubmitResult } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase, TurnIntent } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
@@ -14,8 +14,8 @@ interface ChatInterfaceProps {
   loading: boolean;
   submitting: boolean;
   sessionId: string | null;
-  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<void>;
-  onTurnSubmit: (payload: TurnPayload) => Promise<{ success: boolean; message: string }>;
+  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<QuerySubmitResult>;
+  onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   failedOperations: PendingOperation[];
   onRetryFailedOperation: (opId: string) => void;
   onDismissFailedOperation: (opId: string) => void;

@@ -694,3 +694,146 @@ describe('useDataUpload — the submitted row\'s investigation turn (#251)', () 
     }
   });
 });
+
+describe('useDataUpload — a submission that never reached a case says what was not sent (#312)', () => {
+  const file = (name: string) => new File(['x'], name, { type: 'text/plain' });
+  let stub: ReturnType<typeof createStubHost>;
+  const render = () =>
+    renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stub = createStubHost();
+    setHostStore(stub.store);
+    pendingOpsManager.clear();
+    OptimisticIdGenerator.resetCounters();
+    useAppStore.setState({
+      sessionId: 'session-123',
+      activeCaseId: null,
+      conversations: {},
+      titleSources: {},
+      conversationTitles: {},
+      pinnedCases: new Set(),
+    });
+  });
+
+  const submit = async (payload: Parameters<ReturnType<typeof useDataUpload>['handleTurnSubmit']>[0]) => {
+    const { result } = render();
+    let outcome: Awaited<ReturnType<typeof result.current.handleTurnSubmit>> | undefined;
+    await act(async () => {
+      outcome = await result.current.handleTurnSubmit(payload);
+    });
+    return outcome!;
+  };
+
+  it('a 500 on case creation names the file, says it was not sent, and reports sent: false', async () => {
+    (api.createCase as any).mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+    const outcome = await submit({ files: [file('app.log')], query: 'Analyze this file.', queryIsGenerated: true });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    const shown = mockShowError.mock.calls[0][0] as { userMessage: string; userAction: string };
+    expect(shown.userMessage).toContain('1 file (app.log) was not sent.');
+    expect(shown.userMessage).not.toContain('to the case');
+    expect(shown.userMessage).toContain('still in the message box');
+    expect(shown.userAction).toBe('Send again to retry.');
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  it('a network error on case creation still says the file was not sent (the ambiguity is the case\'s)', async () => {
+    (api.createCase as any).mockRejectedValue(new TypeError('Failed to fetch'));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    const shown = mockShowError.mock.calls[0][0] as { userMessage: string };
+    expect(shown.userMessage).toContain('Your message and 1 file (app.log) were not sent.');
+    expect(shown.userMessage).not.toContain('may not have been');
+  });
+
+  it('no session tells the user and reports sent: false', async () => {
+    useAppStore.setState({ sessionId: null });
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)
+      .toContain('app.log');
+    expect((mockShowError.mock.calls[0][0] as { userAction: string }).userAction)
+      .toBe('Sign in first, then send again.');
+    expect(api.createCase).not.toHaveBeenCalled();
+  });
+
+  it('a text-only submission that cannot create a case still says it was not sent', async () => {
+    (api.createCase as any).mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+    const outcome = await submit({ query: 'why is it down?' });
+
+    expect(outcome.sent).toBe(false);
+    expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)
+      .toContain('Your message was not sent.');
+  });
+
+  it('a turn that was sent and failed does not report sent: false (it keeps its own Retry)', async () => {
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    (api.submitTurn as any).mockRejectedValue(Object.assign(new Error('Internal error'), { status: 500 }));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.sent).toBe(true);
+    expect(useAppStore.getState().getFailedOperationsForUser()).toHaveLength(1);
+  });
+
+  it('an ambiguous create failure is retried under the same Idempotency-Key; success clears it', async () => {
+    (api.createCase as any)
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ case_id: 'case-new', state: 'inquiry' });
+    (api.submitTurn as any).mockResolvedValue(okTurnResponse);
+    const { result } = render();
+    await act(async () => { await result.current.handleTurnSubmit({ files: [file('a.log')], query: 'q' }); });
+    // Resend: same hook instance, case still not created in the store.
+    await act(async () => { await result.current.handleTurnSubmit({ files: [file('a.log')], query: 'q' }); });
+    const keys = (api.createCase as any).mock.calls.map((c: any[]) => c[1].idempotencyKey);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+
+    // A later, unrelated new conversation gets a fresh key.
+    act(() => { useAppStore.setState({ activeCaseId: null }); });
+    (api.createCase as any).mockResolvedValueOnce({ case_id: 'case-2', state: 'inquiry' });
+    await act(async () => { await result.current.handleTurnSubmit({ files: [file('b.log')], query: 'q' }); });
+    const third = (api.createCase as any).mock.calls[2][1].idempotencyKey;
+    expect(third).not.toBe(keys[0]);
+  });
+
+  it('a definite create failure does not pin its key', async () => {
+    (api.createCase as any)
+      .mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }))
+      .mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
+    const { result } = render();
+    await act(async () => { await result.current.handleTurnSubmit({ files: [file('a.log')] }); });
+    await act(async () => { await result.current.handleTurnSubmit({ files: [file('a.log')] }); });
+    const keys = (api.createCase as any).mock.calls.map((c: any[]) => c[1].idempotencyKey);
+    expect(keys[1]).not.toBe(keys[0]);
+  });
+
+  it('a throw before dispatch names the file, reports sent: false and leaves no orphan rows', async () => {
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    const spy = vi.spyOn(pendingOpsManager, 'add').mockImplementation(() => { throw new Error('registry broke'); });
+    try {
+      const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+      expect(outcome).toMatchObject({ success: false, sent: false });
+      expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)
+        .toContain('1 file (app.log) were not sent.');
+      expect(useAppStore.getState().conversations['case-new']).toEqual([]);
+      expect(api.submitTurn).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('says "Your submission" rather than a double negative when nothing is attached', async () => {
+    (api.createCase as any).mockRejectedValue(Object.assign(new Error('x'), { status: 500 }));
+    await submit({ pastedContent: '' , query: 'Analyze this file.', queryIsGenerated: true });
+    const msg = (mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage;
+    expect(msg).toContain('Your submission was not sent.');
+    expect(msg).not.toMatch(/not .* not/i);
+  });
+});

@@ -35,7 +35,7 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
 
   beforeEach(() => {
     mockQuerySubmit = vi.fn();
-    mockTurnSubmit = vi.fn().mockResolvedValue({ success: true, message: '' });
+    mockTurnSubmit = vi.fn().mockResolvedValue({ success: true, message: '', sent: true });
   });
 
   function renderBar() {
@@ -188,5 +188,77 @@ describe('UnifiedInputBar — auto-promotion at line threshold', () => {
     expect(mockQuerySubmit).toHaveBeenCalledWith('why is my service down?');
     // Should NOT also fire the unified turn path
     expect(mockTurnSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('UnifiedInputBar — what stays staged when a submission fails (#312)', () => {
+  const stage = async (mockTurnSubmit: any) => {
+    render(
+      <UnifiedInputBar onQuerySubmit={vi.fn()} onTurnSubmit={mockTurnSubmit} />,
+      { wrapper: hostWrapper(createStubHost().host) }
+    );
+    const file = new File(['boom'], 'app.log', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('File input'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/Type your message/i), { target: { value: 'why?' } });
+    await waitFor(() => expect(screen.getByText('app.log')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+  };
+
+  it('keeps the file and the text when the submission never reached the server', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: false, message: 'Server error', sent: false });
+    await stage(turn);
+    await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled());
+    expect(screen.getByText('app.log')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('why?');
+  });
+
+  it('clears everything on success', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: true, message: '', sent: true });
+    await stage(turn);
+    await waitFor(() => expect(screen.queryByText('app.log')).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('');
+  });
+
+  it('clears the file AND the text when a sent turn failed (it has its own Retry)', async () => {
+    const turn = vi.fn().mockResolvedValue({ success: false, message: 'Internal error', sent: true });
+    await stage(turn);
+    await waitFor(() => expect(screen.queryByText('app.log')).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('');
+  });
+
+  describe('a query-only submission', () => {
+    const renderQuery = (onQuerySubmit: any) => {
+      render(
+        <UnifiedInputBar onQuerySubmit={onQuerySubmit} onTurnSubmit={vi.fn()} />,
+        { wrapper: hostWrapper(createStubHost().host) }
+      );
+      const box = screen.getByLabelText(/Type your message/i);
+      fireEvent.change(box, { target: { value: 'why is it down?' } });
+      fireEvent.keyDown(box, { key: 'Enter', shiftKey: false });
+      return box;
+    };
+
+    it('puts the text back when it never reached the server', async () => {
+      const box = renderQuery(vi.fn().mockResolvedValue({ sent: false }));
+      await waitFor(() => expect(box).toHaveValue('why is it down?'));
+    });
+
+    it('does not restore the text when it was sent', async () => {
+      const box = renderQuery(vi.fn().mockResolvedValue({ sent: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(box).toHaveValue('');
+    });
+
+    it('does not overwrite what the user typed in the meantime', async () => {
+      let settle!: (v: { sent: boolean }) => void;
+      const box = renderQuery(vi.fn().mockReturnValue(new Promise((r) => { settle = r; })));
+      fireEvent.change(box, { target: { value: 'something else' } });
+      settle({ sent: false });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(box).toHaveValue('something else');
+    });
   });
 });

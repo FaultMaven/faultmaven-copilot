@@ -36,6 +36,8 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
+import { notSentError } from '../../../lib/state/unsent-attachments';
+import type { QuerySubmitResult } from '../components/UnifiedInputBar';
 
 const log = createLogger('useMessageSubmission');
 
@@ -365,12 +367,12 @@ export function useMessageSubmission() {
     }
   };
 
-  const handleQuerySubmit = async (query: string, intent?: TurnIntent) => {
-    if (!query.trim()) return;
+  const handleQuerySubmit = async (query: string, intent?: TurnIntent): Promise<QuerySubmitResult> => {
+    if (!query.trim()) return { sent: true };
 
     if (submitting) {
       log.warn('Query submission blocked - already submitting');
-      return;
+      return { sent: false };
     }
 
     // Capture the epoch up front: if the user logs out during case creation
@@ -419,17 +421,21 @@ export function useMessageSubmission() {
         // unsaved-new-chat flag so the UI returns to the fresh composer.
         await setActiveCaseId(null);
         setHasUnsavedNewChat(true);
-        showError('Failed to create case. Please try again.');
+        showError(notSentError(
+          { attachments: [], hasQuery: true },
+          'The case could not be created.',
+          error,
+        ));
         setSubmitting(false);
-        return;
+        return { sent: false };
       }
     }
 
     if (!targetCaseId) {
       log.error('CRITICAL: No case ID available');
-      showError('No active case. Please try again.');
+      showError(notSentError({ attachments: [], hasQuery: true }, 'There is no active case.'));
       setSubmitting(false);
-      return;
+      return { sent: false };
     }
 
     // A logout during case creation ends this submission: don't add optimistic
@@ -437,7 +443,7 @@ export function useMessageSubmission() {
     if (epoch !== getEpoch()) {
       log.info('Session changed during submission setup — aborting query submit');
       setSubmitting(false);
-      return;
+      return { sent: false };
     }
 
     log.debug('Creating optimistic messages', { userMessageId, aiMessageId, targetCaseId });
@@ -515,6 +521,7 @@ export function useMessageSubmission() {
     pendingOpsManager.add(pendingOperation);
 
     submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, intent);
+    return { sent: true };
   };
 
   return {
