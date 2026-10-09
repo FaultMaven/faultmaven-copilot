@@ -262,3 +262,143 @@ describe('UnifiedInputBar — what stays staged when a submission fails (#312)',
     });
   });
 });
+
+describe('UnifiedInputBar — a closed case sends nothing it will refuse (#318)', () => {
+  const threshold = INPUT_LIMITS.DATA_MODE_LINE_THRESHOLD;
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n');
+  const renderBar = (props: Record<string, unknown> = {}, query: any = vi.fn().mockResolvedValue({ sent: true }), turn: any = vi.fn().mockResolvedValue({ success: true, message: '', sent: true })) => {
+    const view = render(
+      <UnifiedInputBar onQuerySubmit={query} onTurnSubmit={turn} {...props} />,
+      { wrapper: hostWrapper(createStubHost().host) },
+    );
+    return { ...view, query, turn };
+  };
+  const box = () => screen.getByLabelText(/Type your message/i);
+  const send = () => fireEvent.click(screen.getByRole('button', { name: /send/i }));
+  const dropOf = (file: File) => ({ dataTransfer: { types: ['Files'], files: [file], dropEffect: '' } });
+
+  it('a drop stages nothing and shows no overlay when attachments are disabled', () => {
+    renderBar({ disableAttachments: true });
+    const file = new File(['x'], 'dropped.log', { type: 'text/plain' });
+    fireEvent.dragEnter(box(), dropOf(file));
+    expect(screen.queryByText(/drop file here/i)).not.toBeInTheDocument();
+    fireEvent.drop(box(), dropOf(file));
+    expect(screen.queryByText('dropped.log')).not.toBeInTheDocument();
+  });
+
+  it('contrast: the same drop stages the file when attachments are enabled', async () => {
+    renderBar();
+    const file = new File(['x'], 'dropped.log', { type: 'text/plain' });
+    fireEvent.drop(box(), dropOf(file));
+    await waitFor(() => expect(screen.getByText('dropped.log')).toBeInTheDocument());
+  });
+
+  it('100+ lines go as an ordinary question, not as pasted data', async () => {
+    const { query, turn } = renderBar({ disableAttachments: true });
+    fireEvent.change(box(), { target: { value: lines(threshold + 5) } });
+    send();
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(1));
+    expect(query.mock.calls[0][0]).toContain('line 1');
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it('a composer already in data mode leaves it, keeping the text, when the case turns terminal', async () => {
+    const q = vi.fn(); const t = vi.fn();
+    const host = hostWrapper(createStubHost().host);
+    const { rerender } = render(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} />, { wrapper: host });
+    fireEvent.change(box(), { target: { value: lines(threshold + 5) } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).toBeInTheDocument());
+    rerender(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} disableAttachments />);
+    send();
+    await waitFor(() => expect(q).toHaveBeenCalledTimes(1));
+    expect(t).not.toHaveBeenCalled();
+    expect(box()).toHaveValue('');
+  });
+
+  it('an attachment staged before the case turned terminal is not sent; the content stays', async () => {
+    const q = vi.fn(); const t = vi.fn();
+    const host = hostWrapper(createStubHost().host);
+    const { rerender } = render(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} />, { wrapper: host });
+    const file = new File(['x'], 'app.log', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('File input'), { target: { files: [file] } });
+    fireEvent.change(box(), { target: { value: 'why?' } });
+    await waitFor(() => expect(screen.getByText('app.log')).toBeInTheDocument());
+    rerender(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} disableAttachments />);
+    send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/closed case/i);
+    expect(q).not.toHaveBeenCalled();
+    expect(t).not.toHaveBeenCalled();
+    expect(screen.getByText('app.log')).toBeInTheDocument();
+    expect(box()).toHaveValue('why?');
+  });
+
+  it('a drag over a closed case shows no copy cursor', () => {
+    renderBar({ disableAttachments: true });
+    const dt = { types: ['Files'], files: [], dropEffect: '' };
+    fireEvent.dragOver(box(), { dataTransfer: dt });
+    expect(dt.dropEffect).toBe('none');
+  });
+
+  it('a pasted block staged before the case turned terminal is not sent; it stays', async () => {
+    const q = vi.fn(); const t = vi.fn();
+    const { rerender } = render(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} />, { wrapper: hostWrapper(createStubHost().host) });
+    fireEvent.click(screen.getByRole('button', { name: /paste data/i }));
+    fireEvent.change(screen.getByLabelText('Paste data content'), { target: { value: 'ERROR boom' } });
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    await waitFor(() => expect(screen.getByText(/Pasted context/)).toBeInTheDocument());
+    rerender(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} disableAttachments />);
+    send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/closed case/i);
+    expect(t).not.toHaveBeenCalled();
+    expect(q).not.toHaveBeenCalled();
+    expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
+  });
+
+  it('a captured page staged before the case turned terminal is not sent; it stays', async () => {
+    const q = vi.fn(); const t = vi.fn();
+    const { rerender } = render(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} />, { wrapper: hostWrapper(createStubHost().host) });
+    fireEvent.click(screen.getByRole('button', { name: /analyze current page/i }));
+    await waitFor(() => expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument());
+    rerender(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} disableAttachments />);
+    send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/closed case/i);
+    expect(t).not.toHaveBeenCalled();
+    expect(q).not.toHaveBeenCalled();
+    expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument();
+  });
+
+  describe('a refused turn', () => {
+    const stagePaste = async (turn: any) => {
+      renderBar({}, vi.fn(), turn);
+      fireEvent.change(box(), { target: { value: lines(threshold + 5) } });
+      await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled());
+      send();
+      await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
+    };
+
+    it('keeps the pasted text', async () => {
+      const turn = vi.fn().mockResolvedValue({ success: false, message: 'closed', sent: true, refused: true });
+      await stagePaste(turn);
+      await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled());
+      expect((box() as HTMLTextAreaElement).value).toContain(`line ${threshold + 5}`);
+    });
+
+    it('keeps a staged file too', async () => {
+      const turn = vi.fn().mockResolvedValue({ success: false, message: 'closed', sent: true, refused: true });
+      renderBar({}, vi.fn(), turn);
+      const file = new File(['x'], 'app.log', { type: 'text/plain' });
+      fireEvent.change(screen.getByLabelText('File input'), { target: { files: [file] } });
+      await waitFor(() => expect(screen.getByText('app.log')).toBeInTheDocument());
+      send();
+      await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled());
+      expect(screen.getByText('app.log')).toBeInTheDocument();
+    });
+
+    it('contrast: a sent, failed (not refused) turn still clears the box', async () => {
+      const turn = vi.fn().mockResolvedValue({ success: false, message: 'boom', sent: true });
+      await stagePaste(turn);
+      await waitFor(() => expect(box()).toHaveValue(''));
+    });
+  });
+});

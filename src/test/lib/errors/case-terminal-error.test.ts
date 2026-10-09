@@ -83,7 +83,7 @@ describe('ErrorClassifier — 409 CASE_TERMINAL', () => {
       { attachments: [{ name: 'app.log', isFile: true }], hasQuery: false },
       { noRetry: true },
     );
-    expect(notice).toBe('1 file (app.log) was not added to the case.');
+    expect(notice).toBe('1 file (app.log) was not added to the case. It is still in the message box.');
   });
 });
 
