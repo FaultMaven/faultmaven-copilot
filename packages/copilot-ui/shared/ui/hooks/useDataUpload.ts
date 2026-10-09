@@ -195,7 +195,7 @@ export function useDataUpload() {
         }));
         void useAppStore.getState().refreshActiveCase(targetCaseId);
         showError(classified);
-        return { success: false, message: classified.userMessage, sent: true };
+        return { success: false, message: classified.userMessage, sent: true, refused: true };
       }
       if (classified instanceof IdempotencyKeyReuseError) {
         // The same key can only meet the same 409: the banner's Retry is a new

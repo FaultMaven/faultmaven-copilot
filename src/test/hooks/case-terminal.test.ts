@@ -199,16 +199,34 @@ describe('409 CASE_TERMINAL (contract 12.3.0)', () => {
     await advance(700_000);
 
     expect(sent('POST', TURNS_URL)).toHaveLength(1);
-    // Sent and refused: the composer clears (the attachment controls are off now).
-    expect(outcome).toMatchObject({ success: false, sent: true });
+    // Sent and refused: flagged `refused` so the composer keeps what was staged.
+    expect(outcome).toMatchObject({ success: false, sent: true, refused: true });
     expectClosedAndFinal();
     const bubble = assistant();
     expect(bubble?.response).toBe(
       'This case is closed and read-only. You can still ask questions about it.\n\n' +
-        'Your message and 1 file (app.log) were not added to the case.',
+        'Your message and 1 file (app.log) were not added to the case. They are still in the message box.',
     );
     expect(bubble).toMatchObject({ error: true, failed: false });
     expect(bubble?.response).not.toMatch(/updated|retry/i);
+  });
+
+  it('upload path, pasted content (#318): reported refused, so the composer keeps the paste', async () => {
+    routeWire(() => caseTerminal('Cannot submit new data to a closed case. Only questions about the case are allowed.'));
+    const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+    let outcome: { success: boolean; sent: boolean; refused?: boolean } | undefined;
+    await act(async () => {
+      outcome = await result.current.handleTurnSubmit({
+        query: 'Analyze the pasted data for errors, patterns, and relevant details.',
+        queryIsGenerated: true,
+        pastedContent: 'ERROR x\n'.repeat(120),
+        inputType: 'paste',
+      });
+    });
+    await advance(700_000);
+
+    expect(sent('POST', TURNS_URL)).toHaveLength(1);
+    expect(outcome).toMatchObject({ success: false, sent: true, refused: true });
   });
 
   // The panel's own wiring (`titleChangeDeps`), as `CopilotPanel` passes it.
