@@ -47,6 +47,7 @@ import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
+import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useMessageSubmission');
 
@@ -60,7 +61,7 @@ const log = createLogger('useMessageSubmission');
 // (fm#1069). Two triggers for one job is how they disagree; the client keeps the
 // user-initiated "Generate title" action in ConversationsList and nothing else.
 
-export function useMessageSubmission() {
+export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
   const [submitting, setSubmitting] = useState(false);
   const { showError } = useError();
 
@@ -257,6 +258,7 @@ export function useMessageSubmission() {
           }
 
           queryClient.invalidateQueries({ queryKey: ['caseUI', caseId] });
+          notifyCaseChanged(onCaseChanged, caseId);
 
           return response;
         },

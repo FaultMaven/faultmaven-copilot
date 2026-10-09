@@ -45,10 +45,11 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
+import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useDataUpload');
 
-export function useDataUpload() {
+export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
   const [loading, setLoading] = useState(false);
   const { showError } = useError();
 
@@ -257,6 +258,7 @@ export function useDataUpload() {
     }
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
+    notifyCaseChanged(onCaseChanged, targetCaseId);
 
     // The conversation as submitted: `duplicateUploads` labels an original's
     // turn from the rows that were committed before this one.
