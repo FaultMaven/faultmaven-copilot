@@ -172,6 +172,10 @@ const arePropsEqual = (prevProps: ContentAreaProps, nextProps: ContentAreaProps)
   // Always re-render on case change
   if (prevProps.activeCaseId !== nextProps.activeCaseId) return false;
 
+  // Re-render when the viewer's right to write changes (a case hydrated as
+  // someone else's, a 403): the composer appears or goes with it.
+  if (prevProps.readOnly !== nextProps.readOnly) return false;
+
   // Re-render on loading state changes
   if (prevProps.loading !== nextProps.loading) return false;
   if (prevProps.submitting !== nextProps.submitting) return false;

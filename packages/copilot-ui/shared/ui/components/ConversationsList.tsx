@@ -13,6 +13,7 @@ import {
 import { idMappingManager } from '../../../lib/optimistic';
 import { selectCaseTitle } from '../../../lib/state/case-title';
 import { createLogger } from '../../../lib/utils/logger';
+import { isOwnedByOther } from '../../../lib/cases/ownership';
 
 const log = createLogger('ConversationsList');
 
@@ -62,6 +63,12 @@ interface ConversationsListProps {
   onCaseTitleChange?: (caseId: string, newTitle: string, source: 'user' | 'backend') => void;
   pinnedCases?: Set<string>;
   onPinToggle?: (caseId: string) => void;
+  /**
+   * The signed-in user's id. A row whose owner is someone else is a case shared
+   * with this user: it stays in the list, marked, and offers no rename, title
+   * generation or delete — all owner-only on the server.
+   */
+  currentUserId?: string;
 }
 
 export function ConversationsList({
@@ -76,7 +83,8 @@ export function ConversationsList({
   onCasesLoaded,
   onCaseTitleChange,
   pinnedCases = new Set(),
-  onPinToggle
+  onPinToggle,
+  currentUserId
 }: ConversationsListProps) {
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
@@ -418,7 +426,9 @@ export function ConversationsList({
         </h3>
         {!isCollapsed && (
           <div id={panelId} role="region" aria-labelledby={headerId}>
-            {items.map((c) => (
+            {items.map((c) => {
+              const shared = isOwnedByOther(c, currentUserId);
+              return (
               <ConversationItem
                 key={c.case_id}
                 session={{ session_id: c.case_id, created_at: c.created_at || '', status: 'active', last_activity: c.updated_at || '', metadata: {} } as any}
@@ -427,12 +437,14 @@ export function ConversationsList({
                 isUnsavedNew={false}
                 isPinned={pinnedCases.has(c.case_id)}
                 onSelect={(id) => onCaseSelect && onCaseSelect(id)}
-                onDelete={(id) => handleDeleteCase(id)}
-                onRename={(id, t) => handleRenameCase(id, t)}
-                onGenerateTitle={(id) => handleGenerateTitle(id)}
+                isShared={shared}
+                onDelete={shared ? undefined : (id) => handleDeleteCase(id)}
+                onRename={shared ? undefined : (id, t) => handleRenameCase(id, t)}
+                onGenerateTitle={shared ? undefined : (id) => handleGenerateTitle(id)}
                 onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
               />
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

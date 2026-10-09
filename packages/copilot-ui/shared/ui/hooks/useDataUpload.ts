@@ -37,6 +37,7 @@ import {
   IdempotencyKeyReuseError,
   TurnReplayUnavailableError,
   CaseTerminalError,
+  PermissionError,
 } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
@@ -45,6 +46,7 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
+import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useDataUpload');
@@ -198,6 +200,20 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         }));
         void useAppStore.getState().refreshActiveCase(targetCaseId);
         showError(classified);
+        return { success: false, message: classified.userMessage, sent: true, refused: true };
+      }
+      if (classified instanceof PermissionError) {
+        // The server refused this viewer's write (403): nothing was added, and
+        // resending can only meet the same refusal. No failed op, no Retry.
+        log.warn('Turn refused: this viewer may not write the case', { caseId: targetCaseId });
+        pendingOpsManager.remove(aiMessageId);
+        applyWriteRefused({
+          caseId: targetCaseId,
+          aiMessageId,
+          fallbackText: classified.userMessage,
+          epoch,
+          setConversations,
+        });
         return { success: false, message: classified.userMessage, sent: true, refused: true };
       }
       if (classified instanceof IdempotencyKeyReuseError) {

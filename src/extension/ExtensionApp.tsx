@@ -19,6 +19,7 @@ import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
 import { ErrorBoundary } from '@faultmaven/copilot-ui/shared/ui/components/ErrorBoundary';
 import { LoadingScreen } from '@faultmaven/copilot-ui/shared/ui/components/LoadingScreen';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { isOwnedByOther } from '@faultmaven/copilot-ui/lib/cases/ownership';
 import {
   clearSessionEnding,
   markSessionEnding,
@@ -69,6 +70,14 @@ export function ExtensionApp() {
   const currentUser = useAppStore((state) => state.currentUser);
   const setSignedInUser = useAppStore((state) => state.setSignedInUser);
   const applyHostAuthState = useAppStore((state) => state.applyHostAuthState);
+
+  // A team share is read-only (fm#1898): the panel lists and opens a teammate's
+  // case, and this host says it is not the signed-in user's to write. Computed
+  // from the open case and the CURRENT user's id on every render, so it covers
+  // each way a case becomes current (list click, restored last case, a case
+  // created here) and re-evaluates when the signed-in user changes.
+  const activeCaseOwnerId = useAppStore((state) => state.activeCase?.owner_id);
+  const activeCaseIsShared = isOwnedByOther({ owner_id: activeCaseOwnerId }, currentUser?.id);
 
   // Set when a deliberate sign-out could not be confirmed to have ended every
   // session for the account. Not an error — the local sign-out succeeded — but
@@ -358,7 +367,7 @@ export function ExtensionApp() {
     );
   }
 
-  return <CopilotPanel host={host} />;
+  return <CopilotPanel host={host} readOnly={activeCaseIsShared} />;
 }
 
 export default ExtensionApp;

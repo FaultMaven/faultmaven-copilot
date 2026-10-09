@@ -8,6 +8,8 @@ interface ConversationItemProps {
   isActive: boolean;
   isUnsavedNew?: boolean;
   isPinned?: boolean;
+  /** Someone else's case, shared with this user: read-only, so marked as such. */
+  isShared?: boolean;
   onSelect: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
   onRename?: (sessionId: string, newTitle: string) => void;
@@ -21,6 +23,7 @@ export function ConversationItem({
   isActive,
   isUnsavedNew = false,
   isPinned = false,
+  isShared = false,
   onSelect,
   onDelete,
   onRename,
@@ -163,6 +166,14 @@ export function ConversationItem({
                     }`}></div>
                 )}
               </div>
+              {isShared && (
+                <span
+                  className="text-xs text-fm-text-tertiary bg-fm-elevated px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+                  title="Shared with you — read-only"
+                >
+                  Shared
+                </span>
+              )}
               {isUnsavedNew && (
                 <span className="text-xs text-fm-text-tertiary bg-fm-elevated px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
                   Draft

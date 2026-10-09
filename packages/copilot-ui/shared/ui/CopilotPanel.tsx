@@ -142,6 +142,15 @@ export interface CopilotPanelProps {
    * and ignore the others.
    */
   onCaseChanged?: (caseId: string) => void;
+  /**
+   * The host's live verdict: this viewer may read the open case and not write
+   * it. Unlike `initialCase.readOnly`, which is the host's answer for the case
+   * it opened the panel on, this follows the case as the user moves between
+   * cases, so a host whose user picks cases inside the panel (the extension)
+   * can say "this one is somebody else's" for each. Either one makes the panel
+   * read-only; neither is re-decided here.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -157,6 +166,7 @@ export default function CopilotPanel({
   initialCase,
   chrome = 'full',
   onCaseChanged,
+  readOnly: hostReadOnly,
 }: CopilotPanelProps) {
   return (
     // The panel's OWN query client, always, and not one the host passes in.
@@ -180,6 +190,7 @@ export default function CopilotPanel({
             initialCase={initialCase}
             chrome={chrome}
             onCaseChanged={onCaseChanged}
+            hostReadOnly={hostReadOnly === true}
           />
         </ErrorHandlerProvider>
       </HostAdapterProvider>
@@ -193,11 +204,13 @@ function CopilotPanelContent({
   initialCase,
   chrome,
   onCaseChanged,
+  hostReadOnly,
 }: {
   session: WiredHost['session'];
   initialCase?: InitialCase;
   chrome: PanelChrome;
   onCaseChanged?: (caseId: string) => void;
+  hostReadOnly: boolean;
 }) {
   const { navigation } = useHost();
 
@@ -301,7 +314,16 @@ function CopilotPanelContent({
   // A host may open a case this user can read and not write. The flag holds
   // for the life of the mount: the panel does not re-decide it, because the
   // question — is this viewer the owner — is the host's.
-  const readOnly = initialCase?.kind === 'existing' && initialCase.readOnly === true;
+  //
+  // The server's refusal is also an answer: a 403 on a write marks the case
+  // denied, and a denied case is read-only whatever ownership data said.
+  const writeDenied = useAppStore((state) =>
+    state.activeCaseId ? state.writeDeniedCaseIds[state.activeCaseId] === true : false,
+  );
+  const readOnly =
+    hostReadOnly ||
+    writeDenied ||
+    (initialCase?.kind === 'existing' && initialCase.readOnly === true);
 
   // --- Data Recovery ---
   //

@@ -35,8 +35,15 @@ export interface CasesSlice {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   pinnedCases: Set<string>;
+  /**
+   * Cases the server refused a write on (403) this session. The ownership the
+   * client holds can be stale; a refusal is the server's own word that this
+   * viewer may not write, so the case renders read-only from then on.
+   */
+  writeDeniedCaseIds: Record<string, true>;
 
   // Actions
+  markWriteDenied: (caseId: string) => void;
   setActiveCaseId: (caseId: string | null | undefined) => Promise<void>;
   setActiveCase: (caseObj: UserCase | null | ((prev: UserCase | null) => UserCase | null)) => void;
   setConversations: (updater: Record<string, OptimisticConversationItem[]> | ((prev: Record<string, OptimisticConversationItem[]>) => Record<string, OptimisticConversationItem[]>)) => void;
@@ -85,6 +92,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     conversationTitles: {},
     titleSources: {},
     pinnedCases: new Set(),
+    writeDeniedCaseIds: {},
+
+    markWriteDenied: (caseId) =>
+      set((state) =>
+        state.writeDeniedCaseIds[caseId]
+          ? state
+          : { writeDeniedCaseIds: { ...state.writeDeniedCaseIds, [caseId]: true as const } },
+      ),
 
     setActiveCaseId: async (caseId) => {
       const targetId = caseId || null;

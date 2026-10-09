@@ -8,7 +8,7 @@
  * split — and both survived a mutation that removed them.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -118,9 +118,9 @@ vi.mock('../../extension/auth/local-auth-client', () => ({
 // hands over; rendering the real panel would pull every hook it owns into a
 // test about the gate above it.
 vi.mock('@faultmaven/copilot-ui/shared/ui/CopilotPanel', () => ({
-  default: ({ host }: any) => {
+  default: ({ host, readOnly }: any) => {
     capturedSignOut.current(host.session.signOut);
-    return <div data-testid="panel-probe" />;
+    return <div data-testid="panel-probe" data-readonly={String(readOnly)} />;
   },
 }));
 import { ExtensionApp } from '../../extension/ExtensionApp';
@@ -536,5 +536,83 @@ describe('the extension session signs out', () => {
 
     await screen.findByText(/Sign in with/i);
     expect(screen.queryByText(/could not confirm your other FaultMaven sessions/i)).toBeNull();
+  });
+});
+
+
+/**
+ * A team share is read-only (fm#1898): the extension host computes the verdict
+ * from the open case's owner and the CURRENT user's id, and hands it to the
+ * panel's existing `readOnly`. The panel is a probe here, so what is asserted is
+ * what the entry decides.
+ */
+describe('ExtensionApp — a case shared with the signed-in user is read-only', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.isAuthenticated = true;
+    messageListeners.length = 0;
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    detectExtensionReload.mockResolvedValue(false);
+    useAppStore.setState({
+      currentUser: null,
+      hasCompletedFirstRun: null,
+      initializingCapabilities: true,
+      capabilitiesError: null,
+      capabilities: null,
+      activeCase: null,
+    });
+  });
+
+  const openCaseOwnedBy = (ownerId: string) =>
+    useAppStore.setState({
+      activeCase: { case_id: 'c1', title: 't', state: 'investigating', owner_id: ownerId } as never,
+    });
+  const readOnlyOf = async () =>
+    (await screen.findByTestId('panel-probe')).getAttribute('data-readonly');
+
+  it('the signed-in user’s own case is writable', async () => {
+    openCaseOwnedBy('u1');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+  });
+
+  it('a case another user owns is read-only', async () => {
+    openCaseOwnedBy('u2');
+    renderApp();
+    expect(await readOnlyOf()).toBe('true');
+  });
+
+  it('follows the case as the user opens another one in the panel', async () => {
+    openCaseOwnedBy('u1');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+
+    act(() => openCaseOwnedBy('u2'));
+    await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('true'));
+
+    act(() => openCaseOwnedBy('u1'));
+    await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('false'));
+  });
+
+  // Account switch: ownership is judged against whoever is signed in NOW, so the
+  // same case row flips with the identity — nothing is cached per account.
+  it('is re-evaluated when the signed-in user changes', async () => {
+    openCaseOwnedBy('u2');
+    renderApp();
+    expect(await readOnlyOf()).toBe('true');
+
+    act(() =>
+      useAppStore.setState({
+        currentUser: { id: 'u2', username: 'other', roles: ['user'] } as never,
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('false'));
+  });
+
+  it('a case that names no owner yet (placeholder before hydration) is not called shared', async () => {
+    openCaseOwnedBy('');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
   });
 });

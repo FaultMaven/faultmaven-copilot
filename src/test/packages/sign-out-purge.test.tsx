@@ -84,6 +84,7 @@ describe('a null auth state purges the panel', () => {
       conversations: SEEDED.conversations,
       conversationTitles: SEEDED.conversationTitles,
       pinnedCases: new Set(['case-1']),
+      writeDeniedCaseIds: { 'case-1': true },
       activeCaseId: 'case-1',
       hasUnsavedNewChat: false,
     } as never);
@@ -121,6 +122,8 @@ describe('a null auth state purges the panel', () => {
       expect(s.conversations).toEqual({});
       expect(s.conversationTitles).toEqual({});
       expect(s.pinnedCases.size).toBe(0);
+      // A refusal belongs to the account that met it (fm#1898).
+      expect(s.writeDeniedCaseIds).toEqual({});
       expect(s.activeCaseId).toBeNull();
     });
   });

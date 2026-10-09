@@ -46,6 +46,8 @@ interface ChatWindowProps {
   onQuerySubmit: (query: string, intent?: TurnIntent) => void;
   onDocumentView?: (documentId: string) => void;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
+  /** The viewer may read this case, not write it: nothing here submits a turn. */
+  readOnly?: boolean;
 }
 
 // PERFORMANCE OPTIMIZATION: Memoized component to prevent unnecessary re-renders
@@ -58,7 +60,8 @@ const ChatWindowComponent = function ChatWindow({
   className = '',
   onQuerySubmit,
   onDocumentView,
-  setActiveCase
+  setActiveCase,
+  readOnly = false
 }: ChatWindowProps) {
   // Evidence panel state removed — case header handles evidence display.
 
@@ -236,7 +239,7 @@ const ChatWindowComponent = function ChatWindow({
 
   // handleViewAnalysis removed — case header handles evidence display.
 
-  const canInteract = Boolean(activeCase) || Boolean(isNewUnsavedChat);
+  const canInteract = !readOnly && (Boolean(activeCase) || Boolean(isNewUnsavedChat));
 
   // Sync activeCase.state from the backend exactly once per case-switch.
   // activeCase defaults to 'inquiry' in SidePanelApp before the first fetch
@@ -307,7 +310,7 @@ const ChatWindowComponent = function ChatWindow({
           loading={caseLoading}
           error={caseError}
           initialExpanded={false}
-          onStatusChangeRequest={handleStatusChangeRequest}
+          onStatusChangeRequest={readOnly ? undefined : handleStatusChangeRequest}
           onScrollToTurn={scrollToTurn}
           turnLabel={turnLabel}
         />
@@ -456,8 +459,8 @@ const ChatWindowComponent = function ChatWindow({
                       content={item.response || ''}
                       sources={item.sources}
                       onDocumentView={onDocumentView}
-                      onConfirmationYes={handleConfirmationYes}
-                      onConfirmationNo={handleConfirmationNo}
+                      onConfirmationYes={readOnly ? undefined : handleConfirmationYes}
+                      onConfirmationNo={readOnly ? undefined : handleConfirmationNo}
                       className="break-words text-body"
                     />
 
@@ -574,7 +577,8 @@ export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
     prevProps.activeCase?.closed_at === nextProps.activeCase?.closed_at &&
     prevProps.loading === nextProps.loading &&
     prevProps.sessionId === nextProps.sessionId &&
-    prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat
+    prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat &&
+    prevProps.readOnly === nextProps.readOnly
   );
 });
 
