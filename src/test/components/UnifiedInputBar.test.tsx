@@ -332,6 +332,41 @@ describe('UnifiedInputBar — a closed case sends nothing it will refuse (#318)'
     expect(box()).toHaveValue('why?');
   });
 
+  it('a drag over a closed case shows no copy cursor', () => {
+    renderBar({ disableAttachments: true });
+    const dt = { types: ['Files'], files: [], dropEffect: '' };
+    fireEvent.dragOver(box(), { dataTransfer: dt });
+    expect(dt.dropEffect).toBe('none');
+  });
+
+  it('a pasted block staged before the case turned terminal is not sent; it stays', async () => {
+    const q = vi.fn(); const t = vi.fn();
+    const { rerender } = render(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} />, { wrapper: hostWrapper(createStubHost().host) });
+    fireEvent.click(screen.getByRole('button', { name: /paste data/i }));
+    fireEvent.change(screen.getByLabelText('Paste data content'), { target: { value: 'ERROR boom' } });
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    await waitFor(() => expect(screen.getByText(/Pasted context/)).toBeInTheDocument());
+    rerender(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} disableAttachments />);
+    send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/closed case/i);
+    expect(t).not.toHaveBeenCalled();
+    expect(q).not.toHaveBeenCalled();
+    expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
+  });
+
+  it('a captured page staged before the case turned terminal is not sent; it stays', async () => {
+    const q = vi.fn(); const t = vi.fn();
+    const { rerender } = render(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} />, { wrapper: hostWrapper(createStubHost().host) });
+    fireEvent.click(screen.getByRole('button', { name: /analyze current page/i }));
+    await waitFor(() => expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument());
+    rerender(<UnifiedInputBar onQuerySubmit={q} onTurnSubmit={t} disableAttachments />);
+    send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/closed case/i);
+    expect(t).not.toHaveBeenCalled();
+    expect(q).not.toHaveBeenCalled();
+    expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument();
+  });
+
   describe('a refused turn', () => {
     const stagePaste = async (turn: any) => {
       renderBar({}, vi.fn(), turn);

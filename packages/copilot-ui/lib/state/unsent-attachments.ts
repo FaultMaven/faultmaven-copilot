@@ -102,7 +102,7 @@ export function unsentAttachmentsNotice(
     return `${lead} ${verb} not sent.`;
   }
   if (options.noRetry) {
-    return `${lead} ${outcome} to the case.`;
+    return `${lead} ${outcome} to the case. ${them === 'it' ? 'It is' : 'They are'} still in the message box.`;
   }
   return `${lead} ${outcome} to the case. Retry sends ${them} again.`;
 }

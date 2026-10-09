@@ -205,7 +205,7 @@ describe('409 CASE_TERMINAL (contract 12.3.0)', () => {
     const bubble = assistant();
     expect(bubble?.response).toBe(
       'This case is closed and read-only. You can still ask questions about it.\n\n' +
-        'Your message and 1 file (app.log) were not added to the case.',
+        'Your message and 1 file (app.log) were not added to the case. They are still in the message box.',
     );
     expect(bubble).toMatchObject({ error: true, failed: false });
     expect(bubble?.response).not.toMatch(/updated|retry/i);

@@ -26,7 +26,9 @@ import { INPUT_LIMITS } from '../layouts/constants';
  * never reached the server (no session, case creation failed): the composer
  * keeps the staged input so sending again needs no re-pick. A turn that WAS sent
  * and failed keeps its own Retry through the pending operation, so it reports
- * `sent: true`, and the composer clears everything.
+ * `sent: true`, and the composer clears everything. The exception is a turn the
+ * server refused outright (`refused`, a 409 `CASE_TERMINAL`): nothing was stored
+ * and there is no Retry, so the composer keeps what was staged.
  */
 export type QuerySubmitResult = { sent: boolean };
 
@@ -497,7 +499,7 @@ export function UnifiedInputBar({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = disableAttachments ? 'none' : 'copy';
   };
 
   const handleDrop = (e: React.DragEvent) => {

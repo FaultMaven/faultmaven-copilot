@@ -66,7 +66,9 @@ saved, and `reloadCommittedTurn` reads it back, dropping the local pair only in
 the write that merges the read, so a failed read loses nothing); `CASE_TERMINAL`, on
 any route → `CaseTerminalError` (the case is resolved or closed: never retried,
 no Retry anywhere. Both turn hooks remove the pending op instead of failing it,
-put the reason in the bubble, naming any attachments that were not added, and
+put the reason in the bubble, naming any attachments that were not added and saying they are still in the
+message box (the turn result carries `refused`, so the composer keeps the refused
+text and attachments instead of clearing), and
 call `refreshActiveCase` so the panel shows the case closed; the title rename
 (`titleChangeDeps`, `lib/state/case-title-deps.ts`) rolls back, shows it, reads
 the case back and refetches the list. Only `CaseTerminalError` is passed through
