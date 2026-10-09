@@ -2286,10 +2286,23 @@ export interface paths {
          *     - for a different turn → **409** `x-error-code: IDEMPOTENCY_KEY_REUSE`.
          *     - while the first is still running → **409** `x-error-code:
          *       TURN_IN_PROGRESS` with `Retry-After`; retry with the same key after it.
+         *       `Retry-After` is the longest the first can still hold its claim, an upper
+         *       bound, not when it finishes.
          *
          *     A response lost after the commit (a disconnect, a timeout on the client's
          *     side) is recovered by retrying with the same key. Without a key, every
          *     request runs as a new turn.
+         *
+         *     **Timing.** `limits.turnResponseBoundSeconds` on
+         *     `GET /api/v1/meta/capabilities` is the NOMINAL bound on this route's answer
+         *     (the turn ceiling plus the commit reserve and the auto-title bound after
+         *     it). It leaves out short steps (the case and receipt lookups before the
+         *     deadline starts, the commit's actual duration), so size a client timeout as
+         *     that plus a network margin that covers them, and re-read it per session,
+         *     because an operator can switch the chat provider and with it the ceiling. A **504** commits nothing:
+         *     `REQUEST_TIMEOUT` means the turn used its whole ceiling on this input and is
+         *     likely to do so again, so retry at most once (it carries no `Retry-After`);
+         *     `LLM_TIMEOUT` is a transient provider timeout, retried after `Retry-After`.
          */
         post: operations["submit_turn_api_v1_cases__case_id__turns_post"];
         delete?: never;
@@ -3268,6 +3281,13 @@ export interface paths {
          *     path receives the SPA's own HTML and degrades its capabilities silently.
          *     The bare ``/v1`` path stays as a deprecated alias because extensions
          *     already installed are pinned to it.
+         *
+         *     ``limits.turnCeilingSeconds`` and ``limits.turnResponseBoundSeconds`` are
+         *     the turn's ceiling and its NOMINAL response bound (clients add a network
+         *     margin) for the chat provider in force (#1905), resolved on
+         *     every request: an operator who switches the chat provider changes which
+         *     per-provider ceiling applies, so a client re-reads them per session rather
+         *     than caching them for the life of an install.
          *
          *     Returns:
          *         Backend capabilities including deployment mode, dashboard URL, and feature flags
@@ -4535,6 +4555,78 @@ export interface components {
             /** Scopes */
             scopes: string[];
         };
+        /** BackendBranding */
+        BackendBranding: {
+            /** Name */
+            name: string;
+            /** Supporturl */
+            supportUrl: string;
+        };
+        /**
+         * BackendCapabilities
+         * @description What this backend offers, for the browser extension and the Dashboard.
+         */
+        BackendCapabilities: {
+            branding: components["schemas"]["BackendBranding"];
+            /** Dashboardurl */
+            dashboardUrl: string;
+            /**
+             * Deploymentmode
+             * @enum {string}
+             */
+            deploymentMode: "cloud" | "self-hosted";
+            features: components["schemas"]["BackendCapabilityFeatures"];
+            /** Kbmanagement */
+            kbManagement: string;
+            limits: components["schemas"]["BackendCapabilityLimits"];
+        };
+        /**
+         * BackendCapabilityFeatures
+         * @description Feature gates a client reads to show or hide surfaces.
+         */
+        BackendCapabilityFeatures: {
+            /** Adminkb */
+            adminKB: boolean;
+            /** Casehistory */
+            caseHistory: boolean;
+            /**
+             * Extensionkb
+             * @description Always false: the extension KB was removed.
+             */
+            extensionKB: boolean;
+            /**
+             * Managementconsole
+             * @description The org/team management console; same signal as teamSharing.
+             */
+            managementConsole: boolean;
+            /** Sso */
+            sso: boolean;
+            /**
+             * Teamsharing
+             * @description Team-based KB/case sharing; true only when team management is live.
+             */
+            teamSharing: boolean;
+        };
+        /**
+         * BackendCapabilityLimits
+         * @description Limits a client applies before sending, and the turn's time bounds.
+         */
+        BackendCapabilityLimits: {
+            /** Allowedextensions */
+            allowedExtensions: string[];
+            /** Maxfilebytes */
+            maxFileBytes: number;
+            /**
+             * Turnceilingseconds
+             * @description The turn ceiling for the chat provider in force: a turn that uses all of it is answered 504 REQUEST_TIMEOUT, nothing committed.
+             */
+            turnCeilingSeconds: number;
+            /**
+             * Turnresponseboundseconds
+             * @description The nominal bound on how long POST /cases/{case_id}/turns takes to answer: the ceiling plus the commit reserve and the auto-title bound after it. Not a hard guarantee: it leaves out short steps (the case and receipt lookups before the deadline starts, the commit's actual duration), so size a client timeout as this plus a network margin that covers them. Both values are resolved per request and change when an operator switches the chat provider, so re-read them per session.
+             */
+            turnResponseBoundSeconds: number;
+        };
         /** BatchDraftRef */
         BatchDraftRef: {
             /** Conversion Id */
@@ -5533,6 +5625,8 @@ export interface components {
              * Format: date-time
              */
             timestamp: string;
+            /** @description The resolved turn ceiling and response bound for the chat provider in force, as clients read them on GET /api/v1/meta/capabilities. */
+            turn_timing: components["schemas"]["TurnTimingStatus"];
             /**
              * Vector Storage
              * @description What the running process's KB and evidence ChromaDB clients talk to: 'chromadb (server)', 'chromadb (persistent, split: kb + evidence)', 'disabled' when neither was built, or a per-client breakdown when they differ
@@ -7462,6 +7556,31 @@ export interface components {
             suggested_actions?: components["schemas"]["SuggestedActionResponse"][];
             /** Turn Number */
             turn_number: number;
+        };
+        /**
+         * TurnTimingStatus
+         * @description The turn's time bounds for the chat provider in force (#1905).
+         *
+         *     The same two numbers ``GET /api/v1/meta/capabilities`` publishes to clients,
+         *     resolved by ``config/turn_ceiling.resolve_turn_ceiling`` on every request,
+         *     so a dashboard provider switch shows here on the next read.
+         */
+        TurnTimingStatus: {
+            /**
+             * Chat Provider
+             * @description The chat provider the ceiling was resolved for; null when none is configured and AGENT_REQUEST_TIMEOUT applies.
+             */
+            chat_provider: string | null;
+            /**
+             * Turn Ceiling Seconds
+             * @description AGENT_REQUEST_TIMEOUT, or this provider's AGENT_PROVIDER_TIMEOUT_OVERRIDES entry: the bound on a turn's preparation and the deadline its LLM calls budget against.
+             */
+            turn_ceiling_seconds: number;
+            /**
+             * Turn Response Bound Seconds
+             * @description The nominal bound on the turn route's answer: the ceiling plus the commit reserve and the auto-title bound. Clients size their timeout from it plus a network margin, which also covers the short steps it leaves out (the case and receipt lookups before the deadline starts, the commit's actual duration).
+             */
+            turn_response_bound_seconds: number;
         };
         /**
          * UploadedFileDetailsResponse
@@ -10443,10 +10562,10 @@ export interface operations {
                     "application/json": components["schemas"]["TurnResponse"];
                 };
             };
-            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered). */
+            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds, the longest the running turn can still hold its claim — an upper bound, not when it finishes; it may finish sooner); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered). */
             409: {
                 headers: {
-                    /** @description Seconds, on `TURN_IN_PROGRESS` only. */
+                    /** @description Seconds, on `TURN_IN_PROGRESS` only: the longest the running turn can still hold its claim (an upper bound, not when it finishes). */
                     "Retry-After"?: number;
                     /** @description Which conflict. */
                     "x-error-code"?: "TURN_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE" | "IDEMPOTENCY_REPLAY_UNAVAILABLE" | "CASE_VERSION_CONFLICT" | "CASE_TERMINAL";
@@ -10463,11 +10582,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description `x-error-code: REQUEST_TIMEOUT`: the turn ran out of time and nothing of it committed, so a retry is safe. */
+            /** @description Timeout; nothing of the turn committed. Told apart by `x-error-code`: `REQUEST_TIMEOUT` (the turn used its whole ceiling, `limits.turnCeilingSeconds` on `GET /api/v1/meta/capabilities`, on this input; the same input is likely to exhaust it again, so a client retries at most once, and no `Retry-After` is sent); `LLM_TIMEOUT` (the AI provider timed out: transient, retry after `Retry-After` seconds). */
             504: {
                 headers: {
+                    /** @description Seconds, on `LLM_TIMEOUT` only. */
                     "Retry-After"?: number;
-                    "x-error-code"?: "REQUEST_TIMEOUT";
+                    /** @description Which timeout. */
+                    "x-error-code"?: "REQUEST_TIMEOUT" | "LLM_TIMEOUT";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -11627,7 +11748,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BackendCapabilities"];
                 };
             };
         };
@@ -12648,7 +12769,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BackendCapabilities"];
                 };
             };
         };

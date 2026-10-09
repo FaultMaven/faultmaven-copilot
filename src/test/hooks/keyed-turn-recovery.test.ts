@@ -17,11 +17,14 @@ import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import {
   TimeoutError,
   TurnInProgressError,
+  TurnTimedOutError,
   TurnReplayUnavailableError,
   UserFacingError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
+import { capabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
+import { deriveTurnTiming } from '@faultmaven/copilot-ui/lib/utils/turn-timing';
 import { createStubHost, hostWrapper } from '../support/host';
 
 const mockShowError = vi.fn();
@@ -371,6 +374,61 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
     expect(turnPosts()).toHaveLength(2);
     expect(mockShowError).toHaveBeenCalledTimes(1);
     expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TimeoutError);
+  });
+
+  it('504 REQUEST_TIMEOUT: no automatic retry; the nothing-was-saved message at once', async () => {
+    routeWire([
+      async () => wire(504, { detail: 'The turn ran out of time and nothing was saved.' }, { 'x-error-code': 'REQUEST_TIMEOUT' }),
+    ]);
+    await submit();
+    await advance(700_000);
+    expect(turnPosts()).toHaveLength(1);
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TurnTimedOutError);
+  });
+
+  it('504 LLM_TIMEOUT: the single retry waits Retry-After', async () => {
+    routeWire([
+      async () => wire(504, { detail: 'The AI provider timed out.' }, { 'x-error-code': 'LLM_TIMEOUT', 'Retry-After': '30' }),
+      async () => replay(),
+    ]);
+    await submit();
+    await advance(29_000);
+    expect(turnPosts()).toHaveLength(1);
+    await advance(2_000);
+    expect(turnPosts()).toHaveLength(2);
+    expect(responses().map((r) => r.response)).toEqual(['The pool is exhausted.']);
+  });
+
+  it('sends the turn with the request timeout derived from the published bound', async () => {
+    vi.spyOn(capabilitiesManager, 'getTurnTiming').mockImplementation((bytes = 0) => deriveTurnTiming(150, bytes));
+    routeWire([async () => replay()]);
+    await submit();
+    const [[, , timeoutMs]] = (fetchWithTimeout.mock.calls as [string, RequestInit, number][]).filter(
+      ([url, init]) => url === TURNS_URL && init.method === 'POST',
+    );
+    expect(timeoutMs).toBe(211_000); // 150 + 60 + ceil(26 / 125000) s
+  });
+
+  it('with no published bound the turn keeps the 300 s request timeout (+1 s: the 26-byte body rounds up)', async () => {
+    routeWire([async () => replay()]);
+    await submit();
+    const [[, , timeoutMs]] = (fetchWithTimeout.mock.calls as [string, RequestInit, number][]).filter(
+      ([url, init]) => url === TURNS_URL && init.method === 'POST',
+    );
+    expect(timeoutMs).toBe(301_000);
+  });
+
+  it('client timeouts stop at the DERIVED deadline (420 s for a 150 s bound), not the 660 s constant', async () => {
+    vi.spyOn(capabilitiesManager, 'getTurnTiming').mockReturnValue(deriveTurnTiming(150));
+    routeWire([
+      () => new Promise<WireResponse>((_, reject) => setTimeout(() => reject(timeout()), 210_000)),
+    ]);
+    await submit();
+    await advance(1_200_000);
+    // Attempts end at 210 s and 421 s; the second ends past the 420 s deadline.
+    expect(turnPosts()).toHaveLength(2);
+    expect(mockShowError).toHaveBeenCalledTimes(1);
   });
 
   it('a final TURN_IN_PROGRESS shows its whole message, Retry advice included', async () => {

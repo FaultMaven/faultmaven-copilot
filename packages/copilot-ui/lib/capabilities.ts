@@ -3,6 +3,13 @@
 import { createLogger } from './utils/logger';
 import { fetchWithTimeout } from './utils/fetch-timeout';
 import { ownedStorage } from './owned-storage';
+import type { components } from '../types/api.generated';
+import { deriveTurnTiming, type TurnTiming } from './utils/turn-timing';
+
+/** A network read older than this is re-read before a turn (the bound moves with a provider switch). */
+export const CAPABILITIES_TTL_MS = 5 * 60 * 1000;
+/** The longest a turn waits on a stale re-read before sending on the held one. */
+export const REFRESH_WAIT_MS = 5_000;
 
 const log = createLogger('CapabilitiesManager');
 
@@ -15,36 +22,18 @@ const log = createLogger('CapabilitiesManager');
  */
 type CapabilitiesSource = 'network' | 'cache' | 'fallback';
 
-export interface BackendCapabilities {
-  deploymentMode: 'self-hosted' | 'cloud';
-  kbManagement: 'dashboard';
-  dashboardUrl: string;
-  features: {
-    extensionKB: boolean;  // Should always be false
-    adminKB: boolean;
-    // Team-based KB/case sharing (ADR-013: Team = the sharing unit). Renamed
-    // from the "teamWorkspaces" misnomer — a Slack workspace maps to a Team;
-    // the capability is team *sharing*, not a workspace. Wire key must match
-    // the backend /v1/meta/capabilities payload.
-    teamSharing: boolean;
-    caseHistory: boolean;
-    sso: boolean;
-  };
-  limits: {
-    maxFileBytes: number;
-    allowedExtensions: string[];
-    maxDocuments?: number;
-  };
-  branding?: {
-    name: string;
-    logoUrl?: string;
-    supportUrl?: string;
-  };
-}
+/**
+ * What the backend offers, aliased to the generated schema (the API types the
+ * route since contract 12.4.0; there is no second, hand-written shape).
+ */
+export type BackendCapabilities = components['schemas']['BackendCapabilities'];
 
 export class CapabilitiesManager {
   private capabilities: BackendCapabilities | null = null;
   private source: CapabilitiesSource | null = null;
+  private fetchedAt = 0;
+  /** The capabilities object the fallback-timing warning was last issued for. */
+  private warnedFor: unknown = undefined;
   private fetchPromise: Promise<BackendCapabilities> | null = null;
 
   async fetch(apiUrl: string): Promise<BackendCapabilities> {
@@ -52,7 +41,7 @@ export class CapabilitiesManager {
     // A cached / fabricated fallback must NOT poison the cache: the backend may
     // be temporarily unreachable and then recover, so a degraded result has to
     // leave the door open for the next call to re-detect a live backend.
-    if (this.capabilities && this.source === 'network') {
+    if (this.capabilities && this.source === 'network' && !this.isStale()) {
       return this.capabilities;
     }
 
@@ -103,6 +92,7 @@ export class CapabilitiesManager {
         }
         this.capabilities = caps;
         this.source = 'network';
+        this.fetchedAt = Date.now();
 
         // Cache for offline access. No availability guard: the host store
         // throws when it is not installed, and that is a wiring bug to surface
@@ -113,6 +103,12 @@ export class CapabilitiesManager {
         return caps;
 
       } catch (error) {
+        // A stale NETWORK read is better than any degraded one: keep it, and
+        // the next call (still stale) tries the network again.
+        if (this.capabilities && this.source === 'network') {
+          log.warn('Capabilities re-read failed; keeping the earlier network read', error);
+          return this.capabilities;
+        }
         log.warn('Capabilities fetch failed; serving degraded capabilities', error);
 
         // Try cache
@@ -135,12 +131,18 @@ export class CapabilitiesManager {
             adminKB: false,
             teamSharing: false,
             caseHistory: false,
-            sso: false
+            sso: false,
+            managementConsole: false,
           },
           limits: {
             maxFileBytes: 10485760,
-            allowedExtensions: ['.md', '.txt', '.log', '.json', '.csv']
-          }
+            allowedExtensions: ['.md', '.txt', '.log', '.json', '.csv'],
+            // Required by the schema, published by no one here: 0 is not a usable
+            // bound, so turn timing falls back to its own constants.
+            turnCeilingSeconds: 0,
+            turnResponseBoundSeconds: 0,
+          },
+          branding: { name: 'FaultMaven', supportUrl: '' },
         };
 
         this.capabilities = fallback;
@@ -163,11 +165,61 @@ export class CapabilitiesManager {
   }
 
   getUploadLimits() {
-    return this.capabilities?.limits ?? {
-      maxFileBytes: 10485760,
-      allowedExtensions: ['.md', '.txt', '.log', '.json', '.csv']
+    const limits = this.capabilities?.limits;
+    return {
+      maxFileBytes: limits?.maxFileBytes ?? 10485760,
+      allowedExtensions: limits?.allowedExtensions ?? ['.md', '.txt', '.log', '.json', '.csv'],
     };
   }
+
+  private isStale(): boolean {
+    return Date.now() - this.fetchedAt >= CAPABILITIES_TTL_MS;
+  }
+
+  /**
+   * Re-read the capabilities before a turn when the network read held is older
+   * than `CAPABILITIES_TTL_MS`: a panel can stay open for days and the turn
+   * bound moves with an operator's provider switch. Does nothing when nothing
+   * authoritative is held (the app's own load covers that) or the read is fresh.
+   */
+  async refreshIfStale(apiUrl: string): Promise<void> {
+    if (this.capabilities && this.source === 'network' && this.isStale()) {
+      // A turn waits at most REFRESH_WAIT_MS for the re-read: a slow probe must
+      // not delay the send. It keeps running, and the next turn reads its result.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        this.fetch(apiUrl),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, REFRESH_WAIT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The turn request timeout and recovery deadline (`utils/turn-timing.ts`) for
+   * a body of `bodyBytes`, from the bound the API published on the capabilities
+   * held now (re-read when stale: `refreshIfStale`). A payload without a usable
+   * bound (a cache written before 12.4.0, a fallback, an out-of-range value) or
+   * nothing held yet uses the policy constants; that is logged once per
+   * capabilities object, not on every attempt.
+   */
+  getTurnTiming(bodyBytes = 0): TurnTiming {
+    const held = this.capabilities;
+    const timing = deriveTurnTiming(held?.limits?.turnResponseBoundSeconds, bodyBytes);
+    if (timing.source === 'fallback' && this.warnedFor !== (held ?? NOTHING_HELD)) {
+      this.warnedFor = held ?? NOTHING_HELD;
+      log.warn('No usable turnResponseBoundSeconds; using the fallback turn timing', {
+        capabilitiesSource: this.source,
+        requestTimeoutMs: timing.requestTimeoutMs,
+        deadlineMs: timing.deadlineMs,
+      });
+    }
+    return timing;
+  }
 }
+
+const NOTHING_HELD = Symbol('nothing held');
 
 export const capabilitiesManager = new CapabilitiesManager();

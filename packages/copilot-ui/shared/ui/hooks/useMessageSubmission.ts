@@ -35,6 +35,7 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import {
   idempotencyKeyFor,
   keyedTurnRetryPolicy,
+  turnTimingFor,
   rotateIdempotencyKey
 } from '../../../lib/utils/keyed-turn-retry';
 import { getRecoveryPlan } from '../../../lib/errors/recovery-strategies';
@@ -219,15 +220,15 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
     // into a purged store (issue #132).
     const epoch = getEpoch();
     try {
+      const turnRequest: TurnRequest = {
+        query: query.trim(),
+        intentType: intent?.type,
+        intentData: intent ? { ...intent } : undefined,
+      };
+      const timing = await turnTimingFor(turnRequest);
       const response = await resilientOperation({
         operation: async () => {
           log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
-
-          const turnRequest: TurnRequest = {
-            query: query.trim(),
-            intentType: intent?.type,
-            intentData: intent ? { ...intent } : undefined,
-          };
 
           const response = await submitTurn(caseId, turnRequest, {
             signal: controller.signal,
@@ -272,7 +273,7 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         idempotent: true,
         // A keyed turn also recovers a lost response (client timeout, gateway
         // 504) and waits out TURN_IN_PROGRESS, under one wall-clock deadline.
-        ...keyedTurnRetryPolicy(),
+        ...keyedTurnRetryPolicy(timing),
         onError: (error, attempt) => {
           log.warn(`Submission attempt ${attempt} failed`, error);
         },

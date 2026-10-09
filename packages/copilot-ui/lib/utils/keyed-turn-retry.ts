@@ -15,10 +15,13 @@
  * That is what makes a lost response safe to recover WITHOUT the user: a client
  * `TimeoutError` or a gateway 504 (no `x-error-code`: a proxy answered, the API
  * may still commit) on a keyed turn is retried under the deadline below. A
- * CODED 504 is the API's own answer that nothing committed —
- * `REQUEST_TIMEOUT` (the turn exhausted its ceiling) or `LLM_TIMEOUT` (the
- * provider timed out) — so every retry of it is a new LLM run of the same
- * input: it is retried at most ONCE, across both codes. A 504 with a code this
+ * CODED 504 is the API's own answer that nothing committed, so every retry of
+ * it is a new LLM run of the same input. `REQUEST_TIMEOUT` (the turn exhausted
+ * its ceiling; the same input likely does again, no `Retry-After`) is NEVER
+ * retried automatically: a second full-ceiling run could double the wait before
+ * the user is told, and the manual Retry stays. `LLM_TIMEOUT` (the provider
+ * timed out; transient, `Retry-After: 30`) is retried ONCE, after its
+ * `Retry-After`, within the deadline. A 504 with a code this
  * build does not know keeps the default decision (no automatic retry).
  *
  * Everything else keeps the decision it has without this policy
@@ -29,32 +32,19 @@
  */
 
 import { ErrorClassifier } from '../errors/classifier';
-import { TurnInProgressError } from '../errors/types';
+import { TurnInProgressError, TURN_IN_PROGRESS_POLL_MS } from '../errors/types';
 import type { HttpError } from '../errors/http-error';
 import { defaultRetryDecision, type ResilientOperationOptions } from './resilient-operation';
-
-/**
- * How long the panel keeps trying to get one keyed turn answered, from the
- * first attempt: 11 minutes.
- *
- * A POLICY number, not one derived from the API. It sits above the default
- * server ceiling (`AGENT_REQUEST_TIMEOUT` 120 s) and its bounded maximum (600 s)
- * plus the commit reserve, but per-provider ceiling overrides are unbounded, so
- * no client number can be "longer than any turn". It counts time inside each
- * request too (`resilientOperation`'s `deadlineMs`).
- *
- * It bounds STARTING a retry, not the last attempt: the 300 s request timeout
- * (`lib/api/client.ts`) is unchanged and an attempt started just before the
- * deadline runs to it, so the worst case is about deadline + one request
- * timeout, ~960 s. The late attempt is deliberately not capped.
- */
-export const KEYED_TURN_DEADLINE_MS = 660_000;
+import { capabilitiesManager } from '../capabilities';
+import { getApiTransport } from '../api/transport';
+import type { TurnRequest } from '../api/types';
+import type { TurnTiming } from './turn-timing';
 
 /** The attempt count every other recovery keeps (`resilientOperation`'s default). */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
-/** The coded 504s that say nothing committed: retried once, together. */
-const NOTHING_COMMITTED_504_CODES: ReadonlySet<string> = new Set(['REQUEST_TIMEOUT', 'LLM_TIMEOUT']);
+/** The coded 504 that is retried automatically, once. `REQUEST_TIMEOUT` is deliberately absent. */
+const RETRIED_ONCE_504_CODE = 'LLM_TIMEOUT';
 
 type TurnTimeout = 'client' | 'gateway' | 'server_timeout';
 
@@ -65,7 +55,7 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
   if (status === 504) {
     const code = (error as HttpError).headers?.['x-error-code'];
     if (code === undefined) return 'gateway';
-    return NOTHING_COMMITTED_504_CODES.has(code) ? 'server_timeout' : null;
+    return code === RETRIED_ONCE_504_CODE ? 'server_timeout' : null;
   }
   if (typeof status !== 'number' && error.name === 'TimeoutError') return 'client';
   return null;
@@ -74,8 +64,20 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
 /**
  * The `resilientOperation` options for one keyed turn submission. Call it once
  * per submission: it carries that submission's retry counts.
+ *
+ * `timing.deadlineMs` is how long the panel keeps trying to get the turn
+ * answered, from the first attempt, and it counts time inside each request too
+ * (`resilientOperation`'s `deadlineMs`). It is derived from the response bound
+ * the API publishes (`lib/utils/turn-timing.ts`), read from the capabilities
+ * held now unless a caller passes one. It bounds STARTING a retry, not the
+ * last attempt: an attempt started just before it runs to its own request
+ * timeout, so the worst case is about deadline + one request timeout.
+ *
+ * The waits between attempts are the server's: a `TURN_IN_PROGRESS` 409 is
+ * polled within its `Retry-After` (an upper bound on the claim) and an
+ * `LLM_TIMEOUT` 504 waits its `Retry-After`.
  */
-export function keyedTurnRetryPolicy(): Pick<
+export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
   ResilientOperationOptions<unknown>,
   'retryOptions' | 'deadlineMs'
 > {
@@ -83,10 +85,13 @@ export function keyedTurnRetryPolicy(): Pick<
   let otherRetries = 0;
 
   return {
-    deadlineMs: KEYED_TURN_DEADLINE_MS,
+    deadlineMs: timing.deadlineMs,
     retryOptions: {
       // The deadline is the bound, not the count.
       maxAttempts: Number.POSITIVE_INFINITY,
+      // A TURN_IN_PROGRESS poll is spaced by min(Retry-After, 5 s) for the
+      // whole wait: the generic backoff must not grow past the poll interval.
+      maxDelay: TURN_IN_PROGRESS_POLL_MS,
       shouldRetry: (error) => {
         switch (turnTimeoutKind(error)) {
           case 'client':
@@ -135,4 +140,23 @@ export function rotateIdempotencyKey(turnId: string): string {
   const key = `${turnId}_r${rotations}`;
   rotatedKeys.set(turnId, key);
   return key;
+}
+
+/** Bytes a turn's multipart body carries (files, paste, query): what the upload allowance is sized on. */
+export function turnBodyBytes(request: TurnRequest): number {
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  for (const file of request.files ?? []) bytes += file.size;
+  if (request.pastedContent) bytes += encoder.encode(request.pastedContent).length;
+  if (request.query) bytes += encoder.encode(request.query).length;
+  return bytes;
+}
+
+/**
+ * The timing for sending `request`: capabilities re-read first if the network
+ * read held is older than five minutes, then derived for this body.
+ */
+export async function turnTimingFor(request: TurnRequest): Promise<TurnTiming> {
+  await capabilitiesManager.refreshIfStale(await getApiTransport().baseUrl());
+  return capabilitiesManager.getTurnTiming(turnBodyBytes(request));
 }

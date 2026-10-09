@@ -33,14 +33,26 @@ This file holds the rules that constrain code *inside* the package.
 - **Keyed turns** (`lib/utils/keyed-turn-retry.ts`, contract 12.2.0). Both turn
   paths send `Idempotency-Key = idempotencyKeyFor(aiMessageId)` and pass
   `keyedTurnRetryPolicy()`: a client `TimeoutError` or an UNCODED (gateway) 504
-  is retried with the same key under `KEYED_TURN_DEADLINE_MS`, a coded 504 that
-  says nothing committed (`REQUEST_TIMEOUT`, `LLM_TIMEOUT`) at most once in all,
-  a 409 `TURN_IN_PROGRESS` after its `Retry-After`; a 504 with an unknown code
-  and everything else keep their default decision and attempt count. The retry
-  replays a committed turn (200, `X-Idempotency-Replayed`), so it is reconciled
-  like a first answer. 660 s is a policy number (how long the panel waits for
-  one turn) bounding the START of a retry: the 300 s request timeout is
-  unchanged, so the worst case is about deadline + one request timeout, ~960 s.
+  is retried with the same key under `timing.deadlineMs`. A coded 504 is
+  the API's own answer that nothing committed (and `isAmbiguousFailure` is
+  false for it): `REQUEST_TIMEOUT` is NEVER retried automatically (the same
+  input likely exhausts the ceiling again at full LLM cost; the user's manual
+  Retry stays), `LLM_TIMEOUT` is retried once after its `Retry-After`. A 409
+  `TURN_IN_PROGRESS` is polled every min(`Retry-After`, 5 s) (the header is an
+  upper bound on the claim; `maxDelay` keeps the backoff from outgrowing it); a
+  504 with an unknown code and everything else keep their default decision and
+  attempt count. The retry replays a committed turn (200,
+  `X-Idempotency-Replayed`), so it is reconciled like a first answer. The
+  timings are derived, not policy (contract 12.4.0, `lib/utils/turn-timing.ts`):
+  request timeout = `limits.turnResponseBoundSeconds` (from `/meta/capabilities`;
+  accepted only within 30-1200 s) + 60 s network margin + an upload allowance of
+  ceil(body bytes / 125 000) s (1 Mbps; the server binds its deadline after
+  reading the body); recovery deadline = 2 x that. Capabilities are re-read
+  before a turn when the network read held is older than 5 minutes
+  (`refreshIfStale`; a failed re-read keeps the earlier read). With no usable
+  bound the old constants apply (300 s / 660 s, plus the same allowance) and a
+  warning is logged once per capabilities object. The deadline bounds the START
+  of a retry, so the worst case is about deadline + one request timeout.
   After `IDEMPOTENCY_KEY_REUSE` the manual Retry is a new logical turn and goes
   out under a fresh key (`rotateIdempotencyKey`).
 
