@@ -65,6 +65,11 @@ describe('ErrorClassifier — 409 CASE_TERMINAL', () => {
     expect(ErrorClassifier.classify(await createHttpErrorFromResponse(response))).toBeInstanceOf(CaseTerminalError);
   });
 
+  it('only a 409 carries it: a 400 or a 500 with the same header keeps its own class', () => {
+    expect(ErrorClassifier.classify(httpError(400, { 'x-error-code': 'CASE_TERMINAL' }))).not.toBeInstanceOf(CaseTerminalError);
+    expect(ErrorClassifier.classify(httpError(500, { 'x-error-code': 'CASE_TERMINAL' }))).not.toBeInstanceOf(CaseTerminalError);
+  });
+
   it('CASE_VERSION_CONFLICT and an unlabelled 409 keep today’s mapping', () => {
     expect(ErrorClassifier.classify(httpError(409, { 'x-error-code': 'CASE_VERSION_CONFLICT' }))).toBeInstanceOf(
       CaseVersionConflictError,

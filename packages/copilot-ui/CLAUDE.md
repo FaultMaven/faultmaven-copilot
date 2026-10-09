@@ -68,7 +68,9 @@ any route → `CaseTerminalError` (the case is resolved or closed: never retried
 no Retry anywhere. Both turn hooks remove the pending op instead of failing it,
 put the reason in the bubble, naming any attachments that were not added, and
 call `refreshActiveCase` so the panel shows the case closed; the title rename
-rolls back, shows it and refreshes the same way. A text-only question on a
+(`titleChangeDeps`, `lib/state/case-title-deps.ts`) rolls back, shows it, reads
+the case back and refetches the list. Only `CaseTerminalError` is passed through
+there: every other rename failure keeps its old toast. A text-only question on a
 closed case is still answered, so it never meets this); `CASE_VERSION_CONFLICT`
 and an unlabelled 409 → `CaseVersionConflictError`. This client never calls
 `POST /cases/{id}/close`: closing is a `status_transition` turn.

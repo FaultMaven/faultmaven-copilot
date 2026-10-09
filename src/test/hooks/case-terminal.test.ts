@@ -6,6 +6,7 @@
  *
  * Each drives the real chain down to `authenticatedFetch` and stubs only the
  * wire (`fetchWithTimeout`), with a closed case row served for the read-back,
+ * and the rename goes through the panel's own wiring (`titleChangeDeps`),
  * so "the panel shows the case closed" is asserted on the store, not on a spy.
  * This client never calls `POST /cases/{id}/close`: closing is a
  * `status_transition` turn.
@@ -17,10 +18,17 @@ import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpl
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
-import { updateCaseTitle } from '@faultmaven/copilot-ui/lib/api/services/case-service';
 import { applyCaseTitleChange } from '@faultmaven/copilot-ui/lib/state/case-title-change';
+import { titleChangeDeps } from '@faultmaven/copilot-ui/lib/state/case-title-deps';
+import { ErrorClassifier } from '@faultmaven/copilot-ui/lib/errors/classifier';
 import { IntentType, type TurnIntent } from '@faultmaven/copilot-ui/lib/api/types';
-import { CaseTerminalError, CaseVersionConflictError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  CaseTerminalError,
+  CaseVersionConflictError,
+  UnknownError,
+  UserFacingError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
@@ -203,26 +211,74 @@ describe('409 CASE_TERMINAL (contract 12.3.0)', () => {
     expect(bubble?.response).not.toMatch(/updated|retry/i);
   });
 
+  // The panel's own wiring (`titleChangeDeps`), as `CopilotPanel` passes it.
+  const rename = async (caseId = CASE) => {
+    await act(async () => {
+      await applyCaseTitleChange(caseId, 'Attempted rename', 'user', titleChangeDeps(mockShowError));
+    });
+    await advance(10);
+  };
+
   it('title rename (PUT /cases/{id}): sent once, CaseTerminalError shown, rolled back, the case is read back', async () => {
     routeWire(() => caseTerminal('Case is closed'));
     useAppStore.setState({ conversationTitles: { [CASE]: 'Prior title' } });
-    const store = useAppStore.getState();
+    const listRefreshes = useAppStore.getState().refreshSessions;
 
-    await act(async () => {
-      await applyCaseTitleChange(CASE, 'Attempted rename', 'user', {
-        readStore: () => useAppStore.getState(),
-        setConversationTitles: store.setConversationTitles,
-        setTitleSources: store.setTitleSources,
-        persistTitle: updateCaseTitle,
-        onPersistError: mockShowError,
-        refreshCase: (id) => { void useAppStore.getState().refreshActiveCase(id); },
-      });
-    });
-    await advance(10);
+    await rename();
 
     expect(sent('PUT', CASE_URL)).toHaveLength(1);
     expectClosedAndFinal();
     expect(useAppStore.getState().conversationTitles[CASE]).toBe('Prior title');
+    expect(useAppStore.getState().refreshSessions).toBe(listRefreshes + 1);
+  });
+
+  it('title rename of a case that is not the active one: the list is refetched, the active case untouched', async () => {
+    routeWire(() => caseTerminal('Case is closed'));
+    const active = useAppStore.getState().activeCase!;
+    useAppStore.setState({ activeCaseId: 'case-other', activeCase: { ...active, case_id: 'case-other' } });
+    const listRefreshes = useAppStore.getState().refreshSessions;
+
+    await rename();
+
+    expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(CaseTerminalError);
+    // The sidebar refetch is what moves the renamed case to its closed group.
+    expect(useAppStore.getState().refreshSessions).toBe(listRefreshes + 1);
+    expect(useAppStore.getState().activeCase).toMatchObject({ case_id: 'case-other', state: 'investigating' });
+  });
+
+  it('title rename after a host token refresh (401, then 409 CASE_TERMINAL): still classified, still refreshed', async () => {
+    setApiTransport({
+      baseUrl: async () => BASE,
+      accessToken: async () => 'test-token',
+      sessionId: async () => null,
+      clearSession: async () => undefined,
+      onUnauthorized: async () => 'refreshed' as const,
+    });
+    let puts = 0;
+    routeWire(() => {
+      puts += 1;
+      return puts === 1 ? wire(401, { detail: 'token expired' }) : caseTerminal('Case is closed');
+    });
+
+    await rename();
+
+    expect(sent('PUT', CASE_URL)).toHaveLength(2);
+    expectClosedAndFinal();
+  });
+
+  it('title rename refused with a 401: renders as before (a toast), never the sign-in modal', async () => {
+    routeWire(() => wire(401, { detail: 'bad token' }));
+
+    await rename();
+
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    const shown = mockShowError.mock.calls[0][0];
+    expect(shown).not.toBeInstanceOf(UserFacingError);
+    const rendered = ErrorClassifier.classify(shown);
+    expect(rendered).not.toBeInstanceOf(AuthenticationError);
+    expect(rendered).toBeInstanceOf(UnknownError);
+    expect(rendered instanceof UnknownError && rendered.getDisplayOptions().displayType).toBe('toast');
+    expect(sent('GET', CASE_URL)).toHaveLength(0);
   });
 
   it('contrast: an unlabelled 409 on the message path keeps today’s version-conflict path and its Retry', async () => {

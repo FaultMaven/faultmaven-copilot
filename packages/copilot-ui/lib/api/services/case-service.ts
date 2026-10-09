@@ -618,10 +618,12 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    // Invalidate cache on failure to ensure consistency 
+    // Invalidate cache on failure to ensure consistency.
     await caseCacheManager.invalidateCache();
-    throw new Error(errorBodyText(errorData) || `Failed to update case: ${response.status}`);
+    // Typed, with its signal headers: a response that arrives here (the retry
+    // after a host token refresh) keeps its `x-error-code`, so a 409
+    // CASE_TERMINAL is still classified as one.
+    throw await createHttpErrorFromResponse(response);
   }
 
   // Optimistically update cache on success
