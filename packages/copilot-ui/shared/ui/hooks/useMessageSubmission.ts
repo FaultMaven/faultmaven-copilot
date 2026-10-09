@@ -47,6 +47,7 @@ import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
+import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useMessageSubmission');
 
@@ -60,7 +61,7 @@ const log = createLogger('useMessageSubmission');
 // (fm#1069). Two triggers for one job is how they disagree; the client keeps the
 // user-initiated "Generate title" action in ConversationsList and nothing else.
 
-export function useMessageSubmission() {
+export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
   const [submitting, setSubmitting] = useState(false);
   const { showError } = useError();
 
@@ -301,6 +302,8 @@ export function useMessageSubmission() {
               )
             }));
             void useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
+            // Committed all the same: the case moved even though its reply did not arrive.
+            if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, caseId);
             showError(classified);
             return;
           }
@@ -396,6 +399,9 @@ export function useMessageSubmission() {
         log.info('Session changed during turn submission — discarding success writes', { caseId });
         return;
       }
+
+      // The turn committed and the session is the one that sent it: tell the host.
+      notifyCaseChanged(onCaseChanged, caseId);
 
       setConversations(prev => ({
         ...prev,

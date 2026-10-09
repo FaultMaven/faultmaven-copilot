@@ -30,6 +30,7 @@ import { titleChangeDeps } from "../../lib/state/case-title-deps";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
+import { notifyCaseChanged } from "./hooks/case-changed";
 import { getKnowledgeDocument } from "../../lib/api";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
 import { queryClient } from "../../lib/api/query-client";
@@ -126,6 +127,21 @@ export interface CopilotPanelProps {
    * side panel has always shown.
    */
   chrome?: PanelChrome;
+  /**
+   * Called after the panel commits a turn on a case, or observes a state
+   * transition of a case (a turn that resolved or closed it, a refresh that
+   * found it closed elsewhere). The host re-reads the case.
+   *
+   * A notification, not a request: it carries only the case id, expects no
+   * answer, and a throw from it is swallowed. It fires with a real case id only
+   * — never for an optimistic id, and never for the panel hydrating the case it
+   * was opened on (the synchronous placeholder row becoming the server's row is
+   * not a change of the case). It may fire twice for a turn that also changed
+   * state, and its id need not be the one `initialCase` named (the user can
+   * switch cases in the panel): a host must compare it with the case it shows
+   * and ignore the others.
+   */
+  onCaseChanged?: (caseId: string) => void;
 }
 
 /**
@@ -140,6 +156,7 @@ export default function CopilotPanel({
   host,
   initialCase,
   chrome = 'full',
+  onCaseChanged,
 }: CopilotPanelProps) {
   return (
     // The panel's OWN query client, always, and not one the host passes in.
@@ -162,6 +179,7 @@ export default function CopilotPanel({
             session={host.session}
             initialCase={initialCase}
             chrome={chrome}
+            onCaseChanged={onCaseChanged}
           />
         </ErrorHandlerProvider>
       </HostAdapterProvider>
@@ -174,12 +192,24 @@ function CopilotPanelContent({
   session,
   initialCase,
   chrome,
+  onCaseChanged,
 }: {
   session: WiredHost['session'];
   initialCase?: InitialCase;
   chrome: PanelChrome;
+  onCaseChanged?: (caseId: string) => void;
 }) {
   const { navigation } = useHost();
+
+  // The host's per-mount callback, read through a ref so a host passing a fresh
+  // closure each render neither re-runs the transition effect nor re-creates
+  // the turn hooks' callbacks.
+  const onCaseChangedRef = useRef(onCaseChanged);
+  onCaseChangedRef.current = onCaseChanged;
+  const notifyHostCaseChanged = useCallback(
+    (caseId: string) => notifyCaseChanged(onCaseChangedRef.current, caseId),
+    [],
+  );
   const { getErrorsByType, dismissError } = useErrorHandler();
   const { showError } = useError();
 
@@ -292,14 +322,14 @@ function CopilotPanelContent({
     submitting,
     handleQuerySubmit,
     abortInFlight: abortInFlightMessageTurns
-  } = useMessageSubmission();
+  } = useMessageSubmission(notifyHostCaseChanged);
 
   // --- Data Upload ---
   const {
     handleTurnSubmit,
     uploading: isUploading,
     abortInFlight: abortInFlightUploadTurns
-  } = useDataUpload();
+  } = useDataUpload(notifyHostCaseChanged);
 
   // Initialize first-run status and capabilities
   useEffect(() => {
@@ -318,18 +348,30 @@ function CopilotPanelContent({
   // responses, the /ui sync discovering an out-of-band change, terminal
   // hydration on reopen) still reconcile. See isCaseTransition for the
   // accepted reopen false positive.
-  const prevCaseSnapshotRef = useRef<CaseSnapshot>({ id: null, state: null });
+  //
+  // `hydrated` is whether the row came from the server: `handleCaseSelect`
+  // writes a locally minted placeholder (state 'inquiry', no `enterprise_id`)
+  // and `refreshActiveCase` replaces it with the server's row on the same id.
+  // That first replacement reveals state that already existed, so it still
+  // reconciles but is not announced to the host.
+  const prevCaseSnapshotRef = useRef<CaseSnapshot & { hydrated: boolean }>({
+    id: null,
+    state: null,
+    hydrated: false,
+  });
   useEffect(() => {
-    const next: CaseSnapshot = {
+    const next = {
       id: activeCase?.case_id ?? null,
-      state: activeCase?.state ?? null
+      state: activeCase?.state ?? null,
+      hydrated: Boolean(activeCase?.enterprise_id),
     };
     const prev = prevCaseSnapshotRef.current;
     prevCaseSnapshotRef.current = next;
     if (isCaseTransition(prev, next)) {
       reconcileActiveCaseState();
+      if (prev.hydrated && next.id) notifyHostCaseChanged(next.id);
     }
-  }, [activeCase?.case_id, activeCase?.state, reconcileActiveCaseState]);
+  }, [activeCase?.case_id, activeCase?.state, activeCase?.enterprise_id, reconcileActiveCaseState, notifyHostCaseChanged]);
 
   const handleLogout = async () => {
     // 0. Fence the session FIRST, synchronously, before any await. handleLogout
