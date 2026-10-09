@@ -30,7 +30,18 @@ import { INPUT_LIMITS } from '../layouts/constants';
  */
 export type QuerySubmitResult = { sent: boolean };
 
-export type TurnSubmitResult = { success: boolean; message: string; sent: boolean };
+export type TurnSubmitResult = {
+  success: boolean;
+  message: string;
+  sent: boolean;
+  /**
+   * The server received the turn and refused it before storing anything (a
+   * terminal case takes no data). Distinct from `sent: false`, which means the
+   * turn never reached the server: here the request WAS delivered, but the
+   * composer must keep what the user staged, since nothing was added.
+   */
+  refused?: boolean;
+};
 
 /**
  * Payload for submissions with attachments (files, pasted data, page content).
@@ -156,13 +167,16 @@ export function UnifiedInputBar({
   // Smart input detection: count newlines to determine mode
   useEffect(() => {
     const lineCount = input.split('\n').length;
-    const newMode: InputMode = lineCount >= INPUT_LIMITS.DATA_MODE_LINE_THRESHOLD ? 'data' : 'question';
+    // A terminal case takes no data, so long text stays an ordinary question
+    // (which the server answers) instead of becoming a refused paste.
+    const newMode: InputMode =
+      !disableAttachments && lineCount >= INPUT_LIMITS.DATA_MODE_LINE_THRESHOLD ? 'data' : 'question';
 
     if (newMode !== inputMode) {
       setInputMode(newMode);
       log.debug('Mode switched', { newMode, lineCount });
     }
-  }, [input, inputMode]);
+  }, [input, inputMode, disableAttachments]);
 
   // Handle text input change
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -223,6 +237,16 @@ export function UnifiedInputBar({
     // Nothing to submit
     if (!hasQuery && !hasAnyAttachment) return;
     if (disabled || loading || submitting || isUploadingData) return;
+
+    // An attachment staged before the case turned terminal: the server would
+    // refuse it, so send nothing and leave the staged content in place.
+    if (disableAttachments && hasAnyAttachment) {
+      setValidationError({
+        message: 'Attachments can’t be added to a closed case. Remove them to send your message.',
+        type: 'error',
+      });
+      return;
+    }
 
     // ROUTE 1: Query-only, question mode, no attachments → optimistic path
     if (hasQuery && !hasAnyAttachment && inputMode === 'question') {
@@ -298,10 +322,12 @@ export function UnifiedInputBar({
       if (result.success) {
         clearAllStagedState();
       } else {
-        keepStaged = !result.sent;
+        keepStaged = !result.sent || result.refused === true;
         // A turn that WAS sent and failed has its own Retry in the banner; a
         // composer still holding its text would invite a second, text-only send.
-        if (result.sent) clearAllStagedState();
+        // A refused one stored nothing and has no Retry: the staged input is
+        // the only copy the user has.
+        if (result.sent && !result.refused) clearAllStagedState();
         log.warn('Turn submission failed', { message: result.message });
       }
     } catch (error) {
@@ -454,6 +480,7 @@ export function UnifiedInputBar({
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (disableAttachments) return;
     if (e.dataTransfer.types.includes('Files')) {
       setIsDragging(true);
     }
@@ -478,7 +505,7 @@ export function UnifiedInputBar({
     e.stopPropagation();
     setIsDragging(false);
 
-    if (isProcessing) return;
+    if (disableAttachments || isProcessing) return;
 
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
