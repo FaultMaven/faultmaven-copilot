@@ -15,12 +15,13 @@
  * That is what makes a lost response safe to recover WITHOUT the user: a client
  * `TimeoutError` or a gateway 504 (no `x-error-code`: a proxy answered, the API
  * may still commit) on a keyed turn is retried under the deadline below. A
- * CODED 504 is the API's own answer that nothing committed —
- * `REQUEST_TIMEOUT` (the turn exhausted its ceiling; the same input likely
- * does again, no `Retry-After`) or `LLM_TIMEOUT` (the provider timed out;
- * transient, `Retry-After: 30`) — so every retry of it is a new LLM run of the
- * same input: it is retried at most ONCE, across both codes, and an
- * `LLM_TIMEOUT` retry waits its `Retry-After` first. A 504 with a code this
+ * CODED 504 is the API's own answer that nothing committed, so every retry of
+ * it is a new LLM run of the same input. `REQUEST_TIMEOUT` (the turn exhausted
+ * its ceiling; the same input likely does again, no `Retry-After`) is NEVER
+ * retried automatically: a second full-ceiling run could double the wait before
+ * the user is told, and the manual Retry stays. `LLM_TIMEOUT` (the provider
+ * timed out; transient, `Retry-After: 30`) is retried ONCE, after its
+ * `Retry-After`, within the deadline. A 504 with a code this
  * build does not know keeps the default decision (no automatic retry).
  *
  * Everything else keeps the decision it has without this policy
@@ -31,17 +32,19 @@
  */
 
 import { ErrorClassifier } from '../errors/classifier';
-import { TurnInProgressError } from '../errors/types';
+import { TurnInProgressError, TURN_IN_PROGRESS_POLL_MS } from '../errors/types';
 import type { HttpError } from '../errors/http-error';
 import { defaultRetryDecision, type ResilientOperationOptions } from './resilient-operation';
 import { capabilitiesManager } from '../capabilities';
+import { getApiTransport } from '../api/transport';
+import type { TurnRequest } from '../api/types';
 import type { TurnTiming } from './turn-timing';
 
 /** The attempt count every other recovery keeps (`resilientOperation`'s default). */
 export const DEFAULT_MAX_ATTEMPTS = 3;
 
-/** The coded 504s that say nothing committed: retried once, together. */
-const NOTHING_COMMITTED_504_CODES: ReadonlySet<string> = new Set(['REQUEST_TIMEOUT', 'LLM_TIMEOUT']);
+/** The coded 504 that is retried automatically, once. `REQUEST_TIMEOUT` is deliberately absent. */
+const RETRIED_ONCE_504_CODE = 'LLM_TIMEOUT';
 
 type TurnTimeout = 'client' | 'gateway' | 'server_timeout';
 
@@ -52,7 +55,7 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
   if (status === 504) {
     const code = (error as HttpError).headers?.['x-error-code'];
     if (code === undefined) return 'gateway';
-    return NOTHING_COMMITTED_504_CODES.has(code) ? 'server_timeout' : null;
+    return code === RETRIED_ONCE_504_CODE ? 'server_timeout' : null;
   }
   if (typeof status !== 'number' && error.name === 'TimeoutError') return 'client';
   return null;
@@ -72,9 +75,9 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
  *
  * The waits between attempts are the server's: a `TURN_IN_PROGRESS` 409 is
  * polled within its `Retry-After` (an upper bound on the claim) and an
- * `LLM_TIMEOUT` 504 waits its `Retry-After`; `REQUEST_TIMEOUT` carries none.
+ * `LLM_TIMEOUT` 504 waits its `Retry-After`.
  */
-export function keyedTurnRetryPolicy(timing: TurnTiming = capabilitiesManager.getTurnTiming()): Pick<
+export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
   ResilientOperationOptions<unknown>,
   'retryOptions' | 'deadlineMs'
 > {
@@ -86,6 +89,9 @@ export function keyedTurnRetryPolicy(timing: TurnTiming = capabilitiesManager.ge
     retryOptions: {
       // The deadline is the bound, not the count.
       maxAttempts: Number.POSITIVE_INFINITY,
+      // A TURN_IN_PROGRESS poll is spaced by min(Retry-After, 5 s) for the
+      // whole wait: the generic backoff must not grow past the poll interval.
+      maxDelay: TURN_IN_PROGRESS_POLL_MS,
       shouldRetry: (error) => {
         switch (turnTimeoutKind(error)) {
           case 'client':
@@ -134,4 +140,23 @@ export function rotateIdempotencyKey(turnId: string): string {
   const key = `${turnId}_r${rotations}`;
   rotatedKeys.set(turnId, key);
   return key;
+}
+
+/** Bytes a turn's multipart body carries (files, paste, query): what the upload allowance is sized on. */
+export function turnBodyBytes(request: TurnRequest): number {
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  for (const file of request.files ?? []) bytes += file.size;
+  if (request.pastedContent) bytes += encoder.encode(request.pastedContent).length;
+  if (request.query) bytes += encoder.encode(request.query).length;
+  return bytes;
+}
+
+/**
+ * The timing for sending `request`: capabilities re-read first if the network
+ * read held is older than five minutes, then derived for this body.
+ */
+export async function turnTimingFor(request: TurnRequest): Promise<TurnTiming> {
+  await capabilitiesManager.refreshIfStale(await getApiTransport().baseUrl());
+  return capabilitiesManager.getTurnTiming(turnBodyBytes(request));
 }

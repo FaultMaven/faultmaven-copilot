@@ -376,13 +376,13 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
     expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TimeoutError);
   });
 
-  it('504 REQUEST_TIMEOUT: one retry, then the nothing-was-saved message', async () => {
+  it('504 REQUEST_TIMEOUT: no automatic retry; the nothing-was-saved message at once', async () => {
     routeWire([
       async () => wire(504, { detail: 'The turn ran out of time and nothing was saved.' }, { 'x-error-code': 'REQUEST_TIMEOUT' }),
     ]);
     await submit();
     await advance(700_000);
-    expect(turnPosts()).toHaveLength(2);
+    expect(turnPosts()).toHaveLength(1);
     expect(mockShowError).toHaveBeenCalledTimes(1);
     expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(TurnTimedOutError);
   });
@@ -401,22 +401,22 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
   });
 
   it('sends the turn with the request timeout derived from the published bound', async () => {
-    vi.spyOn(capabilitiesManager, 'getTurnTiming').mockReturnValue(deriveTurnTiming(150));
+    vi.spyOn(capabilitiesManager, 'getTurnTiming').mockImplementation((bytes = 0) => deriveTurnTiming(150, bytes));
     routeWire([async () => replay()]);
     await submit();
     const [[, , timeoutMs]] = (fetchWithTimeout.mock.calls as [string, RequestInit, number][]).filter(
       ([url, init]) => url === TURNS_URL && init.method === 'POST',
     );
-    expect(timeoutMs).toBe(210_000);
+    expect(timeoutMs).toBe(211_000); // 150 + 60 + ceil(26 / 125000) s
   });
 
-  it('with no published bound the turn keeps the 300 s request timeout', async () => {
+  it('with no published bound the turn keeps the 300 s request timeout (+1 s: the 26-byte body rounds up)', async () => {
     routeWire([async () => replay()]);
     await submit();
     const [[, , timeoutMs]] = (fetchWithTimeout.mock.calls as [string, RequestInit, number][]).filter(
       ([url, init]) => url === TURNS_URL && init.method === 'POST',
     );
-    expect(timeoutMs).toBe(300_000);
+    expect(timeoutMs).toBe(301_000);
   });
 
   it('client timeouts stop at the DERIVED deadline (420 s for a 150 s bound), not the 660 s constant', async () => {

@@ -140,7 +140,8 @@ describe('turnTimeoutKind — the 504 split', () => {
   it('tells a client timeout, an uncoded gateway 504 and a coded 504 apart', () => {
     expect(turnTimeoutKind(clientTimeout())).toBe('client');
     expect(turnTimeoutKind(httpError(504))).toBe('gateway');
-    expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }, 30))).toBe('server_timeout');
+    // REQUEST_TIMEOUT is definite and never retried automatically (F7).
+    expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }))).toBeNull();
     expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 30))).toBe('server_timeout');
     // A code this build does not know is not a gateway's 504.
     expect(turnTimeoutKind(httpError(504, { 'x-error-code': 'SOMETHING_NEW' }))).toBeNull();
@@ -162,7 +163,7 @@ describe('resilientOperation with the keyed-turn policy', () => {
       operation,
       context: { operation: 'message_submission' },
       idempotent: true,
-      ...(withPolicy ? keyedTurnRetryPolicy() : {}),
+      ...(withPolicy ? keyedTurnRetryPolicy(deriveTurnTiming(undefined)) : {}),
     });
 
   it('waits Retry-After on TURN_IN_PROGRESS before re-sending', async () => {
@@ -197,14 +198,14 @@ describe('resilientOperation with the keyed-turn policy', () => {
     expect(bare).toHaveBeenCalledTimes(1);
   });
 
-  it('retries a 504 REQUEST_TIMEOUT at most once', async () => {
+  it('never retries a 504 REQUEST_TIMEOUT automatically: it surfaces at once', async () => {
     const operation = vi
       .fn<() => Promise<string>>()
-      .mockRejectedValue(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }, 30));
+      .mockRejectedValue(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }));
     const caught = run(operation).catch((e: unknown) => e);
     await vi.runAllTimersAsync();
-    expect(await caught).toBeInstanceOf(TimeoutError);
-    expect(operation).toHaveBeenCalledTimes(2);
+    expect(await caught).toBeInstanceOf(TurnTimedOutError);
+    expect(operation).toHaveBeenCalledTimes(1);
   });
 
   it('retries a 504 LLM_TIMEOUT at most once (each retry is a new LLM run)', async () => {
@@ -213,20 +214,21 @@ describe('resilientOperation with the keyed-turn policy', () => {
       .mockRejectedValue(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 30));
     const caught = run(operation).catch((e: unknown) => e);
     await vi.runAllTimersAsync();
-    expect(await caught).toBeInstanceOf(TimeoutError);
+    expect(await caught).toBeInstanceOf(ProviderTimedOutError);
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
-  it('one retry in all across REQUEST_TIMEOUT and LLM_TIMEOUT', async () => {
+  it('LLM_TIMEOUT then REQUEST_TIMEOUT: the retry is spent and the second is not retried either', async () => {
     const operation = vi
       .fn<() => Promise<string>>()
       .mockRejectedValueOnce(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 30))
-      .mockRejectedValue(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }, 30));
+      .mockRejectedValue(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }));
     const caught = run(operation).catch((e: unknown) => e);
     await vi.runAllTimersAsync();
-    await caught;
+    expect(await caught).toBeInstanceOf(TurnTimedOutError);
     expect(operation).toHaveBeenCalledTimes(2);
   });
+
 
   it('a 504 with an unknown code keeps today’s behaviour: no automatic retry', async () => {
     const operation = vi
@@ -280,13 +282,11 @@ describe('resilientOperation with the keyed-turn policy', () => {
     const error = await caught;
 
     expect(error).toBeInstanceOf(TurnInProgressError);
-    // 100 s in each request; between them the longer of the 5 s poll
-    // (Retry-After 10 s is a bound) and the generic backoff (1, 2, 4, 8, 10 s):
-    // gaps 5, 5, 5, 8, 10, 10. The sixth attempt ends at 633 s, the seventh
-    // may still start (643 s start; 633 + 5 < 660) and ends at 743 s, and an
-    // eighth is refused.
+    // 100 s in each request and a 5 s poll between them (Retry-After 10 s is
+    // a bound): attempts end at 100, 205, ... 625 s; the seventh starts at
+    // 630 s (625 + 5 < 660) and ends at 730 s; an eighth is refused.
     expect(operation).toHaveBeenCalledTimes(7);
-    expect(failedAt - started).toBe(743_000);
+    expect(failedAt - started).toBe(730_000);
   });
 });
 
@@ -366,7 +366,7 @@ describe('the keyed-turn policy for coded 504s and the derived deadline', () => 
     vi.useRealTimers();
   });
 
-  const run = (operation: () => Promise<string>, timing?: ReturnType<typeof deriveTurnTiming>) =>
+  const run = (operation: () => Promise<string>, timing: ReturnType<typeof deriveTurnTiming> = deriveTurnTiming(undefined)) =>
     resilientOperation({
       operation,
       context: { operation: 'message_submission' },
@@ -388,7 +388,7 @@ describe('the keyed-turn policy for coded 504s and the derived deadline', () => 
   });
 
   it('LLM_TIMEOUT: a Retry-After that would cross the deadline is not waited out', async () => {
-    const timing = deriveTurnTiming(1); // (1 + 60) s request timeout, 122 s deadline
+    const timing = deriveTurnTiming(30); // (30 + 60) s request timeout, 180 s deadline
     const operation = vi
       .fn<() => Promise<string>>()
       .mockRejectedValue(httpError(504, { 'x-error-code': 'LLM_TIMEOUT' }, 200));
@@ -398,14 +398,14 @@ describe('the keyed-turn policy for coded 504s and the derived deadline', () => 
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
-  it('REQUEST_TIMEOUT: one retry with no server wait, then the not-committed message', async () => {
+  it('REQUEST_TIMEOUT: surfaces the not-committed message with no automatic retry', async () => {
     const operation = vi
       .fn<() => Promise<string>>()
       .mockRejectedValue(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' }));
     const caught = run(operation).catch((e: unknown) => e);
     await vi.runAllTimersAsync();
     expect(await caught).toBeInstanceOf(TurnTimedOutError);
-    expect(operation).toHaveBeenCalledTimes(2);
+    expect(operation).toHaveBeenCalledTimes(1);
   });
 
   it('TURN_IN_PROGRESS is polled inside its Retry-After, not slept through once', async () => {
@@ -419,6 +419,21 @@ describe('the keyed-turn policy for coded 504s and the derived deadline', () => 
     await vi.advanceTimersByTimeAsync(12_000);
     await expect(result).resolves.toBe('replayed');
     expect(operation).toHaveBeenCalledTimes(3);
+  });
+
+  it('TURN_IN_PROGRESS polls are spaced min(Retry-After, 5 s) for the whole wait', async () => {
+    const starts: number[] = [];
+    const t0 = Date.now();
+    const operation = vi.fn<() => Promise<string>>(async () => {
+      starts.push(Date.now() - t0);
+      if (starts.length < 9) throw httpError(409, { 'x-error-code': 'TURN_IN_PROGRESS' }, 5);
+      return 'replayed';
+    });
+    const result = run(operation);
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toBe('replayed');
+    const gaps = starts.slice(1).map((t, i) => t - starts[i]);
+    expect(gaps).toEqual(Array(8).fill(5000));
   });
 
   it('the recovery deadline is the one derived from the published bound', async () => {
@@ -441,5 +456,34 @@ describe('the keyed-turn policy for coded 504s and the derived deadline', () => 
     // Attempts end at 100, 205, 310, 415 s; a fifth would start at 420 s.
     expect(operation).toHaveBeenCalledTimes(4);
     expect(failedAt - started).toBe(415_000);
+  });
+});
+
+
+describe('a coded 504 is definite, not ambiguous (upload wording)', () => {
+  const upload = {
+    attachments: [{ name: 'app.log', isFile: true }],
+    hasQuery: false,
+  };
+
+  it.each(['REQUEST_TIMEOUT', 'LLM_TIMEOUT'])('%s: isAmbiguousFailure is false and the notice says "was not added"', (code) => {
+    const error = httpError(504, { 'x-error-code': code }, 30);
+    expect(isAmbiguousFailure(error)).toBe(false);
+    const notice = unsentAttachmentsNotice({ ...upload, ambiguous: isAmbiguousFailure(error) });
+    expect(notice).toContain('was not added');
+    expect(notice).not.toContain('may not have been added');
+  });
+
+  it('with a message and a file: "were not added"', () => {
+    const notice = unsentAttachmentsNotice({
+      attachments: [{ name: 'app.log', isFile: true }],
+      hasQuery: true,
+      ambiguous: isAmbiguousFailure(httpError(504, { 'x-error-code': 'REQUEST_TIMEOUT' })),
+    });
+    expect(notice).toContain('were not added');
+  });
+
+  it('an uncoded gateway 504 stays ambiguous', () => {
+    expect(isAmbiguousFailure(httpError(504))).toBe(true);
   });
 });

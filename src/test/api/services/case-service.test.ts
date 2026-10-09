@@ -496,6 +496,17 @@ describe('Case Service', () => {
   });
 
   describe('submitTurn', () => {
+    it('adds the upload allowance for a file-carrying turn (1 Mbps: 10 MB adds 80 s)', async () => {
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({
+        agent_response: 'ok', turn_number: 1, milestones_completed: [], case_state: 'inquiry',
+        progress_made: false, is_stuck: false, attachments_processed: []
+      }));
+      const file = new File([new Uint8Array(10_000_000)], 'big.log');
+      await caseService.submitTurn('case-123', { files: [file] });
+      // fallback 300 s + ceil(10 000 000 / 125 000) s
+      expect((client.authenticatedFetchWithRetry as any).mock.calls.at(-1)[2]).toBe(380_000);
+    });
+
     it('should submit a query-only turn', async () => {
       const turnResponseData = {
         agent_response: 'AI Response',
@@ -518,7 +529,7 @@ describe('Case Service', () => {
           credentials: 'include'
         }),
         // No published bound in this suite: the fallback request timeout.
-        300_000
+        301_000 // 300 s + ceil(10 bytes / 125 000) s
       );
 
       // Verify FormData was sent (body is FormData instance)

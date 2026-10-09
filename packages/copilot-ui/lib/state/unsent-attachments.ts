@@ -15,7 +15,7 @@
  * error status says "were not added".
  */
 import { ErrorClassifier } from '../errors/classifier';
-import { NetworkError, TimeoutError, TurnInProgressError, TurnNotSentError } from '../errors/types';
+import { NetworkError, ProviderTimedOutError, TimeoutError, TurnInProgressError, TurnNotSentError, TurnTimedOutError } from '../errors/types';
 
 /** Statuses a gateway answers on the API's behalf; the turn may still commit. */
 const GATEWAY_STATUSES = new Set([502, 504]);
@@ -57,6 +57,9 @@ export function isAmbiguousFailure(error: unknown): boolean {
   // A 409 TURN_IN_PROGRESS is a received status, but its whole content is
   // that the turn is still running and may yet commit (contract 12.2.0).
   if (classified instanceof TurnInProgressError) return true;
+  // A CODED 504 (contract 12.4.0) is the API's own answer that nothing was
+  // committed, however it is a timeout: definite, not ambiguous.
+  if (classified instanceof TurnTimedOutError || classified instanceof ProviderTimedOutError) return false;
   // The retry layer hands over an already classified error; the HTTP status
   // lives on the error it wraps.
   const cause = classified.originalError ?? classified;

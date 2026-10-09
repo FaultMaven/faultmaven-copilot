@@ -4,7 +4,10 @@ import { createLogger } from './utils/logger';
 import { fetchWithTimeout } from './utils/fetch-timeout';
 import { ownedStorage } from './owned-storage';
 import type { components } from '../types/api.generated';
-import { FALLBACK_TURN_TIMING, deriveTurnTiming, type TurnTiming } from './utils/turn-timing';
+import { deriveTurnTiming, type TurnTiming } from './utils/turn-timing';
+
+/** A network read older than this is re-read before a turn (the bound moves with a provider switch). */
+export const CAPABILITIES_TTL_MS = 5 * 60 * 1000;
 
 const log = createLogger('CapabilitiesManager');
 
@@ -26,6 +29,9 @@ export type BackendCapabilities = components['schemas']['BackendCapabilities'];
 export class CapabilitiesManager {
   private capabilities: BackendCapabilities | null = null;
   private source: CapabilitiesSource | null = null;
+  private fetchedAt = 0;
+  /** The capabilities object the fallback-timing warning was last issued for. */
+  private warnedFor: unknown = undefined;
   private fetchPromise: Promise<BackendCapabilities> | null = null;
 
   async fetch(apiUrl: string): Promise<BackendCapabilities> {
@@ -33,7 +39,7 @@ export class CapabilitiesManager {
     // A cached / fabricated fallback must NOT poison the cache: the backend may
     // be temporarily unreachable and then recover, so a degraded result has to
     // leave the door open for the next call to re-detect a live backend.
-    if (this.capabilities && this.source === 'network') {
+    if (this.capabilities && this.source === 'network' && !this.isStale()) {
       return this.capabilities;
     }
 
@@ -84,6 +90,7 @@ export class CapabilitiesManager {
         }
         this.capabilities = caps;
         this.source = 'network';
+        this.fetchedAt = Date.now();
 
         // Cache for offline access. No availability guard: the host store
         // throws when it is not installed, and that is a wiring bug to surface
@@ -94,6 +101,12 @@ export class CapabilitiesManager {
         return caps;
 
       } catch (error) {
+        // A stale NETWORK read is better than any degraded one: keep it, and
+        // the next call (still stale) tries the network again.
+        if (this.capabilities && this.source === 'network') {
+          log.warn('Capabilities re-read failed; keeping the earlier network read', error);
+          return this.capabilities;
+        }
         log.warn('Capabilities fetch failed; serving degraded capabilities', error);
 
         // Try cache
@@ -157,30 +170,45 @@ export class CapabilitiesManager {
     };
   }
 
+  private isStale(): boolean {
+    return Date.now() - this.fetchedAt >= CAPABILITIES_TTL_MS;
+  }
+
   /**
-   * The turn request timeout and recovery deadline (`utils/turn-timing.ts`),
-   * from the bound the API published on the capabilities held now. Read per
-   * submission, so a panel session that re-reads capabilities follows an
-   * operator's provider switch. A fallback result, a payload without the
-   * field (a cache written before 12.4.0) or nothing held yet uses the policy
-   * constants, and says so.
+   * Re-read the capabilities before a turn when the network read held is older
+   * than `CAPABILITIES_TTL_MS`: a panel can stay open for days and the turn
+   * bound moves with an operator's provider switch. Does nothing when nothing
+   * authoritative is held (the app's own load covers that) or the read is fresh.
    */
-  getTurnTiming(): TurnTiming {
-    if (this.capabilities) {
-      const timing = deriveTurnTiming(this.capabilities.limits?.turnResponseBoundSeconds);
-      if (timing.source === 'published') return timing;
-      log.warn('Capabilities carry no usable turnResponseBoundSeconds; using the fallback turn timing', {
-        capabilitiesSource: this.source,
-        ...FALLBACK_TURN_TIMING,
-      });
-      return timing;
+  async refreshIfStale(apiUrl: string): Promise<void> {
+    if (this.capabilities && this.source === 'network' && this.isStale()) {
+      await this.fetch(apiUrl);
     }
-    log.warn('No live capabilities; using the fallback turn timing', {
-      capabilitiesSource: this.source,
-      ...FALLBACK_TURN_TIMING,
-    });
-    return FALLBACK_TURN_TIMING;
+  }
+
+  /**
+   * The turn request timeout and recovery deadline (`utils/turn-timing.ts`) for
+   * a body of `bodyBytes`, from the bound the API published on the capabilities
+   * held now (re-read when stale: `refreshIfStale`). A payload without a usable
+   * bound (a cache written before 12.4.0, a fallback, an out-of-range value) or
+   * nothing held yet uses the policy constants; that is logged once per
+   * capabilities object, not on every attempt.
+   */
+  getTurnTiming(bodyBytes = 0): TurnTiming {
+    const held = this.capabilities;
+    const timing = deriveTurnTiming(held?.limits?.turnResponseBoundSeconds, bodyBytes);
+    if (timing.source === 'fallback' && this.warnedFor !== (held ?? NOTHING_HELD)) {
+      this.warnedFor = held ?? NOTHING_HELD;
+      log.warn('No usable turnResponseBoundSeconds; using the fallback turn timing', {
+        capabilitiesSource: this.source,
+        requestTimeoutMs: timing.requestTimeoutMs,
+        deadlineMs: timing.deadlineMs,
+      });
+    }
+    return timing;
   }
 }
+
+const NOTHING_HELD = Symbol('nothing held');
 
 export const capabilitiesManager = new CapabilitiesManager();

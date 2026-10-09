@@ -14,6 +14,7 @@ import {
 import { createHttpErrorFromResponse } from '@faultmaven/copilot-ui/lib/errors/http-error';
 import { getRecoveryPlan } from '@faultmaven/copilot-ui/lib/errors/recovery-strategies';
 import { defaultRetryDecision, resilientOperation } from '@faultmaven/copilot-ui/lib/utils/resilient-operation';
+import { deriveTurnTiming } from '@faultmaven/copilot-ui/lib/utils/turn-timing';
 import { keyedTurnRetryPolicy } from '@faultmaven/copilot-ui/lib/utils/keyed-turn-retry';
 import { isAmbiguousFailure, unsentAttachmentsNotice } from '@faultmaven/copilot-ui/lib/state/unsent-attachments';
 
@@ -116,7 +117,7 @@ describe('CASE_TERMINAL is never retried', () => {
         operation,
         context: { operation: 'message_submission' },
         idempotent: true,
-        ...(withPolicy ? keyedTurnRetryPolicy() : {}),
+        ...(withPolicy ? keyedTurnRetryPolicy(deriveTurnTiming(undefined)) : {}),
       }).catch((e: unknown) => e);
       await vi.runAllTimersAsync();
       expect(await caught).toBeInstanceOf(CaseTerminalError);
