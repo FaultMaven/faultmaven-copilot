@@ -26,10 +26,11 @@ import DocumentDetailsModal from "./components/DocumentDetailsModal";
 import { PersistenceManager } from "../../lib/utils/persistence-manager";
 import { CaseSnapshot, isCaseTransition } from "../../lib/state/case-reconcile";
 import { applyCaseTitleChange } from "../../lib/state/case-title-change";
+import { titleChangeDeps } from "../../lib/state/case-title-deps";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch } from "../../lib/state/session-epoch";
 import { createLogger } from "../../lib/utils/logger";
-import { getKnowledgeDocument, updateCaseTitle } from "../../lib/api";
+import { getKnowledgeDocument } from "../../lib/api";
 import { useAppStore, debouncedPersist } from "../../lib/state/store";
 import { queryClient } from "../../lib/api/query-client";
 import { HostAdapterProvider, useHost } from "../host";
@@ -203,8 +204,6 @@ function CopilotPanelContent({
   const setIsDocumentModalOpen = useAppStore((state) => state.setIsDocumentModalOpen);
   const initializeApp = useAppStore((state) => state.initializeApp);
 
-  const setConversationTitles = useAppStore((state) => state.setConversationTitles);
-  const setTitleSources = useAppStore((state) => state.setTitleSources);
   const setPinnedCases = useAppStore((state) => state.setPinnedCases);
   const setActiveCaseObj = useAppStore((state) => state.setActiveCase);
   const handleCaseSelect = useAppStore((state) => state.handleCaseSelect);
@@ -488,18 +487,7 @@ function CopilotPanelContent({
               onNewChat={handleNewChatFromNav}
               onLogout={handleLogout}
               onCaseTitleChange={(caseId: string, newTitle: string, source: 'user' | 'backend') =>
-                applyCaseTitleChange(caseId, newTitle, source, {
-                  readStore: () => useAppStore.getState(),
-                  setConversationTitles,
-                  setTitleSources,
-                  persistTitle: updateCaseTitle,
-                  onPersistError: (error) => showError({
-                    title: 'Failed to update title',
-                    message: error instanceof Error ? error.message : 'Unknown error',
-                    type: 'error'
-                  }),
-                  log
-                })
+                applyCaseTitleChange(caseId, newTitle, source, titleChangeDeps(showError, log))
               }
               onPinToggle={(id) => {
                 const newSet = new Set(pinnedCases);

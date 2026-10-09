@@ -19,6 +19,9 @@
  * redundant write went unnoticed.
  */
 
+import { ErrorClassifier } from '../errors/classifier';
+import { CaseTerminalError } from '../errors/types';
+
 export type TitleSource = 'user' | 'backend' | 'system';
 
 type TitleMap = Record<string, string>;
@@ -32,7 +35,17 @@ export interface CaseTitleChangeDeps {
   setTitleSources: Updater<SourceMap>;
   /** `PUT /cases/{id}` — called only when the client is the origin of the change. */
   persistTitle: (caseId: string, title: string) => Promise<void>;
+  /**
+   * The write failed. Handed the `CaseTerminalError` itself on a 409
+   * `CASE_TERMINAL`, so it can be shown as what it is; the raw error otherwise.
+   */
   onPersistError: (error: unknown) => void;
+  /**
+   * Read the case row back (`refreshActiveCase`). Called on a 409
+   * `CASE_TERMINAL`: the case is resolved or closed, and the panel should show
+   * it so. A retry of the rename can only meet the same refusal.
+   */
+  refreshCase: (caseId: string) => void;
   log?: { info: (msg: string, data?: unknown) => void; error: (msg: string, data?: unknown) => void };
 }
 
@@ -61,7 +74,13 @@ export async function applyCaseTitleChange(
     deps.log?.info('Case title updated successfully', { caseId, newTitle });
   } catch (error) {
     deps.log?.error('Failed to update case title', { caseId, newTitle, error });
-    deps.onPersistError(error);
+    const classified = ErrorClassifier.classify(error);
+    if (classified instanceof CaseTerminalError) {
+      deps.onPersistError(classified);
+      deps.refreshCase(caseId);
+    } else {
+      deps.onPersistError(error);
+    }
 
     // Restore both maps to their exact pre-optimistic values.
     deps.setConversationTitles(prev => {

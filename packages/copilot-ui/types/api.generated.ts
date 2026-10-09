@@ -9425,6 +9425,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description `x-error-code: CASE_TERMINAL`: the case is resolved or closed and read-only. */
+            409: {
+                headers: {
+                    /** @description Which conflict. */
+                    "x-error-code"?: "CASE_TERMINAL";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9525,6 +9534,15 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description `x-error-code: CASE_TERMINAL`: the case is already resolved or closed. Unlabelled, with `conflict_reason: concurrent_update`: the case changed while closing; reload and retry. */
+            409: {
+                headers: {
+                    /** @description Which conflict; absent for a concurrent update. */
+                    "x-error-code"?: "CASE_TERMINAL";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10425,13 +10443,13 @@ export interface operations {
                     "application/json": components["schemas"]["TurnResponse"];
                 };
             };
-            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed). Unlabelled: the case is resolved or closed and refuses new data, a status change or a file reclassification. */
+            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered). */
             409: {
                 headers: {
                     /** @description Seconds, on `TURN_IN_PROGRESS` only. */
                     "Retry-After"?: number;
-                    /** @description Which conflict; absent for a terminal case. */
-                    "x-error-code"?: "TURN_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE" | "IDEMPOTENCY_REPLAY_UNAVAILABLE" | "CASE_VERSION_CONFLICT";
+                    /** @description Which conflict. */
+                    "x-error-code"?: "TURN_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE" | "IDEMPOTENCY_REPLAY_UNAVAILABLE" | "CASE_VERSION_CONFLICT" | "CASE_TERMINAL";
                     [name: string]: unknown;
                 };
                 content?: never;

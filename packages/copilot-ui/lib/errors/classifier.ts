@@ -13,6 +13,7 @@ import {
   TurnInProgressError,
   IdempotencyKeyReuseError,
   TurnReplayUnavailableError,
+  CaseTerminalError,
   QuotaExhaustedError,
   OptimisticUpdateError,
   UnknownError,
@@ -135,10 +136,16 @@ export class ErrorClassifier {
         if (errorCode === 'IDEMPOTENCY_REPLAY_UNAVAILABLE') {
           return new TurnReplayUnavailableError(error.message, error, context);
         }
+        // Any route (contract 12.3.0): the case is resolved or closed. Not a
+        // conflict a retry or a reload can clear.
+        if (errorCode === 'CASE_TERMINAL') {
+          return new CaseTerminalError(error.message, error, context);
+        }
 
-        // Case version conflict (`CASE_VERSION_CONFLICT`, and the unlabelled
-        // 409 a terminal case answers with) — backend OCC rejected the save because
-        // another writer updated the case while this turn was in flight.
+        // Case version conflict (`CASE_VERSION_CONFLICT`, and an unlabelled
+        // 409 such as the close route's `concurrent_update`) — backend OCC
+        // rejected the save because another writer updated the case while
+        // this request was in flight.
         // The response carries x-expected-version / x-actual-version
         // headers on HttpError so we can surface the version drift if
         // we ever want to (currently just used for telemetry).

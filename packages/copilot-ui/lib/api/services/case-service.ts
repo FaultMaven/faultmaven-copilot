@@ -618,10 +618,12 @@ export async function updateCaseTitle(caseId: string, title: string): Promise<vo
   });
 
   if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    // Invalidate cache on failure to ensure consistency 
+    // Invalidate cache on failure to ensure consistency.
     await caseCacheManager.invalidateCache();
-    throw new Error(errorBodyText(errorData) || `Failed to update case: ${response.status}`);
+    // Typed, with its signal headers: a response that arrives here (the retry
+    // after a host token refresh) keeps its `x-error-code`, so a 409
+    // CASE_TERMINAL is still classified as one.
+    throw await createHttpErrorFromResponse(response);
   }
 
   // Optimistically update cache on success
@@ -797,7 +799,9 @@ export async function submitTurn(
     // via the ErrorClassifier → CaseVersionConflictError path and
     // surface a soft "Case was updated; retry" message instead of a
     // generic error. Auto-retry would loop on the same conflict, so
-    // CaseVersionConflictError uses manual_retry recovery.
+    // CaseVersionConflictError uses manual_retry recovery. A 409 labelled
+    // `CASE_TERMINAL` (the case is resolved or closed) is not a conflict: the
+    // classifier maps it to CaseTerminalError, which is never retried.
     //
     // Note: in production, authenticatedFetchWithRetry typically throws
     // its own enriched Error for non-OK responses (see client.ts), so

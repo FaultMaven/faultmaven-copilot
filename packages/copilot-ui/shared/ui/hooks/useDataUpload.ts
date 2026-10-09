@@ -36,6 +36,7 @@ import {
   PAGE_CAPTURE_LABEL,
   IdempotencyKeyReuseError,
   TurnReplayUnavailableError,
+  CaseTerminalError,
 } from '../../../lib/errors/types';
 import type { UserCase } from '../../../types/case';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
@@ -172,6 +173,29 @@ export function useDataUpload() {
         void useAppStore.getState().reloadCommittedTurn(targetCaseId, [userMessageId, aiMessageId]);
         showError(classified);
         return { success: true, message: '', sent: true };
+      }
+      if (classified instanceof CaseTerminalError) {
+        // The case is resolved or closed: it takes no new data, and resending
+        // the same files can only meet the same 409. No failed op (so no Retry
+        // in the banner); the bubble says why and names what was not added, and
+        // the case row is read back so the panel shows it closed (which also
+        // turns the attachment controls off).
+        log.warn('Turn refused: the case is terminal', { caseId: targetCaseId });
+        // A received refusal: nothing was added, definitely.
+        const notAdded = unsentAttachmentsNotice({ ...unsent, ambiguous: false }, { noRetry: true });
+        const chatError = notAdded ? `${classified.bubbleText}\n\n${notAdded}` : classified.bubbleText;
+        pendingOpsManager.remove(aiMessageId);
+        setConversations(prev => ({
+          ...prev,
+          [targetCaseId]: (prev[targetCaseId] || []).map(item =>
+            item.id === aiMessageId
+              ? { ...item, response: chatError, optimistic: false, loading: false, error: true, failed: false }
+              : item
+          )
+        }));
+        void useAppStore.getState().refreshActiveCase(targetCaseId);
+        showError(classified);
+        return { success: false, message: classified.userMessage, sent: true };
       }
       if (classified instanceof IdempotencyKeyReuseError) {
         // The same key can only meet the same 409: the banner's Retry is a new
