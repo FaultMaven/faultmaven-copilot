@@ -3,6 +3,7 @@ import type { components, operations } from "../../../types/api.generated";
 import { Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
+import { capabilitiesManager } from "../../capabilities";
 import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
@@ -772,7 +773,7 @@ export async function submitTurn(
     // turn. Callers derive the key from the turn's stable optimistic message id
     // so auto- AND manual-retries of the same turn share one key.
     ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {})
-  });
+  }, capabilitiesManager.getTurnTiming().requestTimeoutMs);
 
   if (response.status === 422) {
     let detail: any = 'Validation failed (422)';

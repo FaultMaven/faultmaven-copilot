@@ -232,9 +232,9 @@ export class NetworkError extends UserFacingError {
  * Timeout error
  */
 export class TimeoutError extends UserFacingError {
-  readonly userTitle = 'Request Timed Out';
-  readonly userMessage = 'The server took too long to respond.';
-  readonly userAction = 'Please try again. If this continues, the server may be experiencing issues.';
+  readonly userTitle: string = 'Request Timed Out';
+  readonly userMessage: string = 'The server took too long to respond.';
+  readonly userAction: string = 'Please try again. If this continues, the server may be experiencing issues.';
   readonly category: ErrorCategory = 'timeout';
   readonly recovery: RecoveryStrategy = 'manual_retry';
   readonly timeoutMs: number;
@@ -251,6 +251,36 @@ export class TimeoutError extends UserFacingError {
       dismissible: true,
       icon: 'warning'
     };
+  }
+}
+
+/**
+ * 504 `x-error-code: REQUEST_TIMEOUT` (contract 12.4.0): the turn used its whole
+ * ceiling and NOTHING was committed. The same input is likely to exhaust the
+ * ceiling again at full LLM cost, and the API sends no `Retry-After`, so the
+ * keyed-turn policy retries it at most once and the copy says why.
+ */
+export class TurnTimedOutError extends TimeoutError {
+  readonly userTitle: string = 'Message Took Too Long';
+  readonly userMessage: string = 'FaultMaven ran out of time on this message, and nothing was saved.';
+  readonly userAction: string = 'Sending it again will probably run out of time too. Try a smaller question or less data, or split it up.';
+}
+
+/**
+ * 504 `x-error-code: LLM_TIMEOUT` (contract 12.4.0): the AI provider timed out
+ * and nothing was committed. Transient; `Retry-After` (30 s) says when to ask
+ * again, honoured by `resilientOperation` as a `ServerDirectedWait`.
+ */
+export class ProviderTimedOutError extends TimeoutError implements ServerDirectedWait {
+  readonly userTitle: string = 'AI Provider Timed Out';
+  readonly userMessage: string = 'The AI provider did not answer in time, and nothing was saved.';
+  readonly userAction: string = 'Try again in a moment.';
+  readonly retryAfterMs: number;
+
+  constructor(message: string, retryAfterMs?: number, originalError?: Error, context?: ErrorContext) {
+    super(message, retryAfterMs, originalError, context);
+    this.retryAfterMs =
+      retryAfterMs === undefined || !Number.isFinite(retryAfterMs) ? 30_000 : Math.max(retryAfterMs, 0);
   }
 }
 
@@ -473,9 +503,9 @@ export class CaseVersionConflictError extends UserFacingError {
   }
 }
 
-/** Bounds on the wait a `TURN_IN_PROGRESS` 409 asks for, and the wait when it names none. */
+/** Bounds on the wait between asks while a `TURN_IN_PROGRESS` 409 lasts, and the wait when it names none. */
 export const TURN_IN_PROGRESS_MIN_WAIT_MS = 1_000;
-export const TURN_IN_PROGRESS_MAX_WAIT_MS = 60_000;
+export const TURN_IN_PROGRESS_POLL_MS = 5_000;
 export const TURN_IN_PROGRESS_DEFAULT_WAIT_MS = 2_000;
 
 /**
@@ -484,10 +514,12 @@ export const TURN_IN_PROGRESS_DEFAULT_WAIT_MS = 2_000;
  * the request; the answer is to send the SAME request with the SAME key again
  * once the first has finished, and that retry replays the committed turn.
  *
- * `Retry-After` is the seconds left on the server's claim, which can be most
- * of a turn's ceiling. It is clamped to [1, 60] s so the panel asks again at
- * least once a minute, and 2 s stands in when the header is missing. How long
- * the panel keeps asking is the keyed-turn deadline
+ * `Retry-After` is an UPPER BOUND on the claim (contract 12.4.0): the longest
+ * the running turn can still hold it, not when the turn finishes. The turn
+ * usually ends sooner and a retry then replays it, so the panel polls: it asks
+ * again after min(Retry-After, 5 s), never later than the bound and never
+ * sooner than 1 s, and 2 s stands in when the header is missing. How long the
+ * panel keeps asking is the keyed-turn deadline
  * (`lib/utils/keyed-turn-retry.ts`), not this class.
  *
  * The copy is what the user reads once the panel has stopped asking: the turn
@@ -505,7 +537,7 @@ export class TurnInProgressError extends UserFacingError implements ServerDirect
     super(message, originalError, context);
     this.retryAfterMs = retryAfterMs === undefined || !Number.isFinite(retryAfterMs)
       ? TURN_IN_PROGRESS_DEFAULT_WAIT_MS
-      : Math.min(Math.max(retryAfterMs, TURN_IN_PROGRESS_MIN_WAIT_MS), TURN_IN_PROGRESS_MAX_WAIT_MS);
+      : Math.max(Math.min(retryAfterMs, TURN_IN_PROGRESS_POLL_MS), TURN_IN_PROGRESS_MIN_WAIT_MS);
   }
 
   getDisplayOptions(): ErrorDisplayOptions {

@@ -16,9 +16,11 @@
  * `TimeoutError` or a gateway 504 (no `x-error-code`: a proxy answered, the API
  * may still commit) on a keyed turn is retried under the deadline below. A
  * CODED 504 is the API's own answer that nothing committed —
- * `REQUEST_TIMEOUT` (the turn exhausted its ceiling) or `LLM_TIMEOUT` (the
- * provider timed out) — so every retry of it is a new LLM run of the same
- * input: it is retried at most ONCE, across both codes. A 504 with a code this
+ * `REQUEST_TIMEOUT` (the turn exhausted its ceiling; the same input likely
+ * does again, no `Retry-After`) or `LLM_TIMEOUT` (the provider timed out;
+ * transient, `Retry-After: 30`) — so every retry of it is a new LLM run of the
+ * same input: it is retried at most ONCE, across both codes, and an
+ * `LLM_TIMEOUT` retry waits its `Retry-After` first. A 504 with a code this
  * build does not know keeps the default decision (no automatic retry).
  *
  * Everything else keeps the decision it has without this policy
@@ -32,23 +34,8 @@ import { ErrorClassifier } from '../errors/classifier';
 import { TurnInProgressError } from '../errors/types';
 import type { HttpError } from '../errors/http-error';
 import { defaultRetryDecision, type ResilientOperationOptions } from './resilient-operation';
-
-/**
- * How long the panel keeps trying to get one keyed turn answered, from the
- * first attempt: 11 minutes.
- *
- * A POLICY number, not one derived from the API. It sits above the default
- * server ceiling (`AGENT_REQUEST_TIMEOUT` 120 s) and its bounded maximum (600 s)
- * plus the commit reserve, but per-provider ceiling overrides are unbounded, so
- * no client number can be "longer than any turn". It counts time inside each
- * request too (`resilientOperation`'s `deadlineMs`).
- *
- * It bounds STARTING a retry, not the last attempt: the 300 s request timeout
- * (`lib/api/client.ts`) is unchanged and an attempt started just before the
- * deadline runs to it, so the worst case is about deadline + one request
- * timeout, ~960 s. The late attempt is deliberately not capped.
- */
-export const KEYED_TURN_DEADLINE_MS = 660_000;
+import { capabilitiesManager } from '../capabilities';
+import type { TurnTiming } from './turn-timing';
 
 /** The attempt count every other recovery keeps (`resilientOperation`'s default). */
 export const DEFAULT_MAX_ATTEMPTS = 3;
@@ -74,8 +61,20 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
 /**
  * The `resilientOperation` options for one keyed turn submission. Call it once
  * per submission: it carries that submission's retry counts.
+ *
+ * `timing.deadlineMs` is how long the panel keeps trying to get the turn
+ * answered, from the first attempt, and it counts time inside each request too
+ * (`resilientOperation`'s `deadlineMs`). It is derived from the response bound
+ * the API publishes (`lib/utils/turn-timing.ts`), read from the capabilities
+ * held now unless a caller passes one. It bounds STARTING a retry, not the
+ * last attempt: an attempt started just before it runs to its own request
+ * timeout, so the worst case is about deadline + one request timeout.
+ *
+ * The waits between attempts are the server's: a `TURN_IN_PROGRESS` 409 is
+ * polled within its `Retry-After` (an upper bound on the claim) and an
+ * `LLM_TIMEOUT` 504 waits its `Retry-After`; `REQUEST_TIMEOUT` carries none.
  */
-export function keyedTurnRetryPolicy(): Pick<
+export function keyedTurnRetryPolicy(timing: TurnTiming = capabilitiesManager.getTurnTiming()): Pick<
   ResilientOperationOptions<unknown>,
   'retryOptions' | 'deadlineMs'
 > {
@@ -83,7 +82,7 @@ export function keyedTurnRetryPolicy(): Pick<
   let otherRetries = 0;
 
   return {
-    deadlineMs: KEYED_TURN_DEADLINE_MS,
+    deadlineMs: timing.deadlineMs,
     retryOptions: {
       // The deadline is the bound, not the count.
       maxAttempts: Number.POSITIVE_INFINITY,

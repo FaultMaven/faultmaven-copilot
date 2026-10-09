@@ -6,6 +6,8 @@ import {
   PermissionError,
   NetworkError,
   TimeoutError,
+  TurnTimedOutError,
+  ProviderTimedOutError,
   ServerError,
   ValidationError,
   RateLimitError,
@@ -171,8 +173,25 @@ export class ErrorClassifier {
         return new RateLimitError(error.message, retryAfter, error, context);
       }
 
+      case 504: {
+        // Coded 504s are the API's own answer that nothing committed (contract
+        // 12.4.0). An uncoded one is a gateway's, and the turn may have run.
+        if (errorCode === 'REQUEST_TIMEOUT') {
+          return new TurnTimedOutError(error.message, 30000, error, context);
+        }
+        if (errorCode === 'LLM_TIMEOUT') {
+          const seconds = this.retryAfterSeconds(error);
+          return new ProviderTimedOutError(
+            error.message,
+            seconds === undefined ? undefined : seconds * 1000,
+            error,
+            context
+          );
+        }
+        return new TimeoutError(error.message, 30000, error, context);
+      }
+
       case 408: // Request Timeout
-      case 504: // Gateway Timeout
         return new TimeoutError(error.message, 30000, error, context);
 
       case 500:

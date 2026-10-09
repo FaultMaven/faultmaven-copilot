@@ -3,6 +3,8 @@
 import { createLogger } from './utils/logger';
 import { fetchWithTimeout } from './utils/fetch-timeout';
 import { ownedStorage } from './owned-storage';
+import type { components } from '../types/api.generated';
+import { FALLBACK_TURN_TIMING, deriveTurnTiming, type TurnTiming } from './utils/turn-timing';
 
 const log = createLogger('CapabilitiesManager');
 
@@ -15,32 +17,11 @@ const log = createLogger('CapabilitiesManager');
  */
 type CapabilitiesSource = 'network' | 'cache' | 'fallback';
 
-export interface BackendCapabilities {
-  deploymentMode: 'self-hosted' | 'cloud';
-  kbManagement: 'dashboard';
-  dashboardUrl: string;
-  features: {
-    extensionKB: boolean;  // Should always be false
-    adminKB: boolean;
-    // Team-based KB/case sharing (ADR-013: Team = the sharing unit). Renamed
-    // from the "teamWorkspaces" misnomer — a Slack workspace maps to a Team;
-    // the capability is team *sharing*, not a workspace. Wire key must match
-    // the backend /v1/meta/capabilities payload.
-    teamSharing: boolean;
-    caseHistory: boolean;
-    sso: boolean;
-  };
-  limits: {
-    maxFileBytes: number;
-    allowedExtensions: string[];
-    maxDocuments?: number;
-  };
-  branding?: {
-    name: string;
-    logoUrl?: string;
-    supportUrl?: string;
-  };
-}
+/**
+ * What the backend offers, aliased to the generated schema (the API types the
+ * route since contract 12.4.0; there is no second, hand-written shape).
+ */
+export type BackendCapabilities = components['schemas']['BackendCapabilities'];
 
 export class CapabilitiesManager {
   private capabilities: BackendCapabilities | null = null;
@@ -135,12 +116,18 @@ export class CapabilitiesManager {
             adminKB: false,
             teamSharing: false,
             caseHistory: false,
-            sso: false
+            sso: false,
+            managementConsole: false,
           },
           limits: {
             maxFileBytes: 10485760,
-            allowedExtensions: ['.md', '.txt', '.log', '.json', '.csv']
-          }
+            allowedExtensions: ['.md', '.txt', '.log', '.json', '.csv'],
+            // Required by the schema, published by no one here: 0 is not a usable
+            // bound, so turn timing falls back to its own constants.
+            turnCeilingSeconds: 0,
+            turnResponseBoundSeconds: 0,
+          },
+          branding: { name: 'FaultMaven', supportUrl: '' },
         };
 
         this.capabilities = fallback;
@@ -163,10 +150,36 @@ export class CapabilitiesManager {
   }
 
   getUploadLimits() {
-    return this.capabilities?.limits ?? {
-      maxFileBytes: 10485760,
-      allowedExtensions: ['.md', '.txt', '.log', '.json', '.csv']
+    const limits = this.capabilities?.limits;
+    return {
+      maxFileBytes: limits?.maxFileBytes ?? 10485760,
+      allowedExtensions: limits?.allowedExtensions ?? ['.md', '.txt', '.log', '.json', '.csv'],
     };
+  }
+
+  /**
+   * The turn request timeout and recovery deadline (`utils/turn-timing.ts`),
+   * from the bound the API published on the capabilities held now. Read per
+   * submission, so a panel session that re-reads capabilities follows an
+   * operator's provider switch. A fallback result, a payload without the
+   * field (a cache written before 12.4.0) or nothing held yet uses the policy
+   * constants, and says so.
+   */
+  getTurnTiming(): TurnTiming {
+    if (this.capabilities) {
+      const timing = deriveTurnTiming(this.capabilities.limits?.turnResponseBoundSeconds);
+      if (timing.source === 'published') return timing;
+      log.warn('Capabilities carry no usable turnResponseBoundSeconds; using the fallback turn timing', {
+        capabilitiesSource: this.source,
+        ...FALLBACK_TURN_TIMING,
+      });
+      return timing;
+    }
+    log.warn('No live capabilities; using the fallback turn timing', {
+      capabilitiesSource: this.source,
+      ...FALLBACK_TURN_TIMING,
+    });
+    return FALLBACK_TURN_TIMING;
   }
 }
 

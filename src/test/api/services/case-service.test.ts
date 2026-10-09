@@ -516,7 +516,9 @@ describe('Case Service', () => {
         expect.objectContaining({
           method: 'POST',
           credentials: 'include'
-        })
+        }),
+        // No published bound in this suite: the fallback request timeout.
+        300_000
       );
 
       // Verify FormData was sent (body is FormData instance)

@@ -33,14 +33,22 @@ This file holds the rules that constrain code *inside* the package.
 - **Keyed turns** (`lib/utils/keyed-turn-retry.ts`, contract 12.2.0). Both turn
   paths send `Idempotency-Key = idempotencyKeyFor(aiMessageId)` and pass
   `keyedTurnRetryPolicy()`: a client `TimeoutError` or an UNCODED (gateway) 504
-  is retried with the same key under `KEYED_TURN_DEADLINE_MS`, a coded 504 that
-  says nothing committed (`REQUEST_TIMEOUT`, `LLM_TIMEOUT`) at most once in all,
-  a 409 `TURN_IN_PROGRESS` after its `Retry-After`; a 504 with an unknown code
+  is retried with the same key under `timing.deadlineMs`, a coded 504 that
+  says nothing committed (`REQUEST_TIMEOUT`, `LLM_TIMEOUT`) at most once in all
+  (`LLM_TIMEOUT` after its `Retry-After`; `REQUEST_TIMEOUT` has none and its
+  copy says a resend will likely time out again),
+  a 409 `TURN_IN_PROGRESS` polled every min(`Retry-After`, 5 s) (the header is
+  an upper bound on the claim, not when the turn ends); a 504 with an unknown code
   and everything else keep their default decision and attempt count. The retry
   replays a committed turn (200, `X-Idempotency-Replayed`), so it is reconciled
-  like a first answer. 660 s is a policy number (how long the panel waits for
-  one turn) bounding the START of a retry: the 300 s request timeout is
-  unchanged, so the worst case is about deadline + one request timeout, ~960 s.
+  like a first answer. The timings are derived, not
+  policy (contract 12.4.0, `lib/utils/turn-timing.ts`): request timeout =
+  `limits.turnResponseBoundSeconds` (from `/meta/capabilities`, per session) +
+  60 s network margin; recovery deadline = 2 x that (one attempt may use its
+  whole timeout and the retry must still start). It bounds the START of a
+  retry, so the worst case is about deadline + one request timeout. With no
+  published bound (unreachable, pre-12.4.0 cache, fallback capabilities) the old
+  constants apply (300 s / 660 s) and a warning is logged.
   After `IDEMPOTENCY_KEY_REUSE` the manual Retry is a new logical turn and goes
   out under a fresh key (`rotateIdempotencyKey`).
 
