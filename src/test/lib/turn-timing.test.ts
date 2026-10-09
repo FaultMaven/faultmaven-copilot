@@ -11,7 +11,7 @@ import {
   uploadAllowanceSeconds,
 } from '@faultmaven/copilot-ui/lib/utils/turn-timing';
 import { turnBodyBytes } from '@faultmaven/copilot-ui/lib/utils/keyed-turn-retry';
-import { CAPABILITIES_TTL_MS, CapabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
+import { CAPABILITIES_TTL_MS, CapabilitiesManager, REFRESH_WAIT_MS } from '@faultmaven/copilot-ui/lib/capabilities';
 
 const fetchWithTimeout = vi.fn();
 vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
@@ -197,6 +197,27 @@ describe('re-reading capabilities (a provider switch moves the bound)', () => {
     fetchWithTimeout.mockRejectedValue(new Error('down'));
     await mgr.refreshIfStale('https://api.example');
     expect(mgr.getTurnTiming()).toMatchObject({ requestTimeoutMs: 210_000, source: 'published' });
+  });
+
+  it('a slow re-read delays the turn at most REFRESH_WAIT_MS, and lands for the next turn', async () => {
+    expect(REFRESH_WAIT_MS).toBe(5_000);
+    fetchWithTimeout.mockResolvedValue(ok(caps({ turnResponseBoundSeconds: 150 })));
+    const mgr = new CapabilitiesManager();
+    await mgr.fetch('https://api.example');
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
+    let answer!: (r: unknown) => void;
+    fetchWithTimeout.mockReturnValue(new Promise((r) => { answer = r; }));
+    let returned = false;
+    const refresh = mgr.refreshIfStale('https://api.example').then(() => { returned = true; });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(returned).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await refresh;
+    expect(returned).toBe(true);
+    expect(mgr.getTurnTiming().requestTimeoutMs).toBe(210_000);
+    answer(ok(caps({ turnResponseBoundSeconds: 300 })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mgr.getTurnTiming().requestTimeoutMs).toBe(360_000);
   });
 
   it('holds nothing authoritative: no read is made', async () => {

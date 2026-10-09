@@ -8,6 +8,8 @@ import { deriveTurnTiming, type TurnTiming } from './utils/turn-timing';
 
 /** A network read older than this is re-read before a turn (the bound moves with a provider switch). */
 export const CAPABILITIES_TTL_MS = 5 * 60 * 1000;
+/** The longest a turn waits on a stale re-read before sending on the held one. */
+export const REFRESH_WAIT_MS = 5_000;
 
 const log = createLogger('CapabilitiesManager');
 
@@ -182,7 +184,16 @@ export class CapabilitiesManager {
    */
   async refreshIfStale(apiUrl: string): Promise<void> {
     if (this.capabilities && this.source === 'network' && this.isStale()) {
-      await this.fetch(apiUrl);
+      // A turn waits at most REFRESH_WAIT_MS for the re-read: a slow probe must
+      // not delay the send. It keeps running, and the next turn reads its result.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        this.fetch(apiUrl),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, REFRESH_WAIT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
     }
   }
 
