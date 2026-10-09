@@ -258,7 +258,6 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
           }
 
           queryClient.invalidateQueries({ queryKey: ['caseUI', caseId] });
-          notifyCaseChanged(onCaseChanged, caseId);
 
           return response;
         },
@@ -303,6 +302,8 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
               )
             }));
             void useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
+            // Committed all the same: the case moved even though its reply did not arrive.
+            if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, caseId);
             showError(classified);
             return;
           }
@@ -398,6 +399,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         log.info('Session changed during turn submission — discarding success writes', { caseId });
         return;
       }
+
+      // The turn committed and the session is the one that sent it: tell the host.
+      notifyCaseChanged(onCaseChanged, caseId);
 
       setConversations(prev => ({
         ...prev,

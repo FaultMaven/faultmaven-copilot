@@ -134,8 +134,12 @@ export interface CopilotPanelProps {
    *
    * A notification, not a request: it carries only the case id, expects no
    * answer, and a throw from it is swallowed. It fires with a real case id only
-   * — never on mount, on a plain case selection, or for an optimistic id — and
-   * may fire twice for a turn that also changed state.
+   * — never for an optimistic id, and never for the panel hydrating the case it
+   * was opened on (the synchronous placeholder row becoming the server's row is
+   * not a change of the case). It may fire twice for a turn that also changed
+   * state, and its id need not be the one `initialCase` named (the user can
+   * switch cases in the panel): a host must compare it with the case it shows
+   * and ignore the others.
    */
   onCaseChanged?: (caseId: string) => void;
 }
@@ -344,19 +348,30 @@ function CopilotPanelContent({
   // responses, the /ui sync discovering an out-of-band change, terminal
   // hydration on reopen) still reconcile. See isCaseTransition for the
   // accepted reopen false positive.
-  const prevCaseSnapshotRef = useRef<CaseSnapshot>({ id: null, state: null });
+  //
+  // `hydrated` is whether the row came from the server: `handleCaseSelect`
+  // writes a locally minted placeholder (state 'inquiry', no `enterprise_id`)
+  // and `refreshActiveCase` replaces it with the server's row on the same id.
+  // That first replacement reveals state that already existed, so it still
+  // reconciles but is not announced to the host.
+  const prevCaseSnapshotRef = useRef<CaseSnapshot & { hydrated: boolean }>({
+    id: null,
+    state: null,
+    hydrated: false,
+  });
   useEffect(() => {
-    const next: CaseSnapshot = {
+    const next = {
       id: activeCase?.case_id ?? null,
-      state: activeCase?.state ?? null
+      state: activeCase?.state ?? null,
+      hydrated: Boolean(activeCase?.enterprise_id),
     };
     const prev = prevCaseSnapshotRef.current;
     prevCaseSnapshotRef.current = next;
     if (isCaseTransition(prev, next)) {
       reconcileActiveCaseState();
-      if (next.id) notifyHostCaseChanged(next.id);
+      if (prev.hydrated && next.id) notifyHostCaseChanged(next.id);
     }
-  }, [activeCase?.case_id, activeCase?.state, reconcileActiveCaseState, notifyHostCaseChanged]);
+  }, [activeCase?.case_id, activeCase?.state, activeCase?.enterprise_id, reconcileActiveCaseState, notifyHostCaseChanged]);
 
   const handleLogout = async () => {
     // 0. Fence the session FIRST, synchronously, before any await. handleLogout

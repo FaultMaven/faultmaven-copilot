@@ -172,6 +172,8 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           )
         }));
         void useAppStore.getState().reloadCommittedTurn(targetCaseId, [userMessageId, aiMessageId]);
+        // Committed all the same: the case moved even though its reply did not arrive.
+        if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, targetCaseId);
         showError(classified);
         return { success: true, message: '', sent: true };
       }

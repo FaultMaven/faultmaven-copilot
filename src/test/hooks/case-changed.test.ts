@@ -12,6 +12,8 @@ import * as api from '@faultmaven/copilot-ui/lib/api';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { pendingOpsManager, OptimisticIdGenerator } from '@faultmaven/copilot-ui/lib/optimistic';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import { TurnReplayUnavailableError } from '@faultmaven/copilot-ui/lib/errors/types';
 import { createStubHost, hostWrapper } from '../support/host';
 
 const okTurn = {
@@ -132,6 +134,105 @@ describe('onCaseChanged on a committed turn', () => {
       await result.current.handleQuerySubmit('hello');
     });
     expect(useAppStore.getState().conversations['case-123']).toHaveLength(2);
+  });
+});
+
+describe('onCaseChanged: which case, and when', () => {
+  let stub: ReturnType<typeof createStubHost>;
+  const reloadCommittedTurn = vi.fn(async () => true);
+  const baseCase = (id: string, state = 'investigating') => ({
+    case_id: id, title: id, state, created_at: '2026-01-01T00:00:00Z', owner_id: 'u1',
+    enterprise_id: 'e1', closure_reason: null, closed_at: null, message_count: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stub = createStubHost();
+    setHostStore(stub.store);
+    pendingOpsManager.clear();
+    OptimisticIdGenerator.resetCounters();
+    useAppStore.setState({
+      sessionId: 'session-123', activeCaseId: 'case-123', hasUnsavedNewChat: false,
+      conversations: { 'case-123': [] }, titleSources: {}, conversationTitles: {}, pinnedCases: new Set(),
+      activeCase: baseCase('case-123'), reloadCommittedTurn,
+    } as never);
+  });
+
+  it('message path: a committed turn whose reply cannot be replayed still tells the host', async () => {
+    (api.submitTurn as any).mockRejectedValue(new TurnReplayUnavailableError('committed; reload the case'));
+    const cb = vi.fn();
+    const { result } = renderHook(() => useMessageSubmission(cb), { wrapper: hostWrapper(stub.host) });
+    await act(async () => { await result.current.handleQuerySubmit('hello'); });
+    expect(reloadCommittedTurn).toHaveBeenCalled();
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith('case-123');
+  });
+
+  it('upload path: a committed turn whose reply cannot be replayed still tells the host', async () => {
+    (api.submitTurn as any).mockRejectedValue(new TurnReplayUnavailableError('committed; reload the case'));
+    const cb = vi.fn();
+    const { result } = renderHook(() => useDataUpload(cb), { wrapper: hostWrapper(stub.host) });
+    await act(async () => { await result.current.handleTurnSubmit({ query: 'diagnose' }); });
+    expect(reloadCommittedTurn).toHaveBeenCalled();
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith('case-123');
+  });
+
+  const deferred = () => {
+    let resolve!: (v: unknown) => void;
+    (api.submitTurn as any).mockImplementation(() => new Promise((r) => { resolve = r; }));
+    return (v: unknown) => resolve(v);
+  };
+  const switchToB = () =>
+    act(() => useAppStore.setState({ activeCaseId: 'case-b', activeCase: baseCase('case-b') } as never));
+
+  it('message path: a turn committing on A after the active case became B names A', async () => {
+    const land = deferred();
+    const cb = vi.fn();
+    const { result } = renderHook(() => useMessageSubmission(cb), { wrapper: hostWrapper(stub.host) });
+    let p!: Promise<unknown>;
+    await act(async () => { p = result.current.handleQuerySubmit('hello'); await Promise.resolve(); });
+    switchToB();
+    await act(async () => { land(okTurn); await p; });
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith('case-123');
+  });
+
+  it('upload path: a turn committing on A after the active case became B names A', async () => {
+    const land = deferred();
+    const cb = vi.fn();
+    const { result } = renderHook(() => useDataUpload(cb), { wrapper: hostWrapper(stub.host) });
+    let p!: Promise<unknown>;
+    await act(async () => { p = result.current.handleTurnSubmit({ query: 'diagnose' }); await Promise.resolve(); });
+    switchToB();
+    await act(async () => { land(okTurn); await p; });
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith('case-123');
+  });
+
+  it('upload path: a failed upload does not tell the host', async () => {
+    (api.submitTurn as any).mockRejectedValue(new Error('boom'));
+    const cb = vi.fn();
+    const { result } = renderHook(() => useDataUpload(cb), { wrapper: hostWrapper(stub.host) });
+    await act(async () => { await result.current.handleTurnSubmit({ query: 'diagnose' }); });
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it('the host is not told after the session ended mid-turn (both paths)', async () => {
+    const cb = vi.fn();
+    let land = deferred();
+    const msg = renderHook(() => useMessageSubmission(cb), { wrapper: hostWrapper(stub.host) });
+    let p!: Promise<unknown>;
+    await act(async () => { p = msg.result.current.handleQuerySubmit('hello'); await Promise.resolve(); });
+    bumpEpoch();
+    await act(async () => { land(okTurn); await p; });
+
+    land = deferred();
+    const up = renderHook(() => useDataUpload(cb), { wrapper: hostWrapper(stub.host) });
+    await act(async () => { p = up.result.current.handleTurnSubmit({ query: 'diagnose' }); await Promise.resolve(); });
+    bumpEpoch();
+    await act(async () => { land(okTurn); await p; });
+    expect(cb).not.toHaveBeenCalled();
   });
 });
 
