@@ -27,4 +27,7 @@ export function isOwnedByOther(
 
 /** The line shown where the composer would be. One copy, so the 403 path says the same thing. */
 export const SHARED_READ_ONLY_NOTICE =
-  'Shared with you — read-only. Only the person who opened this case can add to it.';
+  'Shared with you — read-only. Only the case\'s owner can add to it.';
+
+/** Shown in the bubble while the read-back decides whose case it is; claims nothing yet. */
+export const CHECKING_ACCESS_NOTICE = 'Checking whether you can add to this case…';

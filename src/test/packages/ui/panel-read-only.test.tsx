@@ -134,7 +134,7 @@ describe('host readOnly prop', () => {
     expect(screen.getByRole('note')).toBeInTheDocument();
   });
 
-  it('a readOnly case offers no write action: no status menu, no confirmation buttons, no Retry', async () => {
+  it('a readOnly case offers no write action: no confirmation buttons, no Retry', async () => {
     useAppStore.setState({
       conversations: {
         'case-42': [
@@ -151,7 +151,9 @@ describe('host readOnly prop', () => {
     await waitFor(() => expect(useAppStore.getState().activeCaseId).toBe('case-42'));
 
     expect(screen.queryByRole('button', { name: /^(yes|no|retry)$/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /resolve|close|change status/i })).toBeNull();
+    // (The status menu is asserted against the REAL header in
+    // ChatWindow.readOnlyHeader.test.tsx; the panel here has no case-UI data,
+    // so a query for it would pass vacuously.)
   });
 });
 

@@ -128,6 +128,10 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
       // Reset after a short delay to allow the request to complete
       setTimeout(() => setIsSubmittingStatusChange(false), 3000);
     } else {
+      // Nothing to send (no callback, or a request already in flight): close
+      // anyway, so the modal can never stick open with a Continue that does nothing.
+      setShowStatusModal(false);
+      setRequestedStatus(null);
       log.debug('NOT calling parent callback', {
         noRequestedStatus: !requestedStatus,
         noCallback: !onStatusChangeRequest,
@@ -151,7 +155,7 @@ export const EnhancedCaseHeader: React.FC<EnhancedCaseHeaderProps> = ({
           expanded={expanded}
           severity={severity}
           onToggle={handleToggle}
-          onStatusChangeRequest={handleStatusChangeRequest}
+          onStatusChangeRequest={onStatusChangeRequest ? handleStatusChangeRequest : undefined}
         />
 
         {/* Expanded Details — unified across all phases */}

@@ -14,7 +14,8 @@ import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpl
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
-import { SHARED_READ_ONLY_NOTICE } from '@faultmaven/copilot-ui/lib/cases/ownership';
+import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import { CHECKING_ACCESS_NOTICE, SHARED_READ_ONLY_NOTICE } from '@faultmaven/copilot-ui/lib/cases/ownership';
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
@@ -169,5 +170,106 @@ describe('403 on a turn', () => {
     expect(outcome).toMatchObject({ success: false, sent: true, refused: true });
     expect(assistant()?.response).toBe(SHARED_READ_ONLY_NOTICE);
     expect(denied()).toBe(true);
+  });
+
+  // The read-back is held open so the test can move the user, or end the
+  // session, while it is in flight.
+  function routeDeferred(ownerId: string) {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    fetchWithTimeout.mockImplementation(async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? 'GET';
+      if (url === TURNS_URL && method === 'POST') return wire(403, { detail: 'refused' });
+      if (url === CASE_URL && method === 'GET') {
+        await gate;
+        return wire(200, row(ownerId));
+      }
+      throw new Error(`unrouted ${method} ${url}`);
+    });
+    return release;
+  }
+  const flush = async () => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  };
+
+  it('claims nothing until the read-back lands: the bubble is neutral meanwhile', async () => {
+    const release = routeDeferred('u2');
+    const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      await result.current.handleQuerySubmit('why?');
+    });
+    await flush();
+    expect(assistant()?.response).toBe(CHECKING_ACCESS_NOTICE);
+    expect(denied()).toBe(false);
+
+    release();
+    await flush();
+    expect(assistant()?.response).toBe(SHARED_READ_ONLY_NOTICE);
+    expect(denied()).toBe(true);
+  });
+
+  // The refused case A is the viewer's own (a different permission refused it);
+  // by the time the read lands the user has opened B, which someone else owns.
+  // Judging by the open case would mark A.
+  it('judges the REFUSED case: opening another case mid-read-back does not mark it', async () => {
+    const release = routeDeferred('u1');
+    const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      await result.current.handleQuerySubmit('why?');
+    });
+    await flush();
+    act(() =>
+      useAppStore.setState({
+        activeCaseId: 'case-B',
+        activeCase: { case_id: 'case-B', title: 'B', state: 'investigating', owner_id: 'u2', enterprise_id: 'e1' } as never,
+      }),
+    );
+
+    release();
+    await flush();
+    expect(denied()).toBe(false);
+    expect(useAppStore.getState().writeDeniedCaseIds['case-B']).toBeUndefined();
+    expect(assistant()?.response).not.toBe(SHARED_READ_ONLY_NOTICE);
+  });
+
+  it('a sign-out during the read-back leaves the purged store alone', async () => {
+    const release = routeDeferred('u2');
+    const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      await result.current.handleQuerySubmit('why?');
+    });
+    await flush();
+
+    act(() => {
+      bumpEpoch();
+      useAppStore.setState({ conversations: {}, writeDeniedCaseIds: {} } as never);
+    });
+    release();
+    await flush();
+
+    expect(useAppStore.getState().conversations).toEqual({});
+    expect(useAppStore.getState().writeDeniedCaseIds).toEqual({});
+  });
+
+  // The failed read: ownership the list row carried must survive it.
+  it('a 503 on the case read leaves the owner the list row supplied (still read-only)', async () => {
+    fetchWithTimeout.mockImplementation(async () => wire(503, { detail: 'down' }));
+    useAppStore.setState({ activeCase: null, activeCaseId: null } as never);
+    act(() => useAppStore.getState().handleCaseSelect(CASE, 'u2'));
+    await flush();
+
+    expect(useAppStore.getState().activeCase?.owner_id).toBe('u2');
+  });
+
+  it('re-selecting the same case keeps the owner already known', async () => {
+    fetchWithTimeout.mockImplementation(async () => wire(503, { detail: 'down' }));
+    useAppStore.setState({
+      activeCase: { case_id: CASE, title: 't', state: 'investigating', owner_id: 'u2', enterprise_id: 'e1' } as never,
+    });
+    act(() => useAppStore.getState().handleCaseSelect(CASE));
+    await flush();
+    expect(useAppStore.getState().activeCase?.owner_id).toBe('u2');
   });
 });

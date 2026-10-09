@@ -39,7 +39,7 @@ function loadCollapsedGroups(): Set<CaseGroupKey> {
 
 interface ConversationsListProps {
   activeCaseId?: string;
-  onCaseSelect?: (caseId: string) => void;
+  onCaseSelect?: (caseId: string, ownerId?: string) => void;
   onSessionSelect?: (sessionId: string) => void; // kept for compatibility
   onNewSession: (sessionId: string) => void;
   conversationTitles?: Record<string, string>;
@@ -436,7 +436,7 @@ export function ConversationsList({
                 isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
                 isUnsavedNew={false}
                 isPinned={pinnedCases.has(c.case_id)}
-                onSelect={(id) => onCaseSelect && onCaseSelect(id)}
+                onSelect={(id) => onCaseSelect && onCaseSelect(id, c.owner_id)}
                 isShared={shared}
                 onDelete={shared ? undefined : (id) => handleDeleteCase(id)}
                 onRename={shared ? undefined : (id, t) => handleRenameCase(id, t)}

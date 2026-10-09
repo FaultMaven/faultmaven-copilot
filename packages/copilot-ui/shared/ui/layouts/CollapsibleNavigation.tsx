@@ -38,7 +38,7 @@ export interface CollapsibleNavigationProps {
 
   // Callbacks
   onOpenDashboard?: () => void;
-  onCaseSelect: (caseId: string) => void;
+  onCaseSelect: (caseId: string, ownerId?: string) => void;
   onNewChat: () => void;
   onLogout: () => void;
   /** See `ConversationsList` — `source` says whether a backend write is still owed. */

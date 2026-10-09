@@ -50,6 +50,15 @@ const openMenu = (title: string) =>
   fireEvent.click(screen.getByRole('button', { name: `Menu for ${title}` }));
 
 describe('ConversationsList — shared cases', () => {
+  // The placeholder row names the owner before hydration, so a failed read
+  // cannot leave a shared case with a live composer.
+  it('hands the row’s owner to onCaseSelect', async () => {
+    const onCaseSelect = vi.fn();
+    render(<ConversationsList onCaseSelect={onCaseSelect} onNewSession={() => {}} currentUserId="u1" />);
+    fireEvent.click(await screen.findByText('Their pool exhaustion'));
+    expect(onCaseSelect).toHaveBeenCalledWith('c-theirs', 'u2');
+  });
+
   it('keeps both rows and marks only the one another user owns', async () => {
     renderList('u1');
 

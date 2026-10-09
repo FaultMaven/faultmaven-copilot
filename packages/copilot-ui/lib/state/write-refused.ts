@@ -13,7 +13,7 @@
  * disagree about what a refusal means.
  */
 import type { OptimisticConversationItem } from '../optimistic';
-import { isOwnedByOther, SHARED_READ_ONLY_NOTICE } from '../cases/ownership';
+import { CHECKING_ACCESS_NOTICE, isOwnedByOther, SHARED_READ_ONLY_NOTICE } from '../cases/ownership';
 import { getEpoch } from './session-epoch';
 import { useAppStore } from './store';
 
@@ -41,13 +41,17 @@ export function applyWriteRefused(args: {
       ),
     }));
 
-  setBubble(SHARED_READ_ONLY_NOTICE);
+  // Claim nothing until the row says whose case it is.
+  setBubble(CHECKING_ACCESS_NOTICE);
   void (async () => {
-    await useAppStore.getState().refreshActiveCase(caseId);
+    // Judged on the row fetched for THE REFUSED case, never on whatever case is
+    // open when the read lands: the user may have moved to another one.
+    const row = await useAppStore.getState().refreshActiveCase(caseId);
     if (epoch !== getEpoch()) return;
     const state = useAppStore.getState();
-    if (isOwnedByOther(state.activeCase, state.currentUser?.id)) {
+    if (row && isOwnedByOther(row, state.currentUser?.id)) {
       state.markWriteDenied(caseId);
+      setBubble(SHARED_READ_ONLY_NOTICE);
     } else {
       setBubble(fallbackText);
     }

@@ -125,3 +125,24 @@ describe('ChatInterface — readOnly', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 });
+
+describe('ChatWindow — memo', () => {
+  // Every other prop equal: only the verdict changes. A comparator that ignored
+  // it would keep the live Yes/No on screen after the case turned out shared.
+  it('re-renders when only readOnly flips', () => {
+    const onQuerySubmit = vi.fn();
+    const props = { conversation, activeCase, loading: false, sessionId: 'sid', onQuerySubmit };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (readOnly: boolean) => (
+      <QueryClientProvider client={client}>
+        <HostAdapterProvider value={stub.host}>
+          <ChatWindow {...props} readOnly={readOnly} />
+        </HostAdapterProvider>
+      </QueryClientProvider>
+    );
+    const view = render(tree(false));
+    expect(screen.getByRole('button', { name: /yes/i })).toBeInTheDocument();
+    view.rerender(tree(true));
+    expect(screen.queryByRole('button', { name: /yes/i })).toBeNull();
+  });
+});
