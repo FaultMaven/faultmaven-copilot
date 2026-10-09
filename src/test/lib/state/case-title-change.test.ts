@@ -1,5 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyCaseTitleChange, type CaseTitleChangeDeps } from '@faultmaven/copilot-ui/lib/state/case-title-change';
+import { CaseTerminalError } from '@faultmaven/copilot-ui/lib/errors/types';
+
+/** The error `authenticatedFetch` throws for a non-OK response, as `updateCaseTitle` lets it through. */
+function http409(code?: string): Error {
+  const error = new Error('Case is closed') as Error & { status: number; headers?: Record<string, string> };
+  error.name = 'HTTPError';
+  error.status = 409;
+  if (code) error.headers = { 'x-error-code': code };
+  return error;
+}
 
 /**
  * fm#1069, second failure: clicking "Generate title" showed a 409 and reverted.
@@ -27,6 +37,7 @@ function makeDeps(overrides: Partial<CaseTitleChangeDeps> = {}) {
     },
     persistTitle: vi.fn().mockResolvedValue(undefined),
     onPersistError: vi.fn(),
+    refreshCase: vi.fn(),
     ...overrides
   };
 
@@ -93,6 +104,33 @@ describe('applyCaseTitleChange', () => {
 
       expect('case-1' in store.conversationTitles).toBe(false);
       expect('case-1' in store.titleSources).toBe(false);
+    });
+
+    it('409 CASE_TERMINAL: shows the CaseTerminalError, refreshes the case, rolls back', async () => {
+      const persistTitle = vi.fn().mockRejectedValue(http409('CASE_TERMINAL'));
+      const { deps, store } = makeDeps({ persistTitle });
+      store.conversationTitles['case-1'] = 'Prior title';
+
+      await applyCaseTitleChange('case-1', 'Attempted rename', 'user', deps);
+
+      expect(deps.onPersistError).toHaveBeenCalledTimes(1);
+      const shown = vi.mocked(deps.onPersistError).mock.calls[0][0];
+      expect(shown).toBeInstanceOf(CaseTerminalError);
+      expect((shown as CaseTerminalError).recovery).toBe('graceful_degradation');
+      expect(deps.refreshCase).toHaveBeenCalledWith('case-1');
+      // Nothing was saved.
+      expect(store.conversationTitles['case-1']).toBe('Prior title');
+    });
+
+    it('any other failure (an unlabelled 409 included) keeps today\'s path: raw error, no refresh', async () => {
+      const raw = http409();
+      const persistTitle = vi.fn().mockRejectedValue(raw);
+      const { deps } = makeDeps({ persistTitle });
+
+      await applyCaseTitleChange('case-1', 'Attempted rename', 'user', deps);
+
+      expect(deps.onPersistError).toHaveBeenCalledWith(raw);
+      expect(deps.refreshCase).not.toHaveBeenCalled();
     });
   });
 });

@@ -52,18 +52,26 @@ This file holds the rules that constrain code *inside* the package.
 show_modal · `PermissionError` graceful_degradation · `NetworkError`
 retry_with_backoff · `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
-`QuotaExhaustedError`, `TurnReplayUnavailableError` graceful_degradation ·
+`QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·
 `IdempotencyKeyReuseError` manual_retry (under a fresh key) ·
 `TurnInProgressError` auto_retry_with_delay ·
 `OptimisticUpdateError` rollback_and_retry · `RateLimitError` derived (below).
 
-**A 409 is told apart by `x-error-code`** (contract 12.2.0): `TURN_IN_PROGRESS`
+**A 409 is told apart by `x-error-code`** (contracts 12.2.0, 12.3.0): `TURN_IN_PROGRESS`
 → `TurnInProgressError` (`Retry-After` clamped to [1, 60] s, 2 s when absent);
 `IDEMPOTENCY_KEY_REUSE` → `IdempotencyKeyReuseError` (a client defect, never
 auto-retried; the manual Retry rotates the key); `IDEMPOTENCY_REPLAY_UNAVAILABLE`
 → `TurnReplayUnavailableError` (the turn committed: the bubble says it was
 saved, and `reloadCommittedTurn` reads it back, dropping the local pair only in
-the write that merges the read, so a failed read loses nothing); `CASE_VERSION_CONFLICT` and the unlabelled 409 → `CaseVersionConflictError`.
+the write that merges the read, so a failed read loses nothing); `CASE_TERMINAL`, on
+any route → `CaseTerminalError` (the case is resolved or closed: never retried,
+no Retry anywhere. Both turn hooks remove the pending op instead of failing it,
+put the reason in the bubble, naming any attachments that were not added, and
+call `refreshActiveCase` so the panel shows the case closed; the title rename
+rolls back, shows it and refreshes the same way. A text-only question on a
+closed case is still answered, so it never meets this); `CASE_VERSION_CONFLICT`
+and an unlabelled 409 → `CaseVersionConflictError`. This client never calls
+`POST /cases/{id}/close`: closing is a `status_transition` turn.
 `authenticatedFetch` carries `retryAfter` (seconds) on every non-OK, and
 `resilientOperation` waits out any error implementing `ServerDirectedWait`
 (`hasServerDirectedWait`), not one class.

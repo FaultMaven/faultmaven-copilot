@@ -797,7 +797,9 @@ export async function submitTurn(
     // via the ErrorClassifier → CaseVersionConflictError path and
     // surface a soft "Case was updated; retry" message instead of a
     // generic error. Auto-retry would loop on the same conflict, so
-    // CaseVersionConflictError uses manual_retry recovery.
+    // CaseVersionConflictError uses manual_retry recovery. A 409 labelled
+    // `CASE_TERMINAL` (the case is resolved or closed) is not a conflict: the
+    // classifier maps it to CaseTerminalError, which is never retried.
     //
     // Note: in production, authenticatedFetchWithRetry typically throws
     // its own enriched Error for non-OK responses (see client.ts), so

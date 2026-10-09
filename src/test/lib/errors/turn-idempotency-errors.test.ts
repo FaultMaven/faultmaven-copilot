@@ -114,7 +114,7 @@ describe('ErrorClassifier — the 409s of contract 12.2.0, by x-error-code', () 
     expect((classified as CaseVersionConflictError).actualVersion).toBe(5);
   });
 
-  it('an unlabelled 409 (a terminal case) keeps today’s mapping', () => {
+  it('an unlabelled 409 keeps today’s mapping', () => {
     const classified = ErrorClassifier.classify(httpError(409));
     expect(classified).toBeInstanceOf(CaseVersionConflictError);
     expect(classified.recovery).toBe('manual_retry');

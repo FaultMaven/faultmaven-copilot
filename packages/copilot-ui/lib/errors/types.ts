@@ -570,6 +570,38 @@ export class TurnReplayUnavailableError extends UserFacingError {
 }
 
 /**
+ * 409 `x-error-code: CASE_TERMINAL` (contract 12.3.0), on any route: the case
+ * is resolved or closed, so it is read-only. The turn route refuses new data,
+ * a status change and a file reclassification with it; `PUT /cases/{id}` and
+ * `POST /cases/{id}/close` refuse with it too. A text-only question about the
+ * case is still answered.
+ *
+ * Nothing about the request can change that, so there is no automatic retry
+ * and no manual Retry: the same request can only meet the same refusal.
+ * Recovery is `graceful_degradation` (as `QuotaExhaustedError`), which
+ * `defaultRetryDecision` treats as final. The caller reads the case row back
+ * (`refreshActiveCase`) so the panel shows the case closed.
+ */
+export class CaseTerminalError extends UserFacingError {
+  readonly userTitle = 'Case Is Closed';
+  readonly userMessage = 'This case is closed and read-only.';
+  readonly userAction = 'You can still ask questions about it.';
+  /** What a refused turn's bubble says. */
+  readonly bubbleText = 'This case is closed and read-only. You can still ask questions about it.';
+  readonly category: ErrorCategory = 'validation';
+  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 10000,
+      dismissible: true,
+      icon: 'info'
+    };
+  }
+}
+
+/**
  * Quota / credits exhausted (HTTP 402, x-error-code: QUOTA_EXHAUSTED).
  *
  * The FaultMaven AI provider account is out of quota or credits — a permanent,

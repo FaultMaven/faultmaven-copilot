@@ -73,11 +73,14 @@ export function isAmbiguousFailure(error: unknown): boolean {
 export function unsentAttachmentsNotice(
   turn: UnsentTurn | undefined,
   /**
-   * The submission never left the browser (no session, case creation failed):
-   * the attachments definitely were not sent, whatever became of the case, and
-   * there is no case to say "added to".
+   * `beforeSend`: the submission never left the browser (no session, case
+   * creation failed): the attachments definitely were not sent, whatever became
+   * of the case, and there is no case to say "added to".
+   *
+   * `noRetry`: the refusal is final (409 `CASE_TERMINAL`), so there is no Retry
+   * to point at.
    */
-  options: { beforeSend?: boolean } = {},
+  options: { beforeSend?: boolean; noRetry?: boolean } = {},
 ): string | null {
   const attachments = turn?.attachments;
   if (!turn || !attachments || attachments.length === 0) return null;
@@ -97,6 +100,9 @@ export function unsentAttachmentsNotice(
   const outcome = ambiguous ? 'may not have been added' : `${verb} not added`;
   if (options.beforeSend) {
     return `${lead} ${verb} not sent.`;
+  }
+  if (options.noRetry) {
+    return `${lead} ${outcome} to the case.`;
   }
   return `${lead} ${outcome} to the case. Retry sends ${them} again.`;
 }

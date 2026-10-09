@@ -15,6 +15,7 @@ import {
 } from '../../../lib/api';
 import type { UserCase } from '../../../types/case';
 import {
+  CaseTerminalError,
   CaseVersionConflictError,
   IdempotencyKeyReuseError,
   TurnInProgressError,
@@ -300,6 +301,25 @@ export function useMessageSubmission() {
               )
             }));
             void useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
+            showError(classified);
+            return;
+          }
+          if (classified instanceof CaseTerminalError) {
+            // The case is resolved or closed: a status change or a file
+            // reclassification is refused, and resending it can only meet the
+            // same 409. No failed op (so no Retry in the banner); the bubble says
+            // why, and the case row is read back so the panel shows it closed.
+            log.warn('Turn refused: the case is terminal', { caseId });
+            pendingOpsManager.remove(aiMessageId);
+            setConversations(prev => ({
+              ...prev,
+              [caseId]: (prev[caseId] || []).map(item =>
+                item.id === aiMessageId
+                  ? { ...item, response: classified.bubbleText, optimistic: false, loading: false, error: true, failed: false }
+                  : item
+              )
+            }));
+            void useAppStore.getState().refreshActiveCase(caseId);
             showError(classified);
             return;
           }

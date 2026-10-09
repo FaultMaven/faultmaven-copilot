@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useRef } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
+import { ErrorHandlerProvider, useErrorHandler, useError, UserFacingError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
 import { ErrorModal } from "./components/ErrorModal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -493,11 +493,14 @@ function CopilotPanelContent({
                   setConversationTitles,
                   setTitleSources,
                   persistTitle: updateCaseTitle,
-                  onPersistError: (error) => showError({
+                  // A classified error (409 CASE_TERMINAL's CaseTerminalError) is
+                  // shown as what it is.
+                  onPersistError: (error) => showError(error instanceof UserFacingError ? error : {
                     title: 'Failed to update title',
                     message: error instanceof Error ? error.message : 'Unknown error',
                     type: 'error'
                   }),
+                  refreshCase: (id) => { void useAppStore.getState().refreshActiveCase(id); },
                   log
                 })
               }
