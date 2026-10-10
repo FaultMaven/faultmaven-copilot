@@ -123,3 +123,50 @@ describe('the sidebar list and reconcile do not share a cache slot', () => {
     expect(listCalls()).toHaveLength(1);
   });
 });
+
+// A sidebar fetch in flight across an invalidation (a case reassigned away, a
+// sign-out) lands AFTER it, with the page from before. It must not refill the
+// slot, or the reload that follows is served the case it was meant to drop.
+describe('a fetch in flight across an invalidation', () => {
+  it('does not refill the slot with its older page', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    fetchWithTimeout.mockImplementationOnce(async () => {
+      await held;
+      return wire({ cases: DRIVEN });
+    });
+
+    // 1. The sidebar's fetch starts and is held at the wire.
+    const inFlight = getUserCases(SIDEBAR_CASE_LIST_QUERY);
+    await vi.waitFor(() => expect(listCalls()).toHaveLength(1));
+    // 2. The slot is invalidated while it is out.
+    await caseCacheManager.invalidateCache();
+    // 3. The old page lands.
+    release();
+    expect((await inFlight).map((c) => c.case_id)).toEqual(['case-A']);
+
+    // The caller still gets its answer; the slot stays empty.
+    expect(await caseCacheManager.getCachedCases()).toBeNull();
+  });
+
+  // The cache read itself invalidates an expired slot. The generation is
+  // captured after it, as the request goes out, or the fresh page that
+  // replaces the expired one would be refused by its own read's invalidation.
+  it('an expired slot is replaced by the fresh page', async () => {
+    await getUserCases(SIDEBAR_CASE_LIST_QUERY);
+    const realNow = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(realNow + 6 * 60 * 1000);
+    try {
+      await getUserCases(SIDEBAR_CASE_LIST_QUERY);
+      expect(listCalls()).toHaveLength(2);
+      expect((await caseCacheManager.getCachedCases())?.map((c) => c.case_id)).toEqual(['case-A']);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('contrast: a fetch with no invalidation in between fills the slot', async () => {
+    await getUserCases(SIDEBAR_CASE_LIST_QUERY);
+    expect((await caseCacheManager.getCachedCases())?.map((c) => c.case_id)).toEqual(['case-A']);
+  });
+});

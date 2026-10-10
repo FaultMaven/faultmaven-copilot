@@ -40,6 +40,21 @@ export const CASE_CACHE_VERSION = 2;
 
 export class CaseCacheManager {
     /**
+     * Moves on every invalidation. A writer captures it when it STARTS (a list
+     * fetch, before its request; an optimistic edit, before its read) and its
+     * write is refused if the slot was invalidated since: otherwise a sidebar
+     * fetch in flight across an invalidation (a case reassigned away, a sign-out)
+     * lands afterwards and refills the slot with the page from before it.
+     * In memory: one counter per JS context, which is what holds the requests.
+     */
+    private generation = 0;
+
+    /** The generation a writer captures at its start, to hand to `setCachedCases`. */
+    currentGeneration(): number {
+        return this.generation;
+    }
+
+    /**
      * Get cached cases if valid
      */
     async getCachedCases(): Promise<UserCase[] | null> {
@@ -80,9 +95,18 @@ export class CaseCacheManager {
     }
 
     /**
-     * Set cached cases
+     * Set cached cases, unless the slot was invalidated after `generation`
+     * (captured by the writer when it started) — then the page is older than
+     * the invalidation and is dropped.
      */
-    async setCachedCases(cases: UserCase[]): Promise<void> {
+    async setCachedCases(cases: UserCase[], generation: number): Promise<void> {
+        if (generation !== this.generation) {
+            log.debug('Cache write refused: invalidated since the writer started', {
+                captured: generation,
+                current: this.generation
+            });
+            return;
+        }
         try {
             const cache: CachedCaseList = {
                 cases,
@@ -100,6 +124,9 @@ export class CaseCacheManager {
      * Invalidate/Clear cache
      */
     async invalidateCache(): Promise<void> {
+        // Before the await: a write that starts or lands while the removal is
+        // pending already belongs to the old generation.
+        this.generation++;
         try {
             await ownedStorage.remove([CACHE_KEY]);
             log.debug('Cache invalidated');
@@ -112,6 +139,7 @@ export class CaseCacheManager {
      * Optimistically update a specific case in the cache
      */
     async updateOptimisticCase(caseId: string, changes: Partial<UserCase>): Promise<void> {
+        const generation = this.generation;
         try {
             const currentCases = await this.getCachedCases();
             if (!currentCases) return; // Nothing to update
@@ -119,7 +147,7 @@ export class CaseCacheManager {
             const index = currentCases.findIndex(c => c.case_id === caseId);
             if (index !== -1) {
                 currentCases[index] = { ...currentCases[index], ...changes };
-                await this.setCachedCases(currentCases);
+                await this.setCachedCases(currentCases, generation);
                 log.debug('Optimistic cache update', { caseId, changes });
             }
         } catch (error) {
@@ -131,13 +159,14 @@ export class CaseCacheManager {
      * Add a new case to the cache optimistically
      */
     async addOptimisticCase(newCase: UserCase): Promise<void> {
+        const generation = this.generation;
         try {
             const currentCases = await this.getCachedCases();
             if (!currentCases) return; // If no cache, no need to add (next fetch will get it)
 
             // Add to beginning of list
             const updatedCases = [newCase, ...currentCases];
-            await this.setCachedCases(updatedCases);
+            await this.setCachedCases(updatedCases, generation);
             log.debug('Optimistic cache add', { caseId: newCase.case_id });
         } catch (error) {
             log.warn('Failed to optimistically add to cache:', error);

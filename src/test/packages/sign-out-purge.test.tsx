@@ -217,7 +217,7 @@ describe('a null auth state purges the panel', () => {
         closure_reason: null,
         closed_at: null,
       },
-    ]);
+    ], caseCacheManager.currentGeneration());
     // Guards the guard: the sentinel is really in the host's key space first,
     // so its absence afterwards is the purge and not a write that never landed.
     expect(JSON.stringify(stub.data)).toContain(SENTINEL);
@@ -333,7 +333,7 @@ describe('a sign-out purge outlives the store installation', () => {
         closure_reason: null,
         closed_at: null,
       },
-    ]);
+    ], caseCacheManager.currentGeneration());
     expect(JSON.stringify(stub.data)).toContain(SENTINEL); // there to begin with
 
     render(<CopilotPanel host={stub.host} />);

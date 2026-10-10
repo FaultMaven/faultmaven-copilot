@@ -125,6 +125,7 @@ vi.mock('@faultmaven/copilot-ui/shared/ui/CopilotPanel', () => ({
 }));
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import {
   clearSessionEnding,
   isSessionEnding,
@@ -618,5 +619,22 @@ describe('ExtensionApp — a case someone else drives is read-only', () => {
     openCaseDrivenBy(undefined);
     renderApp();
     expect(await readOnlyOf()).toBe('false');
+  });
+
+  // The sidebar lists the cases this user drives: when the open case turns out
+  // to be someone else's, this host drops the list cache slot and reloads the
+  // list, once (the path-level proof is driven-away-list.test.tsx).
+  it('reloads the sidebar once when the open case turns out to be driven by someone else', async () => {
+    const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache').mockResolvedValue();
+    openCaseDrivenBy('u1');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+    const before = useAppStore.getState().refreshSessions;
+    expect(invalidate).not.toHaveBeenCalled();
+
+    act(() => openCaseDrivenBy('u2'));
+    await waitFor(() => expect(useAppStore.getState().refreshSessions).toBe(before + 1));
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    invalidate.mockRestore();
   });
 });

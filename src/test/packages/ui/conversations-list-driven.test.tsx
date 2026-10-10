@@ -101,17 +101,6 @@ describe('ConversationsList — the cases this user drives', () => {
     expect(screen.queryByText('Delete')).toBeNull();
   });
 
-  // Only a stale row can name another driver; it gets none of the driver's writes.
-  it('offers no rename or title generation on a row naming another driver', async () => {
-    getUserCases.mockResolvedValue([caseRow('c-stale', 'Stale row', 'u1', 'u2')]);
-    renderList('u1');
-    await screen.findByText('Stale row');
-    openMenu('Stale row');
-    expect(screen.queryByText('Rename')).toBeNull();
-    expect(screen.queryByText('Generate title')).toBeNull();
-    // Still the creator's to delete.
-    expect(screen.getByText('Delete')).toBeInTheDocument();
-  });
 });
 
 describe('ConversationsList — a case reassigned away drops out', () => {

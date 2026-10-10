@@ -15,8 +15,8 @@
  * disagree about what a refusal means.
  */
 import type { OptimisticConversationItem } from '../optimistic';
-import { caseCacheManager } from '../cache/case-cache';
 import { CHECKING_ACCESS_NOTICE, DRIVER_READ_ONLY_NOTICE, isDrivenByOther } from '../cases/driver';
+import { reloadDrivenCaseList } from './case-list-reload';
 import { getEpoch } from './session-epoch';
 import { useAppStore } from './store';
 
@@ -55,13 +55,11 @@ export function applyWriteRefused(args: {
     if (row && isDrivenByOther(row, state.currentUser?.id)) {
       state.markWriteDenied(caseId);
       setBubble(DRIVER_READ_ONLY_NOTICE);
-      // The sidebar lists the cases this user drives. Its cached page still
-      // holds this one, so drop the slot BEFORE asking the list to reload:
-      // the reload then reads the server's `access=write` answer, which no
-      // longer has it, instead of the cached page that does.
-      await caseCacheManager.invalidateCache();
-      if (epoch !== getEpoch()) return;
-      useAppStore.getState().triggerRefreshSessions();
+      // The sidebar lists the cases this user drives, and this one no longer
+      // is. Here as well as in the extension host: the user may have opened
+      // another case before the read landed, and then the host never sees
+      // this row.
+      await reloadDrivenCaseList(epoch);
     } else {
       setBubble(fallbackText);
     }

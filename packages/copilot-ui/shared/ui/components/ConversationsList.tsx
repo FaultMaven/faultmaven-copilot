@@ -13,7 +13,7 @@ import {
 import { idMappingManager } from '../../../lib/optimistic';
 import { selectCaseTitle } from '../../../lib/state/case-title';
 import { createLogger } from '../../../lib/utils/logger';
-import { isCreatedBy, isDrivenByOther } from '../../../lib/cases/driver';
+import { isCreatedBy } from '../../../lib/cases/driver';
 
 const log = createLogger('ConversationsList');
 
@@ -430,9 +430,9 @@ export function ConversationsList({
         {!isCollapsed && (
           <div id={panelId} role="region" aria-labelledby={headerId}>
             {items.map((c) => {
-              // Listed rows are driven by this user. A row naming another
-              // driver can only be stale; it gets none of the driver's writes.
-              const drivable = !isDrivenByOther(c, currentUserId);
+              // Every row came from `access=write` (or its cache slot), so the
+              // user drives it: rename and title generation, the driver's
+              // writes, are always offered. Delete is the creator's.
               const creator = isCreatedBy(c, currentUserId);
               return (
               <ConversationItem
@@ -444,8 +444,8 @@ export function ConversationsList({
                 isPinned={pinnedCases.has(c.case_id)}
                 onSelect={(id) => onCaseSelect && onCaseSelect(id)}
                 onDelete={creator ? (id) => handleDeleteCase(id) : undefined}
-                onRename={drivable ? (id, t) => handleRenameCase(id, t) : undefined}
-                onGenerateTitle={drivable ? (id) => handleGenerateTitle(id) : undefined}
+                onRename={(id, t) => handleRenameCase(id, t)}
+                onGenerateTitle={(id) => handleGenerateTitle(id)}
                 onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
               />
               );

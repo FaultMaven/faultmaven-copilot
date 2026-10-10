@@ -20,7 +20,7 @@ import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { CHECKING_ACCESS_NOTICE, DRIVER_READ_ONLY_NOTICE } from '@faultmaven/copilot-ui/lib/cases/driver';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
-import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
+import { idMappingManager, pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
 
@@ -326,6 +326,33 @@ describe('403 on a turn', () => {
       await useAppStore.getState().refreshActiveCase(CASE);
     });
     expect(denied()).toBe(false);
+  });
+
+  // A case created here is refused under the id the turn was sent with, which
+  // may be its optimistic id or its real one; the refresh may be asked by either.
+  // Both keys go, or the one left behind keeps the case read-only.
+  describe('retiring a denial across the optimistic id', () => {
+    const OPT = 'opt_case_1700000000000_1';
+    beforeEach(() => idMappingManager.addMapping(OPT, CASE));
+    afterEach(() => idMappingManager.clear());
+
+    it('a denial under the optimistic id, refreshed by it, is retired', async () => {
+      fetchWithTimeout.mockImplementation(async () => wire(200, row('u1')));
+      useAppStore.setState({ writeDeniedCaseIds: { [OPT]: true } } as never);
+      await act(async () => {
+        await useAppStore.getState().refreshActiveCase(OPT);
+      });
+      expect(useAppStore.getState().writeDeniedCaseIds).toEqual({});
+    });
+
+    it('a denial under the real id, refreshed by the optimistic one, is retired', async () => {
+      fetchWithTimeout.mockImplementation(async () => wire(200, row('u1')));
+      useAppStore.setState({ writeDeniedCaseIds: { [CASE]: true } } as never);
+      await act(async () => {
+        await useAppStore.getState().refreshActiveCase(OPT);
+      });
+      expect(useAppStore.getState().writeDeniedCaseIds).toEqual({});
+    });
   });
 
   it('a fresh row still naming another driver keeps the denial', async () => {

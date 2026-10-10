@@ -532,6 +532,11 @@ export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[
     }
   }
 
+  // Captured as the request starts — after the cache read, which may itself
+  // invalidate an expired slot. If the slot is invalidated while this fetch is
+  // in flight (a case reassigned away, a sign-out), the page is from before
+  // that and must not refill the slot.
+  const cacheGeneration = caseCacheManager.currentGeneration();
   const response = await authenticatedFetchWithRetry(url.toString(), { method: 'GET', credentials: 'include' });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
@@ -558,7 +563,7 @@ export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[
 
   // Update cache if this was the sidebar's list
   if (isSidebarList) {
-    await caseCacheManager.setCachedCases(userCases);
+    await caseCacheManager.setCachedCases(userCases, cacheGeneration);
   }
 
   return userCases;
