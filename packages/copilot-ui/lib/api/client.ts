@@ -14,16 +14,10 @@ const log = createLogger('APIClient');
 // damaging on the credential-renewal / poll paths. Generous enough for the 10 MB
 // max file upload on a slow link; callers may override per request.
 //
-// Sized as the MIDDLE rung of the turn timeout ladder: server per-turn ceiling
-// (120s) < this client timeout (300s) < ingress proxy-read (600s). Keeping the
-// client ABOVE the server ceiling means a slow investigation turn surfaces the
-// server's real error/partial instead of a bare client-side "Request timed out"
-// abort. It was previously 120_000, equal to the server ceiling — the two
-// raced, and the client usually won, producing exactly that opaque timeout.
-//
-// The server rung is core AgentSettings.agent_request_timeout: default 120,
-// bounded 30-600 via AGENT_REQUEST_TIMEOUT, and not overridden in k8s. Re-check
-// it there before narrowing this value — the gap is the safety margin.
+// Every request but a turn. `POST /cases/{id}/turns` does not use this: its
+// timeout is derived from the response bound the API publishes on
+// `/meta/capabilities` (`lib/utils/turn-timing.ts`), so a client timeout is
+// never shorter than a turn the server is still allowed to finish.
 const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
@@ -130,9 +124,13 @@ async function handleSessionExpired(sentSessionId?: string): Promise<void> {
  * 4. Retry the request once — getAuthHeaders now reads the persisted session_id
  *    and attaches X-Session-Id
  */
-export async function authenticatedFetchWithRetry(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authenticatedFetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs?: number
+): Promise<Response> {
   try {
-    return await authenticatedFetch(url, options);
+    return await authenticatedFetch(url, options, timeoutMs);
   } catch (error) {
     // If session expired, refresh and retry once
     if (error instanceof SessionExpiredError ||
@@ -145,7 +143,7 @@ export async function authenticatedFetchWithRetry(url: string, options: RequestI
         await refreshSession();
 
         // Retry the request with the same options
-        return await authenticatedFetch(url, options);
+        return await authenticatedFetch(url, options, timeoutMs);
       } catch (refreshError) {
         // Covers both a failed refresh and a retry that 401s again (no second
         // retry — the error propagates rather than looping).

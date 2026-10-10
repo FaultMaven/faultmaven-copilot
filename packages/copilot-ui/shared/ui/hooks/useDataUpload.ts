@@ -19,6 +19,7 @@ import { resilientOperation } from '../../../lib/utils/resilient-operation';
 import {
   idempotencyKeyFor,
   keyedTurnRetryPolicy,
+  turnTimingFor,
   rotateIdempotencyKey,
 } from '../../../lib/utils/keyed-turn-retry';
 import { formatErrorForChat } from '../../../lib/utils/api-error-handler';
@@ -123,6 +124,7 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     inFlightControllers.current.add(controller);
     let turnResponse: TurnResponse;
     try {
+      const timing = await turnTimingFor(turnRequest);
       turnResponse = await resilientOperation({
         operation: async () => {
           return await submitTurn(targetCaseId, turnRequest, {
@@ -148,7 +150,7 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         idempotent: true,
         // A keyed turn also recovers a lost response (client timeout, gateway
         // 504) and waits out TURN_IN_PROGRESS, under one wall-clock deadline.
-        ...keyedTurnRetryPolicy(),
+        ...keyedTurnRetryPolicy(timing),
       });
     } catch (error) {
       // Caller-initiated cancellation (hook unmounted): return silently. Don't
