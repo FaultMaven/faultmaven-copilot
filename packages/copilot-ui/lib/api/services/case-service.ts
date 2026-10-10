@@ -21,7 +21,7 @@ const log = createLogger('CaseService');
 
 /**
  * Canonical page size for the primary "recent case list" fetch. The single-slot
- * case cache is only valid for this exact page shape (offset 0, this limit), so
+ * case cache is only valid for one exact query (`SIDEBAR_CASE_LIST_QUERY`), so
  * the UI callers that populate/read the cache and the cache-eligibility check
  * must share one source of truth for it — otherwise a differently-paged fetch
  * (e.g. limit:50) would overwrite the cache with a shorter slice that a limit:100
@@ -339,7 +339,10 @@ function toUserCase(row: unknown): UserCase {
     priority: c.priority,
     resolved_at: c.resolved_at ?? undefined,
     message_count: c.current_turn || c.message_count || 0,
-    owner_id: c.user_id || c.owner_id || '',  // API uses user_id
+    owner_id: c.user_id || c.owner_id || '',  // API uses user_id (the creator)
+    // Always the EFFECTIVE driver on a served row (contract 13.2.0); a server
+    // older than that names none, which reads as unknown, i.e. writable.
+    driver_id: c.driver_id || undefined,
     enterprise_id: c.enterprise_id,  // Isolation tenant (ADR-017)
     organization_id: c.organization_id ?? null,  // Billing attribution only
     closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
@@ -414,6 +417,25 @@ export type CaseListFilters = NonNullable<
  * declare is an excess-property error. One source of truth, two gates — which is
  * the whole claim, and a hand-kept second list would not be.
  */
+/**
+ * The sidebar's list: the cases this user DRIVES (`access=write`, ADR-020 D8),
+ * first page. The extension lists what it can write; every case it can merely
+ * read is the Dashboard's to show.
+ *
+ * The filter belongs to THIS query, not to `getUserCases`' default: the other
+ * callers (`reconcileActiveCaseState`, which runs in both hosts, and recovery)
+ * look a case up among every case the user can read, and a case reassigned
+ * away is still one of those.
+ *
+ * It is also the one query the single-slot list cache holds (`getUserCases`'
+ * `isSidebarList`), so the sidebar stays cached and nothing else reads its rows.
+ */
+export const SIDEBAR_CASE_LIST_QUERY = {
+  access: 'write',
+  limit: DEFAULT_CASE_LIST_LIMIT,
+  offset: 0,
+} as const satisfies CaseListFilters;
+
 const CASE_LIST_QUERY_PARAMS: Record<keyof CaseListFilters, true> = {
   state: true,
   source: true,
@@ -423,6 +445,7 @@ const CASE_LIST_QUERY_PARAMS: Record<keyof CaseListFilters, true> = {
   limit: true,
   offset: true,
   include_empty: true,
+  access: true,
 };
 
 /**
@@ -473,30 +496,35 @@ export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[
   const url = new URL(`${await getApiTransport().baseUrl()}/api/v1/cases`);
   if (filters) appendCaseListQuery(url, filters);
 
-  // OPTIMIZATION: Check cache first for the canonical default listing only.
+  // OPTIMIZATION: Check cache first for the sidebar's listing only.
   // The cache is a single slot keyed by nothing, so it may only represent exactly
-  // one page shape: no other filter, offset 0, and the explicit default page
-  // size. Any other request — a different limit/offset, OR a no-arg/`{}` call
-  // that returns the backend-default slice (not guaranteed to equal our page size)
-  // — targets a different slice and must neither read nor write this cache, else
-  // e.g. a limit:50 fetch would shrink the list a limit:100 caller then reads back.
+  // one query: `SIDEBAR_CASE_LIST_QUERY` — the cases this user drives
+  // (`access=write`), no other filter, offset 0, and the explicit default page
+  // size. Any other request — a different limit/offset, a no-arg/`{}` call that
+  // returns the backend-default slice (not guaranteed to equal our page size),
+  // OR the same page without `access=write` — targets a different set and must
+  // neither read nor write this cache. Without the access arm, reconcile's
+  // unfiltered read (every case the user can READ) would fill the slot with
+  // cases the sidebar must not list, and would be served the sidebar's
+  // write-only rows as its own answer, missing a case reassigned away.
   //
   // The predicate reads the QUERY STRING this call is about to issue — `url` is
   // fully built two lines above — rather than the filter it was spelled with. It
   // therefore cannot drift from the serializer, because it reads the
   // serializer's OUTPUT. Re-deriving the skip rule here (a second `v == null`)
   // agreed with `appendCaseListQuery` only by coincidence of being written
-  // twice: teach the serializer one more skip and the canonical query would stop
-  // being recognised as the default page, so the sidebar's list would silently
-  // stop being cached; change it the other way and a cached canonical page would
-  // be served to a call that issued a NARROWED query.
+  // twice: teach the serializer one more skip and the sidebar's query would
+  // stop being recognised, so the sidebar's list would silently stop being
+  // cached; change it the other way and the cached sidebar page would be served
+  // to a call that issued a different query.
   const query = url.searchParams;
-  const isDefaultList =
-    [...query.keys()].every(k => k === 'limit' || k === 'offset') &&
+  const isSidebarList =
+    [...query.keys()].every(k => k === 'access' || k === 'limit' || k === 'offset') &&
+    query.get('access') === SIDEBAR_CASE_LIST_QUERY.access &&
     query.get('limit') === String(DEFAULT_CASE_LIST_LIMIT) &&
     (!query.has('offset') || query.get('offset') === '0');
 
-  if (isDefaultList) {
+  if (isSidebarList) {
     const cached = await caseCacheManager.getCachedCases();
     if (cached) {
       log.info('Returning cached case list');
@@ -504,6 +532,11 @@ export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[
     }
   }
 
+  // Captured as the request starts — after the cache read, which may itself
+  // invalidate an expired slot. If the slot is invalidated while this fetch is
+  // in flight (a case reassigned away, a sign-out), the page is from before
+  // that and must not refill the slot.
+  const cacheGeneration = caseCacheManager.currentGeneration();
   const response = await authenticatedFetchWithRetry(url.toString(), { method: 'GET', credentials: 'include' });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
@@ -512,7 +545,7 @@ export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[
   // A 200 whose body will not parse is NOT an empty list. Substituting
   // `{ cases: [] }` here made it one, and it passed the shape guards below and
   // reached `setCachedCases([])` — because the sidebar's own fetch IS the
-  // canonical default page. `[]` is truthy, so `if (cached) return cached` then
+  // cached query. `[]` is truthy, so `if (cached) return cached` then
   // short-circuited every later fetch and the user's case list read empty and
   // STAYED empty until the TTL expired. `null` falls through to the guards,
   // which return [] without writing the cache. Reachable in practice: a proxy
@@ -528,9 +561,9 @@ export async function getUserCases(filters?: CaseListFilters): Promise<UserCase[
 
   const userCases = data.cases.map((c: unknown) => toUserCase(c));
 
-  // Update cache if this was a default list
-  if (isDefaultList) {
-    await caseCacheManager.setCachedCases(userCases);
+  // Update cache if this was the sidebar's list
+  if (isSidebarList) {
+    await caseCacheManager.setCachedCases(userCases, cacheGeneration);
   }
 
   return userCases;

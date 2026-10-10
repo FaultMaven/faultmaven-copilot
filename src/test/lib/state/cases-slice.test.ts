@@ -469,7 +469,7 @@ describe('cases-slice', () => {
 
       await expect(
         useAppStore.getState().refreshActiveCase('case-h4')
-      ).resolves.toBeUndefined();
+      ).resolves.toBeNull();
 
       expect(useAppStore.getState().activeCase?.state).toBe('inquiry');
     });

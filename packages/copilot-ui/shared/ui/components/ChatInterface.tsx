@@ -4,6 +4,7 @@ import { UnifiedInputBar, TurnPayload, TurnSubmitResult, QuerySubmitResult } fro
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase, TurnIntent } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
+import { DRIVER_READ_ONLY_NOTICE } from '../../../lib/cases/driver';
 
 const log = createLogger('ChatInterface');
 
@@ -27,7 +28,7 @@ interface ChatInterfaceProps {
    * Render the transcript and NOTHING to add to it.
    *
    * Not a disabled composer: a disabled field says "you may write here, later",
-   * which is not what a shared case means, and the upload affordance beside it
+   * which is not what a case someone else drives means, and the upload affordance beside it
    * would still be there to press.
    */
   readOnly?: boolean;
@@ -101,12 +102,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     <p className="text-xs text-fm-text-secondary mt-1 italic">{errorInfo.recoveryHint}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
+                    {/* A retry is a write; a read-only viewer has none to resend. */}
+                    {!readOnly && (
                     <button
                       onClick={() => onRetryFailedOperation(operation.id)}
                       className="px-3 py-1 text-xs bg-fm-elevated text-fm-warning rounded hover:bg-fm-surface transition-colors font-medium"
                     >
                       Retry
                     </button>
+                    )}
                     <button
                       onClick={() => onDismissFailedOperation(operation.id)}
                       className="text-fm-text-tertiary hover:text-fm-text-primary transition-colors"
@@ -132,13 +136,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           onQuerySubmit={onQuerySubmit}
           onDocumentView={onDocumentView}
           setActiveCase={setActiveCase}
+          readOnly={readOnly}
         />
       </div>
 
       {/* Input Area — absent entirely when the host says this viewer may not
           write. A disabled composer says "you may write here, later", which is
-          not what someone else's case means, and the upload affordance beside
+          not what a case someone else drives means, and the upload affordance beside
           it would still be there to press. */}
+      {readOnly && (
+        <div
+          role="note"
+          className="flex-shrink-0 px-4 py-3 border-t border-fm-border bg-fm-surface text-xs text-fm-text-tertiary"
+        >
+          {DRIVER_READ_ONLY_NOTICE}
+        </div>
+      )}
       {!readOnly && (
       <UnifiedInputBar
         onQuerySubmit={onQuerySubmit}

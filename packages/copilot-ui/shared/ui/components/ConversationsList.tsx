@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
+import { UserCase, getUserCases, SIDEBAR_CASE_LIST_QUERY, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
@@ -13,6 +13,7 @@ import {
 import { idMappingManager } from '../../../lib/optimistic';
 import { selectCaseTitle } from '../../../lib/state/case-title';
 import { createLogger } from '../../../lib/utils/logger';
+import { isCreatedBy } from '../../../lib/cases/driver';
 
 const log = createLogger('ConversationsList');
 
@@ -62,6 +63,13 @@ interface ConversationsListProps {
   onCaseTitleChange?: (caseId: string, newTitle: string, source: 'user' | 'backend') => void;
   pinnedCases?: Set<string>;
   onPinToggle?: (caseId: string) => void;
+  /**
+   * The signed-in user's id. Every listed case is one this user drives
+   * (`access=write`), so each offers rename and title generation, the
+   * driver's writes; delete is the CREATOR's (ADR-020 D2) and is offered only
+   * on a row this user created.
+   */
+  currentUserId?: string;
 }
 
 export function ConversationsList({
@@ -76,7 +84,8 @@ export function ConversationsList({
   onCasesLoaded,
   onCaseTitleChange,
   pinnedCases = new Set(),
-  onPinToggle
+  onPinToggle,
+  currentUserId
 }: ConversationsListProps) {
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
@@ -118,7 +127,9 @@ export function ConversationsList({
     try {
       setLoading(true);
       setError(null);
-      const list = await getUserCases({ limit: DEFAULT_CASE_LIST_LIMIT, offset: 0 });
+      // The cases this user DRIVES (ADR-020 D8), never every case they can
+      // read: the extension lists what it can write.
+      const list = await getUserCases(SIDEBAR_CASE_LIST_QUERY);
 
       // ✅ PERFORMANCE WIN: Direct object access instead of JSON.stringify
       // JSON.stringify is computationally expensive and unnecessary
@@ -418,7 +429,12 @@ export function ConversationsList({
         </h3>
         {!isCollapsed && (
           <div id={panelId} role="region" aria-labelledby={headerId}>
-            {items.map((c) => (
+            {items.map((c) => {
+              // Every row came from `access=write` (or its cache slot), so the
+              // user drives it: rename and title generation, the driver's
+              // writes, are always offered. Delete is the creator's.
+              const creator = isCreatedBy(c, currentUserId);
+              return (
               <ConversationItem
                 key={c.case_id}
                 session={{ session_id: c.case_id, created_at: c.created_at || '', status: 'active', last_activity: c.updated_at || '', metadata: {} } as any}
@@ -427,12 +443,13 @@ export function ConversationsList({
                 isUnsavedNew={false}
                 isPinned={pinnedCases.has(c.case_id)}
                 onSelect={(id) => onCaseSelect && onCaseSelect(id)}
-                onDelete={(id) => handleDeleteCase(id)}
+                onDelete={creator ? (id) => handleDeleteCase(id) : undefined}
                 onRename={(id, t) => handleRenameCase(id, t)}
                 onGenerateTitle={(id) => handleGenerateTitle(id)}
                 onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
               />
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

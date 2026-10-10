@@ -83,3 +83,47 @@ describe('InlineSourcesRenderer — runbooks in context', () => {
     expect(screen.queryByText(/in context/)).not.toBeInTheDocument();
   });
 });
+
+// Contract 13.1.0 (fm#1920): a runbook this viewer may not open comes back
+// redacted — no title, no document id, no excerpt, no score. A case retrieves
+// with its DRIVER's knowledge (ADR-020 D9), so a reader meets these.
+describe('InlineSourcesRenderer — a runbook the viewer may not open', () => {
+  const restricted = (over: Partial<Source> = {}): Source => ({
+    type: 'knowledge_base',
+    content: '',
+    confidence: null,
+    metadata: { access: 'restricted' },
+    new_this_turn: true,
+    ...over,
+  });
+
+  it('says so, with no "Source N", no link and no preview', () => {
+    render(
+      <InlineSourcesRenderer content="Done." sources={[kb(1), restricted()]} onDocumentView={vi.fn()} />
+    );
+
+    expect(screen.getByText("A runbook you don't have access to")).toBeInTheDocument();
+    expect(screen.queryByText('Source 2')).toBeNull();
+    // The one link is the openable runbook's.
+    expect(screen.getAllByRole('button', { name: /Open runbook/ })).toHaveLength(1);
+    expect(screen.queryByText(/relevance/, { selector: 'span' })).toHaveTextContent('82% relevance');
+    // Still a runbook the model had: the count stays true.
+    expect(screen.getByText('📚 2 runbooks in context')).toBeInTheDocument();
+  });
+
+  it('is never a link, whatever stray metadata it carries', () => {
+    const onDocumentView = vi.fn();
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[restricted({ metadata: { access: 'restricted', document_id: 'doc-9', title: 'Leaked' } })]}
+        onDocumentView={onDocumentView}
+      />
+    );
+
+    expect(screen.getByText("A runbook you don't have access to")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open runbook/ })).toBeNull();
+    expect(screen.queryByText('Leaked')).toBeNull();
+    expect(screen.queryByText(/Knowledge Base/)).toBeNull();
+  });
+});

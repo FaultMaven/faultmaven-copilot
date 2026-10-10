@@ -18,6 +18,7 @@ import {
   CaseTerminalError,
   CaseVersionConflictError,
   IdempotencyKeyReuseError,
+  PermissionError,
   TurnInProgressError,
   TurnReplayUnavailableError
 } from '../../../lib/errors/types';
@@ -46,6 +47,7 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
+import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
 import { notifyCaseChanged } from './case-changed';
@@ -325,6 +327,20 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             }));
             void useAppStore.getState().refreshActiveCase(caseId);
             showError(classified);
+            return;
+          }
+          if (classified instanceof PermissionError) {
+            // The server refused this viewer's write (403). Resending can only
+            // meet the same refusal: no failed op, no Retry.
+            log.warn('Turn refused: this viewer may not write the case', { caseId });
+            pendingOpsManager.remove(aiMessageId);
+            applyWriteRefused({
+              caseId,
+              aiMessageId,
+              fallbackText: classified.userMessage,
+              epoch,
+              setConversations,
+            });
             return;
           }
           if (classified instanceof IdempotencyKeyReuseError) {

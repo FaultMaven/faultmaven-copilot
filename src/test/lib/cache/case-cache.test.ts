@@ -111,6 +111,25 @@ describe('CaseCacheManager', () => {
             expect(mockStorage.remove).toHaveBeenCalledWith(['faultmaven_case_cache']);
         });
 
+        // ADR-020 (fm#1898): a v1 slot holds every case the user could READ,
+        // naming no driver. The sidebar now lists only the cases its user
+        // drives, so serving that page would put cases they cannot write back
+        // in the list until the TTL ran out.
+        it('drops a v1 slot: every readable case, no driver', async () => {
+            expect(CASE_CACHE_VERSION).toBe(2);
+            mockStorage.get.mockResolvedValue({
+                faultmaven_case_cache: {
+                    cases: mockCases,
+                    timestamp: Date.now(),
+                    version: 1
+                }
+            });
+
+            const result = await manager.getCachedCases();
+            expect(result).toBeNull();
+            expect(mockStorage.remove).toHaveBeenCalledWith(['faultmaven_case_cache']);
+        });
+
         // The shape written before this version was STAMPED at all: no `version`
         // key. Same verdict, and the check must not read `undefined` as current.
         it('drops a case row persisted with no schema stamp', async () => {
@@ -144,7 +163,7 @@ describe('CaseCacheManager', () => {
 
     describe('setCachedCases', () => {
         it('stores cases with timestamp', async () => {
-            await manager.setCachedCases(mockCases);
+            await manager.setCachedCases(mockCases, manager.currentGeneration());
 
             expect(mockStorage.set).toHaveBeenCalledWith(expect.objectContaining({
                 faultmaven_case_cache: expect.objectContaining({
@@ -153,6 +172,41 @@ describe('CaseCacheManager', () => {
                     version: CASE_CACHE_VERSION
                 })
             }));
+        });
+    });
+
+    // A writer captures the generation when it starts; an invalidation since
+    // then means its page predates the invalidation, and the write is refused.
+    describe('generation (fm#1898)', () => {
+        it('an invalidation moves the generation', async () => {
+            const before = manager.currentGeneration();
+            await manager.invalidateCache();
+            expect(manager.currentGeneration()).toBe(before + 1);
+        });
+
+        it('the generation moves before the removal is awaited', () => {
+            const before = manager.currentGeneration();
+            void manager.invalidateCache();
+            expect(manager.currentGeneration()).toBe(before + 1);
+        });
+
+        it('refuses a write captured before an invalidation', async () => {
+            const captured = manager.currentGeneration();
+            await manager.invalidateCache();
+            await manager.setCachedCases(mockCases, captured);
+            expect(mockStorage.set).not.toHaveBeenCalled();
+        });
+
+        it('an optimistic edit whose read straddles an invalidation writes nothing', async () => {
+            mockStorage.get.mockImplementation(async () => {
+                await manager.invalidateCache();
+                return {
+                    faultmaven_case_cache: { cases: mockCases, timestamp: Date.now(), version: CASE_CACHE_VERSION }
+                };
+            });
+            await manager.updateOptimisticCase('123', { title: 'Updated Title' });
+            await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
+            expect(mockStorage.set).not.toHaveBeenCalled();
         });
     });
 

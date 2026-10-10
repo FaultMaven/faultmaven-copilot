@@ -312,3 +312,51 @@ uses for a reason this build does not know).
 the chat reply at generation time, so a card linking to the Dashboard's Report
 tab for a summary already visible above is noise. Runbooks are user-requested
 (the agent offers them as suggestions on terminal Q&A turns).
+
+## The case driver (ADR-020, faultmaven#1898)
+
+A case has a **creator** (`user_id` on the wire, `UserCase.owner_id`) and one
+**driver** (`UserCase.driver_id`, always the EFFECTIVE driver on a served row).
+Every reader views a case; only the driver writes it (turns, uploads, title,
+close, reports); delete is the creator's.
+
+- **The sidebar lists the cases its user drives**: `ConversationsList` asks for
+  `SIDEBAR_CASE_LIST_QUERY` (`access=write`, first page). The filter is that
+  query's, never `getUserCases`' default: `reconcileActiveCaseState` runs in
+  both hosts and must find the open case among every case the user can READ.
+- **The single-slot list cache holds that one query.** `getUserCases`'
+  `isSidebarList` reads the issued URL and admits only `access=write` + the
+  default page, so reconcile's unfiltered read neither fills the slot nor is
+  served from it. Changing the query or the cached row shape bumps
+  `CASE_CACHE_VERSION` (`lib/cache/case-cache.ts`). Every writer captures the
+  cache's **generation** when it starts (a list fetch as its request goes out,
+  an optimistic edit before its read); `invalidateCache` moves it, and
+  `setCachedCases` refuses a write captured before the move — a sidebar fetch
+  in flight across an invalidation cannot refill the slot with its older page.
+- **Rows**: every row came from `access=write` (or its slot), so the user
+  drives it: no "Shared" mark, rename and title generation always offered;
+  delete only where `isCreatedBy(row, viewer)`.
+- **Read-only open case** (`lib/cases/driver.ts`): the extension host's
+  `useActiveCaseDrivenByOther` (`src/extension/useActiveCaseDriver.ts`)
+  passes `readOnly={isDrivenByOther(activeCase, currentUser.id)}`; unknown (a
+  placeholder, a locally minted case) is writable.
+- **A case the user stops driving leaves the sidebar** through one sequence,
+  `reloadDrivenCaseList` (`lib/state/case-list-reload.ts`): drop the slot,
+  THEN reload the list, epoch-guarded. Two callers:
+  - the extension host, when the open case turns driven-by-other for a case
+    id — this covers a case reassigned while not open (clicked from its cached
+    row) and one reassigned during a turn (the 409 refresh). Fires once per
+    flip; the reload changes neither the open case nor its driver;
+  - the 403 backstop (`lib/state/write-refused.ts`), which reads the refused
+    case back and, if another account drives it, marks it denied — needed
+    when the user opened another case before the read landed. A fresh row
+    naming the viewer as driver retires the denial (handed back), under both
+    the optimistic and the real id.
+  Never from `refreshActiveCase`, which also runs in the Dashboard. The
+  Dashboard host passes its own `initialCase.readOnly` and never mounts the
+  sidebar.
+- **Redacted sources** (contract 13.1.0): a `knowledge_base` source with
+  `metadata.access === 'restricted'` (`isRestrictedSource`,
+  `lib/state/turn-sources.ts`) is a runbook this viewer may not open; it renders
+  as "A runbook you don't have access to" — no "Source N", link, preview or
+  score — and still counts toward "N runbooks in context".

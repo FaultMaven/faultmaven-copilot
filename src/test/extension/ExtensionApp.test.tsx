@@ -8,7 +8,7 @@
  * split — and both survived a mutation that removed them.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -118,13 +118,14 @@ vi.mock('../../extension/auth/local-auth-client', () => ({
 // hands over; rendering the real panel would pull every hook it owns into a
 // test about the gate above it.
 vi.mock('@faultmaven/copilot-ui/shared/ui/CopilotPanel', () => ({
-  default: ({ host }: any) => {
+  default: ({ host, readOnly }: any) => {
     capturedSignOut.current(host.session.signOut);
-    return <div data-testid="panel-probe" />;
+    return <div data-testid="panel-probe" data-readonly={String(readOnly)} />;
   },
 }));
 import { ExtensionApp } from '../../extension/ExtensionApp';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import {
   clearSessionEnding,
   isSessionEnding,
@@ -536,5 +537,104 @@ describe('the extension session signs out', () => {
 
     await screen.findByText(/Sign in with/i);
     expect(screen.queryByText(/could not confirm your other FaultMaven sessions/i)).toBeNull();
+  });
+});
+
+
+/**
+ * Only the case's driver writes it (ADR-020, fm#1898): the extension host
+ * computes the verdict from the open case's DRIVER and the CURRENT user's id,
+ * and hands it to the panel's existing `readOnly`. The creator is not the test.
+ * The panel is a probe here, so what is asserted is what the entry decides.
+ */
+describe('ExtensionApp — a case someone else drives is read-only', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.isAuthenticated = true;
+    messageListeners.length = 0;
+    b.storage.local.get.mockResolvedValue({ hasCompletedFirstRun: true });
+    capsFetch.mockResolvedValue({ dashboardUrl: 'https://app.faultmaven.ai' });
+    detectExtensionReload.mockResolvedValue(false);
+    useAppStore.setState({
+      currentUser: null,
+      hasCompletedFirstRun: null,
+      initializingCapabilities: true,
+      capabilitiesError: null,
+      capabilities: null,
+      activeCase: null,
+    });
+  });
+
+  // The signed-in user (u1, from the auth mock) created every case here; only
+  // the driver varies, so a verdict keyed on the creator would fail each test.
+  const openCaseDrivenBy = (driverId: string | undefined) =>
+    useAppStore.setState({
+      activeCase: {
+        case_id: 'c1', title: 't', state: 'investigating', owner_id: 'u1', driver_id: driverId,
+      } as never,
+    });
+  const readOnlyOf = async () =>
+    (await screen.findByTestId('panel-probe')).getAttribute('data-readonly');
+
+  it('a case the signed-in user drives is writable', async () => {
+    openCaseDrivenBy('u1');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+  });
+
+  it('a case another user drives is read-only, though the viewer created it', async () => {
+    openCaseDrivenBy('u2');
+    renderApp();
+    expect(await readOnlyOf()).toBe('true');
+  });
+
+  it('follows the case as the user opens another one in the panel', async () => {
+    openCaseDrivenBy('u1');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+
+    act(() => openCaseDrivenBy('u2'));
+    await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('true'));
+
+    act(() => openCaseDrivenBy('u1'));
+    await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('false'));
+  });
+
+  // Account switch: the driver is judged against whoever is signed in NOW, so the
+  // same case row flips with the identity — nothing is cached per account.
+  it('is re-evaluated when the signed-in user changes', async () => {
+    openCaseDrivenBy('u2');
+    renderApp();
+    expect(await readOnlyOf()).toBe('true');
+
+    act(() =>
+      useAppStore.setState({
+        currentUser: { id: 'u2', username: 'other', roles: ['user'] } as never,
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('false'));
+  });
+
+  it('a case that names no driver yet (placeholder before hydration) is writable', async () => {
+    openCaseDrivenBy(undefined);
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+  });
+
+  // The sidebar lists the cases this user drives: when the open case turns out
+  // to be someone else's, this host drops the list cache slot and reloads the
+  // list, once (the path-level proof is driven-away-list.test.tsx).
+  it('reloads the sidebar once when the open case turns out to be driven by someone else', async () => {
+    const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache').mockResolvedValue();
+    openCaseDrivenBy('u1');
+    renderApp();
+    expect(await readOnlyOf()).toBe('false');
+    const before = useAppStore.getState().refreshSessions;
+    expect(invalidate).not.toHaveBeenCalled();
+
+    act(() => openCaseDrivenBy('u2'));
+    await waitFor(() => expect(useAppStore.getState().refreshSessions).toBe(before + 1));
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    invalidate.mockRestore();
   });
 });

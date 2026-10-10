@@ -35,8 +35,16 @@ export interface CasesSlice {
   conversationTitles: Record<string, string>;
   titleSources: Record<string, 'user' | 'backend' | 'system'>;
   pinnedCases: Set<string>;
+  /**
+   * Cases the server refused a write on (403) whose row then named another
+   * driver. The driver the client holds can be stale; a refusal is the server's
+   * own word that this viewer may not write, so the case renders read-only
+   * until a fresh row names the viewer as its driver again (handed back).
+   */
+  writeDeniedCaseIds: Record<string, true>;
 
   // Actions
+  markWriteDenied: (caseId: string) => void;
   setActiveCaseId: (caseId: string | null | undefined) => Promise<void>;
   setActiveCase: (caseObj: UserCase | null | ((prev: UserCase | null) => UserCase | null)) => void;
   setConversations: (updater: Record<string, OptimisticConversationItem[]> | ((prev: Record<string, OptimisticConversationItem[]>) => Record<string, OptimisticConversationItem[]>)) => void;
@@ -68,7 +76,8 @@ export interface CasesSlice {
    * `false` the local rows stay.
    */
   reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => Promise<boolean>;
-  refreshActiveCase: (caseId: string) => Promise<void>;
+  /** Resolves the row it read (for the case asked about, whichever is open now), or null. */
+  refreshActiveCase: (caseId: string) => Promise<UserCase | null>;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -85,6 +94,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     conversationTitles: {},
     titleSources: {},
     pinnedCases: new Set(),
+    writeDeniedCaseIds: {},
+
+    markWriteDenied: (caseId) =>
+      set((state) =>
+        state.writeDeniedCaseIds[caseId]
+          ? state
+          : { writeDeniedCaseIds: { ...state.writeDeniedCaseIds, [caseId]: true as const } },
+      ),
 
     setActiveCaseId: async (caseId) => {
       const targetId = caseId || null;
@@ -154,6 +171,12 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       set({ hasUnsavedNewChat: false, activeTab: 'copilot' });
 
       const caseMessages = get().conversations[caseId] || [];
+      // Re-selecting the open case keeps what its row already said about who
+      // created and who drives it, so a case read as someone else's does not
+      // flash a composer until the hydration below lands. A different case has
+      // no row yet: unknown, writable, with the server's 403 as backstop.
+      const prior = get().activeCase;
+      const same = prior?.case_id === caseId ? prior : null;
       set({
         activeCase: {
           case_id: caseId,
@@ -164,7 +187,8 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           state: 'inquiry',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          owner_id: '',
+          owner_id: same?.owner_id ?? '',
+          driver_id: same?.driver_id,
           // Locally minted, so it names no tenant yet: `refreshActiveCase`
           // below replaces the whole row with the server's, which does.
           enterprise_id: '',
@@ -420,7 +444,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
-      if (isOptimisticId(resolvedCaseId)) return; // no backend row yet
+      if (isOptimisticId(resolvedCaseId)) return null; // no backend row yet
 
       const epoch = getEpoch();
       try {
@@ -428,11 +452,25 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         // ranked beyond the first list page would never be found there), and
         // no coupling to the sidebar's list cache.
         const row = await getCase(resolvedCaseId);
-        if (!row) return;
+        if (!row) return null;
         if (epoch !== getEpoch()) {
           log.info('Session changed during case refresh — discarding', { caseId });
-          return;
+          return null;
         }
+
+        // A denial means "another account drives this case". A fresh row that
+        // names the viewer as its driver (the case was handed back) retires it,
+        // whichever case is open now.
+        set((state) => {
+          const viewerId = state.currentUser?.id;
+          const denied = state.writeDeniedCaseIds;
+          if (!viewerId || row.driver_id !== viewerId) return {};
+          if (!denied[caseId] && !denied[resolvedCaseId]) return {};
+          const next = { ...denied };
+          delete next[caseId];
+          delete next[resolvedCaseId];
+          return { writeDeniedCaseIds: next };
+        });
 
         set((state) => {
           const current = state.activeCase;
@@ -453,11 +491,13 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // id-mapping manager's job, not a side effect of hydration.
           return { activeCase: { ...current, ...row, case_id: current.case_id } };
         });
+        return row;
       } catch (error) {
         // warn, not debug: this is the only recovery on the post-409 path and
         // the only source of closure metadata on case select, and debug logs
         // are dropped in production builds.
         log.warn('Active-case refresh failed', { caseId, error });
+        return null;
       }
     },
 

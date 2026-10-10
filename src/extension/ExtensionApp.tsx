@@ -19,6 +19,7 @@ import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
 import { ErrorBoundary } from '@faultmaven/copilot-ui/shared/ui/components/ErrorBoundary';
 import { LoadingScreen } from '@faultmaven/copilot-ui/shared/ui/components/LoadingScreen';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
+import { useActiveCaseDrivenByOther } from './useActiveCaseDriver';
 import {
   clearSessionEnding,
   markSessionEnding,
@@ -69,6 +70,16 @@ export function ExtensionApp() {
   const currentUser = useAppStore((state) => state.currentUser);
   const setSignedInUser = useAppStore((state) => state.setSignedInUser);
   const applyHostAuthState = useAppStore((state) => state.applyHostAuthState);
+
+  // Only the case's driver writes it (ADR-020, fm#1898). The list holds only
+  // cases this user drives, but the open case can be reassigned away while it
+  // is open, and a restored last case arrives without a list row, so this host
+  // says when the open case is someone else's to drive — and then takes it
+  // out of the sidebar. Computed from the open case and the CURRENT user's id
+  // on every render, so it covers each way a case becomes current (list click,
+  // restored last case, a case created here) and re-evaluates when the
+  // signed-in user changes.
+  const activeCaseDrivenByOther = useActiveCaseDrivenByOther(currentUser?.id);
 
   // Set when a deliberate sign-out could not be confirmed to have ended every
   // session for the account. Not an error — the local sign-out succeeded — but
@@ -358,7 +369,7 @@ export function ExtensionApp() {
     );
   }
 
-  return <CopilotPanel host={host} />;
+  return <CopilotPanel host={host} readOnly={activeCaseDrivenByOther} />;
 }
 
 export default ExtensionApp;

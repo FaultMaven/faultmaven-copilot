@@ -6,6 +6,7 @@ import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
 import { cleanResponseText } from '../../../lib/utils/text-processor';
 import { formatSource } from '../../../lib/utils/response-handlers';
+import { isRestrictedSource, RESTRICTED_SOURCE_LABEL } from '../../../lib/state/turn-sources';
 import { ConfirmationButtons } from './ConfirmationButtons';
 import { MermaidDiagram } from './MermaidDiagram';
 
@@ -70,6 +71,17 @@ interface SourceEntryProps {
 }
 
 const SourceEntry: React.FC<SourceEntryProps> = memo(({ source, index, onDocumentView }) => {
+  // Redacted for this viewer: it names no runbook, so no "Source N", no link
+  // and no preview — only that the model had one this viewer cannot open.
+  // Returned before any metadata is read, so a stray title or document id on
+  // a restricted entry is never shown or linked.
+  if (isRestrictedSource(source)) {
+    return (
+      <li className="rounded-md border border-fm-border bg-fm-surface p-2 italic text-fm-text-tertiary">
+        {RESTRICTED_SOURCE_LABEL}
+      </li>
+    );
+  }
   const { emoji, label, confidence } = formatSource(source);
   const title = metadataString(source, 'title') ?? `Source ${index + 1}`;
   const documentId = sourceDocumentId(source);

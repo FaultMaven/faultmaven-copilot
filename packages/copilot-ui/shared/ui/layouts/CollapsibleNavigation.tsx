@@ -294,6 +294,7 @@ export function CollapsibleNavigation({
             onCaseTitleChange={onCaseTitleChange}
             pinnedCases={pinnedCases}
             onPinToggle={onPinToggle}
+            currentUserId={currentUser?.id}
           />
         </ErrorBoundary>
       </div>

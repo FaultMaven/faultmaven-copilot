@@ -24,6 +24,7 @@ const STUB_CASE = {
   updated_at: new Date().toISOString(),
   description: 'Stub case. Nothing here reaches a real backend.',
   user_id: 'stub-user',
+  driver_id: 'stub-user',
   enterprise_id: 'stub-enterprise',
   organization_id: null,
   closure_reason: null,

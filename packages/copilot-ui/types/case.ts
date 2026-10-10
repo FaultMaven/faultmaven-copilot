@@ -50,7 +50,13 @@ export interface UserCase {
   priority?: 'low' | 'medium' | 'high' | 'critical' | string;
   resolved_at?: string;
   message_count?: number;
-  owner_id: string; // Required per v2.0 security
+  owner_id: string; // The CREATOR (`user_id` on the wire): holds delete, share, unshare
+  /**
+   * The EFFECTIVE driver (ADR-020): the one account that may write the case.
+   * The server always names it on a row it serves; absent on a placeholder or
+   * locally minted row, which `isDrivenByOther` reads as unknown (writable).
+   */
+  driver_id?: string;
   /** Isolation tenant. Required — the server never serves a row without it. */
   enterprise_id: string;
   /** Billing attribution only. Null for every account nobody pays for. */
