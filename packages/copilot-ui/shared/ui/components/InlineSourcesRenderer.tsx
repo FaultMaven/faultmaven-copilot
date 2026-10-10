@@ -60,10 +60,8 @@ function metadataString(source: Source, key: string): string | null {
   return typeof value === 'string' && value ? value : null;
 }
 
-/** The runbook to link to; never one the viewer may not open, whatever its metadata says. */
 function sourceDocumentId(source: Source): string | null {
-  if (source.type !== 'knowledge_base' || isRestrictedSource(source)) return null;
-  return metadataString(source, 'document_id');
+  return source.type === 'knowledge_base' ? metadataString(source, 'document_id') : null;
 }
 
 interface SourceEntryProps {
@@ -75,6 +73,8 @@ interface SourceEntryProps {
 const SourceEntry: React.FC<SourceEntryProps> = memo(({ source, index, onDocumentView }) => {
   // Redacted for this viewer: it names no runbook, so no "Source N", no link
   // and no preview — only that the model had one this viewer cannot open.
+  // Returned before any metadata is read, so a stray title or document id on
+  // a restricted entry is never shown or linked.
   if (isRestrictedSource(source)) {
     return (
       <li className="rounded-md border border-fm-border bg-fm-surface p-2 italic text-fm-text-tertiary">
