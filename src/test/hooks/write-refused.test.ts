@@ -1,11 +1,14 @@
 /**
- * 403 on a turn (fm#1898): the server's own word that this viewer may not write
- * the case. Driven down to `authenticatedFetch`, stubbing only the wire.
+ * 403 on a turn (fm#1898, ADR-020): the server's own word that this viewer may
+ * not write the case. Driven down to `authenticatedFetch`, stubbing only the wire.
  *
- * The ownership the client held was stale or unknown, so the refusal is read
- * against the case row: a row naming another owner makes the case read-only and
- * keeps the shared-case notice in the bubble; a row naming the viewer means the
- * refusal was something else, so the composer is left alone.
+ * The driver the client held was stale or unknown, so the refusal is read
+ * against the case row: a row naming another DRIVER makes the case read-only,
+ * keeps the driver notice in the bubble and takes the case out of the sidebar's
+ * list (cache slot dropped, list reload requested); a row naming the viewer as
+ * driver means the refusal was something else, so the composer is left alone.
+ * The creator is not the test: here the viewer created every case, and a
+ * creator who handed the case on is refused like any other reader.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -15,7 +18,8 @@ import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
-import { CHECKING_ACCESS_NOTICE, SHARED_READ_ONLY_NOTICE } from '@faultmaven/copilot-ui/lib/cases/ownership';
+import { CHECKING_ACCESS_NOTICE, DRIVER_READ_ONLY_NOTICE } from '@faultmaven/copilot-ui/lib/cases/driver';
+import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
@@ -45,7 +49,8 @@ const wire = (status: number, body: unknown) => ({
   json: async () => body,
 });
 
-const row = (ownerId: string) => ({
+/** The viewer (u1) created the case; only the effective driver varies. */
+const row = (driverId: string) => ({
   case_id: CASE,
   title: 'Test',
   state: 'investigating',
@@ -53,16 +58,17 @@ const row = (ownerId: string) => ({
   closed_at: null,
   created_at: '2026-10-09T09:00:00Z',
   updated_at: '2026-10-09T09:00:00Z',
-  user_id: ownerId,
+  user_id: 'u1',
+  driver_id: driverId,
   enterprise_id: 'e1',
 });
 
-/** Turn POSTs get a 403; the case read-back names `ownerId`. */
-function route(ownerId: string) {
+/** Turn POSTs get a 403; the case read-back names `driverId`. */
+function route(driverId: string) {
   fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET';
-    if (url === TURNS_URL && method === 'POST') return Promise.resolve(wire(403, { detail: 'Not the case owner' }));
-    if (url === CASE_URL && method === 'GET') return Promise.resolve(wire(200, row(ownerId)));
+    if (url === TURNS_URL && method === 'POST') return Promise.resolve(wire(403, { detail: 'Not the case driver' }));
+    if (url === CASE_URL && method === 'GET') return Promise.resolve(wire(200, row(driverId)));
     return Promise.reject(new Error(`unrouted ${method} ${url}`));
   });
 }
@@ -77,6 +83,7 @@ describe('403 on a turn', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
     pendingOpsManager.clear();
     stub = createStubHost();
     setHostStore(stub.store);
@@ -97,7 +104,7 @@ describe('403 on a turn', () => {
       conversationTitles: {},
       pinnedCases: new Set(),
       writeDeniedCaseIds: {},
-      // Ownership not yet known: the placeholder a freshly opened case carries.
+      // Driver not yet known: the placeholder a freshly opened case carries.
       activeCase: {
         case_id: CASE,
         title: 'Test',
@@ -122,7 +129,7 @@ describe('403 on a turn', () => {
     });
   };
 
-  it('message path: another owner → read-only message, case marked, no Retry, sent once', async () => {
+  it('message path: another driver → read-only message, case marked, no Retry, sent once', async () => {
     route('u2');
     const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
     await act(async () => {
@@ -134,27 +141,50 @@ describe('403 on a turn', () => {
       ([u, i]) => u === TURNS_URL && i.method === 'POST',
     );
     expect(posts).toHaveLength(1);
-    expect(assistant()?.response).toBe(SHARED_READ_ONLY_NOTICE);
+    expect(assistant()?.response).toBe(DRIVER_READ_ONLY_NOTICE);
     expect(assistant()).toMatchObject({ error: true, failed: false });
     expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
     expect(denied()).toBe(true);
-    expect(useAppStore.getState().activeCase?.owner_id).toBe('u2');
+    expect(useAppStore.getState().activeCase?.driver_id).toBe('u2');
   });
 
-  it('message path: the viewer owns it → the server’s message, the composer is not hidden', async () => {
+  it('another driver → the case leaves the sidebar: cache slot dropped, then the list reloads', async () => {
+    route('u2');
+    const order: string[] = [];
+    vi.spyOn(caseCacheManager, 'invalidateCache').mockImplementation(async () => {
+      order.push('invalidate');
+    });
+    const unsubscribe = useAppStore.subscribe((s, prev) => {
+      if (s.refreshSessions !== prev.refreshSessions) order.push('refresh');
+    });
+    const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      await result.current.handleQuerySubmit('why?');
+    });
+    await settle();
+    unsubscribe();
+
+    expect(order.slice(-2)).toEqual(['invalidate', 'refresh']);
+  });
+
+  it('message path: the viewer drives it → the server’s message, composer kept, list left alone', async () => {
     route('u1');
+    const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache');
+    const refreshBefore = useAppStore.getState().refreshSessions;
     const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
     await act(async () => {
       await result.current.handleQuerySubmit('why is the pool exhausted?');
     });
     await settle();
 
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(useAppStore.getState().refreshSessions).toBe(refreshBefore);
     expect(denied()).toBe(false);
-    expect(assistant()?.response).not.toBe(SHARED_READ_ONLY_NOTICE);
+    expect(assistant()?.response).not.toBe(DRIVER_READ_ONLY_NOTICE);
     expect(assistant()?.response).toMatch(/permission/i);
   });
 
-  it('upload path: another owner → read-only message, case marked, reported refused', async () => {
+  it('upload path: another driver → read-only message, case marked, reported refused', async () => {
     route('u2');
     const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
     let outcome: unknown;
@@ -168,13 +198,13 @@ describe('403 on a turn', () => {
     await settle();
 
     expect(outcome).toMatchObject({ success: false, sent: true, refused: true });
-    expect(assistant()?.response).toBe(SHARED_READ_ONLY_NOTICE);
+    expect(assistant()?.response).toBe(DRIVER_READ_ONLY_NOTICE);
     expect(denied()).toBe(true);
   });
 
   // The read-back is held open so the test can move the user, or end the
   // session, while it is in flight.
-  function routeDeferred(ownerId: string) {
+  function routeDeferred(driverId: string) {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     fetchWithTimeout.mockImplementation(async (url: string, init: RequestInit = {}) => {
@@ -182,7 +212,7 @@ describe('403 on a turn', () => {
       if (url === TURNS_URL && method === 'POST') return wire(403, { detail: 'refused' });
       if (url === CASE_URL && method === 'GET') {
         await gate;
-        return wire(200, row(ownerId));
+        return wire(200, row(driverId));
       }
       throw new Error(`unrouted ${method} ${url}`);
     });
@@ -206,12 +236,12 @@ describe('403 on a turn', () => {
 
     release();
     await flush();
-    expect(assistant()?.response).toBe(SHARED_READ_ONLY_NOTICE);
+    expect(assistant()?.response).toBe(DRIVER_READ_ONLY_NOTICE);
     expect(denied()).toBe(true);
   });
 
-  // The refused case A is the viewer's own (a different permission refused it);
-  // by the time the read lands the user has opened B, which someone else owns.
+  // The viewer drives the refused case A (a different permission refused it);
+  // by the time the read lands the user has opened B, which someone else drives.
   // Judging by the open case would mark A.
   it('judges the REFUSED case: opening another case mid-read-back does not mark it', async () => {
     const release = routeDeferred('u1');
@@ -223,7 +253,9 @@ describe('403 on a turn', () => {
     act(() =>
       useAppStore.setState({
         activeCaseId: 'case-B',
-        activeCase: { case_id: 'case-B', title: 'B', state: 'investigating', owner_id: 'u2', enterprise_id: 'e1' } as never,
+        activeCase: {
+          case_id: 'case-B', title: 'B', state: 'investigating', owner_id: 'u1', driver_id: 'u2', enterprise_id: 'e1',
+        } as never,
       }),
     );
 
@@ -231,11 +263,12 @@ describe('403 on a turn', () => {
     await flush();
     expect(denied()).toBe(false);
     expect(useAppStore.getState().writeDeniedCaseIds['case-B']).toBeUndefined();
-    expect(assistant()?.response).not.toBe(SHARED_READ_ONLY_NOTICE);
+    expect(assistant()?.response).not.toBe(DRIVER_READ_ONLY_NOTICE);
   });
 
   it('a sign-out during the read-back leaves the purged store alone', async () => {
     const release = routeDeferred('u2');
+    const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache');
     const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
     await act(async () => {
       await result.current.handleQuerySubmit('why?');
@@ -246,30 +279,61 @@ describe('403 on a turn', () => {
       bumpEpoch();
       useAppStore.setState({ conversations: {}, writeDeniedCaseIds: {} } as never);
     });
+    const refreshBefore = useAppStore.getState().refreshSessions;
     release();
     await flush();
 
     expect(useAppStore.getState().conversations).toEqual({});
     expect(useAppStore.getState().writeDeniedCaseIds).toEqual({});
+    expect(useAppStore.getState().refreshSessions).toBe(refreshBefore);
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
-  // The failed read: ownership the list row carried must survive it.
-  it('a 503 on the case read leaves the owner the list row supplied (still read-only)', async () => {
-    fetchWithTimeout.mockImplementation(async () => wire(503, { detail: 'down' }));
-    useAppStore.setState({ activeCase: null, activeCaseId: null } as never);
-    act(() => useAppStore.getState().handleCaseSelect(CASE, 'u2'));
-    await flush();
-
-    expect(useAppStore.getState().activeCase?.owner_id).toBe('u2');
-  });
-
-  it('re-selecting the same case keeps the owner already known', async () => {
+  // Every listed case is one the user drives, so a list click names no driver
+  // up front: unknown, writable, the 403 above as backstop.
+  it('selecting a different case starts unknown (writable) until hydration', async () => {
     fetchWithTimeout.mockImplementation(async () => wire(503, { detail: 'down' }));
     useAppStore.setState({
-      activeCase: { case_id: CASE, title: 't', state: 'investigating', owner_id: 'u2', enterprise_id: 'e1' } as never,
+      activeCase: {
+        case_id: 'case-B', title: 'B', state: 'investigating', owner_id: 'u1', driver_id: 'u2', enterprise_id: 'e1',
+      } as never,
     });
     act(() => useAppStore.getState().handleCaseSelect(CASE));
     await flush();
-    expect(useAppStore.getState().activeCase?.owner_id).toBe('u2');
+    expect(useAppStore.getState().activeCase?.case_id).toBe(CASE);
+    expect(useAppStore.getState().activeCase?.driver_id).toBeUndefined();
+  });
+
+  it('re-selecting the open case keeps the driver already known', async () => {
+    fetchWithTimeout.mockImplementation(async () => wire(503, { detail: 'down' }));
+    useAppStore.setState({
+      activeCase: {
+        case_id: CASE, title: 't', state: 'investigating', owner_id: 'u1', driver_id: 'u2', enterprise_id: 'e1',
+      } as never,
+    });
+    act(() => useAppStore.getState().handleCaseSelect(CASE));
+    await flush();
+    expect(useAppStore.getState().activeCase?.driver_id).toBe('u2');
+  });
+
+  // Handed back: the denial meant "someone else drives it". A fresh row naming
+  // the viewer as driver retires it, or the case would stay read-only for the
+  // rest of the session.
+  it('a fresh row naming the viewer as driver retires the denial', async () => {
+    fetchWithTimeout.mockImplementation(async () => wire(200, row('u1')));
+    useAppStore.setState({ writeDeniedCaseIds: { [CASE]: true } } as never);
+    await act(async () => {
+      await useAppStore.getState().refreshActiveCase(CASE);
+    });
+    expect(denied()).toBe(false);
+  });
+
+  it('a fresh row still naming another driver keeps the denial', async () => {
+    fetchWithTimeout.mockImplementation(async () => wire(200, row('u2')));
+    useAppStore.setState({ writeDeniedCaseIds: { [CASE]: true } } as never);
+    await act(async () => {
+      await useAppStore.getState().refreshActiveCase(CASE);
+    });
+    expect(denied()).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * A case shared with the viewer is read-only (fm#1898): every control in the
+ * A case someone else drives is read-only (fm#1898, ADR-020): every control in the
  * transcript that would submit a turn is absent or inert, not just the composer.
  * Each is a write the server answers with a 403.
  */
@@ -34,7 +34,8 @@ const activeCase = {
   title: 'Pool exhaustion',
   state: 'investigating',
   created_at: '2026-08-01T00:00:00Z',
-  owner_id: 'u2',
+  owner_id: 'u1',
+  driver_id: 'u2',
   enterprise_id: 'e1',
   closure_reason: null,
   closed_at: null,
@@ -128,7 +129,7 @@ describe('ChatInterface — readOnly', () => {
 
 describe('ChatWindow — memo', () => {
   // Every other prop equal: only the verdict changes. A comparator that ignored
-  // it would keep the live Yes/No on screen after the case turned out shared.
+  // it would keep the live Yes/No on screen after the case turned out to be someone else's to drive.
   it('re-renders when only readOnly flips', () => {
     const onQuerySubmit = vi.fn();
     const props = { conversation, activeCase, loading: false, sessionId: 'sid', onQuerySubmit };

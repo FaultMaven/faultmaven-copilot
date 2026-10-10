@@ -204,6 +204,21 @@ describe('Case Service', () => {
       expect(result[1].owner_id).toEqual('user-2');
     });
 
+    // ADR-020: `user_id` is the creator; `driver_id` on the wire is always the
+    // EFFECTIVE driver. A server older than 13.2.0 names none: unknown.
+    it('maps the creator and the effective driver', async () => {
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [
+        { case_id: '1', title: 'Handed', state: 'investigating', created_at: '2024-01-01', user_id: 'creator', driver_id: 'driver', enterprise_id: 'ent-1' },
+        { case_id: '2', title: 'Old server', state: 'investigating', created_at: '2024-01-01', user_id: 'creator', driver_id: null, enterprise_id: 'ent-1' },
+      ] }));
+
+      const [handed, old] = await caseService.getUserCases();
+
+      expect(handed.owner_id).toBe('creator');
+      expect(handed.driver_id).toBe('driver');
+      expect(old.driver_id).toBeUndefined();
+    });
+
     // #271. The filter is forwarded to the query string verbatim, so what
     // reaches the transport IS the contract. Every assertion below reads the URL
     // the code actually handed to `authenticatedFetchWithRetry`, never a
@@ -357,10 +372,13 @@ describe('Case Service', () => {
       });
     });
 
-    // L2: the single-slot cache is only valid for the canonical default page
-    // (offset 0, DEFAULT_CASE_LIST_LIMIT). A differently-paged fetch must neither
-    // read nor write it, or a limit:50 fetch would shrink the list a limit:100
-    // caller reads back.
+    // L2: the single-slot cache is only valid for the sidebar's query —
+    // `SIDEBAR_CASE_LIST_QUERY`: access=write, offset 0, DEFAULT_CASE_LIST_LIMIT.
+    // A differently-paged fetch must neither read nor write it, or a limit:50
+    // fetch would shrink the list a limit:100 caller reads back; and the same
+    // page WITHOUT access=write (reconcile's read, every case the user can read)
+    // is a different set, so it must neither fill the slot the sidebar reads
+    // nor be answered from it.
     describe('cache paging', () => {
       let getSpy: any;
       let setSpy: any;
@@ -398,14 +416,60 @@ describe('Case Service', () => {
         expect(setSpy).not.toHaveBeenCalled();
       });
 
-      it('reads and writes the cache for the canonical default page', async () => {
+      it('reads and writes the cache for the sidebar query', async () => {
         getSpy.mockResolvedValue(null);
         (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [fresh] }));
 
-        await caseService.getUserCases({ limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0 });
+        await caseService.getUserCases(caseService.SIDEBAR_CASE_LIST_QUERY);
 
         expect(getSpy).toHaveBeenCalled();
         expect(setSpy).toHaveBeenCalledTimes(1);
+        const issued = new URL(
+          (client.authenticatedFetchWithRetry as any).mock.calls[0][0]
+        ).searchParams;
+        expect(issued.get('access')).toBe('write');
+        expect(issued.get('limit')).toBe(String(caseService.DEFAULT_CASE_LIST_LIMIT));
+      });
+
+      it('serves the sidebar query from the cache when it holds a page', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' } as any]);
+
+        const result = await caseService.getUserCases(caseService.SIDEBAR_CASE_LIST_QUERY);
+
+        expect(result[0].case_id).toBe('cached');
+        expect(client.authenticatedFetchWithRetry).not.toHaveBeenCalled();
+      });
+
+      // Reconcile's read: the same page, no access filter. It must not FILL
+      // the slot with cases the sidebar may not list (cases the user can only
+      // read), and must not be SERVED the sidebar's driven-only page as its
+      // own answer — a case reassigned away would be missing from it.
+      it('the unfiltered first page neither writes the slot nor reads it', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' } as any]);
+        (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [fresh] }));
+
+        const result = await caseService.getUserCases({ limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0 });
+
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+        expect(result[0].case_id).toBe('fresh');
+        const issued = new URL(
+          (client.authenticatedFetchWithRetry as any).mock.calls[0][0]
+        ).searchParams;
+        expect(issued.has('access')).toBe(false);
+      });
+
+      it('access=read on the first page is not the sidebar query either', async () => {
+        getSpy.mockResolvedValue([{ case_id: 'cached' } as any]);
+        (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({ cases: [fresh] }));
+
+        const result = await caseService.getUserCases({
+          access: 'read', limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0
+        });
+
+        expect(getSpy).not.toHaveBeenCalled();
+        expect(setSpy).not.toHaveBeenCalled();
+        expect(result[0].case_id).toBe('fresh');
       });
 
       // Eligibility is a question about the page this call REQUESTS, and a key
@@ -413,14 +477,14 @@ describe('Case Service', () => {
       // canonical page and must hit the same slot. Keying on the key alone would
       // answer from the call site's spelling and stop caching the default list
       // for any caller that spells "no filter" out.
-      it('treats the canonical page as default when a filter is explicitly null', async () => {
+      it('treats the sidebar query as cacheable when a filter is explicitly null', async () => {
         getSpy.mockResolvedValue(null);
         vi.mocked(client.authenticatedFetchWithRetry).mockResolvedValue(
           mockResponse({ cases: [fresh] }) as unknown as Response
         );
 
         await caseService.getUserCases({
-          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, state: null
+          ...caseService.SIDEBAR_CASE_LIST_QUERY, state: null
         });
 
         expect(getSpy).toHaveBeenCalled();
@@ -434,7 +498,7 @@ describe('Case Service', () => {
         );
 
         const result = await caseService.getUserCases({
-          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, state: 'resolved'
+          ...caseService.SIDEBAR_CASE_LIST_QUERY, state: 'resolved'
         });
 
         expect(getSpy).not.toHaveBeenCalled();
@@ -455,7 +519,7 @@ describe('Case Service', () => {
         );
 
         const result = await caseService.getUserCases({
-          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0, team_id: ''
+          ...caseService.SIDEBAR_CASE_LIST_QUERY, team_id: ''
         });
 
         // Cache behaviour first, so a predicate that drifts back to re-deriving
@@ -466,7 +530,7 @@ describe('Case Service', () => {
         const issued = new URL(
           vi.mocked(client.authenticatedFetchWithRetry).mock.calls[0][0]
         ).searchParams;
-        expect([...issued.keys()].sort()).toEqual(['limit', 'offset', 'team_id']);
+        expect([...issued.keys()].sort()).toEqual(['access', 'limit', 'offset', 'team_id']);
         expect(result[0].case_id).toBe('fresh');
       });
 
@@ -485,9 +549,7 @@ describe('Case Service', () => {
           headers: { get: vi.fn() },
         } as unknown as Response);
 
-        const result = await caseService.getUserCases({
-          limit: caseService.DEFAULT_CASE_LIST_LIMIT, offset: 0
-        });
+        const result = await caseService.getUserCases(caseService.SIDEBAR_CASE_LIST_QUERY);
 
         expect(result).toEqual([]);
         expect(setSpy).not.toHaveBeenCalled();

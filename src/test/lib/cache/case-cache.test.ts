@@ -111,6 +111,25 @@ describe('CaseCacheManager', () => {
             expect(mockStorage.remove).toHaveBeenCalledWith(['faultmaven_case_cache']);
         });
 
+        // ADR-020 (fm#1898): a v1 slot holds every case the user could READ,
+        // naming no driver. The sidebar now lists only the cases its user
+        // drives, so serving that page would put cases they cannot write back
+        // in the list until the TTL ran out.
+        it('drops a v1 slot: every readable case, no driver', async () => {
+            expect(CASE_CACHE_VERSION).toBe(2);
+            mockStorage.get.mockResolvedValue({
+                faultmaven_case_cache: {
+                    cases: mockCases,
+                    timestamp: Date.now(),
+                    version: 1
+                }
+            });
+
+            const result = await manager.getCachedCases();
+            expect(result).toBeNull();
+            expect(mockStorage.remove).toHaveBeenCalledWith(['faultmaven_case_cache']);
+        });
+
         // The shape written before this version was STAMPED at all: no `version`
         // key. Same verdict, and the check must not read `undefined` as current.
         it('drops a case row persisted with no schema stamp', async () => {

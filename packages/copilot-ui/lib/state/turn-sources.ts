@@ -42,6 +42,24 @@ export function sourcesToShow(
   return sameSources(recorded, sources) ? undefined : sources;
 }
 
+/**
+ * A knowledge-base source the viewer may not open, redacted by the server
+ * (contract 13.1.0, fm#1920). A case retrieves with its DRIVER's knowledge
+ * (ADR-020 D9), so a reader can find a runbook in a turn's context that they
+ * cannot open themselves: the server keeps the entry, so the count of what
+ * the model had stays true, and strips it to `content` "", `confidence` null
+ * and `metadata` `{"access": "restricted"}` — no title, no document id.
+ *
+ * It names no runbook, so it is never a link, a "Source N" or a preview; it
+ * renders as "A runbook you don't have access to".
+ */
+export function isRestrictedSource(source: Source): boolean {
+  return source.type === 'knowledge_base' && source.metadata?.access === 'restricted';
+}
+
+/** Shown in place of a runbook the viewer may not open. */
+export const RESTRICTED_SOURCE_LABEL = "A runbook you don't have access to";
+
 /** The rows before `itemId` — the ones a turn's row is compared against. */
 export function rowsBefore<T extends { id: string }>(rows: readonly T[], itemId: string): readonly T[] {
   const at = rows.findIndex((row) => row.id === itemId);

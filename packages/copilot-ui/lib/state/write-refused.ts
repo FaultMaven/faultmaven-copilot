@@ -1,19 +1,22 @@
 /**
  * The server said this viewer may not write the case (403).
  *
- * The ownership the client holds can be stale or not yet known — a placeholder
- * row before hydration, a case that changed hands. A 403 on a turn is the
- * server's own word, so this reads the case row back, and when that row names
- * another owner it marks the case denied (the panel then renders it read-only)
- * and leaves the shared-case notice in the bubble. When the row says the viewer
- * IS the owner the refusal is some other permission: the bubble says what the
+ * The driver the client holds can be stale or not yet known — a placeholder
+ * row before hydration, a case reassigned to someone else while it was open
+ * (ADR-020). A 403 on a turn is the server's own word, so this reads the case
+ * row back, and when that row names another driver it marks the case denied
+ * (the panel then renders it read-only), leaves the read-only notice in the
+ * bubble, and takes the case out of the sidebar's list: the list is the cases
+ * this user drives, and this one no longer is. When the row says the viewer
+ * IS the driver the refusal is some other permission: the bubble says what the
  * server said, and the composer stays — a guess must not hide it.
  *
  * Shared by the two turn-sending paths (message and upload), so they cannot
  * disagree about what a refusal means.
  */
 import type { OptimisticConversationItem } from '../optimistic';
-import { CHECKING_ACCESS_NOTICE, isOwnedByOther, SHARED_READ_ONLY_NOTICE } from '../cases/ownership';
+import { caseCacheManager } from '../cache/case-cache';
+import { CHECKING_ACCESS_NOTICE, DRIVER_READ_ONLY_NOTICE, isDrivenByOther } from '../cases/driver';
 import { getEpoch } from './session-epoch';
 import { useAppStore } from './store';
 
@@ -41,7 +44,7 @@ export function applyWriteRefused(args: {
       ),
     }));
 
-  // Claim nothing until the row says whose case it is.
+  // Claim nothing until the row says who drives the case.
   setBubble(CHECKING_ACCESS_NOTICE);
   void (async () => {
     // Judged on the row fetched for THE REFUSED case, never on whatever case is
@@ -49,9 +52,16 @@ export function applyWriteRefused(args: {
     const row = await useAppStore.getState().refreshActiveCase(caseId);
     if (epoch !== getEpoch()) return;
     const state = useAppStore.getState();
-    if (row && isOwnedByOther(row, state.currentUser?.id)) {
+    if (row && isDrivenByOther(row, state.currentUser?.id)) {
       state.markWriteDenied(caseId);
-      setBubble(SHARED_READ_ONLY_NOTICE);
+      setBubble(DRIVER_READ_ONLY_NOTICE);
+      // The sidebar lists the cases this user drives. Its cached page still
+      // holds this one, so drop the slot BEFORE asking the list to reload:
+      // the reload then reads the server's `access=write` answer, which no
+      // longer has it, instead of the cached page that does.
+      await caseCacheManager.invalidateCache();
+      if (epoch !== getEpoch()) return;
+      useAppStore.getState().triggerRefreshSessions();
     } else {
       setBubble(fallbackText);
     }

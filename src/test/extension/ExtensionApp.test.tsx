@@ -541,12 +541,12 @@ describe('the extension session signs out', () => {
 
 
 /**
- * A team share is read-only (fm#1898): the extension host computes the verdict
- * from the open case's owner and the CURRENT user's id, and hands it to the
- * panel's existing `readOnly`. The panel is a probe here, so what is asserted is
- * what the entry decides.
+ * Only the case's driver writes it (ADR-020, fm#1898): the extension host
+ * computes the verdict from the open case's DRIVER and the CURRENT user's id,
+ * and hands it to the panel's existing `readOnly`. The creator is not the test.
+ * The panel is a probe here, so what is asserted is what the entry decides.
  */
-describe('ExtensionApp — a case shared with the signed-in user is read-only', () => {
+describe('ExtensionApp — a case someone else drives is read-only', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authState.isAuthenticated = true;
@@ -564,41 +564,45 @@ describe('ExtensionApp — a case shared with the signed-in user is read-only', 
     });
   });
 
-  const openCaseOwnedBy = (ownerId: string) =>
+  // The signed-in user (u1, from the auth mock) created every case here; only
+  // the driver varies, so a verdict keyed on the creator would fail each test.
+  const openCaseDrivenBy = (driverId: string | undefined) =>
     useAppStore.setState({
-      activeCase: { case_id: 'c1', title: 't', state: 'investigating', owner_id: ownerId } as never,
+      activeCase: {
+        case_id: 'c1', title: 't', state: 'investigating', owner_id: 'u1', driver_id: driverId,
+      } as never,
     });
   const readOnlyOf = async () =>
     (await screen.findByTestId('panel-probe')).getAttribute('data-readonly');
 
-  it('the signed-in user’s own case is writable', async () => {
-    openCaseOwnedBy('u1');
+  it('a case the signed-in user drives is writable', async () => {
+    openCaseDrivenBy('u1');
     renderApp();
     expect(await readOnlyOf()).toBe('false');
   });
 
-  it('a case another user owns is read-only', async () => {
-    openCaseOwnedBy('u2');
+  it('a case another user drives is read-only, though the viewer created it', async () => {
+    openCaseDrivenBy('u2');
     renderApp();
     expect(await readOnlyOf()).toBe('true');
   });
 
   it('follows the case as the user opens another one in the panel', async () => {
-    openCaseOwnedBy('u1');
+    openCaseDrivenBy('u1');
     renderApp();
     expect(await readOnlyOf()).toBe('false');
 
-    act(() => openCaseOwnedBy('u2'));
+    act(() => openCaseDrivenBy('u2'));
     await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('true'));
 
-    act(() => openCaseOwnedBy('u1'));
+    act(() => openCaseDrivenBy('u1'));
     await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('false'));
   });
 
-  // Account switch: ownership is judged against whoever is signed in NOW, so the
+  // Account switch: the driver is judged against whoever is signed in NOW, so the
   // same case row flips with the identity — nothing is cached per account.
   it('is re-evaluated when the signed-in user changes', async () => {
-    openCaseOwnedBy('u2');
+    openCaseDrivenBy('u2');
     renderApp();
     expect(await readOnlyOf()).toBe('true');
 
@@ -610,8 +614,8 @@ describe('ExtensionApp — a case shared with the signed-in user is read-only', 
     await waitFor(() => expect(screen.getByTestId('panel-probe').getAttribute('data-readonly')).toBe('false'));
   });
 
-  it('a case that names no owner yet (placeholder before hydration) is not called shared', async () => {
-    openCaseOwnedBy('');
+  it('a case that names no driver yet (placeholder before hydration) is writable', async () => {
+    openCaseDrivenBy(undefined);
     renderApp();
     expect(await readOnlyOf()).toBe('false');
   });

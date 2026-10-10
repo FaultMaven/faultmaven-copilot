@@ -4,7 +4,7 @@ import { UnifiedInputBar, TurnPayload, TurnSubmitResult, QuerySubmitResult } fro
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase, TurnIntent } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
-import { SHARED_READ_ONLY_NOTICE } from '../../../lib/cases/ownership';
+import { DRIVER_READ_ONLY_NOTICE } from '../../../lib/cases/driver';
 
 const log = createLogger('ChatInterface');
 
@@ -28,7 +28,7 @@ interface ChatInterfaceProps {
    * Render the transcript and NOTHING to add to it.
    *
    * Not a disabled composer: a disabled field says "you may write here, later",
-   * which is not what a shared case means, and the upload affordance beside it
+   * which is not what a case someone else drives means, and the upload affordance beside it
    * would still be there to press.
    */
   readOnly?: boolean;
@@ -142,14 +142,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       {/* Input Area — absent entirely when the host says this viewer may not
           write. A disabled composer says "you may write here, later", which is
-          not what someone else's case means, and the upload affordance beside
+          not what a case someone else drives means, and the upload affordance beside
           it would still be there to press. */}
       {readOnly && (
         <div
           role="note"
           className="flex-shrink-0 px-4 py-3 border-t border-fm-border bg-fm-surface text-xs text-fm-text-tertiary"
         >
-          {SHARED_READ_ONLY_NOTICE}
+          {DRIVER_READ_ONLY_NOTICE}
         </div>
       )}
       {!readOnly && (

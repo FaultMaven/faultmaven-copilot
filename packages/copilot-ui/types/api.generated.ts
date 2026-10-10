@@ -1479,7 +1479,8 @@ export interface paths {
          * @description Update case details
          *
          *     Updates case metadata such as title, description, state, priority, and tags.
-         *     Requires edit permissions on the case.
+         *     Only the case's DRIVER may update it (ADR-020 D2); any other reader gets
+         *     the answer an absent case gets.
          */
         put: operations["update_case_api_v1_cases__case_id__put"];
         post?: never;
@@ -1494,9 +1495,8 @@ export interface paths {
          *     204 No Content even if the case has already been deleted, and so does a
          *     request naming a case the caller cannot see.
          *
-         *     Only the OWNER may delete. A teammate who can read the case through a team
-         *     share is refused with 403 (ADR-017 D4: a share is read visibility, not
-         *     ownership).
+         *     Only the case's CREATOR may delete it: delete is governance (ADR-020 D2).
+         *     Any other reader — the driver included — is refused with 403.
          *
          *     Returns 204 No Content on success.
          */
@@ -1608,8 +1608,50 @@ export interface paths {
         /**
          * Delete Case Data
          * @description Remove data file from a case. Returns 204 No Content on success.
+         *
+         *     Only the case's DRIVER may call it (ADR-020 D2); anyone else gets 404.
          */
         delete: operations["delete_case_data_api_v1_cases__case_id__data__data_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/driver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reassign Case Driver
+         * @description Hand the case's investigation writes to another account (ADR-020 D4). The caller must be the case's creator or its current driver; the target must be one of `GET /cases/{case_id}/driver-candidates`. Naming the creator hands the case back to them; naming the current driver changes nothing. A change bumps the case's version, so a turn in flight fails with 409 `CASE_VERSION_CONFLICT`, and is recorded in the audit log.
+         */
+        put: operations["reassign_case_driver_api_v1_cases__case_id__driver_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/driver-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Case Driver Candidates
+         * @description Who the case's driver may be handed to (ADR-020 D4): the creator, then the active individual members of the teams the case is shared with, in the case's enterprise. Display names only, never email addresses. Readable by the case's creator and its current driver.
+         */
+        get: operations["list_driver_candidates_api_v1_cases__case_id__driver_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1686,7 +1728,8 @@ export interface paths {
          *       (``NotFoundError``).
          *     - ``409`` — evidence has no backing file (``ConflictError`` with
          *       ``conflict_reason="no_backing_file"``).
-         *     - ``403`` — caller does not own the case (``AuthorizationError``).
+         *     - ``403`` — caller does not drive the case, or drives it but can no
+         *       longer read it (``AuthorizationError``, ADR-020 D2).
          *     - ``422`` — invalid or missing ``data_type``, OR the case is terminal
          *       (both ``ValidationException``). A closed or resolved investigation
          *       accepts questions, not mutation; the terminal refusal is raised after
@@ -1694,26 +1737,6 @@ export interface paths {
          *     - ``500`` — storage/preprocessing failure (``ServiceException``).
          */
         patch: operations["reclassify_evidence_api_v1_cases__case_id__evidence__evidence_id__classification_patch"];
-        trace?: never;
-    };
-    "/api/v1/cases/{case_id}/extract-knowledge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Extract Knowledge from Case
-         * @description Extract reusable knowledge from a case into a suggestion for the knowledge base.
-         */
-        post: operations["extract_knowledge_from_case_api_v1_cases__case_id__extract_knowledge_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/cases/{case_id}/messages": {
@@ -2182,7 +2205,7 @@ export interface paths {
         put?: never;
         /**
          * Share Case With Team
-         * @description Share a case with a Team (ADR-013 §D4). Owner-only; the Team must be one the caller belongs to. Idempotent.
+         * @description Share a case with a Team (ADR-013 §D4). Creator-only (ADR-020 D2); the Team must be one the caller belongs to. Idempotent.
          */
         post: operations["share_case_with_team_api_v1_cases__case_id__team_shares_post"];
         delete?: never;
@@ -2203,7 +2226,7 @@ export interface paths {
         post?: never;
         /**
          * Unshare Case From Team
-         * @description Remove a case's share to a Team (ADR-013 §D4). Owner-only.
+         * @description Remove a case's share to a Team (ADR-013 §D4). Creator-only (ADR-020 D2). If the share was the case's driver's last way to read it, the case is handed back to its creator first (ADR-020 D3).
          */
         delete: operations["unshare_case_from_team_api_v1_cases__case_id__team_shares__team_id__delete"];
         options?: never;
@@ -2231,6 +2254,9 @@ export interface paths {
          *
          *     **Returns:**
          *     - 200: TitleResponse with X-Correlation-ID header
+         *     - 404: the case does not exist or the caller does not drive it. Naming a
+         *       case writes it, an investigation write that is the driver's (ADR-020
+         *       D2), so any other reader is refused here before any title is generated.
          *     - 422: ValidationException body — see ``api/exception_handlers.py``
          *       and ``docs/architecture/specifications/exception-contract.md``.
          *       Raised when there is insufficient meaningful context to generate
@@ -3067,191 +3093,6 @@ export interface paths {
         get: operations["get_knowledge_stats_api_v1_knowledge_stats_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/suggestions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Suggestions
-         * @description List the caller's enterprise's knowledge suggestions.
-         *
-         *     Returns suggestions extracted from cases that are pending review.
-         *     Includes lineage information for each suggestion (source case, extractor, timestamp).
-         *
-         *     Scoped to the caller's tenant, resolved fail-closed: the operator role says
-         *     *what* you may do, never *whose* data you may see.
-         *
-         *     Args:
-         *         status: Filter by status (pending_review, approved, rejected)
-         *         limit: Maximum suggestions to return (default: 20)
-         *         offset: Pagination offset (default: 0)
-         *
-         *     Returns:
-         *         SuggestionListResponse with paginated suggestions
-         */
-        get: operations["list_suggestions_api_v1_knowledge_suggestions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/suggestions/{suggestion_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Suggestion
-         * @description Get a specific knowledge suggestion by ID.
-         *
-         *     Returns full suggestion details including content, PII scan status,
-         *     and lineage information.
-         *
-         *     Resolved through the tenant-scoped lookup: an id belonging to another
-         *     enterprise answers 404, identically to an absent id, so the response is
-         *     never an existence oracle.
-         *
-         *     Args:
-         *         suggestion_id: Suggestion identifier
-         *
-         *     Returns:
-         *         KnowledgeSuggestionDetail
-         */
-        get: operations["get_suggestion_api_v1_knowledge_suggestions__suggestion_id__get"];
-        /**
-         * Update Suggestion
-         * @description Update a suggestion's content.
-         *
-         *     Allows editing the suggested title, content, or type before approval.
-         *     Content changes trigger a new PII scan.
-         *
-         *     Tenant-scoped: an id outside the caller's enterprise answers 404 and
-         *     nothing is written.
-         *
-         *     Args:
-         *         suggestion_id: Suggestion to update
-         *         update_data: Fields to update (title, content, suggested_type)
-         *
-         *     Returns:
-         *         Updated suggestion details
-         */
-        put: operations["update_suggestion_api_v1_knowledge_suggestions__suggestion_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/suggestions/{suggestion_id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve Suggestion
-         * @description Approve a suggestion and create a knowledge item.
-         *
-         *     Validates that PII scan is complete and clean/remediated before approval,
-         *     and refuses a suggestion that is already approved (409).
-         *
-         *     The suggested content must meet the same runbook quality standard as an
-         *     uploaded runbook — YAML frontmatter plus the required sections — and
-         *     approval answers **422** when it does not, publishing nothing. Extracted
-         *     drafts are rarely publishable as-is: edit the suggestion into a valid
-         *     runbook (PUT), then approve.
-         *
-         *     Creates a new KnowledgeItem at global scope with verification level
-         *     EXPERIMENTAL, and establishes the bidirectional link between suggestion and
-         *     knowledge item. If the link cannot be recorded, everything the publish wrote
-         *     is rolled back — the knowledge item and its vectors, the draft/job/upload
-         *     bookkeeping rows, and the runbook file on disk — and any part that could not
-         *     be removed is logged by id for manual cleanup.
-         *
-         *     Args:
-         *         suggestion_id: Suggestion to approve
-         *         request_body: Optional review notes
-         *
-         *     Returns:
-         *         Approval result with new knowledge_item_id
-         */
-        post: operations["approve_suggestion_api_v1_knowledge_suggestions__suggestion_id__approve_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/suggestions/{suggestion_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reject Suggestion
-         * @description Reject a suggestion.
-         *
-         *     Marks the suggestion as rejected with the provided reason.
-         *
-         *     Args:
-         *         suggestion_id: Suggestion to reject
-         *         request_body: Must include rejection_reason, optional review_notes
-         *
-         *     Returns:
-         *         Rejection confirmation
-         */
-        post: operations["reject_suggestion_api_v1_knowledge_suggestions__suggestion_id__reject_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/knowledge/suggestions/{suggestion_id}/remediate-pii": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Remediate Pii
-         * @description Mark PII as remediated after manual review.
-         *
-         *     Called when an admin has manually reviewed and cleaned up
-         *     PII-flagged content. Allows the suggestion to proceed to approval.
-         *
-         *     Args:
-         *         suggestion_id: Suggestion with PII to remediate
-         *
-         *     Returns:
-         *         Updated suggestion with remediated status
-         */
-        post: operations["remediate_pii_api_v1_knowledge_suggestions__suggestion_id__remediate_pii_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4799,6 +4640,15 @@ export interface components {
             ttl_minutes: number;
         };
         /**
+         * CaseAccess
+         * @description Which cases a listing returns, by the caller's ACCESS (ADR-020 D8).
+         *
+         *     Named for access, not identity, so a later rule changes what ``write``
+         *     resolves to without changing the contract.
+         * @enum {string}
+         */
+        CaseAccess: "read" | "write";
+        /**
          * CaseCreateRequest
          * @description Request to create a new case (v2.0).
          *
@@ -4844,6 +4694,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Creator Display Name */
+            creator_display_name?: string | null;
             current_stage: components["schemas"]["InvestigationStage"] | null;
             /**
              * Current Turn
@@ -4852,6 +4704,10 @@ export interface components {
             current_turn: number;
             /** Description */
             description: string;
+            /** Driver Display Name */
+            driver_display_name?: string | null;
+            /** Driver Id */
+            driver_id?: string | null;
             /** Enterprise Id */
             enterprise_id: string;
             /** Escalated */
@@ -4906,6 +4762,39 @@ export interface components {
              * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
             valid_next_states?: string[];
+        };
+        /**
+         * CaseDriverCandidate
+         * @description An account a case's driver may be handed to. Never an email address.
+         */
+        CaseDriverCandidate: {
+            /**
+             * Display Name
+             * @description The account's display name; null when it cannot be resolved.
+             */
+            display_name?: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /**
+         * CaseDriverCandidateList
+         * @description Who a case's driver may be handed to (ADR-020 D4): the creator first,
+         *     then the active individual members of the teams the case is shared with.
+         */
+        CaseDriverCandidateList: {
+            /** Candidates */
+            candidates: components["schemas"]["CaseDriverCandidate"][];
+        };
+        /**
+         * CaseDriverUpdateRequest
+         * @description Hand a case's driving to another account (ADR-020 D4).
+         */
+        CaseDriverUpdateRequest: {
+            /**
+             * Driver Id
+             * @description The new driver: one of `GET /cases/{case_id}/driver-candidates`. Naming the creator hands the case back to them.
+             */
+            driver_id: string;
         };
         /**
          * CaseEvidenceListResponse
@@ -5075,6 +4964,11 @@ export interface components {
          */
         CaseSearchRequest: {
             /**
+             * @description `read` (default): search every case the caller can read. `write`: only the cases the caller drives — whose effective `driver_id` is the caller (ADR-020 D8). Applied in the same query as the text search.
+             * @default read
+             */
+            access: components["schemas"]["CaseAccess"];
+            /**
              * Limit
              * @description Maximum results
              * @default 20
@@ -5130,6 +5024,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Creator Display Name */
+            creator_display_name?: string | null;
             /**
              * Current Turn
              * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
@@ -5137,6 +5033,10 @@ export interface components {
             current_turn: number;
             /** Description */
             description: string;
+            /** Driver Display Name */
+            driver_display_name?: string | null;
+            /** Driver Id */
+            driver_id?: string | null;
             /** Enterprise Id */
             enterprise_id: string;
             /**
@@ -6018,8 +5918,6 @@ export interface components {
             owner_id?: string | null;
             /** Scope */
             scope: string;
-            /** Source Suggestion Id */
-            source_suggestion_id?: string | null;
             /** Source Url */
             source_url?: string | null;
             /**
@@ -6400,7 +6298,7 @@ export interface components {
             role: "user" | "assistant" | "system";
             /**
              * Sources
-             * @description On an assistant row: the knowledge-base runbooks that turn's prompt carried, exactly as the live `TurnResponse.sources` returned them, `new_this_turn` included. Null on a row whose prompt carried none (and on every user or system row).
+             * @description On an assistant row: the knowledge-base runbooks that turn's prompt carried, exactly as the live `TurnResponse.sources` returned them, `new_this_turn` included, and gated the same way for the reader making this request: an excerpt of a runbook the reader cannot open, or one with no `metadata.document_id`, is returned with empty `content`, null `confidence` and `metadata` of only `{"access": "restricted"}`. Null on a row whose prompt carried none (and on every user or system row).
              */
             sources?: components["schemas"]["Source"][] | null;
             /**
@@ -7549,7 +7447,7 @@ export interface components {
             progress_transparency?: components["schemas"]["ProgressTransparencyInfo"] | null;
             /**
              * Sources
-             * @description Knowledge the engine put in front of the model for this turn: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED) that the prompt the model answered from actually carried, after the section budget. A pre-fetch that fires while the turn's response is applied first reaches the NEXT turn's prompt, and is listed there. The context stands in every prompt until a pre-fetch replaces it, so it repeats turn to turn; `new_this_turn` marks the excerpts the previous turn's prompt did not carry. Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when nothing was pre-fetched — including when the push is disabled. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary.
+             * @description Knowledge the engine put in front of the model for this turn: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED) that the prompt the model answered from actually carried, after the section budget. A pre-fetch that fires while the turn's response is applied first reaches the NEXT turn's prompt, and is listed there. The context stands in every prompt until a pre-fetch replaces it, so it repeats turn to turn; `new_this_turn` marks the excerpts the previous turn's prompt did not carry. Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when nothing was pre-fetched — including when the push is disabled. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary. The turn retrieves with the case driver's knowledge; each excerpt is checked against the requester when returned, and one of a runbook the requester cannot open (no longer shared with them, or never was), or one with no `metadata.document_id`, is returned redacted: `type` and `new_this_turn` kept, `content` empty, `confidence` null, and `metadata` of only `{"access": "restricted"}`.
              */
             sources?: components["schemas"]["Source"][];
             /** Suggested Actions */
@@ -9340,6 +9238,8 @@ export interface operations {
                 offset?: number;
                 /** @description Include cases with current_turn == 0 (newly created) */
                 include_empty?: boolean;
+                /** @description `read` (default): every case the caller can read — created by them or shared with one of their teams. `write`: only the cases the caller can write, those whose effective `driver_id` is the caller (ADR-020 D8). Applied in the same query as every other filter, so `total_count` describes the same set as the page. */
+                access?: components["schemas"]["CaseAccess"];
             };
             header?: never;
             path?: never;
@@ -9807,6 +9707,107 @@ export interface operations {
             };
         };
     };
+    reassign_case_driver_api_v1_cases__case_id__driver_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Case ID */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseDriverUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseSummary"];
+                };
+            };
+            /** @description The caller reads the case but neither created nor drives it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such case, or the caller cannot read it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `CASE_VERSION_CONFLICT`: the case kept changing; reload and retry. A resolved or closed case is NOT refused: its driver can still be changed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The target is not a candidate for this case */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_driver_candidates_api_v1_cases__case_id__driver_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Case ID */
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDriverCandidateList"];
+                };
+            };
+            /** @description The caller reads the case but neither created nor drives it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such case, or the caller cannot read it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_case_evidence: {
         parameters: {
             query?: never;
@@ -9898,46 +9899,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    extract_knowledge_from_case_api_v1_cases__case_id__extract_knowledge_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Case ID to extract knowledge from */
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                } | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
@@ -11508,227 +11469,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-        };
-    };
-    list_suggestions_api_v1_knowledge_suggestions_get: {
-        parameters: {
-            query?: {
-                /** @description Filter by status: pending_review, approved, rejected */
-                status?: string | null;
-                /** @description Maximum items to return */
-                limit?: number;
-                /** @description Pagination offset */
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_suggestion_api_v1_knowledge_suggestions__suggestion_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                suggestion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_suggestion_api_v1_knowledge_suggestions__suggestion_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                suggestion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    approve_suggestion_api_v1_knowledge_suggestions__suggestion_id__approve_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                suggestion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                } | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reject_suggestion_api_v1_knowledge_suggestions__suggestion_id__reject_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                suggestion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remediate_pii_api_v1_knowledge_suggestions__suggestion_id__remediate_pii_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                suggestion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UserCase, getUserCases, DEFAULT_CASE_LIST_LIMIT, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
+import { UserCase, getUserCases, SIDEBAR_CASE_LIST_QUERY, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
@@ -13,7 +13,7 @@ import {
 import { idMappingManager } from '../../../lib/optimistic';
 import { selectCaseTitle } from '../../../lib/state/case-title';
 import { createLogger } from '../../../lib/utils/logger';
-import { isOwnedByOther } from '../../../lib/cases/ownership';
+import { isCreatedBy, isDrivenByOther } from '../../../lib/cases/driver';
 
 const log = createLogger('ConversationsList');
 
@@ -39,7 +39,7 @@ function loadCollapsedGroups(): Set<CaseGroupKey> {
 
 interface ConversationsListProps {
   activeCaseId?: string;
-  onCaseSelect?: (caseId: string, ownerId?: string) => void;
+  onCaseSelect?: (caseId: string) => void;
   onSessionSelect?: (sessionId: string) => void; // kept for compatibility
   onNewSession: (sessionId: string) => void;
   conversationTitles?: Record<string, string>;
@@ -64,9 +64,10 @@ interface ConversationsListProps {
   pinnedCases?: Set<string>;
   onPinToggle?: (caseId: string) => void;
   /**
-   * The signed-in user's id. A row whose owner is someone else is a case shared
-   * with this user: it stays in the list, marked, and offers no rename, title
-   * generation or delete — all owner-only on the server.
+   * The signed-in user's id. Every listed case is one this user drives
+   * (`access=write`), so each offers rename and title generation, the
+   * driver's writes; delete is the CREATOR's (ADR-020 D2) and is offered only
+   * on a row this user created.
    */
   currentUserId?: string;
 }
@@ -126,7 +127,9 @@ export function ConversationsList({
     try {
       setLoading(true);
       setError(null);
-      const list = await getUserCases({ limit: DEFAULT_CASE_LIST_LIMIT, offset: 0 });
+      // The cases this user DRIVES (ADR-020 D8), never every case they can
+      // read: the extension lists what it can write.
+      const list = await getUserCases(SIDEBAR_CASE_LIST_QUERY);
 
       // ✅ PERFORMANCE WIN: Direct object access instead of JSON.stringify
       // JSON.stringify is computationally expensive and unnecessary
@@ -427,7 +430,10 @@ export function ConversationsList({
         {!isCollapsed && (
           <div id={panelId} role="region" aria-labelledby={headerId}>
             {items.map((c) => {
-              const shared = isOwnedByOther(c, currentUserId);
+              // Listed rows are driven by this user. A row naming another
+              // driver can only be stale; it gets none of the driver's writes.
+              const drivable = !isDrivenByOther(c, currentUserId);
+              const creator = isCreatedBy(c, currentUserId);
               return (
               <ConversationItem
                 key={c.case_id}
@@ -436,11 +442,10 @@ export function ConversationsList({
                 isActive={Boolean(activeCaseId && c.case_id === activeCaseId)}
                 isUnsavedNew={false}
                 isPinned={pinnedCases.has(c.case_id)}
-                onSelect={(id) => onCaseSelect && onCaseSelect(id, c.owner_id)}
-                isShared={shared}
-                onDelete={shared ? undefined : (id) => handleDeleteCase(id)}
-                onRename={shared ? undefined : (id, t) => handleRenameCase(id, t)}
-                onGenerateTitle={shared ? undefined : (id) => handleGenerateTitle(id)}
+                onSelect={(id) => onCaseSelect && onCaseSelect(id)}
+                onDelete={creator ? (id) => handleDeleteCase(id) : undefined}
+                onRename={drivable ? (id, t) => handleRenameCase(id, t) : undefined}
+                onGenerateTitle={drivable ? (id) => handleGenerateTitle(id) : undefined}
                 onPin={onPinToggle ? () => handlePinToggle(c.case_id) : undefined}
               />
               );

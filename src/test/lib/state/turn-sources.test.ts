@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rowsBefore, sourcesToShow } from '@faultmaven/copilot-ui/lib/state/turn-sources';
+import { isRestrictedSource, rowsBefore, sourcesToShow } from '@faultmaven/copilot-ui/lib/state/turn-sources';
 import type { ConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { Source } from '@faultmaven/copilot-ui/lib/api';
 
@@ -66,5 +66,32 @@ describe('rowsBefore', () => {
     const rows = [row('a'), row('b'), row('c')];
     expect(rowsBefore(rows, 'b').map((r) => r.id)).toEqual(['a']);
     expect(rowsBefore(rows, 'zz').map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+// Contract 13.1.0 (fm#1920): the redacted shape of a runbook the viewer may not open.
+describe('isRestrictedSource', () => {
+  const redacted: Source = {
+    type: 'knowledge_base', content: '', confidence: null, metadata: { access: 'restricted' }, new_this_turn: true,
+  };
+
+  it('is the redacted knowledge-base entry', () => {
+    expect(isRestrictedSource(redacted)).toBe(true);
+  });
+
+  it('is not an openable runbook', () => {
+    expect(isRestrictedSource(kb('doc-1', true))).toBe(false);
+  });
+
+  it('is not an entry with no metadata', () => {
+    expect(isRestrictedSource({ ...redacted, metadata: null })).toBe(false);
+  });
+
+  it('is only ever a knowledge-base entry', () => {
+    expect(isRestrictedSource({ ...redacted, type: 'web_search' })).toBe(false);
+  });
+
+  it('a context that arrives redacted is still kept where it is new', () => {
+    expect(sourcesToShow([redacted])).toEqual([redacted]);
   });
 });

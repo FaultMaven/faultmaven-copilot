@@ -19,7 +19,7 @@ import CopilotPanel from '@faultmaven/copilot-ui/shared/ui/CopilotPanel';
 import { ErrorBoundary } from '@faultmaven/copilot-ui/shared/ui/components/ErrorBoundary';
 import { LoadingScreen } from '@faultmaven/copilot-ui/shared/ui/components/LoadingScreen';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { isOwnedByOther } from '@faultmaven/copilot-ui/lib/cases/ownership';
+import { isDrivenByOther } from '@faultmaven/copilot-ui/lib/cases/driver';
 import {
   clearSessionEnding,
   markSessionEnding,
@@ -71,13 +71,15 @@ export function ExtensionApp() {
   const setSignedInUser = useAppStore((state) => state.setSignedInUser);
   const applyHostAuthState = useAppStore((state) => state.applyHostAuthState);
 
-  // A team share is read-only (fm#1898): the panel lists and opens a teammate's
-  // case, and this host says it is not the signed-in user's to write. Computed
-  // from the open case and the CURRENT user's id on every render, so it covers
-  // each way a case becomes current (list click, restored last case, a case
-  // created here) and re-evaluates when the signed-in user changes.
-  const activeCaseOwnerId = useAppStore((state) => state.activeCase?.owner_id);
-  const activeCaseIsShared = isOwnedByOther({ owner_id: activeCaseOwnerId }, currentUser?.id);
+  // Only the case's driver writes it (ADR-020, fm#1898). The list holds only
+  // cases this user drives, but the open case can be reassigned away while it
+  // is open, and a restored last case arrives without a list row, so this host
+  // says when the open case is someone else's to drive. Computed from the open
+  // case and the CURRENT user's id on every render, so it covers each way a
+  // case becomes current (list click, restored last case, a case created here)
+  // and re-evaluates when the signed-in user changes.
+  const activeCaseDriverId = useAppStore((state) => state.activeCase?.driver_id);
+  const activeCaseDrivenByOther = isDrivenByOther({ driver_id: activeCaseDriverId }, currentUser?.id);
 
   // Set when a deliberate sign-out could not be confirmed to have ended every
   // session for the account. Not an error — the local sign-out succeeded — but
@@ -367,7 +369,7 @@ export function ExtensionApp() {
     );
   }
 
-  return <CopilotPanel host={host} readOnly={activeCaseIsShared} />;
+  return <CopilotPanel host={host} readOnly={activeCaseDrivenByOther} />;
 }
 
 export default ExtensionApp;

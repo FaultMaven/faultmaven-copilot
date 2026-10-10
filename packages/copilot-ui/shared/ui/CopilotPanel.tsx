@@ -72,13 +72,13 @@ export type InitialCase =
       /**
        * Show the case, do not let this user add to it.
        *
-       * A teammate opening someone else's case gets the transcript and no
+       * A reader opening a case someone else drives gets the transcript and no
        * composer or upload. Without it the panel offered both, and a turn sent
-       * into a case the user does not own is a write they cannot make — the
-       * failure arrives from the server, after they have typed it.
+       * into a case the user does not drive is a write they cannot make — the
+       * failure arrives from the server, after they have typed it (ADR-020).
        *
-       * WHO may write is the host's question: it knows the case's owner and the
-       * viewer. The panel only renders the answer.
+       * WHO may write is the host's question: it knows the case's driver and
+       * the viewer. The panel only renders the answer.
        */
       readOnly?: boolean;
     };
@@ -147,7 +147,7 @@ export interface CopilotPanelProps {
    * it. Unlike `initialCase.readOnly`, which is the host's answer for the case
    * it opened the panel on, this follows the case as the user moves between
    * cases, so a host whose user picks cases inside the panel (the extension)
-   * can say "this one is somebody else's" for each. Either one makes the panel
+   * can say "somebody else drives this one" for each. Either one makes the panel
    * read-only; neither is re-decided here.
    */
   readOnly?: boolean;
@@ -313,10 +313,11 @@ function CopilotPanelContent({
 
   // A host may open a case this user can read and not write. The flag holds
   // for the life of the mount: the panel does not re-decide it, because the
-  // question — is this viewer the owner — is the host's.
+  // question — is this viewer the case's driver — is the host's.
   //
-  // The server's refusal is also an answer: a 403 on a write marks the case
-  // denied, and a denied case is read-only whatever ownership data said.
+  // The server's refusal is also an answer: a 403 on a write whose read-back
+  // names another driver marks the case denied, and a denied case is read-only
+  // whatever driver data the host holds.
   const writeDenied = useAppStore((state) =>
     state.activeCaseId ? state.writeDeniedCaseIds[state.activeCaseId] === true : false,
   );

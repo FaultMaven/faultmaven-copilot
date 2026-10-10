@@ -2,7 +2,7 @@
  * The REAL case header under a read-only ChatWindow (fm#1898).
  *
  * `EnhancedCaseHeader` used to hand HeaderSummary its own handler whatever the
- * parent passed, so `canChangeStatus` stayed true on a shared case: the menu
+ * parent passed, so `canChangeStatus` stayed true on a case someone else drives: the menu
  * opened, and the modal's Continue did nothing. The contrast render proves the
  * query can find the menu at all, so the absence below is not vacuous.
  */
@@ -29,7 +29,7 @@ import type { UserCase } from '@faultmaven/copilot-ui/types/case';
 
 const activeCase = {
   case_id: 'case-1', title: 'Pool exhaustion', state: 'investigating',
-  created_at: '2026-08-01T00:00:00Z', owner_id: 'u2', enterprise_id: 'e1',
+  created_at: '2026-08-01T00:00:00Z', owner_id: 'u1', driver_id: 'u2', enterprise_id: 'e1',
   closure_reason: null, closed_at: null,
 } as unknown as UserCase;
 

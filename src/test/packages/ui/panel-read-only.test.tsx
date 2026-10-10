@@ -1,14 +1,14 @@
 /**
- * A case this viewer may read and not write.
+ * A case this viewer may read and not write: someone else drives it (ADR-020).
  *
- * A teammate opening someone else's case was given the composer and the upload
- * button. A turn sent into a case the user does not own is a write they cannot
- * make — the failure arrives from the server, after they have typed it.
+ * A reader opening a case someone else drives was given the composer and the
+ * upload button. A turn sent into a case the user does not drive is a write
+ * they cannot make — the failure arrives from the server, after they have typed it.
  *
- * WHO may write is the host's question: it knows the case's owner and the
+ * WHO may write is the host's question: it knows the case's driver and the
  * viewer. The panel renders the answer, and renders it by ABSENCE — a disabled
- * field says "you may write here, later", which is not what a shared case
- * means.
+ * field says "you may write here, later", which is not what a case someone
+ * else drives means.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -105,7 +105,8 @@ describe('host readOnly prop', () => {
     await waitFor(() => expect(useAppStore.getState().activeCaseId).toBe('case-42'));
 
     expect(screen.queryByRole('form', { name: 'Message Input' })).toBeNull();
-    expect(screen.getByRole('note')).toHaveTextContent(/Shared with you — read-only/);
+    expect(screen.getByRole('note')).toHaveTextContent("Only the case's driver can add to it.");
+    expect(screen.getByRole('note')).not.toHaveTextContent(/shared|owner/i);
     expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 
@@ -157,7 +158,8 @@ describe('host readOnly prop', () => {
   });
 });
 
-// The list is told who the viewer is, so it can mark a teammate's case (fm#1898).
+// The list is told who the viewer is, so it offers delete only on the cases
+// the viewer created (ADR-020 D2).
 describe('the case list is told the signed-in user', () => {
   it('passes the session user id to ConversationsList', async () => {
     const stub = createStubHost();

@@ -312,3 +312,37 @@ uses for a reason this build does not know).
 the chat reply at generation time, so a card linking to the Dashboard's Report
 tab for a summary already visible above is noise. Runbooks are user-requested
 (the agent offers them as suggestions on terminal Q&A turns).
+
+## The case driver (ADR-020, faultmaven#1898)
+
+A case has a **creator** (`user_id` on the wire, `UserCase.owner_id`) and one
+**driver** (`UserCase.driver_id`, always the EFFECTIVE driver on a served row).
+Every reader views a case; only the driver writes it (turns, uploads, title,
+close, reports); delete is the creator's.
+
+- **The sidebar lists the cases its user drives**: `ConversationsList` asks for
+  `SIDEBAR_CASE_LIST_QUERY` (`access=write`, first page). The filter is that
+  query's, never `getUserCases`' default: `reconcileActiveCaseState` runs in
+  both hosts and must find the open case among every case the user can READ.
+- **The single-slot list cache holds that one query.** `getUserCases`'
+  `isSidebarList` reads the issued URL and admits only `access=write` + the
+  default page, so reconcile's unfiltered read neither fills the slot nor is
+  served from it. Changing the query or the cached row shape bumps
+  `CASE_CACHE_VERSION` (`lib/cache/case-cache.ts`).
+- **Rows**: no "Shared" mark (every row is drivable); rename and title
+  generation unless a (stale) row names another driver; delete only where
+  `isCreatedBy(row, viewer)`.
+- **Read-only open case** (`lib/cases/driver.ts`): the extension host passes
+  `readOnly={isDrivenByOther(activeCase, currentUser.id)}`; unknown (a
+  placeholder, a locally minted case) is writable. A case can be reassigned
+  away while open, and a restored last case arrives with no row, so the 403
+  backstop stays: `lib/state/write-refused.ts` reads the refused case back, and
+  if another account drives it marks it denied, drops the list cache slot and
+  reloads the list (the case leaves the sidebar). A fresh row naming the viewer
+  as driver retires the denial (handed back). The Dashboard host passes its own
+  `initialCase.readOnly` and never mounts the sidebar.
+- **Redacted sources** (contract 13.1.0): a `knowledge_base` source with
+  `metadata.access === 'restricted'` (`isRestrictedSource`,
+  `lib/state/turn-sources.ts`) is a runbook this viewer may not open; it renders
+  as "A runbook you don't have access to" — no "Source N", link, preview or
+  score — and still counts toward "N runbooks in context".

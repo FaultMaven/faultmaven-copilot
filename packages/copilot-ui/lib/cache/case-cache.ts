@@ -28,9 +28,15 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  * a row this build can read, and reading it would put a case with no
  * enterprise into the sidebar with nothing to say so.
  *
- * Bump this whenever the persisted `UserCase` shape changes.
+ * v2 (ADR-020, fm#1898): the slot holds the cases the user DRIVES
+ * (`access=write`), each naming its `driver_id`. A v1 slot holds every case
+ * the user could read, with no driver, so serving it would put cases the user
+ * cannot write back in the sidebar until the TTL ran out; it is discarded.
+ *
+ * Bump this whenever the persisted `UserCase` shape, or the query whose page
+ * the slot holds, changes.
  */
-export const CASE_CACHE_VERSION = 1;
+export const CASE_CACHE_VERSION = 2;
 
 export class CaseCacheManager {
     /**
