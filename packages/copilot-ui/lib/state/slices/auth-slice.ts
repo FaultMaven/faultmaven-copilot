@@ -4,6 +4,7 @@ import { bumpEpoch, clearSessionEnding, markSessionEnding } from '../session-epo
 import { PersistenceManager } from '../../utils/persistence-manager';
 import { clearPersistedSession } from '../../api/session-core';
 import { captureStore, purgeOwnedStorage, withStore } from '../../owned-storage';
+import { caseCacheManager } from '../../cache/case-cache';
 import { clientSessionManager } from '../../session/client-session-manager';
 import { idMappingManager, pendingOpsManager } from '../../optimistic';
 import type { StoreState } from '../store';
@@ -94,6 +95,12 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
     //    whose continuation is already queued sees the moved epoch and skips its
     //    post-await writes rather than repopulating what we are clearing.
     bumpEpoch();
+    //    The case-list slot has its own fence, the cache generation. The purge
+    //    below removes the key but cannot stop a sidebar fetch already in flight
+    //    for the departing user: it would land after the purge, pass its
+    //    generation check and rewrite their driven cases, fresh, for whoever
+    //    signs in next. Synchronous, and it never waits on the slot's queue.
+    caseCacheManager.fence();
 
     // 2. A queued debounced persist holds a SNAPSHOT of the pre-purge state and
     //    would write it back AFTER the clear below. The store's own guard skips

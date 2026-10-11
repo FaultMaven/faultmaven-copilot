@@ -47,7 +47,9 @@ export const CASE_CACHE_VERSION = 2;
 
 export class CaseCacheManager {
     /**
-     * Moves on every invalidation. A writer captures it when it STARTS (a list
+     * Moves on every invalidation, a sign-out's included (`fence`, from both the
+     * package's `signOutLocally` and the extension's auth teardown), and when
+     * an expired or older-schema slot is discarded. A writer captures it when it STARTS (a list
      * fetch, before its request; an optimistic edit, before its read) and its
      * write is refused if the slot was invalidated since: otherwise a sidebar
      * fetch in flight across an invalidation (a case reassigned away, a sign-out)
@@ -202,6 +204,23 @@ export class CaseCacheManager {
         // generation and is refused when its turn comes.
         this.generation++;
         await this.serialized(() => this.removeSlot());
+    }
+
+    /**
+     * Sign-out's invalidation: synchronous, and never waits on the queue.
+     *
+     * The generation moves at once, so no fetch or edit that started for the
+     * departing user can write the slot again — this, not the removal, is the
+     * fence. The removal is queued behind any write already landing, and not
+     * awaited: a teardown must reach its sign-out broadcast even if a storage
+     * call never settles (`clearAllAuthData` never rejects, and is not allowed
+     * to hang either). A read in this context queues behind the removal, so it
+     * still never sees the departing user's page; the package sign-out's
+     * `purgeOwnedStorage` removes the key as well.
+     */
+    fence(): void {
+        this.generation++;
+        void this.serialized(() => this.removeSlot());
     }
 
     /** `invalidateCache` from inside the queue, which must not wait on itself. */

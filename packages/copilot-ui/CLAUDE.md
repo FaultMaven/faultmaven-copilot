@@ -341,7 +341,12 @@ close, reports); delete is the creator's.
   edit's read and write are adjacent and a fresh page cannot land between
   them (#330); never enter the queue from inside it. `createCase` only
   invalidates: an optimistic add could only duplicate the row on a page
-  fetched since.
+  fetched since. **Sign-out fences the slot**: `signOutLocally` and the
+  extension's `clearAuthState` call `fence()`, which moves the generation
+  synchronously and queues the removal without awaiting it. The generation is
+  the fence, so a fetch in flight for the departing user cannot refill the
+  slot after the purge, and a storage call that never settles cannot hold a
+  teardown back from its broadcast.
 - **Rows**: every row came from `access=write` (or its slot), so the user
   drives it: no "Shared" mark, rename and title generation always offered;
   delete only where `isCreatedBy(row, viewer)`.

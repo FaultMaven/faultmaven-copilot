@@ -128,7 +128,9 @@ maps it so startup reads storage once.
 ### The three clearing functions
 
 - `authManager.clearAllAuthData()` — **the teardown**: `authState`, the case
-  cache and every credential key, both halves even if the first throws. Callers:
+  cache (`caseCacheManager.fence()`: fenced synchronously, removal queued and
+  not awaited, so a wedged storage call cannot stall the teardown) and every
+  credential key, both halves even if the first throws. Callers:
   `logoutAuth()`, `ExtensionApp`'s `onUnauthorized` (what `client.ts
   handleAuthError()` delegates a hard 401 to), options `handleSignOut()`,
   `LocalAuthClient.signOut()`, `reconcileSession()`, and the act-site.
