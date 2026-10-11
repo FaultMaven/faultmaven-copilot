@@ -47,7 +47,7 @@ import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
-import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
+import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
 import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
@@ -225,9 +225,13 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
                   : item
               )
             }));
-            void useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
-            // Committed all the same: the case moved even though its reply did not arrive.
-            if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, caseId);
+            // The case row is read back for its state, and the list re-read once,
+            // as for any committed turn (#333).
+            if (epoch === getEpoch()) {
+              void applyUnrepliedTurn(caseId, [userMessageId, aiMessageId], epoch);
+              // Committed all the same: the case moved even though its reply did not arrive.
+              notifyCaseChanged(onCaseChanged, caseId);
+            }
             showError(classified);
             return;
           }

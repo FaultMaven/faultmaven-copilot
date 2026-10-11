@@ -17,6 +17,7 @@ import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { idMappingManager, pendingOpsManager, OptimisticIdGenerator } from '@faultmaven/copilot-ui/lib/optimistic';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { TurnReplayUnavailableError } from '@faultmaven/copilot-ui/lib/errors/types';
 import { createStubHost, hostWrapper } from '../support/host';
 
 vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
@@ -140,5 +141,56 @@ describe.each(paths)('post-turn sidebar refresh — $name', ({ send }) => {
     await vi.waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
     expect(useAppStore.getState().refreshSessions).toBe(before);
     invalidate.mockRestore();
+  });
+
+  // IDEMPOTENCY_REPLAY_UNAVAILABLE: the turn committed but its reply cannot be
+  // served, so there is no `case_state` in hand. The case row is read back and
+  // the list re-read once all the same.
+  describe('a committed turn whose reply cannot be replayed', () => {
+    const reloadCommittedTurn = vi.fn(async () => true);
+
+    it('re-reads the list past its cache, once', async () => {
+      let refreshAtInvalidate: number | undefined;
+      const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache').mockImplementation(async () => {
+        refreshAtInvalidate = useAppStore.getState().refreshSessions;
+      });
+      const refreshActiveCase = vi.fn(async () => caseRow(A, 'investigating') as never);
+      useAppStore.setState({ reloadCommittedTurn, refreshActiveCase } as never);
+      (api.submitTurn as any).mockRejectedValue(new TurnReplayUnavailableError('committed; reload the case'));
+      const before = useAppStore.getState().refreshSessions;
+
+      const settled = await send();
+      await act(async () => { await settled(); });
+
+      await vi.waitFor(() => expect(useAppStore.getState().refreshSessions).toBe(before + 1));
+      expect(reloadCommittedTurn).toHaveBeenCalled();
+      expect(refreshActiveCase).toHaveBeenCalledWith(A);
+      expect(invalidate).toHaveBeenCalledTimes(1);
+      expect(refreshAtInvalidate).toBe(before);
+      invalidate.mockRestore();
+    });
+
+    it('a read-back that moved the open case\'s state leaves the reload to the transition effect', async () => {
+      const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache').mockResolvedValue();
+      // The read-back merges the server's row into the open case, as
+      // `refreshActiveCase` does for the case asked about.
+      const refreshActiveCase = vi.fn(async () => {
+        useAppStore.setState({ activeCase: caseRow(A, 'resolved') } as never);
+        return caseRow(A, 'resolved') as never;
+      });
+      useAppStore.setState({ reloadCommittedTurn, refreshActiveCase } as never);
+      (api.submitTurn as any).mockRejectedValue(new TurnReplayUnavailableError('committed; reload the case'));
+      const before = useAppStore.getState().refreshSessions;
+
+      const settled = await send();
+      await act(async () => { await settled(); });
+
+      await vi.waitFor(() => expect(refreshActiveCase).toHaveBeenCalledWith(A));
+      await act(async () => { await Promise.resolve(); });
+      expect(useAppStore.getState().activeCase?.state).toBe('resolved');
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(useAppStore.getState().refreshSessions).toBe(before);
+      invalidate.mockRestore();
+    });
   });
 });

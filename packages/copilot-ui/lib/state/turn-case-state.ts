@@ -22,6 +22,12 @@
  * page, which can be minutes old (#333). That also covers a turn whose case is
  * no longer open, whose row only the sidebar shows.
  *
+ * A turn that committed without a reply it could serve
+ * (`IDEMPOTENCY_REPLAY_UNAVAILABLE`) has no `case_state` in hand. Its state
+ * comes from the case row read back (`refreshActiveCase`, which merges it only
+ * into an open row that is the turn's case), and the list is re-read the same
+ * one way (`applyUnrepliedTurn`).
+ *
  * Shared by the two turn-sending paths (message and upload), so they cannot
  * disagree about which case a response is about.
  */
@@ -30,6 +36,7 @@ import { idMappingManager } from '../optimistic';
 import { isOptimisticId } from '../utils/data-integrity';
 import { createLogger } from '../utils/logger';
 import { reloadDrivenCaseList } from './case-list-reload';
+import { getEpoch } from './session-epoch';
 import { useAppStore } from './store';
 
 const log = createLogger('turn-case-state');
@@ -71,5 +78,34 @@ export function applyTurnCaseState(
   if (!isTurnCase(useAppStore.getState().activeCaseId, caseId)) {
     log.info('Turn landed on a case that is no longer open', { caseId, caseState });
   }
+  void reloadDrivenCaseList(epoch);
+}
+
+/**
+ * A turn committed but its reply cannot be served: read its rows and its case
+ * row back, and re-read the list once. Called after the caller's
+ * session-epoch check, with that same `epoch`.
+ */
+export async function applyUnrepliedTurn(
+  caseId: string,
+  rowIds: readonly string[],
+  epoch: number,
+): Promise<void> {
+  const store = useAppStore.getState();
+  void store.reloadCommittedTurn(caseId, rowIds);
+
+  const openTurnCaseState = () => {
+    const open = useAppStore.getState().activeCase;
+    return open && isTurnCase(open.case_id, caseId) ? open.state : null;
+  };
+  const before = openTurnCaseState();
+  await store.refreshActiveCase(caseId);
+  if (epoch !== getEpoch()) return;
+
+  // The read-back moved the open case's state: the transition effect re-reads
+  // the list for that, as it does for a reply's `case_state`.
+  const after = openTurnCaseState();
+  if (before !== null && after !== null && before !== after) return;
+
   void reloadDrivenCaseList(epoch);
 }

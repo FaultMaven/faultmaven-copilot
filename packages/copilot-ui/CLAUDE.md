@@ -86,7 +86,7 @@ retry_with_backoff · `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `IDEMPOTENCY_KEY_REUSE` → `IdempotencyKeyReuseError` (a client defect, never
 auto-retried; the manual Retry rotates the key); `IDEMPOTENCY_REPLAY_UNAVAILABLE`
 → `TurnReplayUnavailableError` (the turn committed: the bubble says it was
-saved, and `reloadCommittedTurn` reads it back, dropping the local pair only in
+saved, and `reloadCommittedTurn` reads its rows back (`applyUnrepliedTurn` the case row), dropping the local pair only in
 the write that merges the read, so a failed read loses nothing); `CASE_TERMINAL`, on
 any route → `CaseTerminalError` (the case is resolved or closed: never retried,
 no Retry anywhere. Both turn hooks remove the pending op instead of failing it,
@@ -243,6 +243,10 @@ The sidebar is then re-read once: by the transition effect when the open case
 changed state, otherwise by `applyTurnCaseState` through `reloadDrivenCaseList`
 (the slot dropped FIRST: a bare `triggerRefreshSessions` is served the cached
 page, so a title the server gave the case while answering never arrived, #333).
+A turn committed without a servable reply (`IDEMPOTENCY_REPLAY_UNAVAILABLE`) has
+no `case_state`: `applyUnrepliedTurn` reads the case row back
+(`refreshActiveCase`, identity-guarded) for it and re-reads the list the same
+one way.
 The active-case pointer is set when a turn is SENT, never when it lands.
 
 **Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
