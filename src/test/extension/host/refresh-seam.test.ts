@@ -50,8 +50,8 @@ vi.mock('@faultmaven/copilot-ui/lib/cache/case-cache', () => ({
   caseCacheManager: { invalidateCache: vi.fn().mockResolvedValue(undefined), fence: vi.fn() },
 }));
 
-import { readSessionAccessToken } from '../../../extension/host/session-credential';
 import { authManager } from '../../../extension/auth/auth-manager';
+import { endSessionOnRejectedCredential, readSessionAccessToken } from '../../../extension/host/session-credential';
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
@@ -77,15 +77,19 @@ function installWebLocks() {
 }
 
 /**
- * Records that the client reported THROUGH the host, then does the host's real
- * teardown.
+ * Records that the client reported THROUGH the host, and lets the host's real
+ * teardown run.
  *
  * Both halves are needed. The storage assertions alone cannot tell "the client
  * reported and the host tore down" from "the client tore down itself" — the old
  * behaviour called the same function and left the same storage — so without this
  * spy the seam test passes on the previous head, which would make it decoration.
+ *
+ * A spy on the teardown, not on `HostSession.onUnauthorized`: the extension's
+ * transport reports a 401 straight to its act-site WITH the rejected bearer
+ * (copilot#346), which that session signature cannot carry.
  */
-const reportedToHost = vi.fn();
+let reportedToHost: ReturnType<typeof vi.spyOn>;
 
 /** The extension's session, assembled exactly as ExtensionApp assembles it. */
 function extensionSession(): HostSession {
@@ -95,14 +99,7 @@ function extensionSession(): HostSession {
     accessToken: readSessionAccessToken,
     signOut: async () => {},
     subscribeAuthState: () => () => {},
-    // 'ended': the extension destroys the whole local credential chain, so
-    // there is no session left to continue. Same behaviour as before the
-    // outcome existed — it is now stated rather than assumed.
-    onUnauthorized: async () => {
-      reportedToHost();
-      await authManager.clearAllAuthData();
-      return 'ended' as const;
-    },
+    onUnauthorized: () => endSessionOnRejectedCredential(null),
   };
 }
 
@@ -117,7 +114,7 @@ const ok = (body: unknown) => ({
 describe('401 → host → refresh → retry, across the real seam', () => {
   beforeEach(() => {
     for (const k of Object.keys(store)) delete store[k];
-    reportedToHost.mockClear();
+    reportedToHost = vi.spyOn(authManager, 'clearAllAuthData');
     lockRequests.length = 0;
     installWebLocks();
     setApiTransport(createExtensionTransport(extensionSession()));
@@ -229,6 +226,8 @@ describe('401 → host → refresh → retry, across the real seam', () => {
 
     // The client went through the host rather than reaching for the credential.
     expect(reportedToHost).toHaveBeenCalledTimes(1);
+    // ...judged against the bearer the rejected request carried (#346).
+    expect(reportedToHost).toHaveBeenCalledWith({ accessToken: 'live-token' });
 
     // The seam: the shared client cleared nothing itself, and the EXTENSION's
     // real teardown ran — the credential is gone from storage, refresh included,

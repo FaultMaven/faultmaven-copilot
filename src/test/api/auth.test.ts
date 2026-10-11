@@ -251,7 +251,7 @@ describe('Authentication API', () => {
         throw new Error('storage unavailable');
       });
 
-      await expect(authManager.clearAllAuthData()).resolves.toBeUndefined();
+      await expect(authManager.clearAllAuthData()).resolves.toBe('ended');
 
       // The other half still ran.
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(

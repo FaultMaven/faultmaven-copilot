@@ -65,8 +65,14 @@ export interface ApiTransport {
    * Awaited: the teardown this replaced completed before the error was thrown,
    * and a fire-and-forget clear would race the next request into reading a
    * credential that was on its way out.
+   *
+   * `rejectedBearer` is the token the rejected request CARRIED. By the time
+   * the 401 is back, the host may already hold a newer credential (a sign-in
+   * in the meantime); a host that tears down must tear down this one's
+   * session, not that one's (copilot#346). A host with no use for it ignores
+   * it.
    */
-  onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
+  onUnauthorized(rejectedBearer: string): AuthOutcome | Promise<AuthOutcome>;
 }
 
 /** What the host did about a rejected credential. */

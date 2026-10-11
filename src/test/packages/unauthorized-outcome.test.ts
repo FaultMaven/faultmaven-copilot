@@ -32,7 +32,7 @@ const ok = () =>
   }) as unknown as Response;
 
 function install(outcome: AuthOutcome, tokens: string[]) {
-  const onUnauthorized = vi.fn(async () => outcome);
+  const onUnauthorized = vi.fn(async (_rejectedBearer: string) => outcome);
   let call = 0;
   setApiTransport({
     baseUrl: async () => 'https://api.test',
@@ -81,6 +81,19 @@ describe('onUnauthorized decides what a 401 means', () => {
     );
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // The host is told WHICH credential was rejected (copilot#346). Its teardown
+  // must end that credential's session and no other: by the time a 401 comes
+  // back, a sign-in may already have replaced the bearer this request carried,
+  // and a teardown that cannot tell them apart signs the new user out.
+  it('hands the host the bearer the rejected request actually carried', async () => {
+    const { onUnauthorized } = install('ended', ['stale-token']);
+    global.fetch = vi.fn().mockResolvedValue(unauthorized()) as never;
+
+    await expect(authenticatedFetch('https://api.test/api/v1/cases')).rejects.toThrow();
+
+    expect(onUnauthorized).toHaveBeenCalledWith('stale-token');
   });
 
   // The retry is a retry, not a loop: a request still rejected with a freshly

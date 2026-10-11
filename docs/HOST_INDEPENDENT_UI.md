@@ -134,6 +134,12 @@ setApiTransport({
 <CopilotPanel host={{ ...capabilities, session }} />
 ```
 
+The transport's `onUnauthorized` is called with the bearer the rejected request
+carried. A host that tears down on a 401 should end only that credential's
+session, because a sign-in may have replaced it while the request was out. The
+extension does this (copilot#346). A host that delegates elsewhere, as above,
+can ignore the argument.
+
 `playground/` is that, in about 200 lines, against a stub host: `localStorage`
 for the store, the page origin for the endpoints, `settings: null`,
 `pageCapture.supported: false`, and a session handed in already authenticated.

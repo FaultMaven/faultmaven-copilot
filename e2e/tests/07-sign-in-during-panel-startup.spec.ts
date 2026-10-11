@@ -8,9 +8,16 @@ import { test, expect, backgroundWorker, seedExtensionStorage, MOCK_API } from '
  * look at storage and then act on it in separate steps, so a sign-in written
  * in between looked like credentials with no session row and was swept as
  * debris: the user signed in on the Dashboard and the Copilot showed the
- * sign-in screen. Measured before the fix: 28 of 48 runs of this test ended
+ * sign-in screen. Measured before #344: 28 of 48 runs of this test ended
  * signed out, and every one checked for the cause had logged the sweep. After
- * the fix: 96 of 96 passed.
+ * it: 96 of 96 passed.
+ *
+ * WHAT THIS PINS, precisely: storage starts EMPTY here, so the repair's
+ * one-snapshot read is what this test exercises — it passed 24 of 24 with the
+ * repair's lock removed (#346). The window only the session-write LOCK closes
+ * (a snapshot that finds real debris, then a sign-in before the sweep acts) is
+ * pinned by the unit tests in src/test/lib/auth/reconcile-sign-in-race.test.ts
+ * and teardown-stale-verdict.test.ts, which fail with the lock removed.
  *
  * The sign-in is the SHIPPED bridge writer: `storeAuth` is the exact message
  * the Dashboard bridge content script sends, handled by the worker's

@@ -79,7 +79,7 @@ describe('the host must supply an absolute API origin', () => {
     const t = getApiTransport();
     await expect(t.accessToken()).resolves.toBe('token');
     await expect(t.sessionId()).resolves.toBeNull();
-    expect(t.onUnauthorized()).toBe('ended');
+    expect(t.onUnauthorized('token')).toBe('ended');
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 });

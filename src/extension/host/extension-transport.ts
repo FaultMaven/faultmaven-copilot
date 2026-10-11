@@ -11,6 +11,7 @@ import { extensionStore } from './extension-store';
 import { setApiTransport, type ApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
+import { endSessionOnRejectedCredential } from './session-credential';
 
 export function createExtensionTransport(session: HostSession): ApiTransport {
   return {
@@ -31,7 +32,11 @@ export function createExtensionTransport(session: HostSession): ApiTransport {
     // survives, so a fresh /sessions POST can resume rather than start cold.
     clearSession: () => clearPersistedSession(),
 
-    onUnauthorized: () => session.onUnauthorized(),
+    // Straight to the act-site with the bearer the rejected request carried,
+    // so the teardown can tell a verdict on THIS session from one on a session
+    // a sign-in has since replaced (copilot#346). `HostSession.onUnauthorized`
+    // cannot carry it — that signature is shared with the Dashboard host.
+    onUnauthorized: (rejectedBearer) => endSessionOnRejectedCredential(rejectedBearer),
   };
 }
 

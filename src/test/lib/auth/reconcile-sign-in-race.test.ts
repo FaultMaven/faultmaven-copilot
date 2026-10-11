@@ -184,6 +184,67 @@ describe.each([
     expect(storedRow()?.user?.user_id).toBe('user-1');
   });
 
+  // The two tests above pass on the one-snapshot read alone: storage starts
+  // EMPTY, so a snapshot taken before the sign-in finds nothing to sweep. The
+  // window only the LOCK closes is a snapshot that finds real debris — and a
+  // sign-in that lands before the sweep acts on it. Each of the next two fails,
+  // under both modes, with the lock in `reconcileSession` removed.
+
+  it('a sign-in landing after the repair saw a GENUINE orphan is not swept with it', async () => {
+    // Credentials with no row: what a teardown whose credential half failed
+    // leaves behind, and exactly what the sweep exists to remove.
+    Object.assign(store, { refresh_token: 'orphan-refresh' });
+    let signIn: Promise<unknown> | null = null;
+    mockStorage.local.get.mockImplementation(async (keys) => {
+      const snapshot = mockStorage.local.read(keys);
+      const list = Array.isArray(keys) ? keys : [keys];
+      if (!signIn && list.includes('authState')) {
+        signIn = client.signIn({ username: 'u1', password: 'pw' });
+        await settle();
+      }
+      return snapshot;
+    });
+
+    expect(await authManager.reconcileSession()).toBeNull();
+    await signIn;
+    await settle();
+
+    // The orphan went; the session that arrived while the repair ran did not.
+    expect(store.access_token).toBe('fresh-access');
+    expect(store.refresh_token).toBe('fresh-refresh');
+    expect(storedRow()?.user?.user_id).toBe('user-1');
+  });
+
+  it('a sign-in landing after the repair judged a DEAD row is not torn down with it', async () => {
+    // A row whose credential is spent with nothing to refresh it: the repair
+    // rules it dead (`assess()`), then tears down. The sign-in is started at
+    // the liveness read, after the snapshot — so the verdict is on the dead
+    // session and the teardown would otherwise land on the fresh one.
+    Object.assign(store, {
+      authState: { access_token: 'dead-access', user: { user_id: 'user-0' } },
+      access_token: 'dead-access',
+      expires_at: Date.now() - 3600000,
+    });
+    let signIn: Promise<unknown> | null = null;
+    mockStorage.local.get.mockImplementation(async (keys) => {
+      const snapshot = mockStorage.local.read(keys);
+      const list = Array.isArray(keys) ? keys : [keys];
+      if (!signIn && !list.includes('authState') && list.includes('access_token')) {
+        signIn = client.signIn({ username: 'u1', password: 'pw' });
+        await settle();
+      }
+      return snapshot;
+    });
+
+    expect(await authManager.reconcileSession()).toBeNull();
+    await signIn;
+    await settle();
+
+    expect(store.access_token).toBe('fresh-access');
+    expect(store.refresh_token).toBe('fresh-refresh');
+    expect(storedRow()?.user?.user_id).toBe('user-1');
+  });
+
   it('still sweeps a genuine orphan — the repair is not disabled, only serialized', async () => {
     // The negative control. A DEAD orphan (expired, nothing to refresh with) is
     // the debris the sweep exists for: a teardown whose credential half failed.

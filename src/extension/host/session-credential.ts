@@ -10,7 +10,8 @@
  */
 
 import { tokenManager } from '../auth/token-manager';
-import { authManager } from '../auth/auth-manager';
+import { authManager, type TeardownOutcome } from '../auth/auth-manager';
+import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
 import { SessionEndedError } from '../auth/session-ended-error';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
@@ -35,6 +36,10 @@ const log = createLogger('SessionCredential');
  * this boundary exists to keep on the host's side.
  */
 export async function readSessionAccessToken(): Promise<string> {
+  return readOnce(true);
+}
+
+async function readOnce(mayRetry: boolean): Promise<string> {
   try {
     const token = await tokenManager.getValidAccessToken();
     if (!token) throw new Error('No access token available right now.');
@@ -51,12 +56,42 @@ export async function readSessionAccessToken(): Promise<string> {
       // whose recovery is a sign-in prompt — where swallowing it produced a
       // header-less request, a doomed `POST /sessions`, and "session expired,
       // retrying" for a session that is not coming back.
+      //
+      // JUDGED (copilot#346): the verdict is about the credential it was read
+      // with. If a sign-in replaced that credential since, the teardown stands
+      // down — and this request is answered from the session that exists now,
+      // once. A second verdict is not retried: that one is about the new
+      // session, and it surfaces.
+      let outcome: TeardownOutcome = 'ended';
       try {
-        await authManager.clearAllAuthData();
+        outcome = await authManager.clearAllAuthData({ accessToken: error.judgedAccessToken });
       } catch (teardownError) {
         log.error('Teardown after a session verdict failed', teardownError);
       }
+      if (outcome === 'superseded' && mayRetry) return readOnce(false);
     }
     throw error;
   }
+}
+
+/**
+ * The extension's answer to a 401 on a request that carried a credential
+ * (`ApiTransport.onUnauthorized`).
+ *
+ * A teardown, JUDGED against the bearer the rejected request carried
+ * (copilot#346): a 401 arrives a round trip after the token was read, and a
+ * sign-in in that window has already replaced it. Then the verdict is about a
+ * session that is gone, the teardown stands down, and the answer is
+ * `'refreshed'` — the host holds a newer credential, and the client retries the
+ * request once with it. Otherwise the session is over: `'ended'`.
+ *
+ * `null` — a rejection whose bearer the caller cannot name
+ * (`HostSession.onUnauthorized()`, which takes none) — tears down
+ * unconditionally, as every rejection did before.
+ */
+export async function endSessionOnRejectedCredential(rejectedBearer: string | null): Promise<AuthOutcome> {
+  const outcome = await authManager.clearAllAuthData(
+    rejectedBearer ? { accessToken: rejectedBearer } : undefined,
+  );
+  return outcome === 'superseded' ? 'refreshed' : 'ended';
 }

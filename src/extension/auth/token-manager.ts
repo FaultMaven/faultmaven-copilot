@@ -40,7 +40,7 @@ export type CredentialState =
   | { kind: 'absent' }
   | { kind: 'usable'; accessToken: string }
   | { kind: 'refreshable'; refreshToken: string; spendableToken: string | null }
-  | { kind: 'dead'; reason: string };
+  | { kind: 'dead'; reason: string; accessToken: string };
 
 interface StoredTokens {
   access_token: string;
@@ -190,7 +190,11 @@ export class TokenManager {
 
     // The only death this side can declare: nothing to present, and nothing to
     // present it WITH. Every other verdict belongs to the backend.
-    return { kind: 'dead', reason: 'no refresh token and the access token is spent' };
+    return {
+      kind: 'dead',
+      reason: 'no refresh token and the access token is spent',
+      accessToken: tokens.access_token,
+    };
   }
 
   /**
@@ -219,7 +223,7 @@ export class TokenManager {
       case 'usable':
         return state.accessToken;
       case 'dead':
-        throw new SessionEndedError(state.reason);
+        throw new SessionEndedError(state.reason, state.accessToken);
       case 'refreshable':
         break;
     }
@@ -270,7 +274,7 @@ export class TokenManager {
         // rather than ending anything. That is what makes outage protection
         // DURABLE — an earlier version special-cased it here and the protection
         // lasted exactly one call, because the next read re-derived `dead`.
-        throw new SessionEndedError(after.reason);
+        throw new SessionEndedError(after.reason, after.accessToken);
       case 'absent':
         return null;
     }
@@ -399,7 +403,7 @@ export class TokenManager {
           log.info('A newer credential replaced this one mid-refresh; using it instead');
           return;
         }
-        throw new SessionEndedError(`refresh rejected with ${response.status}`);
+        throw new SessionEndedError(`refresh rejected with ${response.status}`, tokens.access_token);
       }
       throw err;
     }

@@ -90,9 +90,17 @@ an error whose recovery is a sign-in prompt. A host that throws anything else
 keeps the old behaviour (the Dashboard host is unaffected).
 
 **`readSessionAccessToken()` (`../host/session-credential.ts`) is the one place
-that acts**, catching `SessionEndedError` and calling `clearAllAuthData()`. It is
-a module rather than inline in `ExtensionApp` because two test harnesses model
-this contract and inline copies drifted; all three import the same function.
+that acts**, catching `SessionEndedError` and calling `clearAllAuthData()` —
+JUDGED against the error's `judgedAccessToken`. If the teardown stands down
+(`'superseded'`: a sign-in replaced that credential after the verdict), the
+request is answered once from the session that exists now; a second verdict is
+not retried. Its sibling `endSessionOnRejectedCredential()` answers a hard 401:
+the extension's transport hands it the bearer the rejected request carried
+(`ApiTransport.onUnauthorized(rejectedBearer)`), and a superseded teardown
+answers `'refreshed'`, so the client retries once with the newer credential.
+It is a module rather than inline in `ExtensionApp` because two test harnesses
+model this contract and inline copies drifted; all three import the same
+function.
 `getValidAccessToken` has exactly two callers — the act-site, and `logoutAuth`,
 which deliberately **swallows** the verdict so its own POST can never tear the
 session down. `background.ts` uses `fetchWithTimeout` directly and has no path
@@ -110,9 +118,10 @@ the chain, and the success path would otherwise stamp the pre-flight snapshot's
 `session_id` / `user` / `authState.user` over storage the new sign-in just
 re-seeded. On the success path the check and the write run inside the
 **session-write lock**, so a sign-in lands wholly before the check or wholly
-after the write. The rejection path writes nothing; its verdict reaches the
-act-site's teardown, which does not take the lock (see "The session-write
-lock" below).
+after the write — and so does a sign-out, which takes the same lock, so a
+refresh can no longer put a signed-out user's credentials back (copilot#346).
+The rejection path writes nothing; its verdict reaches the act-site as a
+`SessionEndedError` carrying the access token it judged.
 
 **Reads never destroy.** `getAuthState()` / `isAuthenticated()` /
 `getCurrentUser()` answer a question and nothing else. Repair is
@@ -130,15 +139,28 @@ maps it so startup reads storage once.
 
 ### The three clearing functions
 
-- `authManager.clearAllAuthData()` — **the teardown**: `authState`, the case
+- `authManager.clearAllAuthData(judged?)` — **the teardown**: `authState`, the case
   cache (`caseCacheManager.fence()`: fenced synchronously, removal queued and
   not awaited, so a wedged storage call cannot stall the teardown) and every
   credential key, both halves even if the first throws. Callers:
-  `logoutAuth()`, `ExtensionApp`'s `onUnauthorized` (what `client.ts
-  handleAuthError()` delegates a hard 401 to), options `handleSignOut()`,
-  `LocalAuthClient.signOut()`, `reconcileSession()`, and the act-site.
-  It **single-flights and never rejects** — both are contracts. The act-site and
-  `onUnauthorized` fire once per failing request, so a revoked credential would
+  `logoutAuth()`, options `handleSignOut()`, `LocalAuthClient.signOut()` (all
+  unconditional), and the two act-sites, judged: `readSessionAccessToken` on a
+  session verdict and `endSessionOnRejectedCredential` on a hard 401 (what
+  `client.ts handleAuthError()` delegates to through the transport; also behind
+  `ExtensionApp`'s `HostSession.onUnauthorized`, unconditionally, since that
+  signature carries no bearer).
+  It runs inside the session-write lock with a **bounded wait**
+  (`TEARDOWN_LOCK_WAIT_MS`, 2s; past it the teardown runs without the lock and
+  logs a warning — a holder wedged on storage must not hold a sign-out back
+  from its broadcast). With `judged`, it stands down and returns
+  `'superseded'` when the stored access token is no longer the judged one;
+  without, it removes whatever is there (a deliberate sign-out). It returns
+  `'ended'` or `'superseded'`. `reconcileSession` already holds the lock, so it
+  calls the private `runTeardown` directly.
+  It **single-flights and never rejects** — both are contracts. Single-flight
+  is keyed by what is torn down, so a sign-out never joins a judged teardown
+  that may stand down. The act-sites fire once per failing request, so a
+  revoked credential would
   otherwise mean three teardowns and three sign-out notifications; and every
   caller does something load-bearing immediately afterwards (`logoutAuth` and
   `LocalAuthClient.signOut` broadcast `auth_state_changed`; `onUnauthorized` must
@@ -187,16 +209,25 @@ message to the sender's own listener).
 
 `session-write-lock.ts` (`withSessionWriteLock`, Web Locks name
 `faultmaven-session-write`) is the one exclusive section shared by code that
-writes a session and code that decides a stored session is debris (copilot#342).
-Holders: the three sign-in writers (`handleStoreAuth`, the OAuth exchange,
-`LocalAuthClient.storeTokens`), `reconcileSession`'s look-and-sweep, and the
-refresh's CAS + rotated write. Only the storage writes are held; no network call
-runs inside it.
+writes a session and code that decides a stored session must go (copilot#342,
+#346). Holders: the three sign-in writers (`handleStoreAuth`, the OAuth exchange,
+`LocalAuthClient.storeTokens`), `reconcileSession`'s look-and-sweep, the
+refresh's CAS + rotated write, and the teardown (`clearAllAuthData`). Only
+storage work is held; no network call runs inside it. Nothing awaited inside
+it may take it again: Web Locks are not re-entrant, which is why the repair
+calls `runTeardown` rather than `clearAllAuthData`.
 
-**`clearAllAuthData()` does not take it**, and nothing awaited inside the lock
-may: Web Locks are not re-entrant and `reconcileSession` tears down while
-holding it. A teardown acting on a stale verdict (a 401 or a dead chain read
-just before a sign-in landed) is a separate race that this lock does not cover.
+What the lock adds over a one-snapshot read is exclusion between a decision and
+its act. The repair's snapshot alone already keeps a sign-in landing in an EMPTY
+profile safe (e2e `07-sign-in-during-panel-startup` passes without the lock);
+the lock is what keeps one safe when the snapshot finds real debris — a genuine
+orphan or a dead row — and the sign-in lands before the sweep acts, and what
+keeps a teardown's verdict check and its removal adjacent. Those windows are
+pinned by `reconcile-sign-in-race.test.ts` and `teardown-stale-verdict.test.ts`,
+which fail with the lock removed.
+
+Writers wait for the lock without a bound (a sign-in that waits is late, not
+lost); the teardown waits at most `TEARDOWN_LOCK_WAIT_MS`.
 
 Without `navigator.locks` the fallback serializes within one JS context only.
 Chromium's MV3 worker and pages have the API, and so do Firefox 96+ windows,
