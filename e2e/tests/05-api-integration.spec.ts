@@ -1,4 +1,4 @@
-import { test, expect, seedExtensionStorage, signedInStorage } from '../setup/extension-context';
+import { test, expect, MOCK_API, seedExtensionStorage, signedInStorage } from '../setup/extension-context';
 
 test.describe('API Integration', () => {
     test.beforeEach(async ({ context }) => {
@@ -18,14 +18,16 @@ test.describe('API Integration', () => {
         // interception misses it.
         let intercepted = false;
         page.on('request', request => {
-            if (request.url().includes('8091') && request.method() === 'POST') {
+            if (request.url().startsWith(MOCK_API) && request.method() === 'POST') {
                 intercepted = true;
             }
         });
 
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
-        await page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first().click().catch(() => { });
+        const newCase = page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first();
+        await expect(newCase).toBeVisible();
+        await newCase.click();
 
         const input = page.locator('textarea').first();
         await input.waitFor({ state: 'visible' });
@@ -42,7 +44,9 @@ test.describe('API Integration', () => {
         const page = await context.newPage();
 
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
-        await page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first().click().catch(() => { });
+        const newCase = page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first();
+        await expect(newCase).toBeVisible();
+        await newCase.click();
 
         // Wait for input to be ready
         const input = page.locator('textarea').first();

@@ -15,7 +15,9 @@ test.describe('UI Rendering', () => {
         const page = await context.newPage();
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
-        await page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first().click().catch(() => { });
+        const newCase = page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first();
+        await expect(newCase).toBeVisible();
+        await newCase.click();
 
         await page.evaluate(() => {
             return new Promise<void>((resolve) => chrome.storage.local.clear(resolve));
@@ -60,7 +62,9 @@ test.describe('UI Rendering', () => {
             data: { responseDelayMs: 5000 }
         });
 
-        await page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first().click().catch(() => { });
+        const newCase = page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first();
+        await expect(newCase).toBeVisible();
+        await newCase.click();
 
         const input = page.locator('textarea').first();
         await input.waitFor({ state: 'visible' });
@@ -85,7 +89,9 @@ test.describe('UI Rendering', () => {
 
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
-        await page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first().click().catch(() => { });
+        const newCase = page.getByText(/(New Case|E2E Empty Case|E2E Full Case)/i).first();
+        await expect(newCase).toBeVisible();
+        await newCase.click();
 
         const input = page.locator('textarea').first();
         await input.waitFor({ state: 'visible' });
