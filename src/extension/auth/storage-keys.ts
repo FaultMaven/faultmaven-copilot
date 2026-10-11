@@ -20,6 +20,15 @@
 export const AUTH_STATE_KEY = 'authState';
 
 /**
+ * Which user owns the at-rest data (`user-scope.ts`). Written by every sign-in
+ * AFTER the previous user's data has been purged, so "the session row and the
+ * data owner name the same user" means that user's sign-in is complete and the
+ * panel can re-scope onto it without hydrating anyone else's residue
+ * (`host/auth-state.ts`, #350).
+ */
+export const DATA_OWNER_KEY = 'faultmaven_data_owner_id';
+
+/**
  * Every key that makes up a stored credential.
  *
  * One list, read by `getStoredTokens` and removed by `clearTokens`, for the same

@@ -96,7 +96,7 @@ function extensionSession(): HostSession {
   return {
     user: { id: 'u1', username: 'op', roles: ['user'] },
     // The real thing, not a mirror — see host/session-credential.ts.
-    accessToken: () => readSessionAccessToken(null),
+    accessToken: () => readSessionAccessToken('u1'),
     signOut: async () => {},
     subscribeAuthState: () => () => {},
     onUnauthorized: () => endSessionOnRejectedCredential(null, null),

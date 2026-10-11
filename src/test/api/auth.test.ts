@@ -588,7 +588,7 @@ describe('Authentication API', () => {
         })
       });
 
-      const outcome = await logoutAuth();
+      const outcome = await logoutAuth(null);
       expect(outcome.allSessionsEnded).toBe(true);
 
       // Verify logout API call
@@ -635,7 +635,7 @@ describe('Authentication API', () => {
         json: { detail: 'Server error' }
       }));
 
-      await expect(logoutAuth()).rejects.toThrow('Server error');
+      await expect(logoutAuth(null)).rejects.toThrow('Server error');
 
       // Auth state AND tokens should still be cleared even on API failure.
       expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['authState']);
@@ -667,7 +667,7 @@ describe('Authentication API', () => {
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
 
-      await logoutAuth();
+      await logoutAuth(null);
 
       await vi.waitFor(() =>
         expect(mockBrowserRuntime.sendMessage).toHaveBeenCalledWith(REVOKE_HANDOFF)
@@ -700,7 +700,7 @@ describe('Authentication API', () => {
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
 
-      await logoutAuth();
+      await logoutAuth(null);
 
       await vi.waitFor(() =>
         expect(fetch).toHaveBeenCalledWith(
@@ -740,7 +740,7 @@ describe('Authentication API', () => {
       // Logout resolves despite both failures, and reports the sign-out as
       // unconfirmed: this body carries no `all_sessions_ended`, which is what a
       // backend predating the field looks like. Unconfirmed, not assumed.
-      await expect(logoutAuth()).resolves.toEqual({ allSessionsEnded: false });
+      await expect(logoutAuth(null)).resolves.toEqual({ allSessionsEnded: false });
       // ...the logout endpoint was still called...
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/auth/logout',
@@ -763,7 +763,7 @@ describe('Authentication API', () => {
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({ ok: true }));
 
-      await logoutAuth();
+      await logoutAuth(null);
 
       expect(mockBrowserRuntime.sendMessage).not.toHaveBeenCalledWith(
         expect.objectContaining({ action: 'revokeRefreshToken' })
@@ -813,7 +813,7 @@ describe('Authentication API', () => {
         return mockFetchResponse({ ok: true, json: { all_sessions_ended: true } });
       });
 
-      const outcome = await logoutAuth();
+      const outcome = await logoutAuth(null);
 
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/auth/logout',
@@ -848,7 +848,7 @@ describe('Authentication API', () => {
       });
 
       // Resolves rather than rejecting: the verdict must not escape logoutAuth.
-      await expect(logoutAuth()).resolves.toBeDefined();
+      await expect(logoutAuth(null)).resolves.toBeDefined();
 
       // The POST still went out, with whatever bearer was stored.
       expect(fetch).toHaveBeenCalledWith(

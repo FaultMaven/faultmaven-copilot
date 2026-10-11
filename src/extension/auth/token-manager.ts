@@ -543,18 +543,20 @@ export class TokenManager {
   }
 
   /**
-   * The stored access token AS-IS — no refresh, no verdict, no teardown.
+   * The stored access token AS-IS, with its owner from the same read — no
+   * refresh, no verdict, no teardown.
    *
    * The FALLBACK for callers that must not let a verdict escape. `logoutAuth`
-   * asks `getValidAccessToken()` first — so a healthy near-expiry session still
+   * asks `getValidCredential()` first — so a healthy near-expiry session still
    * refreshes and the sign-out can actually be confirmed — and falls back here
    * when that answers nothing or reports a dead chain. Sending a possibly-expired
    * bearer is fine: server-side logout is best-effort and the local teardown
-   * runs regardless.
+   * runs regardless. The owner is what lets it refuse to sign out a session
+   * that is not the caller's (#350).
    */
-  async peekAccessToken(): Promise<string | null> {
-    const { access_token } = await browser.storage.local.get(['access_token']);
-    return typeof access_token === 'string' ? access_token : null;
+  async peekCredential(): Promise<{ accessToken: string; userId: string | null } | null> {
+    const tokens = await this.getStoredTokens();
+    return tokens ? { accessToken: tokens.access_token, userId: userIdOf(tokens) } : null;
   }
 
   /**

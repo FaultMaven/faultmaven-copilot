@@ -321,6 +321,53 @@ describe('TokenManager', () => {
     expect(stored.refresh_token).toBe('valid-refresh-token');
   }, 10000);
 
+  // The act-site refuses a token whose owner is not the panel's user (#350).
+  // So the owner must survive EVERY arm that hands a token out — including this
+  // one, the refresh-outage fallback. Answering `userId: null` here refused the
+  // same user's own requests for as long as the token endpoint was down.
+  it('reports the OWNER with the still-valid token on a transient refresh failure (#350)', async () => {
+    await mockBrowserStorage.local.set({
+      access_token: 'still-valid-access-token',
+      token_type: 'bearer',
+      expires_at: Date.now() + 2 * 60 * 1000,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000,
+      user: { user_id: 'owner-1' }
+    });
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+
+    await expect(tokenManager.getValidCredential()).resolves.toEqual({
+      accessToken: 'still-valid-access-token',
+      userId: 'owner-1',
+    });
+  }, 10000);
+
+  it('reports the OWNER with the rotated token after a successful refresh (#350)', async () => {
+    await mockBrowserStorage.local.set({
+      access_token: 'old-access-token',
+      token_type: 'bearer',
+      expires_at: Date.now() + 2 * 60 * 1000,
+      refresh_token: 'valid-refresh-token',
+      refresh_expires_at: Date.now() + 60 * 60 * 1000,
+      user: { user_id: 'owner-1' }
+    });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        access_token: 'new-access-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'new-refresh-token',
+      }),
+    });
+
+    await expect(tokenManager.getValidCredential()).resolves.toEqual({
+      accessToken: 'new-access-token',
+      userId: 'owner-1',
+    });
+  });
+
   it('reports a dead chain on a DEFINITIVE (400) refresh rejection', async () => {
     const expiresAt = Date.now() + 2 * 60 * 1000;
     await mockBrowserStorage.local.set({

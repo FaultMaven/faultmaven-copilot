@@ -54,8 +54,15 @@ be inherited from the previous session (`storage.set` drops an undefined value
 instead of clearing). A key added to the writers and forgotten in the teardown
 stays at rest after a "full" logout — a partial teardown no test sees.
 
-`subscribeExtensionAuthState` watches `authState` **alone**: its disappearance is
-the sign-out. Clearing credential keys without it ends a session unobservably.
+`subscribeExtensionAuthState` watches `authState`, whose disappearance is the
+sign-out. Clearing credential keys without it ends a session unobservably. It
+also watches the data owner (`DATA_OWNER_KEY`, which every sign-in writes AFTER
+purging the previous user's data). When the owner becomes the user the row
+names, that user's sign-in is complete, and the panel re-scopes to it with no
+broadcast needed. It checks once on subscribing too, so a sign-in that completed
+before the panel subscribed (the startup gap) is not missed (#350). It never
+reports on the row alone: the row lands before the purge, and re-scoping then
+would hydrate the previous user's residue.
 
 ## Auth teardown — who DECIDES, who REPORTS, who ENDS
 
@@ -101,7 +108,17 @@ on the bridge path). A `POST /cases` built for the previous user in that window
 would otherwise create their content in the new user's account. A stored
 credential naming no user is refused to a panel that has one (unknown is never
 the same user). `forUserId === null` compares nothing. A refusal is not a
-verdict: TokenManager still only reports, and the act-site ends nothing.
+verdict: TokenManager still only reports, and the act-site ends nothing. The
+extension's transport asks `HostSession.accessToken()`, the one path the
+HostAdapter contract names, and `ExtensionApp` answers it with
+`readSessionAccessToken(currentUser.id)`. **Sign-out carries its user too:**
+`logoutAuth(forUserId)` checks the owner of the credential it would send (one
+read: `getValidCredential`, else `peekCredential`). If the owner is KNOWN and is
+someone else, it sends nothing, tears down nothing, broadcasts and revokes
+nothing, and returns `sessionSwitched`; `ExtensionApp` then re-scopes the panel
+to the completed sign-in rather than signing anyone out. Its teardown is judged
+against that credential, so another user signing in during the POST is left
+alone. An unknown owner does not block a sign-out the user asked for.
 
 **`readSessionAccessToken()` (`../host/session-credential.ts`) is the one place
 that acts**, catching `SessionEndedError` and calling `clearAllAuthData()` —
@@ -199,16 +216,18 @@ observe the `authState` change.
 
 ### Logout
 
-`logoutAuth` (`auth-service.ts`) does not use `authenticatedFetch`. It asks
-`getValidAccessToken()` directly, swallows the verdict, falls back to
-`peekAccessToken()`, and POSTs `/api/v1/auth/logout` by hand. Going through
+`logoutAuth(forUserId)` (`auth-service.ts`) does not use `authenticatedFetch`.
+It asks `getValidCredential()` directly, swallows the verdict, falls back to
+`peekCredential()`, checks the owner (above, #350), and POSTs
+`/api/v1/auth/logout` by hand. Going through
 `getAuthHeaders` would let a near-expiry proactive refresh's verdict reach the
 act-site and tear the session down *mid-logout*, before the broadcast. Both
 halves matter: a healthy near-expiry session refreshes so the account-wide
 revocation is actually written, and a dead chain tears nothing down.
 
-Order in the `finally`: read the refresh token → `clearAllAuthData()` →
-**broadcast** → revoke, and the revoke is **not awaited**. `ExtensionApp.signOut`
+Order in the `finally`: read the refresh token → `clearAllAuthData()` (judged
+when the caller named its user; `'replaced'` stops here, with no broadcast and no
+revoke) → **broadcast** → revoke, and the revoke is **not awaited**. `ExtensionApp.signOut`
 awaits `logoutAuth`, so awaiting a ~20s best-effort network call there stalls
 the panel; and the teardown must never sit behind it, or a panel closed
 mid-revoke leaves a "signed out" user holding live tokens at rest.

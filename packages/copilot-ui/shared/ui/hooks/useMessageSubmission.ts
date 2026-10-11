@@ -321,12 +321,17 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
 
           // A TurnInProgressError that outlasted the deadline still says what to
           // do next ("Retry in a moment to get its reply"): show it whole.
+          // A NOTICE goes to the toast whole, so it is shown as one (info, not
+          // "Something went wrong"): a bare string is classified as an unknown
+          // failure. `SessionSwitchedError` is the case (#350): the host refused
+          // to send because another account signed in.
           if (
             plan.strategy === 'manual_retry' ||
             plan.strategy === 'retry_with_backoff' ||
-            classified instanceof TurnInProgressError
+            classified instanceof TurnInProgressError ||
+            classified.category === 'notice'
           ) {
-             showError(error);
+             showError(classified.category === 'notice' ? classified : error);
           } else {
              showError(error.userMessage);
           }

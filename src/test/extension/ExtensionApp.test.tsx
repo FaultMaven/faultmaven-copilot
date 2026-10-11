@@ -527,6 +527,33 @@ describe('the extension session signs out', () => {
       .toBeInTheDocument();
   });
 
+  it("asks the host to sign out the PANEL's user, by id (#350 review)", async () => {
+    logoutAuth.mockResolvedValue({ allSessionsEnded: true });
+
+    await hostSignOut();
+
+    expect(logoutAuth).toHaveBeenCalledWith('u1');
+  });
+
+  it('re-scopes, rather than signing out, when another account is stored (#350 review)', async () => {
+    // The host refused: the stored session is someone else's, and signing it
+    // out would end THEIR session everywhere. The panel moves to them instead.
+    logoutAuth.mockResolvedValue({ allSessionsEnded: false, sessionSwitched: true });
+    b.storage.local.get.mockResolvedValue({
+      hasCompletedFirstRun: true,
+      authState: { access_token: 'b', user: { user_id: 'u2', username: 'other', roles: ['user'] } },
+      faultmaven_data_owner_id: 'u2',
+    });
+
+    await act(async () => {
+      await hostSignOut();
+    });
+
+    expect(useAppStore.getState().currentUser?.id).toBe('u2');
+    expect(window.location.reload).toHaveBeenCalled();
+    expect(screen.queryByText(/could not confirm your other FaultMaven sessions/i)).toBeNull();
+  });
+
   it('says nothing when the server confirmed every session ended', async () => {
     logoutAuth.mockResolvedValue({ allSessionsEnded: true });
     authState.isAuthenticated = false;

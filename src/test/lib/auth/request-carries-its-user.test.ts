@@ -57,6 +57,7 @@ import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 import { createCase } from '@faultmaven/copilot-ui/lib/api/services/case-service';
+import { logoutAuth } from '../../../extension/auth/auth-service';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
 const API = 'https://api.example.test';
@@ -171,5 +172,48 @@ describe('a request carries the user it was built for', () => {
     });
     expect(global.fetch).not.toHaveBeenCalled();
     expect(store.access_token).toBe('anon-access');
+  });
+
+  // ---- Sign-out (#350 review) ----
+  //
+  // `logoutAuth` sent whatever bearer was stored. A's sign-out with B's
+  // session in storage POSTed /auth/logout with B's bearer — which revokes
+  // every B session account-wide, their Dashboard included — then cleared B's
+  // credential here and revoked B's refresh token.
+  const logoutCalls = () =>
+    (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(([url]) =>
+      String(url).endsWith('/api/v1/auth/logout'),
+    );
+
+  it("A's sign-out with B's session stored sends nothing and leaves B signed in", async () => {
+    Object.assign(store, sessionOf('user-b', 'b-access'));
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, headers: new Headers(), json: async () => ({ all_sessions_ended: true }),
+    }) as unknown as typeof fetch;
+
+    const outcome = await logoutAuth('user-a');
+
+    expect(outcome).toMatchObject({ allSessionsEnded: false, sessionSwitched: true });
+    expect(logoutCalls()).toHaveLength(0);
+    expect(store.access_token).toBe('b-access');
+    expect(store.refresh_token).toBe('b-access-refresh');
+    // No sign-out broadcast and no revoke hand-off: nothing left this context.
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("A's sign-out with A's own (rotated) session signs A out, as before", async () => {
+    Object.assign(store, sessionOf('user-a', 'a2-access'));
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, headers: new Headers(), json: async () => ({ all_sessions_ended: true }),
+    }) as unknown as typeof fetch;
+
+    const outcome = await logoutAuth('user-a');
+
+    expect(outcome).toMatchObject({ allSessionsEnded: true });
+    expect(logoutCalls()).toHaveLength(1);
+    const headers = (logoutCalls()[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer a2-access');
+    expect(store.access_token).toBeUndefined();
+    expect(store.authState).toBeUndefined();
   });
 });

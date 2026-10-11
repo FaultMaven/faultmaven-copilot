@@ -11,16 +11,18 @@ import { extensionStore } from './extension-store';
 import { setApiTransport, type ApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
-import { endSessionOnRejectedCredential, readSessionAccessToken } from './session-credential';
+import { endSessionOnRejectedCredential } from './session-credential';
 
 export function createExtensionTransport(session: HostSession): ApiTransport {
   return {
     baseUrl: () => getApiUrl(),
 
-    // For THIS session's user, always (copilot#350): every request this
-    // transport sends was built for `session.user`, so a credential that a
-    // different user's sign-in has put in storage is refused, not sent.
-    accessToken: () => readSessionAccessToken(session.user?.id ?? null),
+    // The session's own answer, and only it: `HostSession.accessToken()` is what
+    // the HostAdapter contract says the package asks. The extension's session
+    // answers it for its user (`readSessionAccessToken(user.id)`, copilot#350),
+    // so a credential another user's sign-in has put in storage is refused, not
+    // sent.
+    accessToken: () => session.accessToken(),
 
     // Through the same store everything else reads and writes this key from.
     // A direct `browser.storage.local` read here would work in the extension
