@@ -58,7 +58,7 @@ const log = createLogger('useMessageSubmission');
 //
 // Auto-titling is the server's job: POST /cases/{id}/turns names a case still
 // carrying its `Case-YYMMDD-N` placeholder once it has enough substance to name,
-// in the background. This hook used to do it too, gated on `turn_number >= 5` —
+// before it answers the turn (`_auto_title_case_if_default`). This hook used to do it too, gated on `turn_number >= 5` —
 // a copy of a backend policy, written in TypeScript, that drifted from it and
 // blocked exactly the upload-driven cases the backend gate was relaxed to allow
 // (fm#1069). Two triggers for one job is how they disagree; the client keeps the
@@ -398,11 +398,12 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       }
 
       // The state goes to the case the turn was sent for, never to whichever
-      // case is open now (#321). A state change makes SidePanelApp's transition
-      // effect refresh the case list on its own, and a turn on a case no longer
-      // open reloads it here; either way the post-turn refresh below stands down
-      // rather than asking for the same list twice.
-      const { stateChanged, listReloaded } = applyTurnCaseState(caseId, response.case_state, epoch);
+      // case is open now (#321), and the sidebar is re-read past its cache so a
+      // title the server gave this case while answering reaches it (#333).
+      // Not gated on the store's titles: it holds an entry only for cases the
+      // user renamed or generated a title for, so "no store entry" does not
+      // mean "no server title".
+      applyTurnCaseState(caseId, response.case_state, epoch);
 
       // The turn committed and the session is the one that sent it: tell the host.
       notifyCaseChanged(onCaseChanged, caseId);
@@ -418,24 +419,6 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
 
       pendingOpsManager.complete(aiMessageId);
       log.info('Message submission completed and UI updated');
-
-      // The backend may have named this case while processing the turn (see
-      // POST /cases/{id}/turns). Refetch the list so a title the client never
-      // asked for still reaches the sidebar.
-      //
-      // Not gated on the store: it holds an entry only for cases the user
-      // renamed or generated a title for, so "no store entry" does not mean "no
-      // server title", and gating on it would skip the refresh for every case
-      // loaded from the server.
-      //
-      // Skipped when the turn changed case_state, because SidePanelApp's
-      // transition effect then runs reconcileActiveCaseState, which invalidates
-      // the list cache and bumps this same counter itself, and when the turn's
-      // case is no longer open (`applyTurnCaseState` reloaded the list). Firing
-      // both would spend two list GETs to answer one question.
-      if (!stateChanged && !listReloaded) {
-        triggerRefreshSessions();
-      }
 
     } catch (error) {
       log.debug('Caught error from resilientOperation (handled in onFailure)', error);

@@ -262,8 +262,11 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     }
 
     // The state goes to the case the turn was sent for, never to whichever case
-    // is open now (#321); see the refresh below for what the result suppresses.
-    const { stateChanged, listReloaded } = applyTurnCaseState(targetCaseId, turnResponse.case_state, epoch);
+    // is open now (#321), and the sidebar is re-read past its cache so a title
+    // the server gave this case while answering reaches it (#333). That is what
+    // names an upload-driven case, where the user types nothing and attaches a
+    // log (fm#1069): the client-side titling gate that lived here never did.
+    applyTurnCaseState(targetCaseId, turnResponse.case_state, epoch);
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
     notifyCaseChanged(onCaseChanged, targetCaseId);
@@ -292,21 +295,6 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     // The turn committed: mark the pending op complete so the retry affordance
     // (if this was a retry) clears.
     pendingOpsManager.complete(aiMessageId);
-
-    // Auto-titling moved to the server (POST /cases/{id}/turns names a case still
-    // holding its `Case-YYMMDD-N` placeholder in the background). The client-side
-    // copy that lived here was gated on `turn_number >= 5`, which is precisely
-    // what kept an upload-driven case — the user types nothing and attaches a
-    // 40MB log — unnamed forever (fm#1069). Refetch so the server's title reaches
-    // the sidebar.
-    //
-    // Skipped when the turn changed case_state, as in useMessageSubmission:
-    // SidePanelApp's transition effect then refreshes the list itself, as
-    // `applyTurnCaseState` does when the turn's case is no longer open, and both
-    // would spend two list GETs to answer one question.
-    if (!stateChanged && !listReloaded) {
-      triggerRefreshSessions();
-    }
 
     return { success: true, message: "", sent: true };
   };

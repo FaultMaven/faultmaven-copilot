@@ -15,9 +15,9 @@
  *
  * The one copy of the sequence: the 403 path (`write-refused.ts`) and the
  * extension host (when its open case turns out to be driven by someone else)
- * both call it, and so does a turn that lands after the user opened another
- * case (`turn-case-state.ts`, #321): the turn's case is out of sight, and its
- * cached row is the one place its new state would otherwise not reach. It is
+ * both call it, and so does every committed turn the transition effect does
+ * not already re-read the list for (`turn-case-state.ts`, #321, #333): a bare
+ * reload is served the cached page, which predates what the turn changed. It is
  * NOT called from `refreshActiveCase`, which also runs in the Dashboard, a host
  * with no sidebar.
  */
