@@ -61,6 +61,7 @@ import { readSessionAccessToken } from '../../../extension/host/session-credenti
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 import { withSessionWriteLock } from '../../../extension/auth/session-write-lock';
+import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
 
@@ -117,8 +118,23 @@ const SESSION_B = {
   user: { user_id: 'user-b' },
 };
 
+/** The SAME user's session with a newer credential — a rotation, or a re-sign-in. */
+const SESSION_A2 = {
+  authState: { access_token: 'a2-access', expires_at: Date.now() + 3600000, user: { user_id: 'user-a' } },
+  access_token: 'a2-access',
+  token_type: 'bearer',
+  expires_at: Date.now() + 3600000,
+  refresh_token: 'a2-refresh',
+  user: { user_id: 'user-a' },
+};
+
 /** A sign-in, written the way every real sign-in writer writes. */
 const signInB = () => withSessionWriteLock(() => mockStorage.local.set({ ...SESSION_B }));
+const signInA2 = () => withSessionWriteLock(() => mockStorage.local.set({ ...SESSION_A2 }));
+
+/** The panel's session, as the extension's transport is built from it. */
+const panelFor = (userId: string) =>
+  ({ user: { id: userId }, onUnauthorized: async () => 'ended' as const }) as unknown as HostSession;
 
 describe.each([
   ['Web Locks', installWebLocks],
@@ -150,12 +166,23 @@ describe.each([
     removeWebLocks();
   });
 
-  it('a teardown judged on credential A stands down when B has replaced it', async () => {
-    Object.assign(store, SESSION_B);
+  it("a teardown judged on A stands down when A's own session holds a newer credential", async () => {
+    Object.assign(store, SESSION_A2);
 
-    const outcome = await authManager.clearAllAuthData({ accessToken: 'a-access' });
+    const outcome = await authManager.clearAllAuthData({ accessToken: 'a-access', userId: 'user-a' });
 
     expect(outcome).toBe('superseded');
+    expect(store.access_token).toBe('a2-access');
+  });
+
+  it("a teardown judged on A stands down for ANOTHER user's session — and says so", async () => {
+    // B is left alone, but A's session is over: 'replaced', never 'superseded',
+    // so no caller mistakes B's credential for a continuation of A's.
+    Object.assign(store, SESSION_B);
+
+    const outcome = await authManager.clearAllAuthData({ accessToken: 'a-access', userId: 'user-a' });
+
+    expect(outcome).toBe('replaced');
     expect(store.access_token).toBe('b-access');
     expect(store.authState).toEqual(SESSION_B.authState);
   });
@@ -163,7 +190,7 @@ describe.each([
   it('a teardown judged on credential A still ends A', async () => {
     Object.assign(store, SESSION_A);
 
-    const outcome = await authManager.clearAllAuthData({ accessToken: 'a-access' });
+    const outcome = await authManager.clearAllAuthData({ accessToken: 'a-access', userId: 'user-a' });
 
     expect(outcome).toBe('ended');
     expect(store.access_token).toBeUndefined();
@@ -179,14 +206,15 @@ describe.each([
     mockStorage.local.get.mockImplementation(async (keys) => {
       const snapshot = mockStorage.local.read(keys);
       const list = Array.isArray(keys) ? keys : [keys];
-      if (!signIn && list.length === 1 && list[0] === 'access_token') {
+      // The teardown's comparison read (inside the lock, after the verdict).
+      if (!signIn && list.includes('access_token') && list.includes('authState') && list.length === 3) {
         signIn = signInB();
         await settle();
       }
       return snapshot;
     });
 
-    expect(await authManager.clearAllAuthData({ accessToken: 'a-access' })).toBe('ended');
+    expect(await authManager.clearAllAuthData({ accessToken: 'a-access', userId: 'user-a' })).toBe('ended');
     await signIn;
     await settle();
 
@@ -194,49 +222,76 @@ describe.each([
     expect(store.authState).toEqual(SESSION_B.authState);
   });
 
-  it('the act-site does not sign out a session that arrived after the dead-chain verdict', async () => {
-    // A is spent with nothing to refresh it: `assess()` rules it dead. B is
-    // written right after that read — so the verdict, and the teardown that
-    // follows it, are about A.
+  /** A is spent with nothing to refresh it; `sign` lands right after `assess()` read it. */
+  function deadAThenSignIn(sign: () => Promise<unknown>) {
     Object.assign(store, { ...SESSION_A, expires_at: Date.now() - 3600000 });
-    let signIn: Promise<unknown> | null = null;
+    const landed: { signIn: Promise<unknown> | null } = { signIn: null };
     mockStorage.local.get.mockImplementation(async (keys) => {
       const snapshot = mockStorage.local.read(keys);
       const list = Array.isArray(keys) ? keys : [keys];
-      if (!signIn && list.includes('access_token') && !list.includes('authState')) {
-        signIn = signInB();
+      if (!landed.signIn && list.includes('access_token') && !list.includes('authState')) {
+        landed.signIn = sign();
         await settle();
       }
       return snapshot;
     });
+    return landed;
+  }
 
-    // The request that asked gets the session that now exists.
-    await expect(readSessionAccessToken()).resolves.toBe('b-access');
-    await signIn;
+  it("the act-site answers from A's newer credential after a verdict on A's old one", async () => {
+    // The verdict — and the teardown it asks for — is about a-access. The same
+    // user signed in again meanwhile: their session continues, and the request
+    // that asked gets its newer bearer.
+    const landed = deadAThenSignIn(signInA2);
+
+    await expect(readSessionAccessToken()).resolves.toBe('a2-access');
+    await landed.signIn;
+
+    expect(store.access_token).toBe('a2-access');
+    expect(store.authState).toEqual(SESSION_A2.authState);
+  });
+
+  it("the act-site neither signs B out nor hands A's request B's bearer", async () => {
+    // A different user signed in after the verdict on A. B's session is left
+    // alone — and A's request is NOT retried with B's credential: it was built
+    // for A, and replayed it would land in B's account.
+    const landed = deadAThenSignIn(signInB);
+
+    await expect(readSessionAccessToken()).rejects.toBeInstanceOf(SessionEndedError);
+    await landed.signIn;
 
     expect(store.access_token).toBe('b-access');
     expect(store.refresh_token).toBe('b-refresh');
     expect(store.authState).toEqual(SESSION_B.authState);
   });
 
-  it("a 401 for a bearer a sign-in has since replaced answers 'refreshed' and keeps the new session", async () => {
-    // The 401 is a round trip late: B was written while A's request was out.
-    Object.assign(store, SESSION_B);
-    const session = { onUnauthorized: async () => 'ended' as const } as unknown as HostSession;
+  it("a 401 for A's old bearer answers 'refreshed' when A's session holds a newer one", async () => {
+    // The 401 is a round trip late: A's credential rotated while the request
+    // was out. The same session continues; the client retries once with a2.
+    Object.assign(store, SESSION_A2);
 
-    const outcome = await createExtensionTransport(session).onUnauthorized('a-access');
+    const outcome = await createExtensionTransport(panelFor('user-a')).onUnauthorized('a-access');
 
-    // 'refreshed': the client retries once, with B.
     expect(outcome).toBe('refreshed');
+    expect(store.access_token).toBe('a2-access');
+  });
+
+  it("a 401 for A's bearer answers 'ended' — no retry — when B has signed in, and leaves B alone", async () => {
+    // 'refreshed' would replay A's request (a POST /cases, a turn) with B's
+    // bearer, into B's account.
+    Object.assign(store, SESSION_B);
+
+    const outcome = await createExtensionTransport(panelFor('user-a')).onUnauthorized('a-access');
+
+    expect(outcome).toBe('ended');
     expect(store.access_token).toBe('b-access');
     expect(store.authState).toEqual(SESSION_B.authState);
   });
 
   it("a 401 for the bearer still stored ends that session", async () => {
     Object.assign(store, SESSION_A);
-    const session = { onUnauthorized: async () => 'ended' as const } as unknown as HostSession;
 
-    expect(await createExtensionTransport(session).onUnauthorized('a-access')).toBe('ended');
+    expect(await createExtensionTransport(panelFor('user-a')).onUnauthorized('a-access')).toBe('ended');
     expect(store.access_token).toBeUndefined();
     expect(store.authState).toBeUndefined();
   });

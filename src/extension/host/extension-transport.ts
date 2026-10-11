@@ -36,7 +36,11 @@ export function createExtensionTransport(session: HostSession): ApiTransport {
     // so the teardown can tell a verdict on THIS session from one on a session
     // a sign-in has since replaced (copilot#346). `HostSession.onUnauthorized`
     // cannot carry it — that signature is shared with the Dashboard host.
-    onUnauthorized: (rejectedBearer) => endSessionOnRejectedCredential(rejectedBearer),
+    // The user is the session's: every request this transport sends was built
+    // for it, so a newer credential belonging to anyone else is never a
+    // continuation of the rejected one.
+    onUnauthorized: (rejectedBearer) =>
+      endSessionOnRejectedCredential(rejectedBearer, session.user?.id ?? null),
   };
 }
 

@@ -91,14 +91,19 @@ keeps the old behaviour (the Dashboard host is unaffected).
 
 **`readSessionAccessToken()` (`../host/session-credential.ts`) is the one place
 that acts**, catching `SessionEndedError` and calling `clearAllAuthData()` —
-JUDGED against the error's `judgedAccessToken`. If the teardown stands down
-(`'superseded'`: a sign-in replaced that credential after the verdict), the
-request is answered once from the session that exists now; a second verdict is
-not retried. Its sibling `endSessionOnRejectedCredential()` answers a hard 401:
-the extension's transport hands it the bearer the rejected request carried
-(`ApiTransport.onUnauthorized(rejectedBearer)`), and a superseded teardown
-answers `'refreshed'`, so the client retries once with the newer credential.
-It is a module rather than inline in `ExtensionApp` because two test harnesses
+JUDGED against the error's `judgedAccessToken` and `judgedUserId` (the `user`
+stored with the chain). If the SAME user's session now holds a newer credential
+(`'superseded'`), the request is answered once from it; if ANOTHER user's
+session replaced it (`'replaced'`), that session is left alone and the verdict
+surfaces — never a retry with someone else's bearer. A second verdict is not
+retried. Its sibling `endSessionOnRejectedCredential()` answers a hard 401: the
+extension's transport hands it the bearer the rejected request carried
+(`ApiTransport.onUnauthorized(rejectedBearer)`) and the user the panel built
+the request for (`HostSession.user.id`). Only `'superseded'` answers
+`'refreshed'` (the client retries once, the epoch does not move); `'replaced'`
+and `'ended'` answer `'ended'`. Identity is compared by `user_id`, the stored
+side read from the `authState` row (falling back to the `user` key); an unknown
+identity is never the same user. It is a module rather than inline in `ExtensionApp` because two test harnesses
 model this contract and inline copies drifted; all three import the same
 function.
 `getValidAccessToken` has exactly two callers — the act-site, and `logoutAuth`,
@@ -152,11 +157,12 @@ maps it so startup reads storage once.
   It runs inside the session-write lock with a **bounded wait**
   (`TEARDOWN_LOCK_WAIT_MS`, 2s; past it the teardown runs without the lock and
   logs a warning — a holder wedged on storage must not hold a sign-out back
-  from its broadcast). With `judged`, it stands down and returns
-  `'superseded'` when the stored access token is no longer the judged one;
-  without, it removes whatever is there (a deliberate sign-out). It returns
-  `'ended'` or `'superseded'`. `reconcileSession` already holds the lock, so it
-  calls the private `runTeardown` directly.
+  from its broadcast). With `judged`, it stands down when the stored access
+  token is no longer the judged one, returning `'superseded'` when the stored
+  row is the judged user's and `'replaced'` when it is anyone else's; without,
+  it removes whatever is there (a deliberate sign-out) and returns `'ended'`.
+  `reconcileSession` already holds the lock, so it calls the private
+  `runTeardown` directly.
   It **single-flights and never rejects** — both are contracts. Single-flight
   is keyed by what is torn down, so a sign-out never joins a judged teardown
   that may stand down. The act-sites fire once per failing request, so a

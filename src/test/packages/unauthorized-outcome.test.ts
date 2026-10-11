@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
+import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 
 const unauthorized = () =>
   ({
@@ -94,6 +95,30 @@ describe('onUnauthorized decides what a 401 means', () => {
     await expect(authenticatedFetch('https://api.test/api/v1/cases')).rejects.toThrow();
 
     expect(onUnauthorized).toHaveBeenCalledWith('stale-token');
+  });
+
+  // The session epoch fences writers of an ENDED session (session-epoch.ts).
+  // 'refreshed' is the same session continuing: moving the epoch there drops
+  // that session's own in-flight writes — an optimistic case never reconciled,
+  // a turn's result discarded — for nothing.
+  it("'refreshed' leaves the session epoch alone", async () => {
+    install('refreshed', ['stale-token', 'fresh-token']);
+    global.fetch = vi.fn().mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok()) as never;
+    const before = getEpoch();
+
+    await authenticatedFetch('https://api.test/api/v1/cases');
+
+    expect(getEpoch()).toBe(before);
+  });
+
+  it("'ended' moves the session epoch", async () => {
+    install('ended', ['stale-token']);
+    global.fetch = vi.fn().mockResolvedValue(unauthorized()) as never;
+    const before = getEpoch();
+
+    await expect(authenticatedFetch('https://api.test/api/v1/cases')).rejects.toThrow();
+
+    expect(getEpoch()).toBeGreaterThan(before);
   });
 
   // The retry is a retry, not a loop: a request still rejected with a freshly

@@ -49,14 +49,18 @@ export function prepareBody(body: unknown): string | undefined {
  * Handles authentication errors and triggers re-authentication
  */
 async function handleAuthError(rejectedBearer: string): Promise<'refreshed' | 'ended'> {
-  // A hard 401 ends the session. Fence it synchronously (before the await below)
-  // so any in-flight background writer in THIS context whose continuation is
-  // already queued skips its post-await writes rather than repopulating state
-  // we're about to tear down. When handleAuthError runs in the background
-  // context instead, this bumps the background epoch; the sidepanel bumps its
-  // own epoch off the resulting `{ isAuthenticated: false }` broadcast/storage
-  // change (see auth-slice).
-  bumpEpoch();
+  // The epoch moves only when the session ENDS — below, on 'ended', never
+  // before the host has answered. A 401 is not yet a verdict: the host may
+  // hold a newer credential for the same session ('refreshed'), and bumping
+  // here then discarded that session's own in-flight writes — an optimistic
+  // case never reconciled, a turn's result dropped — for a session that
+  // carried on (copilot#346 review).
+  //
+  // What the early bump used to fence — writers landing while the host tears
+  // down — belongs to the user being signed out, and the purge that follows
+  // removes it: on 'ended' the session's `authState` goes, the panel hears
+  // it through `subscribeAuthState`, and `signOutLocally` fences (bumps the
+  // epoch, fences the case slot) and purges memory and storage after them.
 
   // A hard 401 means the credential itself is no longer valid. This module used
   // to clear the token keys here. It does not any more, and the change is the
@@ -73,6 +77,12 @@ async function handleAuthError(rejectedBearer: string): Promise<'refreshed' | 'e
     log.info('Host refreshed the credential after a 401; retrying once');
     return 'refreshed';
   }
+
+  // Ended. Fence THIS context's in-flight writers now, before the purge
+  // notification arrives: their continuations must not land for a session the
+  // host has just ended. `signOutLocally` bumps again when it runs; a second
+  // bump is harmless.
+  bumpEpoch();
 
   // Trigger re-authentication flow
   // This will be handled by the UI components

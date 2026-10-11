@@ -99,7 +99,7 @@ function extensionSession(): HostSession {
     accessToken: readSessionAccessToken,
     signOut: async () => {},
     subscribeAuthState: () => () => {},
-    onUnauthorized: () => endSessionOnRejectedCredential(null),
+    onUnauthorized: () => endSessionOnRejectedCredential(null, null),
   };
 }
 
@@ -227,7 +227,8 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     // The client went through the host rather than reaching for the credential.
     expect(reportedToHost).toHaveBeenCalledTimes(1);
     // ...judged against the bearer the rejected request carried (#346).
-    expect(reportedToHost).toHaveBeenCalledWith({ accessToken: 'live-token' });
+    // ...and the user the panel built the request for.
+    expect(reportedToHost).toHaveBeenCalledWith({ accessToken: 'live-token', userId: 'u1' });
 
     // The seam: the shared client cleared nothing itself, and the EXTENSION's
     // real teardown ran — the credential is gone from storage, refresh included,

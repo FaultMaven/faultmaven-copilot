@@ -30,6 +30,8 @@ export class SessionEndedError extends AuthenticationError {
   constructor(
     reason: string,
     readonly judgedAccessToken: string,
+    /** Whose chain it was — `user.user_id` from the credential read; `null` if absent. */
+    readonly judgedUserId: string | null = null,
   ) {
     super(`Session ended: ${reason}`);
   }

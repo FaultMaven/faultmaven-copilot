@@ -54,7 +54,7 @@ describe('readSessionAccessToken', () => {
     await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
     expect(mockClearAllAuthData).toHaveBeenCalledTimes(1);
     // Judged: the teardown is told which credential the verdict was about.
-    expect(mockClearAllAuthData).toHaveBeenCalledWith({ accessToken: 'a-token' });
+    expect(mockClearAllAuthData).toHaveBeenCalledWith({ accessToken: 'a-token', userId: null });
   });
 
   it('answers from the newer session, once, when the teardown stands down (#346)', async () => {
@@ -64,6 +64,16 @@ describe('readSessionAccessToken', () => {
     mockClearAllAuthData.mockResolvedValueOnce('superseded');
 
     expect(await readSessionAccessToken()).toBe('b-token');
+  });
+
+  it("does not retry when ANOTHER user's session replaced the judged one", async () => {
+    // 'replaced': answering from the newer credential would send a request
+    // built for the user whose session ended with someone else's bearer.
+    mockGetValidAccessToken.mockRejectedValue(new SessionEndedError('refresh rejected', 'a-token', 'user-a'));
+    mockClearAllAuthData.mockResolvedValue('replaced');
+
+    await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
+    expect(mockGetValidAccessToken).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry a second verdict — that one is about the newer session', async () => {

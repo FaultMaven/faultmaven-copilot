@@ -9,18 +9,31 @@ import { withSessionWriteLock } from './session-write-lock';
 const log = createLogger('AuthManager');
 
 /**
- * The credential a teardown's verdict was about: the access token a dead chain
- * was read with, or the bearer a 401 rejected (copilot#346).
+ * The credential a teardown's verdict was about (copilot#346): the access token
+ * a dead chain was read with, or the bearer a 401 rejected — and WHOSE it was.
+ *
+ * `userId` is the identity the verdict's caller acts for: the user the dead
+ * chain belonged to (`SessionEndedError.judgedUserId`), or the user the panel
+ * built the rejected request for (the transport's `HostSession.user.id`).
+ * `null` when it is not known, which never counts as the same user.
  */
 export interface JudgedCredential {
   accessToken: string;
+  userId: string | null;
 }
 
 /**
- * `'ended'` — the session was torn down. `'superseded'` — a newer session had
- * replaced the judged credential, and was left alone.
+ * - `'ended'` — the judged session was torn down.
+ * - `'superseded'` — the SAME user's session now holds a newer credential (a
+ *   rotation, or that user signing in again). Left alone, and it continues:
+ *   a caller may answer from it.
+ * - `'replaced'` — a DIFFERENT user's session (or one whose user cannot be
+ *   established) replaced the judged one. Left alone too — but the judged
+ *   session is over, and nothing built for it may be sent with the newer
+ *   credential: a retry would land the old user's request in the new user's
+ *   account.
  */
-export type TeardownOutcome = 'ended' | 'superseded';
+export type TeardownOutcome = 'ended' | 'superseded' | 'replaced';
 
 /** How long a teardown waits for the session-write lock before going without. */
 export const TEARDOWN_LOCK_WAIT_MS = 2_000;
@@ -110,7 +123,7 @@ class AuthManager {
     // join one teardown, but a deliberate sign-out never joins a conditional
     // teardown that may stand down — it would inherit a "superseded" that was
     // never about it. Per-JS-context; the lock below is what is cross-context.
-    const key = judged ? `judged:${judged.accessToken}` : 'unconditional';
+    const key = judged ? `judged:${judged.userId ?? ''}:${judged.accessToken}` : 'unconditional';
     const inFlight = this.teardownsInFlight.get(key);
     if (inFlight) return inFlight;
     const run = this.runTeardownLocked(judged).finally(() => {
@@ -134,8 +147,10 @@ class AuthManager {
    * a dead chain, or a 401 for the bearer a request carried — stands down when
    * the stored access token is no longer that one. A sign-in (or a refresh)
    * replaced it after the verdict was formed, and the verdict is not about the
-   * session that exists now. An unconditional teardown — the user signing out
-   * — removes whatever is there.
+   * session that exists now. It then says WHOSE session that is:
+   * `'superseded'` when the stored row names the judged user, `'replaced'`
+   * otherwise (see `TeardownOutcome`). An unconditional teardown — the user
+   * signing out — removes whatever is there.
    *
    * The wait for the lock is BOUNDED (`TEARDOWN_LOCK_WAIT_MS`): past it, the
    * teardown runs without the lock rather than wait on a holder wedged on a
@@ -149,9 +164,12 @@ class AuthManager {
   private runTeardownLocked(judged?: JudgedCredential): Promise<TeardownOutcome> {
     return withSessionWriteLock(
       async () => {
-        if (judged && (await this.replacedSince(judged))) {
-          log.info('A newer session replaced the credential this teardown was about; standing down');
-          return 'superseded' as const;
+        const standing = judged ? await this.compareWithStored(judged) : 'same';
+        if (standing !== 'same') {
+          log.info('A newer session replaced the credential this teardown was about; standing down', {
+            sameUser: standing === 'superseded',
+          });
+          return standing;
         }
         await this.runTeardown();
         return 'ended' as const;
@@ -160,15 +178,28 @@ class AuthManager {
     );
   }
 
-  /** Is the stored access token a DIFFERENT one from the credential judged? */
-  private async replacedSince(judged: JudgedCredential): Promise<boolean> {
+  /**
+   * Is the judged credential still the stored one — and if not, is the stored
+   * session the same user's?
+   *
+   * Identity is read from the stored `authState` row (the identity row every
+   * sign-in writer and the refresh write together with the credential), falling
+   * back to the `user` credential key. Compared by `user_id` only.
+   */
+  private async compareWithStored(
+    judged: JudgedCredential,
+  ): Promise<'same' | 'superseded' | 'replaced'> {
     try {
-      const stored = await browser.storage.local.get(['access_token']);
+      const stored = await browser.storage.local.get(['access_token', AUTH_STATE_KEY, 'user']);
       const current = stored.access_token;
-      return typeof current === 'string' && current !== judged.accessToken;
+      if (typeof current !== 'string' || current === judged.accessToken) return 'same';
+      const row = stored[AUTH_STATE_KEY] as { user?: { user_id?: unknown } } | undefined;
+      const key = stored.user as { user_id?: unknown } | undefined;
+      const storedUserId = row?.user?.user_id ?? key?.user_id;
+      return judged.userId !== null && storedUserId === judged.userId ? 'superseded' : 'replaced';
     } catch (error) {
       log.warn('Could not compare the stored credential before teardown; tearing down', error);
-      return false;
+      return 'same';
     }
   }
 

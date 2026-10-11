@@ -195,7 +195,7 @@ export function ExtensionApp() {
       // down (copilot#346). This is the same act-site, unconditional for want
       // of the bearer — clearing ALL local auth data, the token keys included,
       // is what stops a stale refresh_token silently re-authenticating.
-      onUnauthorized: () => endSessionOnRejectedCredential(null),
+      onUnauthorized: () => endSessionOnRejectedCredential(null, null),
       // Runtime messaging and the credential key disappearing — both the
       // extension's own transports, both meaning the same thing, and neither
       // named on the other side of the boundary. What crosses is the fact: who

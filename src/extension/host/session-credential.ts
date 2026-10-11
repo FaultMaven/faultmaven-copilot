@@ -58,13 +58,18 @@ async function readOnce(mayRetry: boolean): Promise<string> {
       // retrying" for a session that is not coming back.
       //
       // JUDGED (copilot#346): the verdict is about the credential it was read
-      // with. If a sign-in replaced that credential since, the teardown stands
-      // down — and this request is answered from the session that exists now,
-      // once. A second verdict is not retried: that one is about the new
-      // session, and it surfaces.
+      // with, and the user it belonged to. If that user's session now holds a
+      // newer credential ('superseded'), this request is answered from it,
+      // once. If ANOTHER user's session replaced it ('replaced'), it is left
+      // alone and the verdict surfaces: the request was built for the user
+      // whose session ended, and sent with the new credential it would land in
+      // the new user's account. A second verdict is not retried either.
       let outcome: TeardownOutcome = 'ended';
       try {
-        outcome = await authManager.clearAllAuthData({ accessToken: error.judgedAccessToken });
+        outcome = await authManager.clearAllAuthData({
+          accessToken: error.judgedAccessToken,
+          userId: error.judgedUserId,
+        });
       } catch (teardownError) {
         log.error('Teardown after a session verdict failed', teardownError);
       }
@@ -78,20 +83,32 @@ async function readOnce(mayRetry: boolean): Promise<string> {
  * The extension's answer to a 401 on a request that carried a credential
  * (`ApiTransport.onUnauthorized`).
  *
- * A teardown, JUDGED against the bearer the rejected request carried
- * (copilot#346): a 401 arrives a round trip after the token was read, and a
- * sign-in in that window has already replaced it. Then the verdict is about a
- * session that is gone, the teardown stands down, and the answer is
- * `'refreshed'` — the host holds a newer credential, and the client retries the
- * request once with it. Otherwise the session is over: `'ended'`.
+ * A teardown, JUDGED against the bearer the rejected request carried and the
+ * user the panel built that request for (copilot#346). A 401 arrives a round
+ * trip after the token was read, and the stored credential may have changed in
+ * that window:
  *
- * `null` — a rejection whose bearer the caller cannot name
+ * - the SAME user's session holds a newer one (a rotation, a re-sign-in): the
+ *   teardown stands down and the answer is `'refreshed'`, so the client
+ *   retries the request once with it. `'refreshed'` means exactly this — the
+ *   same session continuing with a newer credential;
+ * - ANOTHER user's session replaced it: the teardown stands down, but the
+ *   answer is `'ended'`. Retrying would replay a request built for the first
+ *   user — a turn, a `POST /cases` — with the second user's bearer, into the
+ *   second user's account. The panel learns of the new identity from the
+ *   sign-in itself;
+ * - otherwise the judged session is torn down: `'ended'`.
+ *
+ * `rejectedBearer === null` — a rejection whose bearer the caller cannot name
  * (`HostSession.onUnauthorized()`, which takes none) — tears down
  * unconditionally, as every rejection did before.
  */
-export async function endSessionOnRejectedCredential(rejectedBearer: string | null): Promise<AuthOutcome> {
+export async function endSessionOnRejectedCredential(
+  rejectedBearer: string | null,
+  requestUserId: string | null,
+): Promise<AuthOutcome> {
   const outcome = await authManager.clearAllAuthData(
-    rejectedBearer ? { accessToken: rejectedBearer } : undefined,
+    rejectedBearer ? { accessToken: rejectedBearer, userId: requestUserId } : undefined,
   );
   return outcome === 'superseded' ? 'refreshed' : 'ended';
 }

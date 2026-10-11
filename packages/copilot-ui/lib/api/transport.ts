@@ -52,10 +52,14 @@ export interface ApiTransport {
    * The API rejected our credential. The host decides what that means, and
    * SAYS which it decided.
    *
-   *   'refreshed'  the host renewed the credential and the session continues.
-   *                The client retries the request once with a fresh bearer and
-   *                the user sees nothing.
-   *   'ended'      the session is over. The client surfaces it.
+   *   'refreshed'  the SAME session continues — same user — with a newer
+   *                credential. The client retries the request once with it and
+   *                the user sees nothing, and the session epoch does not move.
+   *                Never answer it for a credential that belongs to someone
+   *                else: the retry replays a request built for the rejected
+   *                session (a turn, a `POST /cases`) into that account.
+   *   'ended'      the session is over. The client fences this context's
+   *                in-flight writers (moves the epoch) and surfaces it.
    *
    * The answer is load-bearing. Without it the client threw
    * `AuthenticationError` after the callback regardless, so a host that
