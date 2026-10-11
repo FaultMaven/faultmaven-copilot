@@ -6,14 +6,16 @@
  * in one case is sent to another. Three changes are the SAME case:
  *
  * - an optimistic `opt_case_*` id reconciled to its real id (`idMappingManager`);
- * - a new-case draft (`null`) becoming the case its own send created: the
- *   question path makes an optimistic case, the upload path a real one;
- * - that optimistic case rolled back to `null` when its creation failed.
+ * - a new-case draft (`null`) becoming the lazy case its own send claimed
+ *   (`claimLazyCase`: both send paths claim a fresh optimistic id when their
+ *   create starts, #338);
+ * - that claim rolled back to `null` when its create failed (`abandonLazyCase`).
  *
- * The last two happen only while the composer's own submission is in flight,
- * which is how they are told apart from the user opening a case from a draft
- * or starting a new one. A move from one real case to another is never the
- * composer's doing, in flight or not.
+ * `ownClaims` holds the ids the composer's own sends claimed. A move to a case
+ * none of them claimed, such as the user opening case B while the draft's
+ * create is in flight, is another case: the input refused there (#318) belongs
+ * to the draft, not to B. A move from one real case to another is never the
+ * composer's doing.
  */
 import { idMappingManager } from '../optimistic';
 import { isOptimisticId } from '../utils/data-integrity';
@@ -21,12 +23,13 @@ import { isOptimisticId } from '../utils/data-integrity';
 export function isSameComposerCase(
   prev: string | null,
   next: string | null,
-  ownSubmissionInFlight: boolean,
+  ownClaims: ReadonlySet<string>,
 ): boolean {
   if (prev === next) return true;
-  if (prev !== null && isOptimisticId(prev)) {
-    if (next !== null && idMappingManager.getRealId(prev) === next) return true;
-    if (next === null && ownSubmissionInFlight) return true;
+  if (prev === null) return next !== null && ownClaims.has(next);
+  if (isOptimisticId(prev)) {
+    if (next === null) return ownClaims.has(prev);
+    return idMappingManager.getRealId(prev) === next;
   }
-  return prev === null && ownSubmissionInFlight;
+  return false;
 }

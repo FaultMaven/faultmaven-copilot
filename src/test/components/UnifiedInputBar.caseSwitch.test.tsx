@@ -10,6 +10,7 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { idMappingManager } from '@faultmaven/copilot-ui/lib/optimistic';
+import { claimLazyCase } from '@faultmaven/copilot-ui/lib/state/lazy-case';
 import { createStubHost, hostWrapper } from '../support/host';
 
 vi.mock('wxt/browser', () => ({
@@ -103,16 +104,31 @@ describe('UnifiedInputBar — staged input belongs to a case (#339)', () => {
     expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
   });
 
-  it('a draft whose own send creates the case and is refused keeps its input (#318)', async () => {
+  /**
+   * A send whose hook claims a lazy case (#338: both hooks do, at create start)
+   * and then waits. `claimed()` is the optimistic id that send claimed.
+   */
+  function claimingSend() {
     let settle!: (v: unknown) => void;
-    const turn = vi.fn().mockReturnValue(new Promise((r) => { settle = r; }));
-    const { switchTo } = mount(null, { turn });
+    let id: string | null = null;
+    const handler = vi.fn(() => {
+      id = claimLazyCase();
+      return new Promise((r) => { settle = r; });
+    });
+    return { handler, settle: (v: unknown) => settle(v), claimed: () => id! };
+  }
+
+  it('a draft whose own send creates the case and is refused keeps its input (#318)', async () => {
+    const turn = claimingSend();
+    const { switchTo } = mount(null, { turn: turn.handler });
     await stageEverything();
     send();
-    await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
-    // The upload hook creates the case and makes it active while the turn is in flight.
+    await waitFor(() => expect(turn.handler).toHaveBeenCalledTimes(1));
+    // The upload hook claims an optimistic case, then reconciles it to the real one.
+    switchTo(turn.claimed());
+    idMappingManager.addMapping(turn.claimed(), 'case-new');
     switchTo('case-new');
-    settle({ success: false, message: 'closed', sent: true, refused: true });
+    turn.settle({ success: false, message: 'closed', sent: true, refused: true });
     await waitFor(() => expect(screen.getByRole('button', { name: /send/i })).not.toBeDisabled());
     expect(box()).toHaveValue('why?');
     expect(screen.getByText('app.log')).toBeInTheDocument();
@@ -120,15 +136,54 @@ describe('UnifiedInputBar — staged input belongs to a case (#339)', () => {
   });
 
   it('a draft question whose case-create failed and rolled back gets its text back', async () => {
-    let settle!: (v: unknown) => void;
-    const query = vi.fn().mockReturnValue(new Promise((r) => { settle = r; }));
-    const { switchTo } = mount(null, { query });
+    const query = claimingSend();
+    const { switchTo } = mount(null, { query: query.handler });
     fireEvent.change(box(), { target: { value: 'why is it down?' } });
     fireEvent.keyDown(box(), { key: 'Enter', shiftKey: false });
-    switchTo('opt_case_9');
+    switchTo(query.claimed());
     switchTo(null);
-    settle({ sent: false });
+    query.settle({ sent: false });
     await waitFor(() => expect(box()).toHaveValue('why is it down?'));
+  });
+
+  describe('the user opens another case while a new chat’s own send is in flight', () => {
+    it('a refused upload does not leave its input in that case', async () => {
+      const turn = claimingSend();
+      const { switchTo } = mount(null, { turn: turn.handler });
+      await stageEverything();
+      send();
+      await waitFor(() => expect(turn.handler).toHaveBeenCalledTimes(1));
+      // The user opens case B from the sidebar; the create no longer pulls them back (#338).
+      switchTo('case-b');
+      turn.settle({ success: false, message: 'closed', sent: true, refused: true });
+      // Settled: the box re-enables (Send stays disabled, with nothing to send).
+      await waitFor(() => expect(box()).not.toBeDisabled());
+      expect(box()).toHaveValue('');
+      expect(screen.queryByText('app.log')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pasted context/)).not.toBeInTheDocument();
+    });
+
+    it('an unsent question is not put back into that case', async () => {
+      const query = claimingSend();
+      const { switchTo } = mount(null, { query: query.handler });
+      fireEvent.change(box(), { target: { value: 'X' } });
+      fireEvent.keyDown(box(), { key: 'Enter', shiftKey: false });
+      switchTo('case-b');
+      query.settle({ sent: false });
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      expect(box()).toHaveValue('');
+    });
+
+    it('nor is an optimistic case the composer did not claim its own', async () => {
+      const query = claimingSend();
+      const { switchTo } = mount(null, { query: query.handler });
+      fireEvent.change(box(), { target: { value: 'X' } });
+      fireEvent.keyDown(box(), { key: 'Enter', shiftKey: false });
+      switchTo('opt_case_someone_else');
+      query.settle({ sent: false });
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      expect(box()).toHaveValue('');
+    });
   });
 
   it('a question not sent from case A is not put back into case B', async () => {

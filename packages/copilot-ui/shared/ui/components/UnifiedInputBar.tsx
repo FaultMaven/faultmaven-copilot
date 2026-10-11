@@ -30,6 +30,7 @@ import {
   stripBlankEdgeLines,
 } from '../../../lib/utils/pasted-data';
 import { isSameComposerCase } from '../../../lib/state/composer-case';
+import { onLazyCaseClaimed } from '../../../lib/state/lazy-case';
 import { PasteDataScratchpad } from './PasteDataScratchpad';
 
 const log = createLogger('UnifiedInputBar');
@@ -215,8 +216,12 @@ export function UnifiedInputBar({
   const pendingCaretRef = useRef<number | null>(null);
   /** The case the staged input belongs to. */
   const composerCaseRef = useRef<string | null>(caseId);
-  /** Sends from this composer still awaiting their outcome. */
-  const ownSubmissionsRef = useRef(0);
+  /**
+   * The lazy cases this composer's own sends claimed (`claimLazyCase`). Only
+   * these, not "a send is in flight", make a draft's move to a new case the
+   * same case: a case the user opened meanwhile was claimed by no send.
+   */
+  const ownClaimsRef = useRef<Set<string>>(new Set());
   /** Moves on every reset, so an outcome that lands after one restores nothing. */
   const resetGenerationRef = useRef(0);
 
@@ -280,22 +285,32 @@ export function UnifiedInputBar({
 
   // Staged input belongs to a case (#339): opening another case resets the
   // composer, so nothing typed or staged for one case is sent to another. An
-  // optimistic id reconciled to its real id, and the case this composer's own
-  // send created, are the same case: the input a refused turn kept (#318)
+  // optimistic id reconciled to its real id, and the lazy case this composer's
+  // own send claimed, are the same case: the input a refused turn kept (#318)
   // stays. The typed text is cleared, not kept per case: a draft kept for a
   // case would come back with whatever was staged beside it (files cannot be
   // persisted), and the text the user is reading must be the one that is sent.
   useEffect(() => {
     const prev = composerCaseRef.current;
     composerCaseRef.current = caseId;
-    if (isSameComposerCase(prev, caseId, ownSubmissionsRef.current > 0)) return;
+    if (isSameComposerCase(prev, caseId, ownClaimsRef.current)) return;
     resetGenerationRef.current += 1;
+    ownClaimsRef.current = new Set();
     clearAllStagedState();
     setValidationError(null);
     log.debug('Composer reset for another case', { hadCase: prev !== null, hasCase: caseId !== null });
     // clearAllStagedState only calls state setters, which are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
+
+  /**
+   * Record the lazy case this send claims, if it creates one. The listener is
+   * live only while the send is in flight; a panel has one composer, and only
+   * a send claims a lazy case. Returns the stop.
+   */
+  const listenForOwnClaims = () => onLazyCaseClaimed((optimisticId) => {
+    ownClaimsRef.current.add(optimisticId);
+  });
 
   // Unified submit handler
   const handleSubmit = async () => {
@@ -354,7 +369,7 @@ export function UnifiedInputBar({
     if (hasQuery && !hasAnyAttachment) {
       setValidationError(null);
       const generation = resetGenerationRef.current;
-      ownSubmissionsRef.current += 1;
+      const stopListening = listenForOwnClaims();
       const pending = onQuerySubmit(query);
       setInput("");
       // Restore the text if the submission never reached the server, unless the
@@ -367,7 +382,7 @@ export function UnifiedInputBar({
           }
         })
         .catch((error) => log.error('Query submission rejected', error))
-        .finally(() => { ownSubmissionsRef.current -= 1; });
+        .finally(stopListening);
       return;
     }
 
@@ -408,7 +423,7 @@ export function UnifiedInputBar({
     // staged input: the user was told what was not sent and sends it again
     // without re-picking.
     let keepStaged = false;
-    ownSubmissionsRef.current += 1;
+    const stopListening = listenForOwnClaims();
     try {
       const result = await onTurnSubmit(payload);
       if (result.success) {
@@ -427,7 +442,7 @@ export function UnifiedInputBar({
       // Unknown whether it was sent: never discard the user's input.
       keepStaged = true;
     } finally {
-      ownSubmissionsRef.current -= 1;
+      stopListening();
       setIsUploadingData(false);
       if (!keepStaged) {
         // Clear file/page state to prevent stuck UI

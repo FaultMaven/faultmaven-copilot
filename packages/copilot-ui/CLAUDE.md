@@ -163,7 +163,15 @@ active id when it starts, and its completion reconciles the id everywhere but
 moves the active pointer and row to the real case (or rolls a failure back) only
 while the active case is still THAT id. A user who opened another case, or
 another new chat, meanwhile stays there; the new case reaches the sidebar
-through `reloadDrivenCaseList` whether or not its turn commits. Both submit paths resolve a stale
+through `reloadDrivenCaseList` whether or not its turn commits. The composer's
+typed and staged input belongs to a case (#339): `UnifiedInputBar` resets when
+another case opens, except where `isSameComposerCase`
+(`lib/state/composer-case.ts`) says it is the same case: an optimistic id
+reconciled to its real id, or the lazy case its OWN send claimed (heard through
+`onLazyCaseClaimed` while that send is in flight), or that claim rolled back.
+Never widen this to "a send is in flight": the user can open another case
+meanwhile, and input a refused turn kept (#318) would follow them there.
+Both submit paths resolve a stale
 `opt_case_*` (via the mapping, or a fresh real case) before POSTing a turn. Only
 **case** ids are swapped; a message keeps its `opt_msg_*` id until the delta
 fetch reconciles it (below), or until its turn's response finds the server's
