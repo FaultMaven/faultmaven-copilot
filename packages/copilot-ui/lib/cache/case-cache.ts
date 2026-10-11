@@ -11,8 +11,8 @@ interface CachedCaseList {
      * When this page was FETCHED from the server — not when the slot was last
      * written. The TTL runs from here: it bounds how long the page can hide a
      * change the user did not make (a case reassigned to or away from them,
-     * fm#1898). A local edit of a row (a rename, a generated title, a created
-     * case) keeps it; only `setCachedCases`, a fresh page, moves it (#325).
+     * fm#1898). A local edit of a row (a rename, a generated title) keeps it;
+     * only `setCachedCases`, a fresh page, moves it (#325).
      */
     timestamp: number;
     version: number;
@@ -56,6 +56,32 @@ export class CaseCacheManager {
      */
     private generation = 0;
 
+    /**
+     * Every storage operation on the slot runs here, one at a time, in the
+     * order it was asked for (#330). A local edit is a read and then a write,
+     * with an await between them; run unserialized, a fresh page could land
+     * in that gap and the edit would write the older page back over it. In
+     * the queue the edit's read and write are adjacent: a page that arrives
+     * meanwhile is written after the edit, and an edit asked for after a page
+     * applies to that page. A removal is queued too, so it cannot overtake a
+     * write that passed its generation check and is still landing.
+     *
+     * Per JS context, like `generation`: it orders the writers of one panel.
+     * Two contexts sharing one store (two extension windows) are not ordered
+     * against each other; each still bounds the other's staleness by the TTL.
+     *
+     * Never enter the queue from inside a queued operation — it would wait on
+     * itself. `readSlot` discards through `discardSlot`, not `invalidateCache`,
+     * for that reason.
+     */
+    private queue: Promise<unknown> = Promise.resolve();
+
+    private serialized<T>(op: () => Promise<T>): Promise<T> {
+        const run = this.queue.then(op);
+        this.queue = run.catch(() => undefined);
+        return run;
+    }
+
     /** The generation a writer captures at its start, to hand to `setCachedCases`. */
     currentGeneration(): number {
         return this.generation;
@@ -66,7 +92,7 @@ export class CaseCacheManager {
      */
     async getCachedCases(): Promise<UserCase[] | null> {
         try {
-            const cache = await this.readSlot();
+            const cache = await this.serialized(() => this.readSlot());
             return cache ? cache.cases : null;
         } catch (error) {
             log.warn('Failed to read cache:', error);
@@ -81,12 +107,12 @@ export class CaseCacheManager {
      * is dropped. A local edit of the cached page goes through `editSlot`.
      */
     async setCachedCases(cases: UserCase[], generation: number): Promise<void> {
-        await this.writeSlot(cases, Date.now(), generation);
+        await this.serialized(() => this.writeSlot(cases, Date.now(), generation));
     }
 
     /**
      * The slot if it is readable and within its TTL, else null (discarding a
-     * slot that is neither). Throws what storage throws.
+     * slot that is neither). Throws what storage throws. Runs inside the queue.
      */
     private async readSlot(): Promise<CachedCaseList | null> {
         const stored = await ownedStorage.get([CACHE_KEY]);
@@ -104,7 +130,7 @@ export class CaseCacheManager {
                 cachedVersion: cache.version,
                 currentVersion: CASE_CACHE_VERSION
             });
-            await this.invalidateCache();
+            await this.discardSlot();
             return null;
         }
 
@@ -112,7 +138,7 @@ export class CaseCacheManager {
         if (now - cache.timestamp > CACHE_TTL_MS) {
             log.debug('Cache miss: Expired', { age: now - cache.timestamp });
             // Clean up expired cache
-            await this.invalidateCache();
+            await this.discardSlot();
             return null;
         }
 
@@ -150,26 +176,41 @@ export class CaseCacheManager {
      * to null for no change. The page keeps its fetch time — an edit changes a
      * row the user already knows about, and restarting the TTL for the whole
      * page would keep serving its membership, which only the server can
-     * refresh (#325). The generation is captured before the read, so an edit
-     * that straddles an invalidation writes nothing.
+     * refresh (#325). The generation is captured when the edit is asked for,
+     * so an edit queued or reading across an invalidation writes nothing; the
+     * read and the write run as one queued operation, so no other write lands
+     * between them (#330).
      */
     private async editSlot(edit: (cases: UserCase[]) => UserCase[] | null): Promise<boolean> {
         const generation = this.generation;
-        const cache = await this.readSlot();
-        if (!cache) return false; // Nothing to edit: the next fetch reads the server
-        const cases = edit(cache.cases);
-        if (!cases) return false;
-        await this.writeSlot(cases, cache.timestamp, generation);
-        return true;
+        return this.serialized(async () => {
+            const cache = await this.readSlot();
+            if (!cache) return false; // Nothing to edit: the next fetch reads the server
+            const cases = edit(cache.cases);
+            if (!cases) return false;
+            await this.writeSlot(cases, cache.timestamp, generation);
+            return true;
+        });
     }
 
     /**
      * Invalidate/Clear cache
      */
     async invalidateCache(): Promise<void> {
-        // Before the await: a write that starts or lands while the removal is
-        // pending already belongs to the old generation.
+        // Before the queue: a write asked for earlier and still queued, or one
+        // that starts while the removal is pending, already belongs to the old
+        // generation and is refused when its turn comes.
         this.generation++;
+        await this.serialized(() => this.removeSlot());
+    }
+
+    /** `invalidateCache` from inside the queue, which must not wait on itself. */
+    private async discardSlot(): Promise<void> {
+        this.generation++;
+        await this.removeSlot();
+    }
+
+    private async removeSlot(): Promise<void> {
         try {
             await ownedStorage.remove([CACHE_KEY]);
             log.debug('Cache invalidated');
@@ -194,21 +235,6 @@ export class CaseCacheManager {
             if (updated) log.debug('Optimistic cache update', { caseId, changes });
         } catch (error) {
             log.warn('Failed to optimistically update cache:', error);
-        }
-    }
-
-    /**
-     * Add a new case to the cache optimistically. A local edit: the page keeps
-     * its fetch time. If there is no cache, nothing is added (the next fetch
-     * gets it).
-     */
-    async addOptimisticCase(newCase: UserCase): Promise<void> {
-        try {
-            // Add to beginning of list
-            const added = await this.editSlot(cases => [newCase, ...cases]);
-            if (added) log.debug('Optimistic cache add', { caseId: newCase.case_id });
-        } catch (error) {
-            log.warn('Failed to optimistically add to cache:', error);
         }
     }
 }

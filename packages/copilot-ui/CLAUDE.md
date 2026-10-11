@@ -335,9 +335,13 @@ close, reports); delete is the creator's.
   in flight across an invalidation cannot refill the slot with its older page.
   The slot's `timestamp` is when its page was **fetched**, and the 5-minute
   TTL runs from it: only `setCachedCases` (a fresh page) stamps now; a local
-  edit (`updateOptimisticCase` for a rename or generated title,
-  `addOptimisticCase`) keeps it, so editing rows never extends how long the
-  page's membership is served (#325).
+  edit (`updateOptimisticCase`, for a rename or a generated title) keeps it,
+  so editing rows never extends how long the page's membership is served
+  (#325). Every operation on the slot runs through one in-manager queue, so an
+  edit's read and write are adjacent and a fresh page cannot land between
+  them (#330); never enter the queue from inside it. `createCase` only
+  invalidates: an optimistic add could only duplicate the row on a page
+  fetched since.
 - **Rows**: every row came from `access=write` (or its slot), so the user
   drives it: no "Shared" mark, rename and title generation always offered;
   delete only where `isCreatedBy(row, viewer)`.
