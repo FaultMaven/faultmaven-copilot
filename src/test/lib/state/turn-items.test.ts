@@ -212,6 +212,44 @@ describe('suggestionFromResponse', () => {
       .toEqual(confirm);
   });
 
+  // #328 (contract 13.3.0): an EVIDENCE that carries `prefill` opens the data
+  // box. The field is what marks it, so narrowing must keep it, and keep an
+  // empty string as the string it is: "" means "open the box empty", which is
+  // not the same as no prefill at all.
+  it('keeps prefill, an empty one included, and the body beside it', () => {
+    const resubmit = suggestionFromResponse({
+      label: 'Not exactly, let me re-submit',
+      type: 'EVIDENCE',
+      body: 'Correct it, then send it as data (pasted or attached).',
+      prefill: '  key: value\nERROR pool exhausted',
+    });
+    expect(resubmit.prefill).toBe('  key: value\nERROR pool exhausted');
+    expect(resubmit.body).toBe('Correct it, then send it as data (pasted or attached).');
+
+    const submit = suggestionFromResponse({
+      label: 'Submit the output',
+      type: 'EVIDENCE',
+      body: 'Send it as data (pasted or attached): the output of `kubectl get pods`.',
+      prefill: '',
+    });
+    expect(submit.prefill).toBe('');
+    expect(submit.body).toBe('Send it as data (pasted or attached): the output of `kubectl get pods`.');
+
+    expect(suggestionFromResponse({ label: 'x', type: 'EVIDENCE', prefill: null }).prefill).toBeUndefined();
+    expect(suggestionFromResponse({ label: 'x', type: 'EVIDENCE' }).prefill).toBeUndefined();
+  });
+
+  // The save choice names its offer; the server refuses a click naming none.
+  it("keeps a save_chat_data intent's offer_id", () => {
+    const save = { type: 'save_chat_data', offer_id: 'cdo_3f9a1c2b7d4e' };
+    expect(suggestionFromResponse({
+      label: 'Yes, save it as data',
+      type: 'DECIDE',
+      payload: 'Save that output as data.',
+      intent: save,
+    }).intent).toEqual(save);
+  });
+
   it('drops an intent with no usable type, which the request could not name', () => {
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { file_id: 'f' } }).intent).toBeUndefined();
     expect(suggestionFromResponse({ label: 'x', type: 'DECIDE', intent: { type: 3 } }).intent).toBeUndefined();

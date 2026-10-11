@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { ChatWindow } from './ChatWindow';
-import { UnifiedInputBar, TurnPayload, TurnSubmitResult, QuerySubmitResult } from './UnifiedInputBar';
+import {
+  UnifiedInputBar,
+  TurnPayload,
+  TurnSubmitResult,
+  QuerySubmitResult,
+  type ComposerHandle,
+} from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
 import { UserCase, TurnIntent } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
@@ -59,6 +65,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // Check if interaction is allowed — terminal cases allow text Q&A but not evidence
   const isTerminal = !!activeCase && (activeCase.state === 'resolved' || activeCase.state === 'closed');
   const canInteract = (!!activeCase || hasUnsavedNewChat);
+
+  // A data-box action in the transcript opens the composer's data box (#328).
+  // Read through the ref at click time: ChatWindow's memo ignores callbacks.
+  const composerRef = useRef<ComposerHandle>(null);
+  const openDataBox = useCallback((prefill: string, hint: string | undefined) => {
+    composerRef.current?.openDataBox(prefill, hint);
+  }, []);
+  // Where the composer takes no data, the action is not offered at all; while
+  // it is busy (a turn or a capture in flight), it is offered disabled.
+  const composerTakesData = !readOnly && !isTerminal;
+  const [composerBusy, setComposerBusy] = useState(false);
 
   // Empty state — dark themed
   if (!activeCaseId && !hasUnsavedNewChat) {
@@ -134,6 +151,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           loading={loading}
           sessionId={sessionId}
           onQuerySubmit={onQuerySubmit}
+          onOpenDataBox={composerTakesData ? openDataBox : undefined}
+          dataBoxBusy={composerBusy}
           onDocumentView={onDocumentView}
           setActiveCase={setActiveCase}
           readOnly={readOnly}
@@ -154,6 +173,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )}
       {!readOnly && (
       <UnifiedInputBar
+        ref={composerRef}
+        onBusyChange={setComposerBusy}
         // What is typed or staged belongs to this case (#339).
         caseId={activeCaseId ?? null}
         onQuerySubmit={onQuerySubmit}

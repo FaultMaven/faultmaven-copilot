@@ -18,14 +18,18 @@
  * What the user types is a message, never data (#327): only the textpad, a file
  * or a captured page is. A multi-line paste EVENT into the box goes to the
  * textpad and leaves the typed words in place; one action puts it back.
+ *
+ * The transcript's data-box action (#328) opens the textpad through
+ * `ComposerHandle.openDataBox`: the user corrects what it holds and sends it.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle } from 'react';
 import { useHost } from '../../host';
 import { createLogger } from '../../../lib/utils/logger';
 import {
   appendBlock,
   countLines,
+  holdsBlock,
   normalizeLineBreaks,
   stripBlankEdgeLines,
 } from '../../../lib/utils/pasted-data';
@@ -76,7 +80,35 @@ export interface TurnPayload {
   sourceUrl?: string;
 }
 
+/**
+ * What the composer's parent may ask of it. One action, so the transcript can
+ * reach the data box without the composer's state leaving the composer.
+ */
+export interface ComposerHandle {
+  /**
+   * Open the textpad (Paste data) holding `prefill`, for the user to correct
+   * and send as data; `hint` is its placeholder while it is empty. The data-box
+   * action of a chat-data offer (#328, contract 13.3.0). Sends nothing.
+   *
+   * Nothing staged is dropped: `prefill` is added after what the textpad
+   * already holds (as a multi-line paste is), unless it already holds it as
+   * whole lines; a staged file stays and goes with it. A no-op exactly when the
+   * Paste button is disabled: no data taken (disabled, a closed case) or the
+   * composer busy (`onBusyChange`).
+   */
+  openDataBox: (prefill: string, hint?: string) => void;
+}
+
 export interface UnifiedInputBarProps {
+  /** The handle a parent opens the data box through (#328). */
+  ref?: React.Ref<ComposerHandle>;
+  /**
+   * Told whenever the composer starts or stops being busy (a turn being sent,
+   * a page being captured), and once on mount. The data box cannot open while
+   * it is, so the transcript shows its data-box action disabled (#328).
+   */
+  onBusyChange?: (busy: boolean) => void;
+
   // State
   disabled?: boolean;
   disableAttachments?: boolean;
@@ -186,6 +218,8 @@ export function UnifiedInputBar({
   maxLength = INPUT_LIMITS.MAX_QUERY_LENGTH,
   placeholder = "Ask a question or paste data...",
   caseId = null,
+  ref,
+  onBusyChange,
 }: UnifiedInputBarProps) {
   // Input state
   const [input, setInput] = useState("");
@@ -206,7 +240,25 @@ export function UnifiedInputBar({
   const [showPasteScratchpad, setShowPasteScratchpad] = useState(false);
   // The open textpad's text. It is staged on Done, and Send carries it too.
   const [pasteDraft, setPasteDraft] = useState("");
+  /** The open textpad's placeholder when a data-box action opened it; else its own. */
+  const [textpadHint, setTextpadHint] = useState<string | null>(null);
   const [pasteUndo, setPasteUndo] = useState<PasteUndo | null>(null);
+  /** Moves when an offer asks for the textpad, so an open one takes focus. */
+  const [textpadFocusSignal, setTextpadFocusSignal] = useState(0);
+
+  // One busy predicate for everything that stages data. A turn in flight still
+  // holds the paste it is sending, and its landing clears the composer: data
+  // put in the textpad meanwhile would be lost without a word.
+  const isBusy = loading || submitting || isCapturingPage || isUploadingData;
+  const isProcessing = disabled || isBusy;
+  /** The Paste button and the data-box action open the textpad exactly when this holds. */
+  const canOpenTextpad = !isProcessing && !disableAttachments;
+
+  useEffect(() => {
+    onBusyChange?.(isBusy);
+    // Reports a change of state; the callback's identity is not one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBusy]);
 
   // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -277,6 +329,7 @@ export function UnifiedInputBar({
     setStagedPastedContent("");
     setShowPasteScratchpad(false);
     setPasteDraft("");
+    setTextpadHint(null);
     setPasteUndo(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -597,8 +650,31 @@ export function UnifiedInputBar({
 
   const openTextpad = () => {
     setPasteDraft(stagedPastedContent);
+    setTextpadHint(null);
     setShowPasteScratchpad(true);
   };
+
+  // The data-box action (#328). The textpad opens holding what it held, staged
+  // or open, with `prefill` after it: an offer never replaces data the user
+  // put there. A second click on the same offer adds nothing. A staged file
+  // stays; a captured page stays until Done chooses the paste (Send asks).
+  useImperativeHandle(ref, () => ({
+    openDataBox: (prefill: string, hint?: string) => {
+      if (!canOpenTextpad) {
+        log.debug('Data box not opened: the composer cannot take data now', { disabled, disableAttachments, isBusy });
+        return;
+      }
+      const held = showPasteScratchpad ? pasteDraft : stagedPastedContent;
+      const data = stripBlankEdgeLines(prefill);
+      const next = holdsBlock(held, data) ? held : appendBlock(held, data);
+      setPasteDraft(next);
+      setTextpadHint(hint ?? null);
+      setShowPasteScratchpad(true);
+      // A textpad already open keeps its place but takes focus; a new one focuses on mount.
+      setTextpadFocusSignal((n) => n + 1);
+      log.debug('Data box opened from an offer', { prefillLines: countLines(data), held: held !== '' });
+    },
+  }));
 
   // Closing from the Paste button stages what the textpad holds, like its own
   // close button and Escape, so a paste that landed there is not dropped.
@@ -761,8 +837,7 @@ export function UnifiedInputBar({
 
   // Derived state
   const hasAnyAttachment = selectedFile !== null || capturedPageUrl !== null || stagedPastedContent.length > 0;
-  const isProcessing = disabled || loading || submitting || isCapturingPage || isUploadingData;
-  const isInputDisabled = disabled || loading || submitting || isCapturingPage || isUploadingData;
+  const isInputDisabled = isProcessing;
   const hasOpenDraft = showPasteScratchpad && pasteDraft.trim().length > 0;
   const canSubmit = (input.trim() || hasAnyAttachment || hasOpenDraft) && !isProcessing;
 
@@ -915,6 +990,8 @@ export function UnifiedInputBar({
           onStage={stagePastedData}
           onClear={() => setStagedPastedContent("")}
           onClose={() => setShowPasteScratchpad(false)}
+          hint={textpadHint ?? undefined}
+          focusSignal={textpadFocusSignal}
         />
       )}
 
@@ -977,7 +1054,7 @@ export function UnifiedInputBar({
           <button
             type="button"
             onClick={showPasteScratchpad ? closeTextpad : openTextpad}
-            disabled={isProcessing || disableAttachments}
+            disabled={!canOpenTextpad}
             className={`p-1.5 rounded transition-colors disabled:opacity-50 ${showPasteScratchpad || stagedPastedContent
               ? 'text-fm-accent bg-fm-accent-soft'
               : 'text-fm-text-tertiary hover:text-fm-text-primary'

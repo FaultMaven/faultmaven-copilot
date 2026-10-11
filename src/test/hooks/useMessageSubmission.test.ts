@@ -255,6 +255,31 @@ describe('useMessageSubmission', () => {
     });
   });
 
+  // #328 (contract 13.3.0): "Yes, save it as data" names the chat-data offer it
+  // answers. The server admits the save only when `offer_id` names an offer of
+  // the case (a 422 otherwise), so the click must carry it unchanged.
+  it("sends a save_chat_data card's offer_id with its intent", async () => {
+    const { result } = render();
+    const save = { type: 'save_chat_data', offer_id: 'cdo_3f9a1c2b7d4e' };
+
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Saved the output as data.',
+      turn_number: 4,
+      milestones_completed: [],
+      case_state: 'investigating',
+      progress_made: true,
+    });
+
+    await act(async () => {
+      await result.current.handleQuerySubmit('Save that output as data.', save);
+    });
+
+    const request = (api.submitTurn as any).mock.calls[0][1];
+    expect(request.query).toBe('Save that output as data.');
+    expect(request.intentType).toBe('save_chat_data');
+    expect(request.intentData).toEqual({ type: 'save_chat_data', offer_id: 'cdo_3f9a1c2b7d4e' });
+  });
+
   // The KB pre-fetch's citations arrive on TurnResponse.sources; until they were
   // copied onto the item, InlineSourcesRenderer's citation path never ran.
   it('carries TurnResponse.sources onto the assistant item', async () => {

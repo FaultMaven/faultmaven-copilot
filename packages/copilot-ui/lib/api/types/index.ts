@@ -389,7 +389,10 @@ export interface EvidenceProvided {
 // Suggestion type system — the type IS the agent's intent, and encoding
 // follows from it: DECIDE (clickable — click sends payload as the user's
 // message), RUN (clickable — click copies payload command to clipboard),
-// EVIDENCE / FREE_SPEECH (informational, never clickable).
+// EVIDENCE / FREE_SPEECH (informational, never clickable). The one exception is
+// an EVIDENCE carrying `prefill` (contract 13.3.0, #328): a click opens the
+// composer's data box holding it and sends nothing (`opensDataBox`,
+// `lib/state/turn-items`).
 //
 // The contract types `SuggestedActionResponse.type` as a bare string, so a
 // value this build does not know is narrowed to UNRECOGNIZED by
@@ -415,6 +418,14 @@ export interface SuggestedAction {
   hints?: string[];
   /** Sent with the payload when a DECIDE is clicked, verbatim; see `SuggestionIntent`. */
   intent?: SuggestionIntent;
+  /**
+   * EVIDENCE only (contract 13.3.0, faultmaven#1930): the text the composer's
+   * data box opens holding, for the user to correct and send as data. PRESENT
+   * is what makes the action the data-box action, so `""` is meaningful: open
+   * the box empty, `body` naming the output asked for. Absent means an ordinary
+   * informational EVIDENCE.
+   */
+  prefill?: string;
   /** For EVIDENCE-type suggestions: the persistent EvidenceNeed this
    *  suggestion derives from. Format: `eneed_xxxxxxxxxxxx`. Used for
    *  visual linkage (highlight, dismiss, group by need). Backend already

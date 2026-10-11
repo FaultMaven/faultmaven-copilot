@@ -169,6 +169,8 @@ function backendCopiesOfTurn(
  *   becomes UNRECOGNIZED, which renders as plain text and is never clickable
  *   (see `SuggestionType`).
  * - `intent` is kept whole, extra keys and all; see `SuggestionIntent`.
+ * - `prefill` is kept as sent, `""` included: an empty prefill still marks the
+ *   data-box action (`opensDataBox`).
  * - The contract's `null`s become absent fields.
  */
 export function suggestionFromResponse(response: SuggestedActionResponse): SuggestedAction {
@@ -180,7 +182,19 @@ export function suggestionFromResponse(response: SuggestedActionResponse): Sugge
     hints: response.hints ?? undefined,
     intent: forwardableIntent(response.intent),
     evidence_need_id: response.evidence_need_id ?? undefined,
+    prefill: response.prefill ?? undefined,
   };
+}
+
+/**
+ * The data-box action (contract 13.3.0, faultmaven#1930): an EVIDENCE whose
+ * `prefill` is present, `""` included. A click opens the composer's data box
+ * holding `prefill`, `body` its hint, and sends nothing; the user corrects and
+ * sends it as data. Recognised by the field, never by label. Any other type
+ * keeps its own click, or none.
+ */
+export function opensDataBox(action: SuggestedAction): action is SuggestedAction & { prefill: string } {
+  return action.type === 'EVIDENCE' && typeof action.prefill === 'string';
 }
 
 function knownSuggestionType(type: string): SuggestionType {

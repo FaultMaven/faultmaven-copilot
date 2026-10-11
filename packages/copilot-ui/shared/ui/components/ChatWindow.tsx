@@ -44,6 +44,13 @@ interface ChatWindowProps {
 
   // Action callbacks
   onQuerySubmit: (query: string, intent?: TurnIntent) => void;
+  /**
+   * Opens the composer's data box holding `prefill` (#328). Absent where the
+   * composer takes no data: the data-box action is then informational.
+   */
+  onOpenDataBox?: (prefill: string, hint: string | undefined) => void;
+  /** The composer is busy: the data-box action is shown disabled. */
+  dataBoxBusy?: boolean;
   onDocumentView?: (documentId: string) => void;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
   /** The viewer may read this case, not write it: nothing here submits a turn. */
@@ -59,6 +66,8 @@ const ChatWindowComponent = function ChatWindow({
   isNewUnsavedChat = false,
   className = '',
   onQuerySubmit,
+  onOpenDataBox,
+  dataBoxBusy = false,
   onDocumentView,
   setActiveCase,
   readOnly = false
@@ -459,6 +468,8 @@ const ChatWindowComponent = function ChatWindow({
                                 onQuerySubmit(payload, intent);
                               }
                             }}
+                            onOpenDataBox={onOpenDataBox}
+                            dataBoxBusy={dataBoxBusy}
                           />
                         ))}
                       </div>
@@ -549,6 +560,8 @@ export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
   // surfaces ResolutionActionsCard and the terminal-state UI. Callbacks are
   // intentionally excluded: the parent does not memoize them and the submission
   // hooks read live state from the store, so their identity is not meaningful.
+  // Whether `onOpenDataBox` is passed at all follows `readOnly` and the case
+  // state, both compared here.
   return (
     prevProps.conversation === nextProps.conversation &&
     prevProps.activeCase?.case_id === nextProps.activeCase?.case_id &&
@@ -558,6 +571,7 @@ export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
     prevProps.loading === nextProps.loading &&
     prevProps.sessionId === nextProps.sessionId &&
     prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat &&
+    prevProps.dataBoxBusy === nextProps.dataBoxBusy &&
     prevProps.readOnly === nextProps.readOnly
   );
 });

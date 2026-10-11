@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { INPUT_LIMITS } from '@faultmaven/copilot-ui/shared/ui/layouts/constants';
 import { createStubHost, hostWrapper } from '../support/host';
 
@@ -20,7 +20,7 @@ vi.mock('wxt/browser', () => ({
   },
 }));
 
-import { UnifiedInputBar } from '@faultmaven/copilot-ui/shared/ui/components/UnifiedInputBar';
+import { UnifiedInputBar, type ComposerHandle } from '@faultmaven/copilot-ui/shared/ui/components/UnifiedInputBar';
 
 const lines = (n: number, prefix = 'line') => Array.from({ length: n }, (_, i) => `${prefix} ${i + 1}`).join('\n');
 const box = () => screen.getByLabelText(/Type your message/i) as HTMLTextAreaElement;
@@ -706,5 +706,48 @@ describe('UnifiedInputBar — a closed case sends nothing it will refuse (#318)'
       await stagePaste(turn);
       await waitFor(() => expect(box()).toHaveValue(''));
     });
+  });
+});
+
+// #345 review: the data box opens only when the Paste button could. A turn in
+// flight would otherwise reopen the textpad holding the paste being sent, and
+// its landing would clear what the user typed there.
+describe('UnifiedInputBar — openDataBox (#328)', () => {
+  const renderWithHandle = (props: Record<string, unknown> = {}) => {
+    const ref = React.createRef<ComposerHandle>();
+    render(
+      <UnifiedInputBar ref={ref} onQuerySubmit={vi.fn()} onTurnSubmit={vi.fn()} {...props} />,
+      { wrapper: hostWrapper(createStubHost().host) }
+    );
+    return ref;
+  };
+
+  it('opens the textpad holding the prefill', () => {
+    const ref = renderWithHandle();
+    act(() => ref.current!.openDataBox('ERROR boom', 'hint'));
+    expect(textpad()).toHaveValue('ERROR boom');
+  });
+
+  it.each([
+    ['submitting', { submitting: true }],
+    ['loading', { loading: true }],
+    ['disabled', { disabled: true }],
+    ['a closed case', { disableAttachments: true }],
+  ])('does nothing while %s, as the Paste button', (_name, props) => {
+    const ref = renderWithHandle(props);
+    expect(screen.getByRole('button', { name: 'Paste data' })).toBeDisabled();
+    act(() => ref.current!.openDataBox('ERROR boom', 'hint'));
+    expect(screen.queryByLabelText('Paste data content')).toBeNull();
+  });
+
+  it('reports when it is busy, so the transcript can show the action disabled', () => {
+    const onBusyChange = vi.fn();
+    const { rerender } = render(
+      <UnifiedInputBar onQuerySubmit={vi.fn()} onTurnSubmit={vi.fn()} onBusyChange={onBusyChange} />,
+      { wrapper: hostWrapper(createStubHost().host) }
+    );
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+    rerender(<UnifiedInputBar onQuerySubmit={vi.fn()} onTurnSubmit={vi.fn()} onBusyChange={onBusyChange} submitting />);
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
   });
 });
