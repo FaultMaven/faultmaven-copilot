@@ -71,10 +71,14 @@ describe('TokenManager', () => {
     // request() is INDEPENDENT: a rejected holder must not prevent the next
     // waiter's callback from running (the refresh path now acquires the lock
     // once per retry attempt, so a failed attempt must not poison the next).
-    let activeLock: Promise<any> = Promise.resolve();
+    // PER NAME, as the real API is: the refresh holds its own lock while it
+    // takes the session-write lock for its compare-and-swap, and one queue
+    // shared across names would deadlock that nesting where Chrome does not.
+    const activeLocks = new Map<string, Promise<any>>();
     mockLocksRequest = vi.fn((name: string, options: any, callback: () => Promise<any>) => {
-      const result = activeLock.then(() => callback(), () => callback());
-      activeLock = result.then(() => {}, () => {});
+      const prev = activeLocks.get(name) ?? Promise.resolve();
+      const result = prev.then(() => callback(), () => callback());
+      activeLocks.set(name, result.then(() => {}, () => {}));
       return result;
     });
 
@@ -281,7 +285,10 @@ describe('TokenManager', () => {
     // Web Lock triggers lock callbacks sequentially, so the second lock request
     // sees that the token has already been refreshed and skips fetch.
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(mockLocksRequest).toHaveBeenCalledTimes(2);
+    const refreshLockRequests = mockLocksRequest.mock.calls.filter(
+      ([name]: [string]) => name === 'faultmaven-token-refresh'
+    );
+    expect(refreshLockRequests).toHaveLength(2);
   });
 
   it('preserves tokens and returns the still-valid access token on a TRANSIENT refresh failure', async () => {

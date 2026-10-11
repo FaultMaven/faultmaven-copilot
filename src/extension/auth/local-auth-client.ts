@@ -15,6 +15,7 @@ import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
 import { enforceUserDataScope } from './user-scope';
 import { authManager } from './auth-manager';
 import { AUTH_STATE_KEY, isUsableDuration, type CredentialKey } from './storage-keys';
+import { withSessionWriteLock } from './session-write-lock';
 import { EventBus } from '../messaging';
 import type { AuthTokenResponse, APIError } from '@faultmaven/copilot-ui/lib/api/types';
 
@@ -309,10 +310,15 @@ export class LocalAuthClient {
       keysToRemove.push('refresh_token', 'refresh_expires_at');
     }
 
-    await browser.storage.local.set(data);
-    if (keysToRemove.length > 0) {
-      await browser.storage.local.remove(keysToRemove);
-    }
+    // Inside the session-write lock, like every sign-in write: another panel's
+    // startup repair must not look before this write and act after it
+    // (copilot#342, session-write-lock.ts).
+    await withSessionWriteLock(async () => {
+      await browser.storage.local.set(data);
+      if (keysToRemove.length > 0) {
+        await browser.storage.local.remove(keysToRemove);
+      }
+    });
 
     // Purge a prior user's at-rest data if this local login/registration hands
     // the profile to a DIFFERENT user (#144). Runs here — before signIn/register

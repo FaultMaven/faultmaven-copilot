@@ -10,6 +10,7 @@ import {
   revokeRefreshTokenBestEffort,
 } from '../extension/auth/revoke-refresh-token';
 import { AUTH_STATE_KEY, isUsableDuration, isUsableTimestamp, type CredentialKey } from '../extension/auth/storage-keys';
+import { withSessionWriteLock } from '../extension/auth/session-write-lock';
 import {
   panelSurface,
   reconcileSidePanelForAllTabs,
@@ -171,10 +172,15 @@ export default defineBackground({
           if (!isUsableTimestamp(payload.expires_at)) delete sanitizedRow.expires_at;
           tokenData[AUTH_STATE_KEY] = sanitizedRow;
 
-          await browser.storage.local.set(tokenData);
-          if (keysToRemove.length > 0) {
-            await browser.storage.local.remove(keysToRemove);
-          }
+          // Inside the session-write lock, so the panel's startup repair can
+          // never look at storage before this write and act on it after
+          // (copilot#342) — see session-write-lock.ts. Only the write is held.
+          await withSessionWriteLock(async () => {
+            await browser.storage.local.set(tokenData);
+            if (keysToRemove.length > 0) {
+              await browser.storage.local.remove(keysToRemove);
+            }
+          });
         }
 
         // Purge a prior user's at-rest data if this bridge login hands the
@@ -498,15 +504,19 @@ export default defineBackground({
         };
         oauthTokenData[AUTH_STATE_KEY] = authState;
 
-        await browser.storage.local.set(oauthTokenData);
+        // Inside the session-write lock, like every sign-in write — see
+        // handleStoreAuth and session-write-lock.ts (copilot#342).
+        await withSessionWriteLock(async () => {
+          await browser.storage.local.set(oauthTokenData);
 
-        // `set` MERGES, so a key this response could not supply would otherwise
-        // be inherited from the PREVIOUS session — a past expiry or a closed
-        // window that this login has no business carrying. Remove, never write a
-        // sentinel.
-        if (!isUsableDuration(tokens.refresh_expires_in)) {
-          await browser.storage.local.remove(['refresh_expires_at']);
-        }
+          // `set` MERGES, so a key this response could not supply would otherwise
+          // be inherited from the PREVIOUS session — a past expiry or a closed
+          // window that this login has no business carrying. Remove, never write a
+          // sentinel.
+          if (!isUsableDuration(tokens.refresh_expires_in)) {
+            await browser.storage.local.remove(['refresh_expires_at']);
+          }
+        });
 
         // Purge a prior user's at-rest data if this OAuth login hands the profile
         // to a DIFFERENT user on a shared browser profile (#144). Runs BEFORE the

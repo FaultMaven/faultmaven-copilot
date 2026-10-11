@@ -144,6 +144,22 @@ vi.mock('../../extension/auth/auth-bridge-registration', () => ({
 // Import background entrypoint
 import backgroundEntry from '../../entrypoints/background';
 import { installExtensionHostContext } from '../../extension/host/install';
+import { withSessionWriteLock } from '../../extension/auth/session-write-lock';
+
+/**
+ * Hold the session-write lock until the returned `release` is called — the
+ * stand-in for the panel's startup repair mid-look (copilot#342).
+ */
+async function holdSessionWriteLock(): Promise<{ release: () => void; released: Promise<void> }> {
+  let release!: () => void;
+  const released = withSessionWriteLock(() => new Promise<void>((r) => { release = r; }));
+  await settleTurns();
+  return { release, released };
+}
+
+async function settleTurns(turns = 10): Promise<void> {
+  for (let i = 0; i < turns; i++) await new Promise((r) => setTimeout(r, 0));
+}
 
 describe('Background Service Worker', () => {
   beforeEach(async () => {
@@ -545,6 +561,34 @@ describe('Background Service Worker', () => {
       expect(stored.refresh_expires_at).toBeUndefined();
     });
 
+    it('writes the OAuth session inside the session-write lock (#342)', async () => {
+      // A startup repair that has looked at storage and not yet acted holds the
+      // lock; this sign-in must wait for it rather than land in between.
+      await mockStorage.local.set({
+        pkce_verifier: 'v', auth_state: 's',
+        redirect_uri: 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/',
+      });
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'locked-oauth-access', token_type: 'bearer', expires_in: 3600,
+          refresh_token: 'r', user_id: 'u', username: 'x'
+        })
+      });
+      const lock = await holdSessionWriteLock();
+
+      const pending = new Promise<any>((resolve) => {
+        listeners['message']({ type: 'AUTH_CALLBACK', code: 'c-locked', state: 's' }, { id: 'test-copilot-id' }, resolve);
+      });
+      await settleTurns();
+      expect((await mockStorage.local.get(['access_token'])).access_token).toBeUndefined();
+
+      lock.release();
+      await lock.released;
+      expect((await pending).success).toBe(true);
+      expect((await mockStorage.local.get(['access_token'])).access_token).toBe('locked-oauth-access');
+    });
+
     it('rejects an OAuth token response with a non-numeric expires_in (no NaN expires_at stored)', async () => {
       await mockStorage.local.set({
         pkce_verifier: 'v', auth_state: 's',
@@ -861,6 +905,22 @@ describe('Background Service Worker', () => {
       const stored = await mockStorage.local.get(['access_token', 'refresh_token']);
       expect(stored.access_token).toBeUndefined();
       expect(stored.refresh_token).toBeUndefined();
+    });
+
+    it('writes the bridge session inside the session-write lock (#342)', async () => {
+      // The panel's startup repair holds this lock from its look to its act.
+      // A bridge sign-in landing in between was swept as an orphan credential
+      // and the user saw the sign-in screen; it must wait instead.
+      const lock = await holdSessionWriteLock();
+
+      const pending = storeAuth(bridgePayload);
+      await settleTurns();
+      expect((await mockStorage.local.get(['access_token'])).access_token).toBeUndefined();
+
+      lock.release();
+      await lock.released;
+      expect(await pending).toEqual({ status: 'success' });
+      expect((await mockStorage.local.get(['access_token'])).access_token).toBe('bridge-access');
     });
 
     it('persists the refresh_token (TokenManager keys) so a bridge session can auto-refresh', async () => {

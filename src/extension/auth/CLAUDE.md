@@ -108,20 +108,23 @@ the attempt itself.
 the rejection path *and* the success path: a sign-in landing mid-refresh rotates
 the chain, and the success path would otherwise stamp the pre-flight snapshot's
 `session_id` / `user` / `authState.user` over storage the new sign-in just
-re-seeded. **Narrowed, not closed**: this is check-then-act and the sign-in side
-holds no lock (`handleStoreAuth`, the OAuth exchange and `storeTokens` write
-storage directly), so a sign-in landing between the check and the write still
-loses. What the single `set()` buys is only that a sign-in cannot interleave
-*between* the credential keys and `authState` and leave B's tokens paired with
-A's identity (`token-manager.ts`, the success-path CAS comment).
+re-seeded. On the success path the check and the write run inside the
+**session-write lock**, so a sign-in lands wholly before the check or wholly
+after the write. The rejection path writes nothing; its verdict reaches the
+act-site's teardown, which does not take the lock (see "The session-write
+lock" below).
 
 **Reads never destroy.** `getAuthState()` / `isAuthenticated()` /
 `getCurrentUser()` answer a question and nothing else. Repair is
 `authManager.reconcileSession()`, explicit and run once at panel startup: it
-clears a row with no live credential behind it and a row with no `user`
-(copilot#185). It asks `tokenManager.isAuthenticated()` **directly**, not through
-`getAuthState()`, which folds "the read threw" into the same `null` as "no live
-session" — reconciling on that conflation turns a transient storage error into an
+clears a row with no live credential behind it, a row with no `user`
+(copilot#185), and credentials with no row. It looks (one snapshot of the row
+and the credential keys) and acts **inside the session-write lock**. Outside
+it, a sign-in landing between the look and the act was swept as an orphan, and
+the user who had just signed in saw the sign-in screen (copilot#342). It asks
+`tokenManager.isAuthenticated()` **directly**, not through `getAuthState()`,
+which folds "the read threw" into the same `null` as "no live session" —
+reconciling on that conflation turns a transient storage error into an
 irreversible sign-out. It returns the state it validated; `userFromAuthState()`
 maps it so startup reads storage once.
 
@@ -179,3 +182,22 @@ carrying the token in a payload safe. The hand-off **falls back to calling
 in-context** when no worker takes the message (evicted, a test environment, or
 `logoutAuth` called from the worker itself, where Chrome does not deliver a
 message to the sender's own listener).
+
+## The session-write lock
+
+`session-write-lock.ts` (`withSessionWriteLock`, Web Locks name
+`faultmaven-session-write`) is the one exclusive section shared by code that
+writes a session and code that decides a stored session is debris (copilot#342).
+Holders: the three sign-in writers (`handleStoreAuth`, the OAuth exchange,
+`LocalAuthClient.storeTokens`), `reconcileSession`'s look-and-sweep, and the
+refresh's CAS + rotated write. Only the storage writes are held; no network call
+runs inside it.
+
+**`clearAllAuthData()` does not take it**, and nothing awaited inside the lock
+may: Web Locks are not re-entrant and `reconcileSession` tears down while
+holding it. A teardown acting on a stale verdict (a 401 or a dead chain read
+just before a sign-in landed) is a separate race that this lock does not cover.
+
+Without `navigator.locks` the fallback serializes within one JS context only.
+Chromium's MV3 worker and pages have the API, and so do Firefox 96+ windows,
+which is what the MV2 background page is.
