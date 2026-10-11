@@ -90,6 +90,55 @@ describe('the extension reports auth-state changes', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  // ---- An identity switch with no broadcast behind it (#350 review) ----
+  //
+  // The broadcast used to be the ONLY way the panel learned another user had
+  // signed in. Missed — or sent before the panel subscribed — the panel stayed
+  // A over B's credential, and every request was refused for its whole life.
+  // `storage.onChanged` reaches every context; the sign-in is COMPLETE once the
+  // data owner is the new user (written after the prior user's data is purged),
+  // and only then is it safe to re-scope onto it.
+  const B_ROW = { access_token: 'b', user: { user_id: 'u2', username: 'other', roles: ['user'] } };
+  const flush = async () => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+
+  it("reports the new user once their sign-in is complete, with no broadcast", async () => {
+    mockBrowser.storage.local.get.mockResolvedValue({ authState: B_ROW, faultmaven_data_owner_id: 'u2' });
+    subscribeExtensionAuthState(toHostUser, onChange);
+    await flush();
+    onChange.mockClear();
+
+    deliverStorageChange({ faultmaven_data_owner_id: { newValue: 'u2' } });
+    await flush();
+
+    expect(onChange).toHaveBeenCalledWith({ id: 'u2', username: 'other', roles: ['user'] });
+  });
+
+  it("says nothing while the previous user's data is still being purged", async () => {
+    // The row is B's, the owner still A's: re-scoping now would hydrate A's
+    // residue under B. The owner write that follows the purge is the signal.
+    mockBrowser.storage.local.get.mockResolvedValue({ authState: B_ROW, faultmaven_data_owner_id: 'u1' });
+    subscribeExtensionAuthState(toHostUser, onChange);
+    await flush();
+
+    deliverStorageChange({ authState: { newValue: B_ROW } });
+    await flush();
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('reports a sign-in that completed BEFORE the subscription (the startup gap)', async () => {
+    // B signed in after the entry read A at startup and before the panel
+    // subscribed: no event will ever arrive for it, so subscribing reads once.
+    mockBrowser.storage.local.get.mockResolvedValue({ authState: B_ROW, faultmaven_data_owner_id: 'u2' });
+
+    subscribeExtensionAuthState(toHostUser, onChange);
+    await flush();
+
+    expect(onChange).toHaveBeenCalledWith({ id: 'u2', username: 'other', roles: ['user'] });
+  });
+
   it('detaches both listeners on unsubscribe', () => {
     const unsubscribe = subscribeExtensionAuthState(toHostUser, onChange);
 

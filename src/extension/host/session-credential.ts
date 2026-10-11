@@ -13,6 +13,7 @@ import { tokenManager } from '../auth/token-manager';
 import { authManager, type TeardownOutcome } from '../auth/auth-manager';
 import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
 import { SessionEndedError } from '../auth/session-ended-error';
+import { SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('SessionCredential');
@@ -35,15 +36,42 @@ const log = createLogger('SessionCredential');
  * business of deciding what an absent credential means, which is the decision
  * this boundary exists to keep on the host's side.
  */
-export async function readSessionAccessToken(): Promise<string> {
-  return readOnce(true);
+export async function readSessionAccessToken(forUserId: string | null): Promise<string> {
+  return readOnce(forUserId, true);
 }
 
-async function readOnce(mayRetry: boolean): Promise<string> {
+/**
+ * The credential for a request built for `forUserId`, or a refusal
+ * (copilot#350).
+ *
+ * Another user signing in on this browser profile — the Dashboard bridge, say —
+ * lands in storage some milliseconds before the panel hears of it and
+ * re-scopes. A request the panel builds in between is still FOR the previous
+ * user; handed the new user's bearer, a `POST /cases` would create the previous
+ * user's content in the new user's account. So the token is handed out only if
+ * the `user` stored beside it — read in the same storage read — is the user the
+ * request is for. Otherwise `SessionSwitchedError`: `getAuthHeaders`
+ * propagates it, nothing is sent, and NOTHING is torn down — the stored session
+ * is the new user's, perfectly good, and the panel applies it when the sign-in's
+ * broadcast arrives. A refusal is not a verdict on any credential.
+ *
+ * Unknown is never the same user (the rule #348's teardown uses): a stored
+ * credential that names no user is refused to a panel that has one. Every
+ * writer stores `user` beside the token, so this does not happen to a session
+ * this extension wrote. `forUserId === null` — a caller acting for no
+ * particular user — skips the comparison.
+ */
+async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<string> {
   try {
-    const token = await tokenManager.getValidAccessToken();
-    if (!token) throw new Error('No access token available right now.');
-    return token;
+    const credential = await tokenManager.getValidCredential();
+    if (!credential) throw new Error('No access token available right now.');
+    if (forUserId !== null && credential.userId !== forUserId) {
+      log.warn('The stored session is not the user this request was built for; not sending it', {
+        storedUserKnown: credential.userId !== null,
+      });
+      throw new SessionSwitchedError();
+    }
+    return credential.accessToken;
   } catch (error) {
     if (error instanceof SessionEndedError) {
       // Guarded even though `clearAllAuthData()` is contracted not to reject:
@@ -73,7 +101,7 @@ async function readOnce(mayRetry: boolean): Promise<string> {
       } catch (teardownError) {
         log.error('Teardown after a session verdict failed', teardownError);
       }
-      if (outcome === 'superseded' && mayRetry) return readOnce(false);
+      if (outcome === 'superseded' && mayRetry) return readOnce(forUserId, false);
     }
     throw error;
   }

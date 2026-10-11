@@ -17,6 +17,11 @@ export function createExtensionTransport(session: HostSession): ApiTransport {
   return {
     baseUrl: () => getApiUrl(),
 
+    // The session's own answer, and only it: `HostSession.accessToken()` is what
+    // the HostAdapter contract says the package asks. The extension's session
+    // answers it for its user (`readSessionAccessToken(user.id)`, copilot#350),
+    // so a credential another user's sign-in has put in storage is refused, not
+    // sent.
     accessToken: () => session.accessToken(),
 
     // Through the same store everything else reads and writes this key from.

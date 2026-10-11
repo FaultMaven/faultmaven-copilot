@@ -78,6 +78,9 @@ retry_with_backoff · `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
 `QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·
 `IdempotencyKeyReuseError` manual_retry (under a fresh key) ·
+`SessionSwitchedError` none (category `notice`; the host's stored session is
+another user's, so the request was not sent and nothing ends; never
+`authentication`, whose "Sign In" action would sign the new user out, #350) ·
 `TurnInProgressError` auto_retry_with_delay ·
 `OptimisticUpdateError` rollback_and_retry · `RateLimitError` derived (below).
 

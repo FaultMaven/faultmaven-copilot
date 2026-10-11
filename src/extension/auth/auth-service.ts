@@ -26,6 +26,12 @@ export interface LogoutOutcome {
    *  client — typically the Dashboard, on its own token chain — may still be
    *  signed in as them. */
   allSessionsEnded: boolean;
+  /**
+   * The stored session is ANOTHER user's than the one asked to sign out
+   * (#350): nothing was sent, nothing was torn down, nothing was broadcast.
+   * The caller re-scopes to the stored user rather than signing anyone out.
+   */
+  sessionSwitched?: true;
 }
 
 /**
@@ -52,13 +58,31 @@ export async function getCurrentUser(): Promise<UserProfile> {
   return response.json();
 }
 
-export async function logoutAuth(): Promise<LogoutOutcome> {
+export async function logoutAuth(forUserId: string | null): Promise<LogoutOutcome> {
   // Pessimistic until the server says otherwise. Every path that fails to
   // produce a confirmation — offline, a non-2xx, a body that will not parse, a
   // backend predating the field — leaves this false, which is what the user is
   // told. Never inferred from the request merely having been sent.
   let allSessionsEnded = false;
 
+  // WHOSE credential is this (#350 review)? The token and its owner come from
+  // one storage read. A panel still showing A, with B's session already stored
+  // (B signed in a moment ago, the panel not yet re-scoped), would otherwise
+  // POST /auth/logout with B's bearer — revoking every B session account-wide,
+  // their Dashboard included — then clear B's credential here and revoke B's
+  // refresh token. When the stored owner is KNOWN and is someone else, nothing
+  // is sent, torn down or broadcast. An unknown owner does not stop a sign-out:
+  // it is the user's explicit request, and a credential naming nobody is not
+  // anybody else's to protect.
+  const credential =
+    (await tokenManager.getValidCredential().catch(() => null)) ??
+    (await tokenManager.peekCredential().catch(() => null));
+  if (forUserId !== null && credential?.userId && credential.userId !== forUserId) {
+    log.warn('Sign-out asked for one user while another user\'s session is stored; not signing it out');
+    return { allSessionsEnded: false, sessionSwitched: true };
+  }
+
+  let replacedDuringSignOut = false;
   try {
     // Deliberately NOT `authenticatedFetch`, and deliberately NOT the raw token
     // either — the credential stack is asked directly, and its verdict is
@@ -78,10 +102,7 @@ export async function logoutAuth(): Promise<LogoutOutcome> {
     // catching its verdict here means a dead one still cannot tear anything
     // down. Falling back to whatever is stored keeps the request authenticated
     // where it can be; an expired bearer is no worse than none.
-    const bearer = await tokenManager
-      .getValidAccessToken()
-      .catch(() => null)
-      .then((token) => token ?? tokenManager.peekAccessToken().catch(() => null));
+    const bearer = credential?.accessToken ?? null;
     // try/catch, not `.catch()`. A storage accessor can throw SYNCHRONOUSLY (an
     // invalidated MV3 context, a test double), and `.catch()` guards the promise
     // rather than the call — the throw would escape past the POST below, so the
@@ -128,34 +149,61 @@ export async function logoutAuth(): Promise<LogoutOutcome> {
     const refreshToken = await tokenManager.getRefreshToken().catch(() => null);
 
     // Never rejects, so the broadcast below always runs.
-    await authManager.clearAllAuthData();
-
-    // Tell the other contexts BEFORE the best-effort revoke. That revoke
-    // resolves an auth config and then waits on the network — up to ~20s on a
-    // flaky connection — and nothing about it is needed for the sign-out to be
-    // observable. Behind it, the panel's own sign-out handler and every other
-    // context stall for that whole window.
     //
-    // Through the typed door: the payload shape is the contract the panel reads,
-    // and spelling it by hand is how a raw token payload once went out as an
-    // auth state whose `isAuthenticated` was undefined. EventBus.emit already
-    // swallows "no listener".
-    await EventBus.emit({ type: 'auth_state_changed', authState: null });
+    // JUDGED against the credential checked above when the caller named its
+    // user: the POST takes a round trip, and another user's sign-in landing in
+    // it must not be torn down ('replaced' — and then neither broadcast nor
+    // revoke, both of which would reach THEIR session). The same user's newer
+    // credential ('superseded') is still this user's session: end it too.
+    if (forUserId !== null) {
+      const outcome = await authManager.clearAllAuthData({
+        accessToken: credential?.accessToken ?? '',
+        userId: forUserId,
+      });
+      if (outcome === 'replaced') {
+        log.warn('Another user signed in during sign-out; leaving their session alone');
+        replacedDuringSignOut = true;
+      }
+      if (outcome === 'superseded') await authManager.clearAllAuthData();
+    } else {
+      await authManager.clearAllAuthData();
+    }
 
-    // Last, and NOT awaited. It resolves an auth config and then waits on the
-    // network — ~20s worst case — and `logoutAuth` is awaited by
-    // `ExtensionApp.signOut`, whose own `finally` clears the identity and drops
-    // the spinner. Awaiting it here stalled the panel that asked for the
-    // sign-out, which is the very thing moving it after the broadcast was meant
-    // to prevent.
-    //
-    // Which is why it is HANDED OFF rather than started here: an un-awaited
-    // fetch belongs to the document that made it, and this one runs in the side
-    // panel — a user who signs out and closes the panel would take the revoke
-    // with them. The worker outlives the panel and has nobody waiting on it.
-    // Never rejects.
-    void requestRefreshTokenRevoke(refreshToken);
+    // Still in the `finally`: a failed POST must complete the local sign-out
+    // AND tell the other contexts. Not when another user's session was left
+    // alone — the broadcast would sign THEM out everywhere, and the refresh
+    // token read above may be theirs.
+    if (!replacedDuringSignOut) await announceSignOut(refreshToken);
   }
 
-  return { allSessionsEnded };
+  return replacedDuringSignOut ? { allSessionsEnded, sessionSwitched: true } : { allSessionsEnded };
+}
+
+/** Broadcast the sign-out, then hand off the refresh-token revoke. Never rejects. */
+async function announceSignOut(refreshToken: string | null): Promise<void> {
+  // Tell the other contexts BEFORE the best-effort revoke. That revoke
+  // resolves an auth config and then waits on the network — up to ~20s on a
+  // flaky connection — and nothing about it is needed for the sign-out to be
+  // observable. Behind it, the panel's own sign-out handler and every other
+  // context stall for that whole window.
+  //
+  // Through the typed door: the payload shape is the contract the panel reads,
+  // and spelling it by hand is how a raw token payload once went out as an
+  // auth state whose `isAuthenticated` was undefined. EventBus.emit already
+  // swallows "no listener".
+  await EventBus.emit({ type: 'auth_state_changed', authState: null });
+
+  // Last, and NOT awaited. It resolves an auth config and then waits on the
+  // network — ~20s worst case — and `logoutAuth` is awaited by
+  // `ExtensionApp.signOut`, which then clears the identity and drops
+  // the spinner. Awaiting it here stalled the panel that asked for the
+  // sign-out, which is the very thing moving it after the broadcast was meant
+  // to prevent.
+  //
+  // Which is why it is HANDED OFF rather than started here: an un-awaited
+  // fetch belongs to the document that made it, and this one runs in the side
+  // panel — a user who signs out and closes the panel would take the revoke
+  // with them. The worker outlives the panel and has nobody waiting on it.
+  // Never rejects.
+  void requestRefreshTokenRevoke(refreshToken);
 }

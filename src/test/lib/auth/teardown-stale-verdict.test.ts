@@ -244,7 +244,7 @@ describe.each([
     // that asked gets its newer bearer.
     const landed = deadAThenSignIn(signInA2);
 
-    await expect(readSessionAccessToken()).resolves.toBe('a2-access');
+    await expect(readSessionAccessToken('user-a')).resolves.toBe('a2-access');
     await landed.signIn;
 
     expect(store.access_token).toBe('a2-access');
@@ -257,7 +257,7 @@ describe.each([
     // for A, and replayed it would land in B's account.
     const landed = deadAThenSignIn(signInB);
 
-    await expect(readSessionAccessToken()).rejects.toBeInstanceOf(SessionEndedError);
+    await expect(readSessionAccessToken('user-a')).rejects.toBeInstanceOf(SessionEndedError);
     await landed.signIn;
 
     expect(store.access_token).toBe('b-access');

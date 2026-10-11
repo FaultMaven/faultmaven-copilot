@@ -30,7 +30,7 @@ import { authManager } from './auth/auth-manager';
 import { logoutAuth } from './auth/auth-service';
 import { installExtensionTransport } from './host';
 import { EventBus, isSignedInBroadcast, type AuthStateChangedEvent } from './messaging';
-import { subscribeExtensionAuthState } from './host/auth-state';
+import { readCompletedSignIn, subscribeExtensionAuthState } from './host/auth-state';
 import { useExtensionReloadRecovery } from './useExtensionReloadRecovery';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { AuthScreen } from './components/AuthScreen';
@@ -160,7 +160,8 @@ export function ExtensionApp() {
       //
       // The act-site lives in `host/session-credential.ts`: it is a contract two
       // test harnesses also model, and inline copies of it drifted.
-      accessToken: readSessionAccessToken,
+      // For this panel's user — see readSessionAccessToken (copilot#350).
+      accessToken: () => readSessionAccessToken(currentUser.id),
       // The extension owns sign-out because it owns the credential. The panel
       // tears down its own state and asks for this; nothing about the token
       // chain, its storage key or its revocation reaches the panel.
@@ -168,25 +169,36 @@ export function ExtensionApp() {
       // logoutAuth() ALWAYS destroys the local credential in its finally, so a
       // failed POST (offline, a 401) only means the best-effort server-side
       // revocation did not land. It also broadcasts, which is what tells the
-      // OTHER contexts; this one is told by the call returning.
+      // OTHER contexts; this one is told by the call returning. The one
+      // exception is a stored session that is another user's (#350): the host
+      // signs NOBODY out, and the panel moves to that user instead.
       signOut: async () => {
         let allSessionsEnded = false;
         try {
-          ({ allSessionsEnded } = await logoutAuth());
+          const outcome = await logoutAuth(currentUser.id);
+          if (outcome.sessionSwitched) {
+            // Another user's session is stored (#350 review): the host signed
+            // nobody out. Move the panel to them — once their sign-in is
+            // complete; while it is still purging, the auth-state watch moves
+            // it when it completes.
+            const switchedTo = await readCompletedSignIn();
+            if (switchedTo) applyHostAuthState(toHostUser(switchedTo));
+            return;
+          }
+          ({ allSessionsEnded } = outcome);
           log.info('Logout successful', { allSessionsEnded });
         } catch (error) {
           log.warn('Backend logout failed; completing local sign-out anyway', error);
-        } finally {
-          // Pessimistic: a throw, or an unconfirmed outcome, leaves the notice
-          // set. The local sign-out succeeded either way; what is unknown is
-          // whether it reached the user's other client.
-          setSignOutNotice(
-            allSessionsEnded
-              ? null
-              : 'Signed out here. We could not confirm your other FaultMaven sessions ended — if you were signed in to the Dashboard, sign out there too.',
-          );
-          applyHostAuthState(null);
         }
+        // Pessimistic: a throw, or an unconfirmed outcome, leaves the notice
+        // set. The local sign-out succeeded either way; what is unknown is
+        // whether it reached the user's other client.
+        setSignOutNotice(
+          allSessionsEnded
+            ? null
+            : 'Signed out here. We could not confirm your other FaultMaven sessions ended — if you were signed in to the Dashboard, sign out there too.',
+        );
+        applyHostAuthState(null);
       },
       // A hard 401 whose bearer this signature cannot name. The API client does
       // not come through here: the extension's transport sends a 401 straight

@@ -134,6 +134,12 @@ setApiTransport({
 <CopilotPanel host={{ ...capabilities, session }} />
 ```
 
+The transport's `accessToken()` is for the session's user. A host that can see
+that its stored credential now belongs to someone else (another account signed
+in, and the panel has not re-scoped yet) throws `SessionSwitchedError`. The
+request is then not sent, and nothing is torn down (copilot#350). The extension
+does this.
+
 The transport's `onUnauthorized` is called with the bearer the rejected request
 carried. A host that tears down on a 401 should end only that credential's
 session, because a sign-in may have replaced it while the request was out. The

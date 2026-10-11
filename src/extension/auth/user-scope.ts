@@ -26,7 +26,8 @@ const log = createLogger('UserScope');
  * browser.storage.local. Compared on every login to detect a hand-off to a
  * different user on the same browser profile.
  */
-const DATA_OWNER_KEY = 'faultmaven_data_owner_id';
+// One definition, shared with the auth-state watch (storage-keys.ts).
+import { DATA_OWNER_KEY } from './storage-keys';
 
 /**
  * Enforce that all at-rest per-user data belongs to `userId`.

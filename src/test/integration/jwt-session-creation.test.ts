@@ -68,8 +68,10 @@ function installHostChainTransport() {
   });
   setApiTransport({
     baseUrl: async () => API,
-    // The real thing, not a mirror — see host/session-credential.ts.
-    accessToken: readSessionAccessToken,
+    // The real thing, not a mirror — see host/session-credential.ts. For no
+    // particular user: these tests stage several identities and assert header
+    // ASSEMBLY; the identity check is pinned in request-carries-its-user.test.ts.
+    accessToken: () => readSessionAccessToken(null),
     sessionId: async () => {
       const stored = await mockBrowser.storage.local.get(['sessionId']);
       return (stored?.sessionId as string | undefined) ?? null;
