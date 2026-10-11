@@ -17,7 +17,9 @@
  * extension host (when its open case turns out to be driven by someone else)
  * both call it, and so does every committed turn the transition effect does
  * not already re-read the list for (`turn-case-state.ts`, #321, #333): a bare
- * reload is served the cached page, which predates what the turn changed. It is
+ * reload is served the cached page, which predates what the turn changed; and
+ * a lazy case-create's completion, so the new case is listed even when the user
+ * opened another one meanwhile (#334). It is
  * NOT called from `refreshActiveCase`, which also runs in the Dashboard, a host
  * with no sidebar.
  */

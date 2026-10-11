@@ -48,6 +48,7 @@ import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
+import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
 import { notifyCaseChanged } from './case-changed';
@@ -100,7 +101,6 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
   const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversationTitles = useAppStore((state) => state.setConversationTitles);
   const setTitleSources = useAppStore((state) => state.setTitleSources);
-  const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   // Reconcile optimistic case ID with backend ID
   const createOptimisticCaseInBackground = async (optimisticId: string, title: string | null) => {
@@ -138,18 +138,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       log.info('Case created on backend', { optimisticId, realCaseId });
       idMappingManager.addMapping(optimisticId, realCaseId);
 
-      await setActiveCaseId(realCaseId);
-
-      // Re-check after setActiveCaseId's await: a logout during that write must
-      // not let the remaining store/storage writes below repopulate the purge.
-      if (epoch !== getEpoch()) {
-        log.info('Session changed mid-reconciliation — discarding remaining writes', {
-          optimisticId,
-          realCaseId
-        });
-        return realCaseId;
-      }
-
+      // The optimistic id is reconciled to the real one everywhere it lives,
+      // whichever case is open now. Every write from here to the pointer's
+      // storage write is synchronous, so a logout cannot land between them.
       setConversations(prev => {
         const optimisticConversation = prev[optimisticId];
         if (!optimisticConversation) return prev;
@@ -189,11 +180,26 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         return updated;
       });
 
-      setActiveCase(newCase);
+      // The panel moves to the new case only if it is still showing the
+      // optimistic one this create was for. The user may have opened another
+      // case from the sidebar meanwhile, and pulling them back is navigation
+      // they did not ask for (#334); the new case reaches the sidebar below.
+      // The row and pointer switch together, so neither is ever another case's.
+      if (useAppStore.getState().activeCaseId === optimisticId) {
+        setActiveCase(newCase);
+        await setActiveCaseId(realCaseId);
+      } else {
+        log.info('Case created after the user left it; leaving the open case alone', {
+          optimisticId,
+          realCaseId
+        });
+      }
 
       log.info('Case ID reconciliation completed', { optimisticId, realCaseId });
 
-      triggerRefreshSessions();
+      // Drop the list slot, then reload (epoch-guarded): the new case is not
+      // on any cached page.
+      void reloadDrivenCaseList(epoch);
 
       return realCaseId;
     } catch (error) {
@@ -460,12 +466,16 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
     }
 
+    // Set when this submit created its case lazily: the create's completion
+    // has then already decided whether the panel follows it (#334).
+    let createdCase = false;
+
     if (!targetCaseId) {
       log.debug('No active case, creating case via createOptimisticCaseInBackground');
+      createdCase = true;
 
+      const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
       try {
-        const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
-
         setActiveCaseId(optimisticCaseId);
         setHasUnsavedNewChat(false);
 
@@ -480,9 +490,13 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         // so no id-mapping exists; leaving activeCaseId as a stale opt_case_*
         // would make the next submit POST a turn against an optimistic id → 404.
         // Clear it (this also removes faultmaven_current_case) and restore the
-        // unsaved-new-chat flag so the UI returns to the fresh composer.
-        await setActiveCaseId(null);
-        setHasUnsavedNewChat(true);
+        // unsaved-new-chat flag so the UI returns to the fresh composer. Only
+        // while the panel still shows it: a user who opened another case
+        // meanwhile stays there (#334).
+        if (useAppStore.getState().activeCaseId === optimisticCaseId) {
+          await setActiveCaseId(null);
+          setHasUnsavedNewChat(true);
+        }
         showError(notSentError(
           { attachments: [], hasQuery: true },
           'The case could not be created.',
@@ -562,7 +576,13 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiWorkingMessage]
     }));
 
-    setActiveCaseId(targetCaseId);
+    // Point the panel at the case the turn is for. No await separates this
+    // from the click on an existing case, so the user is still there; after a
+    // lazy create the create's completion already moved the panel, or left the
+    // user where they went meanwhile (#334).
+    if (!createdCase) {
+      setActiveCaseId(targetCaseId);
+    }
 
     log.info('Messages added to UI immediately - 0ms response time');
 

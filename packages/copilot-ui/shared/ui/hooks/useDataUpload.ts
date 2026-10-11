@@ -48,6 +48,7 @@ import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-ite
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
+import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useDataUpload');
@@ -94,7 +95,6 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
   const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
   const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversations = useAppStore((state) => state.setConversations);
-  const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   /**
    * Submit the turn via the unified /turns endpoint and, on success, reconcile
@@ -356,9 +356,17 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
       }
 
+      // Whether the panel follows the turn to its case. Always, for an existing
+      // case: no await separates the click from the pointer write below. After a
+      // lazy create, only if the user is still where the create started (#334).
+      let followCase = true;
+
       if (!targetCaseId) {
         log.info('No active case, creating case via /api/v1/cases');
 
+        // Where the panel was when the create started: a new chat (null), or a
+        // stale optimistic id with no mapping.
+        const startedOn = useAppStore.getState().activeCaseId;
         let caseIdempotencyKey = '';
         try {
           // Stable key for this logical case creation so an ambiguous network
@@ -398,14 +406,23 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
           targetCaseId = newCaseId;
 
-          setActiveCaseId(newCaseId);
-          setHasUnsavedNewChat(false);
-          setActiveCase(caseData);
-
           setConversations(prev => ({
             ...prev,
             [newCaseId]: []
           }));
+
+          // The panel moves to the new case only if the user is still where the
+          // create started. One who opened another case from the sidebar
+          // meanwhile stays there (#334); the new case reaches the sidebar below
+          // and its turn still goes out.
+          followCase = useAppStore.getState().activeCaseId === startedOn;
+          if (followCase) {
+            setActiveCaseId(newCaseId);
+            setHasUnsavedNewChat(false);
+            setActiveCase(caseData);
+          } else {
+            log.info('Case created after the user left the new chat; leaving the open case alone', { newCaseId });
+          }
 
           // Deliberately NOT seeding conversationTitles with `caseData.title`.
           // A freshly created case's title is the backend placeholder
@@ -416,9 +433,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           // The store is for titles a user chose or explicitly generated; the
           // backend's own title already renders as the second source.
 
-          // The active-case pointer is persisted by setActiveCaseId above —
-          // the single writer of that key.
-          triggerRefreshSessions();
+          // Drop the list slot, then reload (epoch-guarded): the new case is
+          // not on any cached page.
+          void reloadDrivenCaseList(epoch);
 
           log.info('Case created:', targetCaseId);
         } catch (error) {
@@ -564,7 +581,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       // real id here. Never when the response lands, by which time the user may
       // have opened another case, and moving the pointer back would put this
       // case's conversation under that case's row (#321).
-      setActiveCaseId(targetCaseId);
+      if (followCase) {
+        setActiveCaseId(targetCaseId);
+      }
 
       // Step 4: Register a pending operation so a failed turn keeps a retry
       // affordance in the failed-operation banner (parity with
