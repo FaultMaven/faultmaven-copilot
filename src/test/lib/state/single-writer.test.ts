@@ -101,8 +101,11 @@ describe('the active-case pointer has a single writer', () => {
 
     expect(hookWrites, 'a shared-UI hook wrote the active-case pointer').toEqual([]);
     expect(sliceWrites.length).toBeGreaterThan(0);
-    // Whatever the slice was asked to persist, it agreed with itself.
-    expect(new Set(sliceWrites.map(([i]) => i[POINTER]))).toEqual(new Set(['real-case-id']));
+    // Whatever the slice was asked to persist, it agreed with itself: the
+    // lazy create's optimistic claim, then the real id (`lazy-case.ts`, #334).
+    const written = sliceWrites.map(([i]) => i[POINTER] as string);
+    expect(written.every((v) => v === 'real-case-id' || /^opt_case_/.test(v))).toBe(true);
+    expect(written[written.length - 1]).toBe('real-case-id');
     expect(sliceStore.data[POINTER]).toBe('real-case-id');
   });
 });

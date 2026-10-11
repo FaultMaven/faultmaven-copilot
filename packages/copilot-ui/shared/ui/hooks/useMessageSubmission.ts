@@ -48,7 +48,7 @@ import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
-import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
+import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
 import { notifyCaseChanged } from './case-changed';
@@ -96,11 +96,7 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
 
   // Selected store actions
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
-  const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
   const setConversations = useAppStore((state) => state.setConversations);
-  const setActiveCase = useAppStore((state) => state.setActiveCase);
-  const setConversationTitles = useAppStore((state) => state.setConversationTitles);
-  const setTitleSources = useAppStore((state) => state.setTitleSources);
 
   // Reconcile optimistic case ID with backend ID
   const createOptimisticCaseInBackground = async (optimisticId: string, title: string | null) => {
@@ -136,70 +132,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       }
 
       log.info('Case created on backend', { optimisticId, realCaseId });
-      idMappingManager.addMapping(optimisticId, realCaseId);
-
-      // The optimistic id is reconciled to the real one everywhere it lives,
-      // whichever case is open now. Every write from here to the pointer's
-      // storage write is synchronous, so a logout cannot land between them.
-      setConversations(prev => {
-        const optimisticConversation = prev[optimisticId];
-        if (!optimisticConversation) return prev;
-
-        const updated = { ...prev };
-        delete updated[optimisticId];
-        updated[realCaseId] = optimisticConversation;
-        return updated;
-      });
-
-      setConversationTitles(prev => {
-        const optimisticTitle = prev[optimisticId];
-        if (optimisticId === realCaseId || !optimisticTitle) return prev;
-
-        // Carry a title the user set on the optimistic case over to the real id —
-        // and nothing else. This used to write `newCase.title`, which for a
-        // just-created case is the backend placeholder `Case-YYMMDD-N`. Because
-        // the store wins over the backend title in `selectCaseTitle`, that pinned
-        // the placeholder ahead of the real title the server writes moments later,
-        // and the sidebar kept showing `Case-YYMMDD-N` for a case that had been
-        // named (fm#1069). With no entry, the backend title renders.
-        const updated = { ...prev };
-        updated[realCaseId] = optimisticTitle;
-        delete updated[optimisticId];
-        return updated;
-      });
-
-      setTitleSources(prev => {
-        const optimisticSource = prev[optimisticId];
-        if (!optimisticSource) return prev;
-
-        const updated = { ...prev };
-        delete updated[optimisticId];
-        if (optimisticSource === 'user') {
-          updated[realCaseId] = optimisticSource;
-        }
-        return updated;
-      });
-
-      // The panel moves to the new case only if it is still showing the
-      // optimistic one this create was for. The user may have opened another
-      // case from the sidebar meanwhile, and pulling them back is navigation
-      // they did not ask for (#334); the new case reaches the sidebar below.
-      // The row and pointer switch together, so neither is ever another case's.
-      if (useAppStore.getState().activeCaseId === optimisticId) {
-        setActiveCase(newCase);
-        await setActiveCaseId(realCaseId);
-      } else {
-        log.info('Case created after the user left it; leaving the open case alone', {
-          optimisticId,
-          realCaseId
-        });
-      }
-
-      log.info('Case ID reconciliation completed', { optimisticId, realCaseId });
-
-      // Drop the list slot, then reload (epoch-guarded): the new case is not
-      // on any cached page.
-      void reloadDrivenCaseList(epoch);
+      // Reconciled everywhere; the panel follows only if it is still on the
+      // optimistic id (#334). See `lazy-case.ts`.
+      await landLazyCase(optimisticId, newCase, epoch);
 
       return realCaseId;
     } catch (error) {
@@ -474,11 +409,8 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       log.debug('No active case, creating case via createOptimisticCaseInBackground');
       createdCase = true;
 
-      const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
+      const optimisticCaseId = claimLazyCase();
       try {
-        setActiveCaseId(optimisticCaseId);
-        setHasUnsavedNewChat(false);
-
         const realCaseId = await createOptimisticCaseInBackground(optimisticCaseId, null);
 
         targetCaseId = realCaseId;
@@ -486,17 +418,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         log.info('Case created and ID reconciled', { optimisticId: optimisticCaseId, realId: targetCaseId });
       } catch (error) {
         log.error('Failed to create case', error);
-        // Roll back the optimistic active-case state set above. Creation failed,
-        // so no id-mapping exists; leaving activeCaseId as a stale opt_case_*
-        // would make the next submit POST a turn against an optimistic id → 404.
-        // Clear it (this also removes faultmaven_current_case) and restore the
-        // unsaved-new-chat flag so the UI returns to the fresh composer. Only
-        // while the panel still shows it: a user who opened another case
-        // meanwhile stays there (#334).
-        if (useAppStore.getState().activeCaseId === optimisticCaseId) {
-          await setActiveCaseId(null);
-          setHasUnsavedNewChat(true);
-        }
+        // Roll back the optimistic active-case state set above, while the
+        // panel still shows it (`abandonLazyCase`).
+        await abandonLazyCase(optimisticCaseId);
         showError(notSentError(
           { attachments: [], hasQuery: true },
           'The case could not be created.',

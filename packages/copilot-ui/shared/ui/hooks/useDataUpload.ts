@@ -48,7 +48,7 @@ import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-ite
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
-import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
+import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useDataUpload');
@@ -92,8 +92,6 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
   // Selected store actions
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
-  const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
-  const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversations = useAppStore((state) => state.setConversations);
 
   /**
@@ -356,17 +354,18 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
       }
 
-      // Whether the panel follows the turn to its case. Always, for an existing
-      // case: no await separates the click from the pointer write below. After a
-      // lazy create, only if the user is still where the create started (#334).
-      let followCase = true;
+      // Set when this submit created its case lazily: the create's completion
+      // has then already decided whether the panel follows it (#334).
+      let createdCase = false;
 
       if (!targetCaseId) {
         log.info('No active case, creating case via /api/v1/cases');
+        createdCase = true;
 
-        // Where the panel was when the create started: a new chat (null), or a
-        // stale optimistic id with no mapping.
-        const startedOn = useAppStore.getState().activeCaseId;
+        // The create's own identity while it is in flight, as on the message
+        // path (`lazy-case.ts`): whether the user is still on it when it lands
+        // is a question about THIS id, not about the `null` of a new chat.
+        const optimisticCaseId = claimLazyCase();
         let caseIdempotencyKey = '';
         try {
           // Stable key for this logical case creation so an ambiguous network
@@ -406,36 +405,14 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
           targetCaseId = newCaseId;
 
-          setConversations(prev => ({
-            ...prev,
-            [newCaseId]: []
-          }));
-
-          // The panel moves to the new case only if the user is still where the
-          // create started. One who opened another case from the sidebar
-          // meanwhile stays there (#334); the new case reaches the sidebar below
-          // and its turn still goes out.
-          followCase = useAppStore.getState().activeCaseId === startedOn;
-          if (followCase) {
-            setActiveCaseId(newCaseId);
-            setHasUnsavedNewChat(false);
-            setActiveCase(caseData);
-          } else {
-            log.info('Case created after the user left the new chat; leaving the open case alone', { newCaseId });
-          }
-
-          // Deliberately NOT seeding conversationTitles with `caseData.title`.
-          // A freshly created case's title is the backend placeholder
+          // Reconciled everywhere; the panel follows only if it is still on the
+          // optimistic id, and the new case reaches the sidebar either way.
+          // conversationTitles is deliberately NOT seeded with `caseData.title`:
+          // a freshly created case's title is the backend placeholder
           // `Case-YYMMDD-N`, and the store wins over the backend title in
-          // `selectCaseTitle` — so pinning it here would shadow the real title
-          // the server writes moments later, and the sidebar would show the
-          // placeholder forever even though the case had been named (fm#1069).
-          // The store is for titles a user chose or explicitly generated; the
-          // backend's own title already renders as the second source.
-
-          // Drop the list slot, then reload (epoch-guarded): the new case is
-          // not on any cached page.
-          void reloadDrivenCaseList(epoch);
+          // `selectCaseTitle`, so pinning it would shadow the real title the
+          // server writes moments later (fm#1069).
+          await landLazyCase(optimisticCaseId, caseData, epoch);
 
           log.info('Case created:', targetCaseId);
         } catch (error) {
@@ -446,6 +423,8 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           pendingCaseKey.current = isAmbiguousFailure(error) && caseIdempotencyKey
             ? { key: caseIdempotencyKey, epoch }
             : null;
+          // Back to the new chat composer, while the panel still shows it.
+          await abandonLazyCase(optimisticCaseId);
           showError(notSentError(unsent, 'The case could not be created.', error));
           return {
             success: false,
@@ -580,8 +559,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       // useMessageSubmission does): a stale optimistic pointer resolves to its
       // real id here. Never when the response lands, by which time the user may
       // have opened another case, and moving the pointer back would put this
-      // case's conversation under that case's row (#321).
-      if (followCase) {
+      // case's conversation under that case's row (#321). After a lazy create
+      // the create's completion already decided (#334).
+      if (!createdCase) {
         setActiveCaseId(targetCaseId);
       }
 

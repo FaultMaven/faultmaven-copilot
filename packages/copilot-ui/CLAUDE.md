@@ -157,11 +157,13 @@ Optimistic ids start with `opt_`; real ids never do. The case list is real-only
 (`sanitizeBackendCases`, `validateStateIntegrity`): a transient `opt_case_*`
 exists only while a lazy case-create is in flight, is set as the active-case id,
 and is reconciled to the real id via `idMappingManager`. If the create fails the
-optimistic active-case id is rolled back. The create's completion reconciles
-the id everywhere, but moves the active pointer and row to the real case (or
-rolls a failure back) only while the active case is still the one the create
-started from: a user who opened another case meanwhile stays there, and the new
-case reaches the sidebar through `reloadDrivenCaseList` (#334). Both submit paths resolve a stale
+optimistic active-case id is rolled back. Both paths' lazy creates go through
+`lib/state/lazy-case.ts` (#334): the create claims a fresh `opt_case_*` as the
+active id when it starts, and its completion reconciles the id everywhere but
+moves the active pointer and row to the real case (or rolls a failure back) only
+while the active case is still THAT id. A user who opened another case, or
+another new chat, meanwhile stays there; the new case reaches the sidebar
+through `reloadDrivenCaseList` whether or not its turn commits. Both submit paths resolve a stale
 `opt_case_*` (via the mapping, or a fresh real case) before POSTing a turn. Only
 **case** ids are swapped; a message keeps its `opt_msg_*` id until the delta
 fetch reconciles it (below), or until its turn's response finds the server's

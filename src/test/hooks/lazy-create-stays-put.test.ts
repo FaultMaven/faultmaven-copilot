@@ -182,4 +182,50 @@ describe.each(paths)('lazy case-create completion — $name', ({ name, send }) =
     expect(state.hasUnsavedNewChat).toBe(false);
     expect(api.submitTurn).not.toHaveBeenCalled();
   });
+
+  it('B, then a new chat, before the create lands: the user stays on the new chat', async () => {
+    // A→B→A: the panel is back on a blank composer, as it was when the create
+    // started, but it is a NEW new chat the user opened, not the one this
+    // create was for.
+    const create = deferredCreate();
+    const settled = await send();
+    openB();
+    act(() => useAppStore.setState({ activeCaseId: null, activeCase: null, hasUnsavedNewChat: true } as never));
+
+    await act(async () => { await create.resolve(caseRow(NEW)); await settled(); });
+
+    const state = useAppStore.getState();
+    expect(state.activeCaseId).toBeNull();
+    expect(state.activeCase).toBeNull();
+    expect(state.hasUnsavedNewChat).toBe(true);
+  });
+
+  it('the new case reaches the sidebar from the create itself, even when its turn fails', async () => {
+    // No turn commits, so the post-turn read never runs: only the create's
+    // own reload can list the case.
+    const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache').mockResolvedValue();
+    (api.submitTurn as any).mockRejectedValue(new Error('turn failed'));
+    const create = deferredCreate();
+    const settled = await send();
+    openB();
+    const before = useAppStore.getState().refreshSessions;
+
+    await act(async () => { await create.resolve(caseRow(NEW)); await settled(); });
+
+    await vi.waitFor(() => expect(useAppStore.getState().refreshSessions).toBe(before + 1));
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    invalidate.mockRestore();
+  });
+
+  it('a create failing while the user is still on the new chat returns them to the composer', async () => {
+    const create = deferredCreate();
+    const settled = await send();
+
+    await act(async () => { await create.reject(new Error('create failed')); await settled(); });
+
+    const state = useAppStore.getState();
+    expect(state.activeCaseId).toBeNull();
+    expect(state.hasUnsavedNewChat).toBe(true);
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
 });
