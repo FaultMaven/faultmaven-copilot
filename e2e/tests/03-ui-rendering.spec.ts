@@ -1,47 +1,14 @@
-import { test, expect } from '../setup/extension-context';
+import { test, expect, MOCK_API, seedExtensionStorage, signedInStorage } from '../setup/extension-context';
 
+// Mock API state is reset and asserted before every test by the shared
+// fixture (`mockApiState` in e2e/setup/extension-context.ts), so no test here
+// has to clean up after itself.
 test.describe('UI Rendering', () => {
-    test.beforeEach(async ({ context, extensionId }) => {
-        const page = await context.newPage();
-        await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
-
-        // Inject auth state to skip to the case/chat view
-        await page.evaluate(() => {
-            return new Promise<void>((resolve) => {
-                // @ts-ignore
-                chrome.storage.local.set({
-                    authState: {
-                        access_token: 'e2e-mock-token',
-                        expires_at: Date.now() + 86400000,
-                        refresh_token: 'e2e-refresh-token',
-                        refresh_expires_at: Date.now() + 86400000 * 7,
-                        user: { user_id: 'e2e-user', username: 'test_user', roles: ['user'] }
-                    },
-                    access_token: 'e2e-mock-token',
-                    expires_at: Date.now() + 86400000,
-                    refresh_token: 'e2e-refresh-token',
-                    refresh_expires_at: Date.now() + 86400000 * 7,
-                    user: { user_id: 'e2e-user', username: 'test_user', roles: ['user'] },
-                    apiEndpoint: 'http://localhost:8091',
-                    hasCompletedFirstRun: true
-                }, () => {
-                    chrome.storage.local.get(null, (res) => console.log('INJECT SUCCESS: ', res));
-                    resolve();
-                });
-            });
-        });
-
-        await page.reload();
-
-        await page.evaluate(() => {
-            return new Promise<void>((resolve) => {
-                // @ts-ignore
-                chrome.storage.local.get(null, (res) => {
-                    console.log('AFTER RELOAD: ', res);
-                    resolve();
-                });
-            });
-        });
+    test.beforeEach(async ({ context }) => {
+        // Signed in BEFORE any panel page exists. Writing this from a panel page
+        // that had just loaded raced the panel's startup repair and signed out
+        // roughly every other test in this file — see seedExtensionStorage.
+        await seedExtensionStorage(context, signedInStorage());
     });
 
     test('Empty/welcome state renders on first open', async ({ context, extensionId }) => {
@@ -89,7 +56,7 @@ test.describe('UI Rendering', () => {
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
         // Slow down the turns response so the loading indicator stays visible
-        await page.request.post('http://localhost:8091/__admin/state', {
+        await page.request.post(`${MOCK_API}/__admin/state`, {
             data: { responseDelayMs: 5000 }
         });
 
@@ -112,7 +79,7 @@ test.describe('UI Rendering', () => {
         const page = await context.newPage();
 
         // First, set the server state to return a 500
-        await page.request.post('http://localhost:8091/__admin/state', {
+        await page.request.post(`${MOCK_API}/__admin/state`, {
             data: { shouldFail: true }
         });
 
@@ -132,9 +99,6 @@ test.describe('UI Rendering', () => {
         // The exact text will depend on ErrorClassifier output
         const body = page.locator('body');
         await expect(body).toContainText(/(fail|error|wrong)/i);
-
-        // Reset server state
-        await page.request.post('http://localhost:8091/__admin/reset');
     });
 
     test('Rate limited (429) shows retry message', async ({ context, extensionId }) => {
@@ -143,15 +107,15 @@ test.describe('UI Rendering', () => {
         // populate the case cache; the reload then served cases from that cache
         // and never reached the rate-limited endpoint, so no banner rendered and
         // the assertion failed against a perfectly working panel.
-        await context.request.post('http://localhost:8091/__admin/state', {
+        await context.request.post(`${MOCK_API}/__admin/state`, {
             data: { rateLimit: true }
         });
 
         const page = await context.newPage();
         await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
 
-        // Drop any cache a PREVIOUS test left behind, then reload so the render
-        // is driven by a live (rate-limited) request rather than stale cases.
+        // Drop any case cache, then reload so the render is driven by a live
+        // (rate-limited) request rather than stale cases.
         await page.evaluate(() => {
             return new Promise<void>((resolve) => {
                 // @ts-ignore
@@ -162,15 +126,5 @@ test.describe('UI Rendering', () => {
 
         const body = page.locator('body');
         await expect(body).toContainText(/(limit|exceeded|try again|rate limit)/i);
-
-        await page.request.post('http://localhost:8091/__admin/reset');
-    });
-
-    // Always reset mock server state to prevent leaks between tests
-    test.afterEach(async ({ context }) => {
-        const page = context.pages()[0];
-        if (page) {
-            await page.request.post('http://localhost:8091/__admin/reset').catch(() => {});
-        }
     });
 });

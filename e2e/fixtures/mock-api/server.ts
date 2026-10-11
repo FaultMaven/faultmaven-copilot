@@ -34,28 +34,35 @@ function sendFixture(res: express.Response, fixtureName: string, statusCode = 20
     }
 }
 
-// Memory store for dynamic behavior across tests
-let testState = {
+// Memory store for dynamic behavior across tests.
+//
+// ‼ This is the ONLY mutable state shared between tests: the browser context is
+// test-scoped (fresh profile per test), but this process lives for the whole
+// run. A test that sets a flag and dies before clearing it hands the flag to the
+// next test. Specs reset it in `beforeEach` (where it cannot be skipped) and can
+// read it back through `GET /__admin/state` to measure rather than assume.
+const DEFAULT_STATE = {
     shouldFail: false,
     rateLimit: false,
     authExpired: false,
     responseDelayMs: 0,
 };
+let testState = { ...DEFAULT_STATE };
 
-// Admin endpoint for tests to reset/change server state
+// Admin endpoint for tests to change server state
 app.post('/__admin/state', (req, res) => {
     testState = { ...testState, ...req.body };
     res.json(testState);
 });
 
+// Read the current state, so a test can assert what it starts from
+app.get('/__admin/state', (req, res) => {
+    res.json(testState);
+});
+
 // Reset state
 app.post('/__admin/reset', (req, res) => {
-    testState = {
-        shouldFail: false,
-        rateLimit: false,
-        authExpired: false,
-        responseDelayMs: 0,
-    };
+    testState = { ...DEFAULT_STATE };
     res.json({ success: true });
 });
 

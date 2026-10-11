@@ -1,35 +1,11 @@
-import { test, expect } from '../setup/extension-context';
+import { test, expect, seedExtensionStorage, signedInStorage } from '../setup/extension-context';
 
 test.describe('API Integration', () => {
-    test.beforeEach(async ({ context, extensionId }) => {
-        const page = await context.newPage();
-        await page.goto(`chrome-extension://${extensionId}/sidepanel_manual.html`);
-
-        // Reset mock server state to prevent leaks from other test files
-        await page.request.post('http://localhost:8091/__admin/reset').catch(() => {});
-
-        await page.evaluate(() => {
-            return new Promise<void>((resolve) => {
-                // @ts-ignore
-                chrome.storage.local.set({
-                    authState: {
-                        access_token: 'e2e-mock-token',
-                        expires_at: Date.now() + 86400000,
-                        refresh_token: 'e2e-refresh-token',
-                        refresh_expires_at: Date.now() + 86400000 * 7,
-                        user: { user_id: 'e2e-user', username: 'test_user', roles: ['user'] }
-                    },
-                    access_token: 'e2e-mock-token',
-                    expires_at: Date.now() + 86400000,
-                    refresh_token: 'e2e-refresh-token',
-                    refresh_expires_at: Date.now() + 86400000 * 7,
-                    user: { user_id: 'e2e-user', username: 'test_user', roles: ['user'] },
-                    apiEndpoint: 'http://localhost:8091',
-                    hasCompletedFirstRun: true
-                }, resolve);
-            });
-        });
-        await page.reload();
+    test.beforeEach(async ({ context }) => {
+        // Mock API state is reset by the shared fixture (`mockApiState`). The
+        // session is seeded before any panel page exists — see
+        // seedExtensionStorage for the race seeding from a panel page loses.
+        await seedExtensionStorage(context, signedInStorage());
     });
 
     test('Submitting a query sends correct request to API', async ({ context, extensionId }) => {
