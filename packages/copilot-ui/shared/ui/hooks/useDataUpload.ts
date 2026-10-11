@@ -47,7 +47,8 @@ import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
-import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
+import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
+import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useDataUpload');
@@ -91,10 +92,7 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
   // Selected store actions
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
-  const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
-  const setActiveCase = useAppStore((state) => state.setActiveCase);
   const setConversations = useAppStore((state) => state.setConversations);
-  const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   /**
    * Submit the turn via the unified /turns endpoint and, on success, reconcile
@@ -175,9 +173,13 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
               : item
           )
         }));
-        void useAppStore.getState().reloadCommittedTurn(targetCaseId, [userMessageId, aiMessageId]);
-        // Committed all the same: the case moved even though its reply did not arrive.
-        if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, targetCaseId);
+        // The case row is read back for its state, and the list re-read once,
+        // as for any committed turn (#333).
+        if (epoch === getEpoch()) {
+          void applyUnrepliedTurn(targetCaseId, [userMessageId, aiMessageId], epoch);
+          // Committed all the same: the case moved even though its reply did not arrive.
+          notifyCaseChanged(onCaseChanged, targetCaseId);
+        }
         showError(classified);
         return { success: true, message: '', sent: true };
       }
@@ -262,8 +264,11 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     }
 
     // The state goes to the case the turn was sent for, never to whichever case
-    // is open now (#321); see the refresh below for what the result suppresses.
-    const { stateChanged, listReloaded } = applyTurnCaseState(targetCaseId, turnResponse.case_state, epoch);
+    // is open now (#321), and the sidebar is re-read past its cache so a title
+    // the server gave this case while answering reaches it (#333). That is what
+    // names an upload-driven case, where the user types nothing and attaches a
+    // log (fm#1069): the client-side titling gate that lived here never did.
+    applyTurnCaseState(targetCaseId, turnResponse.case_state, epoch);
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
     notifyCaseChanged(onCaseChanged, targetCaseId);
@@ -292,21 +297,6 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     // The turn committed: mark the pending op complete so the retry affordance
     // (if this was a retry) clears.
     pendingOpsManager.complete(aiMessageId);
-
-    // Auto-titling moved to the server (POST /cases/{id}/turns names a case still
-    // holding its `Case-YYMMDD-N` placeholder in the background). The client-side
-    // copy that lived here was gated on `turn_number >= 5`, which is precisely
-    // what kept an upload-driven case — the user types nothing and attaches a
-    // 40MB log — unnamed forever (fm#1069). Refetch so the server's title reaches
-    // the sidebar.
-    //
-    // Skipped when the turn changed case_state, as in useMessageSubmission:
-    // SidePanelApp's transition effect then refreshes the list itself, as
-    // `applyTurnCaseState` does when the turn's case is no longer open, and both
-    // would spend two list GETs to answer one question.
-    if (!stateChanged && !listReloaded) {
-      triggerRefreshSessions();
-    }
 
     return { success: true, message: "", sent: true };
   };
@@ -368,9 +358,18 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
       }
 
+      // Set when this submit created its case lazily: the create's completion
+      // has then already decided whether the panel follows it (#334).
+      let createdCase = false;
+
       if (!targetCaseId) {
         log.info('No active case, creating case via /api/v1/cases');
+        createdCase = true;
 
+        // The create's own identity while it is in flight, as on the message
+        // path (`lazy-case.ts`): whether the user is still on it when it lands
+        // is a question about THIS id, not about the `null` of a new chat.
+        const optimisticCaseId = claimLazyCase();
         let caseIdempotencyKey = '';
         try {
           // Stable key for this logical case creation so an ambiguous network
@@ -410,27 +409,14 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
           targetCaseId = newCaseId;
 
-          setActiveCaseId(newCaseId);
-          setHasUnsavedNewChat(false);
-          setActiveCase(caseData);
-
-          setConversations(prev => ({
-            ...prev,
-            [newCaseId]: []
-          }));
-
-          // Deliberately NOT seeding conversationTitles with `caseData.title`.
-          // A freshly created case's title is the backend placeholder
+          // Reconciled everywhere; the panel follows only if it is still on the
+          // optimistic id, and the new case reaches the sidebar either way.
+          // conversationTitles is deliberately NOT seeded with `caseData.title`:
+          // a freshly created case's title is the backend placeholder
           // `Case-YYMMDD-N`, and the store wins over the backend title in
-          // `selectCaseTitle` — so pinning it here would shadow the real title
-          // the server writes moments later, and the sidebar would show the
-          // placeholder forever even though the case had been named (fm#1069).
-          // The store is for titles a user chose or explicitly generated; the
-          // backend's own title already renders as the second source.
-
-          // The active-case pointer is persisted by setActiveCaseId above —
-          // the single writer of that key.
-          triggerRefreshSessions();
+          // `selectCaseTitle`, so pinning it would shadow the real title the
+          // server writes moments later (fm#1069).
+          await landLazyCase(optimisticCaseId, caseData, epoch);
 
           log.info('Case created:', targetCaseId);
         } catch (error) {
@@ -441,6 +427,8 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           pendingCaseKey.current = isAmbiguousFailure(error) && caseIdempotencyKey
             ? { key: caseIdempotencyKey, epoch }
             : null;
+          // Back to the new chat composer, while the panel still shows it.
+          await abandonLazyCase(optimisticCaseId);
           showError(notSentError(unsent, 'The case could not be created.', error));
           return {
             success: false,
@@ -575,8 +563,11 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       // useMessageSubmission does): a stale optimistic pointer resolves to its
       // real id here. Never when the response lands, by which time the user may
       // have opened another case, and moving the pointer back would put this
-      // case's conversation under that case's row (#321).
-      setActiveCaseId(targetCaseId);
+      // case's conversation under that case's row (#321). After a lazy create
+      // the create's completion already decided (#334).
+      if (!createdCase) {
+        setActiveCaseId(targetCaseId);
+      }
 
       // Step 4: Register a pending operation so a failed turn keeps a retry
       // affordance in the failed-operation banner (parity with

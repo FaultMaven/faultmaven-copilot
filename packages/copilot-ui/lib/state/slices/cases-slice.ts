@@ -73,7 +73,8 @@ export interface CasesSlice {
    * A turn committed but its reply could not be served
    * (`IDEMPOTENCY_REPLAY_UNAVAILABLE`): drop its local rows and read the turn
    * back from the case instead. Resolves as `fetchConversationDelta` does; on
-   * `false` the local rows stay.
+   * `false` the local rows stay. Messages only: `applyUnrepliedTurn` reads the
+   * case row.
    */
   reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => Promise<boolean>;
   /** Resolves the row it read (for the case asked about, whichever is open now), or null. */
@@ -429,9 +430,9 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     },
 
     reloadCommittedTurn: (caseId, rowIds) => {
-      // `refreshActiveCase` reads the case row only (state, closure), never
-      // its messages, so the messages come from the delta fetch.
-      void get().refreshActiveCase(caseId);
+      // The messages only. The case row (state, closure) is read back by the
+      // caller, `applyUnrepliedTurn` (`lib/state/turn-case-state.ts`), which
+      // also re-reads the sidebar list once, as for any committed turn.
       // The local pair cannot be filled (there is no reply to fill it with)
       // and must not stay beside the backend copy the fetch appends: the turn
       // committed, so the case's own rows are the turn. It is dropped in the

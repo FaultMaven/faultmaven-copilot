@@ -47,7 +47,8 @@ import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
-import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
+import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
+import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
 import { notifyCaseChanged } from './case-changed';
@@ -58,7 +59,7 @@ const log = createLogger('useMessageSubmission');
 //
 // Auto-titling is the server's job: POST /cases/{id}/turns names a case still
 // carrying its `Case-YYMMDD-N` placeholder once it has enough substance to name,
-// in the background. This hook used to do it too, gated on `turn_number >= 5` —
+// before it answers the turn (`_auto_title_case_if_default`). This hook used to do it too, gated on `turn_number >= 5` —
 // a copy of a backend policy, written in TypeScript, that drifted from it and
 // blocked exactly the upload-driven cases the backend gate was relaxed to allow
 // (fm#1069). Two triggers for one job is how they disagree; the client keeps the
@@ -95,12 +96,7 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
 
   // Selected store actions
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
-  const setHasUnsavedNewChat = useAppStore((state) => state.setHasUnsavedNewChat);
   const setConversations = useAppStore((state) => state.setConversations);
-  const setActiveCase = useAppStore((state) => state.setActiveCase);
-  const setConversationTitles = useAppStore((state) => state.setConversationTitles);
-  const setTitleSources = useAppStore((state) => state.setTitleSources);
-  const triggerRefreshSessions = useAppStore((state) => state.triggerRefreshSessions);
 
   // Reconcile optimistic case ID with backend ID
   const createOptimisticCaseInBackground = async (optimisticId: string, title: string | null) => {
@@ -136,64 +132,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       }
 
       log.info('Case created on backend', { optimisticId, realCaseId });
-      idMappingManager.addMapping(optimisticId, realCaseId);
-
-      await setActiveCaseId(realCaseId);
-
-      // Re-check after setActiveCaseId's await: a logout during that write must
-      // not let the remaining store/storage writes below repopulate the purge.
-      if (epoch !== getEpoch()) {
-        log.info('Session changed mid-reconciliation — discarding remaining writes', {
-          optimisticId,
-          realCaseId
-        });
-        return realCaseId;
-      }
-
-      setConversations(prev => {
-        const optimisticConversation = prev[optimisticId];
-        if (!optimisticConversation) return prev;
-
-        const updated = { ...prev };
-        delete updated[optimisticId];
-        updated[realCaseId] = optimisticConversation;
-        return updated;
-      });
-
-      setConversationTitles(prev => {
-        const optimisticTitle = prev[optimisticId];
-        if (optimisticId === realCaseId || !optimisticTitle) return prev;
-
-        // Carry a title the user set on the optimistic case over to the real id —
-        // and nothing else. This used to write `newCase.title`, which for a
-        // just-created case is the backend placeholder `Case-YYMMDD-N`. Because
-        // the store wins over the backend title in `selectCaseTitle`, that pinned
-        // the placeholder ahead of the real title the server writes moments later,
-        // and the sidebar kept showing `Case-YYMMDD-N` for a case that had been
-        // named (fm#1069). With no entry, the backend title renders.
-        const updated = { ...prev };
-        updated[realCaseId] = optimisticTitle;
-        delete updated[optimisticId];
-        return updated;
-      });
-
-      setTitleSources(prev => {
-        const optimisticSource = prev[optimisticId];
-        if (!optimisticSource) return prev;
-
-        const updated = { ...prev };
-        delete updated[optimisticId];
-        if (optimisticSource === 'user') {
-          updated[realCaseId] = optimisticSource;
-        }
-        return updated;
-      });
-
-      setActiveCase(newCase);
-
-      log.info('Case ID reconciliation completed', { optimisticId, realCaseId });
-
-      triggerRefreshSessions();
+      // Reconciled everywhere; the panel follows only if it is still on the
+      // optimistic id (#334). See `lazy-case.ts`.
+      await landLazyCase(optimisticId, newCase, epoch);
 
       return realCaseId;
     } catch (error) {
@@ -284,9 +225,13 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
                   : item
               )
             }));
-            void useAppStore.getState().reloadCommittedTurn(caseId, [userMessageId, aiMessageId]);
-            // Committed all the same: the case moved even though its reply did not arrive.
-            if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, caseId);
+            // The case row is read back for its state, and the list re-read once,
+            // as for any committed turn (#333).
+            if (epoch === getEpoch()) {
+              void applyUnrepliedTurn(caseId, [userMessageId, aiMessageId], epoch);
+              // Committed all the same: the case moved even though its reply did not arrive.
+              notifyCaseChanged(onCaseChanged, caseId);
+            }
             showError(classified);
             return;
           }
@@ -398,11 +343,12 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       }
 
       // The state goes to the case the turn was sent for, never to whichever
-      // case is open now (#321). A state change makes SidePanelApp's transition
-      // effect refresh the case list on its own, and a turn on a case no longer
-      // open reloads it here; either way the post-turn refresh below stands down
-      // rather than asking for the same list twice.
-      const { stateChanged, listReloaded } = applyTurnCaseState(caseId, response.case_state, epoch);
+      // case is open now (#321), and the sidebar is re-read past its cache so a
+      // title the server gave this case while answering reaches it (#333).
+      // Not gated on the store's titles: it holds an entry only for cases the
+      // user renamed or generated a title for, so "no store entry" does not
+      // mean "no server title".
+      applyTurnCaseState(caseId, response.case_state, epoch);
 
       // The turn committed and the session is the one that sent it: tell the host.
       notifyCaseChanged(onCaseChanged, caseId);
@@ -418,24 +364,6 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
 
       pendingOpsManager.complete(aiMessageId);
       log.info('Message submission completed and UI updated');
-
-      // The backend may have named this case while processing the turn (see
-      // POST /cases/{id}/turns). Refetch the list so a title the client never
-      // asked for still reaches the sidebar.
-      //
-      // Not gated on the store: it holds an entry only for cases the user
-      // renamed or generated a title for, so "no store entry" does not mean "no
-      // server title", and gating on it would skip the refresh for every case
-      // loaded from the server.
-      //
-      // Skipped when the turn changed case_state, because SidePanelApp's
-      // transition effect then runs reconcileActiveCaseState, which invalidates
-      // the list cache and bumps this same counter itself, and when the turn's
-      // case is no longer open (`applyTurnCaseState` reloaded the list). Firing
-      // both would spend two list GETs to answer one question.
-      if (!stateChanged && !listReloaded) {
-        triggerRefreshSessions();
-      }
 
     } catch (error) {
       log.debug('Caught error from resilientOperation (handled in onFailure)', error);
@@ -477,15 +405,16 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       targetCaseId = idMappingManager.getRealId(targetCaseId) ?? null;
     }
 
+    // Set when this submit created its case lazily: the create's completion
+    // has then already decided whether the panel follows it (#334).
+    let createdCase = false;
+
     if (!targetCaseId) {
       log.debug('No active case, creating case via createOptimisticCaseInBackground');
+      createdCase = true;
 
+      const optimisticCaseId = claimLazyCase();
       try {
-        const optimisticCaseId = OptimisticIdGenerator.generateCaseId();
-
-        setActiveCaseId(optimisticCaseId);
-        setHasUnsavedNewChat(false);
-
         const realCaseId = await createOptimisticCaseInBackground(optimisticCaseId, null);
 
         targetCaseId = realCaseId;
@@ -493,13 +422,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         log.info('Case created and ID reconciled', { optimisticId: optimisticCaseId, realId: targetCaseId });
       } catch (error) {
         log.error('Failed to create case', error);
-        // Roll back the optimistic active-case state set above. Creation failed,
-        // so no id-mapping exists; leaving activeCaseId as a stale opt_case_*
-        // would make the next submit POST a turn against an optimistic id → 404.
-        // Clear it (this also removes faultmaven_current_case) and restore the
-        // unsaved-new-chat flag so the UI returns to the fresh composer.
-        await setActiveCaseId(null);
-        setHasUnsavedNewChat(true);
+        // Roll back the optimistic active-case state set above, while the
+        // panel still shows it (`abandonLazyCase`).
+        await abandonLazyCase(optimisticCaseId);
         showError(notSentError(
           { attachments: [], hasQuery: true },
           'The case could not be created.',
@@ -579,7 +504,13 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       [targetCaseId!]: [...(prev[targetCaseId!] || []), userMessage, aiWorkingMessage]
     }));
 
-    setActiveCaseId(targetCaseId);
+    // Point the panel at the case the turn is for. No await separates this
+    // from the click on an existing case, so the user is still there; after a
+    // lazy create the create's completion already moved the panel, or left the
+    // user where they went meanwhile (#334).
+    if (!createdCase) {
+      setActiveCaseId(targetCaseId);
+    }
 
     log.info('Messages added to UI immediately - 0ms response time');
 
