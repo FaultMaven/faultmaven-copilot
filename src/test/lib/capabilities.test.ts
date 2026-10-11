@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CapabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
+import { CapabilitiesManager, MAX_STORED_CAPABILITIES } from '@faultmaven/copilot-ui/lib/capabilities';
 
 // Mock the timeout-wrapped fetch used by CapabilitiesManager.
 const fetchWithTimeout = vi.fn();
@@ -56,8 +56,7 @@ describe('CapabilitiesManager', () => {
   it('serves cached capabilities when the fetch fails', async () => {
     fetchWithTimeout.mockRejectedValue(new Error('network down'));
     (global as any).browser.storage.local.get.mockResolvedValue({
-      backendCapabilities: liveCaps,
-      backendCapabilitiesApiUrl: 'https://api.example',
+      backendCapabilitiesByUrl: { 'https://api.example': liveCaps },
     });
     const mgr = new CapabilitiesManager();
 
@@ -211,17 +210,38 @@ describe('CapabilitiesManager is keyed on the API URL', () => {
     expect(caps.limits.turnResponseBoundSeconds).toBe(0);
   });
 
-  it('a probe for A landing after B was requested does not overwrite B’s offline copy', async () => {
+  it('a probe for A landing after B was requested does not displace B’s offline copy', async () => {
     hold.add(A);
     const mgr = new CapabilitiesManager();
     const forA = mgr.fetch(A);
     await mgr.fetch(B);
     pending.get(A)!(undefined);
     await forA;
-    expect(stored.backendCapabilitiesApiUrl).toBe(B);
 
+    down.add(A);
     down.add(B);
-    const caps = await new CapabilitiesManager().fetch(B);
-    expect(caps.limits.turnResponseBoundSeconds).toBe(300);
+    expect((await new CapabilitiesManager().fetch(B)).limits.turnResponseBoundSeconds).toBe(300);
+    expect((await new CapabilitiesManager().fetch(A)).limits.turnResponseBoundSeconds).toBe(150);
+  });
+
+  // The options page and the panel are separate documents over ONE
+  // storage.local. Options' Test probes an URL the user has not saved; that
+  // must not cost the panel, still on A, its offline copy of A.
+  it('another document probing an unsaved B does not evict A’s offline copy', async () => {
+    await new CapabilitiesManager().fetch(A); // the panel, on A
+    await new CapabilitiesManager().fetch(B); // options' Test of B
+    down.add(A);
+    const caps = await new CapabilitiesManager().fetch(A); // the panel, A down
+    expect(caps.limits.turnResponseBoundSeconds).toBe(150);
+  });
+
+  it('keeps offline copies for the most recently read servers only', async () => {
+    expect(MAX_STORED_CAPABILITIES).toBe(4);
+    const urls = ['https://1.example', 'https://2.example', 'https://3.example', 'https://4.example', 'https://5.example'];
+    for (const url of urls) {
+      await new CapabilitiesManager().fetch(url);
+    }
+    const byUrl = stored.backendCapabilitiesByUrl as Record<string, unknown>;
+    expect(Object.keys(byUrl).sort()).toEqual(urls.slice(1).sort());
   });
 });

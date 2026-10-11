@@ -54,10 +54,14 @@ This file holds the rules that constrain code *inside* the package.
   before a turn when the network read held is older than 5 minutes
   (`refreshIfStale`; a failed re-read keeps the earlier read). The manager
   is keyed on the API URL (#324): what is held, the in-flight probe, the
-  persisted offline copy (`backendCapabilitiesApiUrl` tags it) and the
-  fallback warning all belong to one server, every read names its URL (the
-  turn's is the transport's `baseUrl`), and nothing held for a URL (the user
-  changed it) is read before the turn. With no usable
+  fallback warning and the persisted offline copies (`backendCapabilitiesByUrl`,
+  one per server for the 4 read last: the options page and the panel share the
+  store, and options probes unsaved URLs) all belong to one server, every read
+  names its URL (the turn's is the transport's `baseUrl`), and nothing held for
+  a URL (the user changed it) is read before the turn. A turn is held by one
+  probe at most `REFRESH_WAIT_MS` counted from the PROBE's start, so its
+  repeated timing reads (the hook, then `submitTurn` per attempt) never wait
+  twice on the same probe. With no usable
   bound the old constants apply (300 s / 660 s, plus the same allowance) and a
   warning is logged once per capabilities object. The deadline bounds the START
   of a retry, so the worst case is about deadline + one request timeout.

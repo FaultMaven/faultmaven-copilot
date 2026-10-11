@@ -8,12 +8,22 @@ import { deriveTurnTiming, type TurnTiming } from './utils/turn-timing';
 
 /** A network read older than this is re-read before a turn (the bound moves with a provider switch). */
 export const CAPABILITIES_TTL_MS = 5 * 60 * 1000;
-/** The longest a turn waits on a stale re-read before sending on the held one. */
+/**
+ * The longest a turn is held by one capabilities probe, counted from the
+ * probe's START: every read that joins it waits only what is left, so a turn
+ * that reads its timing twice (the hook, then `submitTurn` per attempt) is not
+ * held twice by the same slow probe.
+ */
 export const REFRESH_WAIT_MS = 5_000;
 
-/** The persisted offline copy, and the API URL it was read from (`apiUrlKey`). */
-const STORED_CAPABILITIES_KEY = 'backendCapabilities';
-const STORED_CAPABILITIES_URL_KEY = 'backendCapabilitiesApiUrl';
+/**
+ * The persisted offline copies: `{ [apiUrlKey]: BackendCapabilities }`, most
+ * recently read last. One copy PER SERVER, not one slot: every document of the
+ * host shares the store, and the options page probing an unsaved URL must not
+ * cost a panel on the saved one its copy. Bounded to the servers read last.
+ */
+const STORED_CAPABILITIES_KEY = 'backendCapabilitiesByUrl';
+export const MAX_STORED_CAPABILITIES = 4;
 
 const log = createLogger('CapabilitiesManager');
 
@@ -57,15 +67,12 @@ function apiUrlKey(apiUrl: string): string {
  */
 export class CapabilitiesManager {
   private held = new Map<string, HeldCapabilities>();
-  private inFlight = new Map<string, Promise<BackendCapabilities>>();
-  /** The URL most recently asked about: only its read may replace the persisted copy. */
-  private lastRequested: string | null = null;
+  private inFlight = new Map<string, { probe: Promise<BackendCapabilities>; startedAt: number }>();
   /** The capabilities object (or per-URL "nothing held") the fallback-timing warning was last issued for. */
   private warnedFor: unknown = undefined;
 
   async fetch(apiUrl: string): Promise<BackendCapabilities> {
     const key = apiUrlKey(apiUrl);
-    this.lastRequested = key;
 
     // Only an authoritative (network) result short-circuits future fetches.
     // A cached / fabricated fallback must NOT poison the cache: the backend may
@@ -80,9 +87,11 @@ export class CapabilitiesManager {
     // of another URL answers nothing about this one.
     const running = this.inFlight.get(key);
     if (running) {
-      return running;
+      return running.probe;
     }
 
+    const startedAt = Date.now();
+    let settled = false;
     const probe = (async () => {
       try {
         // UNDER `/api/v1`, like every other client route.
@@ -125,18 +134,11 @@ export class CapabilitiesManager {
         }
         this.held.set(key, { capabilities: caps, source: 'network', fetchedAt: Date.now() });
 
-        // Cache for offline access, tagged with the server it describes. One
-        // slot, so only the URL asked about last may write it: a probe of the
-        // old server landing after a switch must not displace the new one's.
-        // No availability guard: the host store throws when it is not
-        // installed, and that is a wiring bug to surface rather than a
-        // condition to tiptoe around.
-        if (this.lastRequested === key) {
-          await ownedStorage.set({
-            [STORED_CAPABILITIES_KEY]: caps,
-            [STORED_CAPABILITIES_URL_KEY]: key,
-          });
-        }
+        // Cache for offline access, under the server it describes. No
+        // availability guard: the host store throws when it is not installed,
+        // and that is a wiring bug to surface rather than a condition to
+        // tiptoe around.
+        await storeOfflineCopy(key, caps);
 
         log.info('Connected to backend', { deploymentMode: caps.deploymentMode });
         return caps;
@@ -151,17 +153,11 @@ export class CapabilitiesManager {
         }
         log.warn('Capabilities fetch failed; serving degraded capabilities', error);
 
-        // Try the offline copy — only if it was read from this server. One
-        // written before it carried its URL is from an unknown server.
-        const cached = (await ownedStorage.get([
-          STORED_CAPABILITIES_KEY,
-          STORED_CAPABILITIES_URL_KEY,
-        ])) as {
-          [STORED_CAPABILITIES_KEY]?: BackendCapabilities;
-          [STORED_CAPABILITIES_URL_KEY]?: string;
-        };
-        const offline = cached[STORED_CAPABILITIES_KEY];
-        if (offline && cached[STORED_CAPABILITIES_URL_KEY] === key) {
+        // Try the offline copy read from THIS server. The single untagged
+        // `backendCapabilities` an older build wrote is from an unknown
+        // server and is never read.
+        const offline = (await readOfflineCopies())[key];
+        if (offline) {
           this.held.set(key, { capabilities: offline, source: 'cache', fetchedAt: 0 });
           return offline;
         }
@@ -193,11 +189,14 @@ export class CapabilitiesManager {
         this.held.set(key, { capabilities: fallback, source: 'fallback', fetchedAt: 0 });
         return fallback;
       } finally {
+        settled = true;
         this.inFlight.delete(key);
       }
     })();
 
-    this.inFlight.set(key, probe);
+    // A probe that settled without suspending has already run its `finally`;
+    // registering it now would leave a settled probe "in flight" for good.
+    if (!settled) this.inFlight.set(key, { probe, startedAt });
     return probe;
   }
 
@@ -211,16 +210,26 @@ export class CapabilitiesManager {
    * a probe that keeps failing.
    */
   async refreshIfStale(apiUrl: string): Promise<void> {
-    const held = this.held.get(apiUrlKey(apiUrl));
+    const key = apiUrlKey(apiUrl);
+    const held = this.held.get(key);
     if (held && !(held.source === 'network' && isStale(held))) return;
 
-    // A turn waits at most REFRESH_WAIT_MS for the re-read: a slow probe must
-    // not delay the send. It keeps running, and the next turn reads its result.
+    const probe = this.fetch(apiUrl);
+    // A slow probe must not delay the send: it keeps running and a later read
+    // takes its result. The wait is the PROBE's, REFRESH_WAIT_MS from its
+    // start, not each caller's: a turn reads its timing more than once (the
+    // hook, then `submitTurn` per attempt), and a fresh budget per read held
+    // the first POST for two budgets and every retry for another.
+    const startedAt = this.inFlight.get(key)?.startedAt;
+    if (startedAt === undefined) return; // settled already (or never started)
+    const remaining = startedAt + REFRESH_WAIT_MS - Date.now();
+    if (remaining <= 0) return;
+
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
-      this.fetch(apiUrl),
+      probe,
       new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, REFRESH_WAIT_MS);
+        timer = setTimeout(resolve, remaining);
       }),
     ]);
     clearTimeout(timer);
@@ -250,6 +259,25 @@ export class CapabilitiesManager {
     }
     return timing;
   }
+}
+
+type OfflineCopies = Record<string, BackendCapabilities>;
+
+async function readOfflineCopies(): Promise<OfflineCopies> {
+  const stored = (await ownedStorage.get([STORED_CAPABILITIES_KEY]))[STORED_CAPABILITIES_KEY];
+  return stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as OfflineCopies) : {};
+}
+
+/**
+ * Put `caps` as `key`'s offline copy, most recent last, keeping the
+ * `MAX_STORED_CAPABILITIES` servers read last. Read-modify-write across
+ * documents: a concurrent write from another document can lose one copy,
+ * which costs only a degraded read while that server is unreachable.
+ */
+async function storeOfflineCopy(key: string, caps: BackendCapabilities): Promise<void> {
+  const others = Object.entries(await readOfflineCopies()).filter(([url]) => url !== key);
+  const kept = [...others, [key, caps] as const].slice(-MAX_STORED_CAPABILITIES);
+  await ownedStorage.set({ [STORED_CAPABILITIES_KEY]: Object.fromEntries(kept) });
 }
 
 function isStale(held: HeldCapabilities): boolean {

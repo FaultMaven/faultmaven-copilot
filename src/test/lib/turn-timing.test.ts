@@ -132,8 +132,7 @@ describe('CapabilitiesManager.getTurnTiming', () => {
   it('a cached payload that carries the bound is used when the fetch fails', async () => {
     fetchWithTimeout.mockRejectedValue(new Error('down'));
     (global as any).browser.storage.local.get.mockResolvedValue({
-      backendCapabilities: caps({ turnResponseBoundSeconds: 140 }),
-      backendCapabilitiesApiUrl: API,
+      backendCapabilitiesByUrl: { [API]: caps({ turnResponseBoundSeconds: 140 }) },
     });
     const mgr = new CapabilitiesManager();
     await mgr.fetch('https://api.example');
@@ -238,5 +237,57 @@ describe('re-reading capabilities (a provider switch moves the bound)', () => {
     await mgr.refreshIfStale(API);
     expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
     expect(mgr.getTurnTiming(API).requestTimeoutMs).toBe(360_000);
+  });
+
+  // A turn reads its timing twice (the hook, then `submitTurn`, once per
+  // attempt). Each read used to wait REFRESH_WAIT_MS of its own on the SAME
+  // slow probe, so the first POST went out after 10 s and every retry waited
+  // another 5 s. The budget belongs to the probe: it runs from the probe's
+  // start, and a later read waits only what is left of it.
+  describe('one probe, one wait', () => {
+    /** Runs `reads` reads back to back and says how long they held the turn. */
+    async function heldFor(mgr: CapabilitiesManager, reads: number): Promise<number> {
+      const t0 = Date.now();
+      let doneAt = -1;
+      const run = (async () => {
+        for (let i = 0; i < reads; i += 1) await mgr.refreshIfStale(API);
+        doneAt = Date.now() - t0;
+      })();
+      await vi.advanceTimersByTimeAsync(3 * REFRESH_WAIT_MS);
+      await run;
+      return doneAt;
+    }
+
+    it('nothing held: two reads before one turn wait on a slow probe once', async () => {
+      fetchWithTimeout.mockReturnValue(new Promise(() => {}));
+      expect(await heldFor(new CapabilitiesManager(), 2)).toBe(REFRESH_WAIT_MS);
+      expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+    });
+
+    it('stale read: two reads before one turn wait on a slow re-read once', async () => {
+      fetchWithTimeout.mockResolvedValue(ok(caps({ turnResponseBoundSeconds: 150 })));
+      const mgr = new CapabilitiesManager();
+      await mgr.fetch(API);
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+      fetchWithTimeout.mockReturnValue(new Promise(() => {}));
+      expect(await heldFor(mgr, 2)).toBe(REFRESH_WAIT_MS);
+      expect(mgr.getTurnTiming(API).requestTimeoutMs).toBe(210_000);
+    });
+
+    it('a retry attempt after the budget is spent does not wait on the same probe again', async () => {
+      fetchWithTimeout.mockReturnValue(new Promise(() => {}));
+      const mgr = new CapabilitiesManager();
+      expect(await heldFor(mgr, 1)).toBe(REFRESH_WAIT_MS);
+      expect(await heldFor(mgr, 3)).toBe(0);
+      expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+    });
+
+    it('a read that joins a probe partway waits only the rest of its budget', async () => {
+      fetchWithTimeout.mockReturnValue(new Promise(() => {}));
+      const mgr = new CapabilitiesManager();
+      void mgr.fetch(API); // the app's own load, already running
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await heldFor(mgr, 1)).toBe(REFRESH_WAIT_MS - 2_000);
+    });
   });
 });
