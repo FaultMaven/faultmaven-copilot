@@ -184,15 +184,22 @@ export class AuthenticationError extends UserFacingError {
  * has not re-scoped to it yet. Not an authentication failure — nobody's session
  * has ended, and treating it as one (`category: 'authentication'`) would offer
  * a "Sign In" whose action signs the NEW user out. Nothing to recover either:
- * the panel switches to the new account when the host reports it. A notice.
+ * the host moves the panel off the old account when it reports the switch. A
+ * notice.
+ *
+ * ‼ The copy is HOST-NEUTRAL, because what happens next is the host's: the
+ * extension re-scopes its panel to the new account, while the Dashboard ends
+ * the tab and routes it to sign-in (faultmaven-dashboard#212). So it names no
+ * mechanism — and recommends no sign-in either, for the reason above.
  *
  * `getAuthHeaders` propagates it so the request is never sent; a host throws
- * it from `accessToken()` when it can tell the two users apart.
+ * it from `accessToken()` when it can tell the two users apart. A host outside
+ * this repository reaches it through the package entry.
  */
 export class SessionSwitchedError extends UserFacingError {
   readonly userTitle = 'Signed in as another account';
   readonly userMessage = 'Another account signed in on this browser, so this was not sent.';
-  readonly userAction = 'The panel is switching to that account.';
+  readonly userAction = 'Check which account is signed in, then send it again.';
   readonly category: ErrorCategory = 'notice';
   readonly recovery: RecoveryStrategy = 'none';
 
