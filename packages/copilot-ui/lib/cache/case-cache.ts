@@ -7,6 +7,13 @@ const log = createLogger('CaseCacheManager');
 
 interface CachedCaseList {
     cases: UserCase[];
+    /**
+     * When this page was FETCHED from the server — not when the slot was last
+     * written. The TTL runs from here: it bounds how long the page can hide a
+     * change the user did not make (a case reassigned to or away from them,
+     * fm#1898). A local edit of a row (a rename, a generated title, a created
+     * case) keeps it; only `setCachedCases`, a fresh page, moves it (#325).
+     */
     timestamp: number;
     version: number;
 }
@@ -59,35 +66,8 @@ export class CaseCacheManager {
      */
     async getCachedCases(): Promise<UserCase[] | null> {
         try {
-            const stored = await ownedStorage.get([CACHE_KEY]);
-            const cache = stored[CACHE_KEY] as CachedCaseList | undefined;
-
-            if (!cache) {
-                log.debug('Cache miss: No cache found');
-                return null;
-            }
-
-            // Shape before staleness: a row from an older build is unreadable
-            // whatever its age. An unstamped cache is pre-v1 by definition.
-            if (cache.version !== CASE_CACHE_VERSION) {
-                log.info('Cache miss: written by an older schema, discarding', {
-                    cachedVersion: cache.version,
-                    currentVersion: CASE_CACHE_VERSION
-                });
-                await this.invalidateCache();
-                return null;
-            }
-
-            const now = Date.now();
-            if (now - cache.timestamp > CACHE_TTL_MS) {
-                log.debug('Cache miss: Expired', { age: now - cache.timestamp });
-                // Clean up expired cache
-                await this.invalidateCache();
-                return null;
-            }
-
-            log.debug('Cache hit', { count: cache.cases.length });
-            return cache.cases;
+            const cache = await this.readSlot();
+            return cache ? cache.cases : null;
         } catch (error) {
             log.warn('Failed to read cache:', error);
             return null;
@@ -95,11 +75,56 @@ export class CaseCacheManager {
     }
 
     /**
-     * Set cached cases, unless the slot was invalidated after `generation`
-     * (captured by the writer when it started) — then the page is older than
-     * the invalidation and is dropped.
+     * Store a page FRESH FROM THE SERVER, stamped with now as its fetch time —
+     * unless the slot was invalidated after `generation` (captured by the
+     * writer when it started); then the page is older than the invalidation and
+     * is dropped. A local edit of the cached page goes through `editSlot`.
      */
     async setCachedCases(cases: UserCase[], generation: number): Promise<void> {
+        await this.writeSlot(cases, Date.now(), generation);
+    }
+
+    /**
+     * The slot if it is readable and within its TTL, else null (discarding a
+     * slot that is neither). Throws what storage throws.
+     */
+    private async readSlot(): Promise<CachedCaseList | null> {
+        const stored = await ownedStorage.get([CACHE_KEY]);
+        const cache = stored[CACHE_KEY] as CachedCaseList | undefined;
+
+        if (!cache) {
+            log.debug('Cache miss: No cache found');
+            return null;
+        }
+
+        // Shape before staleness: a row from an older build is unreadable
+        // whatever its age. An unstamped cache is pre-v1 by definition.
+        if (cache.version !== CASE_CACHE_VERSION) {
+            log.info('Cache miss: written by an older schema, discarding', {
+                cachedVersion: cache.version,
+                currentVersion: CASE_CACHE_VERSION
+            });
+            await this.invalidateCache();
+            return null;
+        }
+
+        const now = Date.now();
+        if (now - cache.timestamp > CACHE_TTL_MS) {
+            log.debug('Cache miss: Expired', { age: now - cache.timestamp });
+            // Clean up expired cache
+            await this.invalidateCache();
+            return null;
+        }
+
+        log.debug('Cache hit', { count: cache.cases.length });
+        return cache;
+    }
+
+    /**
+     * The one write to the slot. `fetchedAt` is when the page came from the
+     * server: now for a fresh page, the slot's own for a local edit.
+     */
+    private async writeSlot(cases: UserCase[], fetchedAt: number, generation: number): Promise<void> {
         if (generation !== this.generation) {
             log.debug('Cache write refused: invalidated since the writer started', {
                 captured: generation,
@@ -110,14 +135,32 @@ export class CaseCacheManager {
         try {
             const cache: CachedCaseList = {
                 cases,
-                timestamp: Date.now(),
+                timestamp: fetchedAt,
                 version: CASE_CACHE_VERSION
             };
             await ownedStorage.set({ [CACHE_KEY]: cache });
-            log.debug('Cache updated', { count: cases.length });
+            log.debug('Cache updated', { count: cases.length, fetchedAt });
         } catch (error) {
             log.error('Failed to write cache:', error);
         }
+    }
+
+    /**
+     * A local edit of the cached page: `edit` maps its rows to the new rows, or
+     * to null for no change. The page keeps its fetch time — an edit changes a
+     * row the user already knows about, and restarting the TTL for the whole
+     * page would keep serving its membership, which only the server can
+     * refresh (#325). The generation is captured before the read, so an edit
+     * that straddles an invalidation writes nothing.
+     */
+    private async editSlot(edit: (cases: UserCase[]) => UserCase[] | null): Promise<boolean> {
+        const generation = this.generation;
+        const cache = await this.readSlot();
+        if (!cache) return false; // Nothing to edit: the next fetch reads the server
+        const cases = edit(cache.cases);
+        if (!cases) return false;
+        await this.writeSlot(cases, cache.timestamp, generation);
+        return true;
     }
 
     /**
@@ -136,38 +179,34 @@ export class CaseCacheManager {
     }
 
     /**
-     * Optimistically update a specific case in the cache
+     * Optimistically update a specific case in the cache. A local edit: the
+     * page keeps its fetch time.
      */
     async updateOptimisticCase(caseId: string, changes: Partial<UserCase>): Promise<void> {
-        const generation = this.generation;
         try {
-            const currentCases = await this.getCachedCases();
-            if (!currentCases) return; // Nothing to update
-
-            const index = currentCases.findIndex(c => c.case_id === caseId);
-            if (index !== -1) {
-                currentCases[index] = { ...currentCases[index], ...changes };
-                await this.setCachedCases(currentCases, generation);
-                log.debug('Optimistic cache update', { caseId, changes });
-            }
+            const updated = await this.editSlot(cases => {
+                const index = cases.findIndex(c => c.case_id === caseId);
+                if (index === -1) return null;
+                const next = [...cases];
+                next[index] = { ...cases[index], ...changes };
+                return next;
+            });
+            if (updated) log.debug('Optimistic cache update', { caseId, changes });
         } catch (error) {
             log.warn('Failed to optimistically update cache:', error);
         }
     }
 
     /**
-     * Add a new case to the cache optimistically
+     * Add a new case to the cache optimistically. A local edit: the page keeps
+     * its fetch time. If there is no cache, nothing is added (the next fetch
+     * gets it).
      */
     async addOptimisticCase(newCase: UserCase): Promise<void> {
-        const generation = this.generation;
         try {
-            const currentCases = await this.getCachedCases();
-            if (!currentCases) return; // If no cache, no need to add (next fetch will get it)
-
             // Add to beginning of list
-            const updatedCases = [newCase, ...currentCases];
-            await this.setCachedCases(updatedCases, generation);
-            log.debug('Optimistic cache add', { caseId: newCase.case_id });
+            const added = await this.editSlot(cases => [newCase, ...cases]);
+            if (added) log.debug('Optimistic cache add', { caseId: newCase.case_id });
         } catch (error) {
             log.warn('Failed to optimistically add to cache:', error);
         }

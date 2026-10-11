@@ -1,5 +1,5 @@
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CASE_CACHE_VERSION, CaseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { UserCase } from '@faultmaven/copilot-ui/types/case';
 
@@ -207,6 +207,76 @@ describe('CaseCacheManager', () => {
             await manager.updateOptimisticCase('123', { title: 'Updated Title' });
             await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
             expect(mockStorage.set).not.toHaveBeenCalled();
+        });
+    });
+
+    // #325. The slot's timestamp is when its page was FETCHED from the server,
+    // and the TTL bounds how long a list the user did not change can be served.
+    // A local edit (a rename, a generated title, a created case) changes a row
+    // the user already knows about; re-stamping it restarted the TTL for the
+    // whole page, so a case reassigned to or away from the user (fm#1898) stayed
+    // hidden for as long as they kept renaming.
+    describe('local edits keep the fetch time (#325)', () => {
+        const MINUTE = 60 * 1000;
+        let stored: Record<string, unknown>;
+        const fetchedAtInStorage = () => (stored.faultmaven_case_cache as { timestamp: number }).timestamp;
+
+        beforeEach(() => {
+            vi.useFakeTimers();
+            stored = {};
+            mockStorage.get.mockImplementation(async (keys: string[]) =>
+                Object.fromEntries(keys.filter(k => k in stored).map(k => [k, structuredClone(stored[k])])));
+            mockStorage.set.mockImplementation(async (items: Record<string, unknown>) => {
+                Object.assign(stored, structuredClone(items));
+            });
+            mockStorage.remove.mockImplementation(async (keys: string[]) => {
+                for (const k of keys) delete stored[k];
+            });
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('an optimistic title edit does not extend the TTL', async () => {
+            await manager.setCachedCases(mockCases, manager.currentGeneration());
+            vi.advanceTimersByTime(4 * MINUTE);
+
+            await manager.updateOptimisticCase('123', { title: 'Renamed' });
+            expect((await manager.getCachedCases())?.[0].title).toBe('Renamed');
+
+            vi.advanceTimersByTime(2 * MINUTE);
+            expect(await manager.getCachedCases()).toBeNull();
+        });
+
+        it('an optimistically added case does not extend the TTL', async () => {
+            await manager.setCachedCases(mockCases, manager.currentGeneration());
+            vi.advanceTimersByTime(4 * MINUTE);
+
+            await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
+            expect((await manager.getCachedCases())?.map(c => c.case_id)).toEqual(['456', '123']);
+
+            vi.advanceTimersByTime(2 * MINUTE);
+            expect(await manager.getCachedCases()).toBeNull();
+        });
+
+        it('an edit keeps the stored fetch time exactly', async () => {
+            await manager.setCachedCases(mockCases, manager.currentGeneration());
+            const fetchedAt = fetchedAtInStorage();
+            vi.advanceTimersByTime(3 * MINUTE);
+
+            await manager.updateOptimisticCase('123', { title: 'Renamed' });
+            await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
+            expect(fetchedAtInStorage()).toBe(fetchedAt);
+        });
+
+        it('a fresh page from the server does restart the TTL', async () => {
+            await manager.setCachedCases(mockCases, manager.currentGeneration());
+            vi.advanceTimersByTime(4 * MINUTE);
+
+            await manager.setCachedCases(mockCases, manager.currentGeneration());
+            vi.advanceTimersByTime(2 * MINUTE);
+            expect(await manager.getCachedCases()).toEqual(mockCases);
         });
     });
 
