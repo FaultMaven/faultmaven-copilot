@@ -228,6 +228,14 @@ routes on keys and intent types this client does not declare (an offer key,
 `file_reclassification`'s `file_id`), so it is never rebuilt from known fields
 or checked against `IntentType`.
 
+**A turn's `case_state` belongs to its case** (#321). The user can open another
+case while a turn is in flight, so both paths apply it through
+`applyTurnCaseState` (`lib/state/turn-case-state.ts`), which writes it only onto
+an open row that is the turn's case (by id, or the optimistic id the mapping
+resolves to it). When the turn's case is no longer open, nothing open changes
+and the sidebar's slot is dropped and reloaded (`reloadDrivenCaseList`) instead.
+The active-case pointer is set when a turn is SENT, never when it lands.
+
 **Cache schema.** `CONVERSATION_CACHE_VERSION` (`lib/state/store.ts`) stamps the
 persisted `conversations` map and `useDataRecovery` discards a mismatch
 (lossless: committed messages live on the backend; titles, pins and id-mappings

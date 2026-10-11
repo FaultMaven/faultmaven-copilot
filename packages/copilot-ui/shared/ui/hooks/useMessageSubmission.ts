@@ -13,7 +13,6 @@ import {
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
-import type { UserCase } from '../../../types/case';
 import {
   CaseTerminalError,
   CaseVersionConflictError,
@@ -48,6 +47,7 @@ import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
+import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
 import { notifyCaseChanged } from './case-changed';
@@ -213,9 +213,6 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
   ) => {
     const controller = new AbortController();
     inFlightControllers.current.add(controller);
-    // Set when this turn moved the case to a new state — see the refresh at the
-    // end of this function for why that suppresses the post-turn list refetch.
-    let caseStateChanged = false;
     // Capture the session epoch before the turn round-trip. A logout while the
     // turn is in flight (or its poll loop is running) must not let the success
     // handler write the response / complete the pending op / set a title back
@@ -242,23 +239,6 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             idempotencyKey: idempotencyKeyFor(aiMessageId),
           });
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
-
-          if (response.case_state) {
-            setActiveCase((prev: UserCase | null) => {
-              if (prev && prev.state !== response.case_state) {
-                log.info('Updating active case status from backend', {
-                  oldStatus: prev.state,
-                  newStatus: response.case_state
-                });
-                // Recorded because a state change makes SidePanelApp's transition
-                // effect refresh the case list on its own; the post-turn refresh
-                // below stands down rather than asking for the same list twice.
-                caseStateChanged = true;
-                return { ...prev, state: response.case_state as UserCase['state'] };
-              }
-              return prev;
-            });
-          }
 
           queryClient.invalidateQueries({ queryKey: ['caseUI', caseId] });
 
@@ -417,6 +397,13 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         return;
       }
 
+      // The state goes to the case the turn was sent for, never to whichever
+      // case is open now (#321). A state change makes SidePanelApp's transition
+      // effect refresh the case list on its own, and a turn on a case no longer
+      // open reloads it here; either way the post-turn refresh below stands down
+      // rather than asking for the same list twice.
+      const { stateChanged, listReloaded } = applyTurnCaseState(caseId, response.case_state, epoch);
+
       // The turn committed and the session is the one that sent it: tell the host.
       notifyCaseChanged(onCaseChanged, caseId);
 
@@ -443,9 +430,10 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       //
       // Skipped when the turn changed case_state, because SidePanelApp's
       // transition effect then runs reconcileActiveCaseState, which invalidates
-      // the list cache and bumps this same counter itself. Firing both would
-      // spend two list GETs to answer one question.
-      if (!caseStateChanged) {
+      // the list cache and bumps this same counter itself, and when the turn's
+      // case is no longer open (`applyTurnCaseState` reloaded the list). Firing
+      // both would spend two list GETs to answer one question.
+      if (!stateChanged && !listReloaded) {
         triggerRefreshSessions();
       }
 

@@ -40,7 +40,6 @@ import {
   CaseTerminalError,
   PermissionError,
 } from '../../../lib/errors/types';
-import type { UserCase } from '../../../types/case';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
 import { getEpoch } from '../../../lib/state/session-epoch';
@@ -48,6 +47,7 @@ import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
+import { applyTurnCaseState } from '../../../lib/state/turn-case-state';
 import { notifyCaseChanged } from './case-changed';
 
 const log = createLogger('useDataUpload');
@@ -261,21 +261,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       return { success: false, message: '', sent: true };
     }
 
-    // Set when this turn moved the case to a new state; see the refresh below.
-    let caseStateChanged = false;
-    if (turnResponse.case_state) {
-      setActiveCase((prev: UserCase | null) => {
-        if (prev && prev.state !== turnResponse.case_state) {
-          log.info('Updating active case status from backend', {
-            oldStatus: prev.state,
-            newStatus: turnResponse.case_state
-          });
-          caseStateChanged = true;
-          return { ...prev, state: turnResponse.case_state as UserCase['state'] };
-        }
-        return prev;
-      });
-    }
+    // The state goes to the case the turn was sent for, never to whichever case
+    // is open now (#321); see the refresh below for what the result suppresses.
+    const { stateChanged, listReloaded } = applyTurnCaseState(targetCaseId, turnResponse.case_state, epoch);
 
     queryClient.invalidateQueries({ queryKey: ['caseUI', targetCaseId] });
     notifyCaseChanged(onCaseChanged, targetCaseId);
@@ -301,8 +289,6 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       showError(new DuplicateUploadNotice(duplicates));
     }
 
-    setActiveCaseId(targetCaseId);
-
     // The turn committed: mark the pending op complete so the retry affordance
     // (if this was a retry) clears.
     pendingOpsManager.complete(aiMessageId);
@@ -315,9 +301,10 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     // the sidebar.
     //
     // Skipped when the turn changed case_state, as in useMessageSubmission:
-    // SidePanelApp's transition effect then refreshes the list itself, and both
+    // SidePanelApp's transition effect then refreshes the list itself, as
+    // `applyTurnCaseState` does when the turn's case is no longer open, and both
     // would spend two list GETs to answer one question.
-    if (!caseStateChanged) {
+    if (!stateChanged && !listReloaded) {
       triggerRefreshSessions();
     }
 
@@ -583,6 +570,13 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         [targetCaseId!]: [...(prev[targetCaseId!] || []), optimisticUserMessage, optimisticAiMessage]
       }));
       optimisticRows = { caseId: targetCaseId!, userId: userMessageId, aiId: aiMessageId };
+
+      // Point the panel at the case the turn is for as it is SENT (as
+      // useMessageSubmission does): a stale optimistic pointer resolves to its
+      // real id here. Never when the response lands, by which time the user may
+      // have opened another case, and moving the pointer back would put this
+      // case's conversation under that case's row (#321).
+      setActiveCaseId(targetCaseId);
 
       // Step 4: Register a pending operation so a failed turn keeps a retry
       // affordance in the failed-operation banner (parity with
