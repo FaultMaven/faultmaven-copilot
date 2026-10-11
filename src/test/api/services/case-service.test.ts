@@ -637,6 +637,32 @@ describe('Case Service', () => {
       expect(result.attachments_processed?.[0].file_id).toBe('file_abc123');
     });
 
+    it('carries one file AND a paste in the same turn, the paste typed as a paste (#327)', async () => {
+      (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockResponse({
+        agent_response: 'ok', turn_number: 3, milestones_completed: [], case_state: 'investigating',
+        progress_made: true, is_stuck: false, attachments_processed: [],
+      }));
+      const file = new File(['boom'], 'app.log', { type: 'text/plain' });
+      const pasted = '  spec:\n    replicas: 3';
+
+      await caseService.submitTurn('case-123', {
+        query: 'why did this start after the deploy?',
+        files: [file],
+        pastedContent: pasted,
+        inputType: 'paste',
+      });
+
+      const body: FormData = (client.authenticatedFetchWithRetry as any).mock.calls[0][1].body;
+      expect(body.get('query')).toBe('why did this start after the deploy?');
+      expect(body.getAll('files')).toHaveLength(1);
+      expect((body.get('files') as File).name).toBe('app.log');
+      // Verbatim: the first line's indentation reaches the server.
+      expect(body.get('pasted_content')).toBe(pasted);
+      // Core consults input_type only for pasted_content; files are file_upload regardless.
+      expect(body.get('input_type')).toBe('paste');
+      expect(body.get('source_url')).toBeNull();
+    });
+
     it('should submit a turn with query and intent', async () => {
       const turnResponseData = {
         agent_response: 'Case resolved',

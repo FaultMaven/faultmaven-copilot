@@ -2,8 +2,11 @@
 
 
 interface InputLimitsConfig {
-  /** Smart detection threshold: text >= this many lines is treated as data upload */
-  dataModeLinesThreshold: number;
+  /**
+   * A paste EVENT of at least this many lines into the chat box goes to the
+   * textpad as data (#327). Typing never triggers it. Never below 2.
+   */
+  pasteToTextpadLines: number;
   /** Maximum character length for input */
   maxQueryLength: number;
   /** Textarea auto-sizing minimum rows */
@@ -38,7 +41,7 @@ interface Config {
  * the host that owns it (see extension/host/endpoints.ts and HostEndpoints).
  *
  * Environment Variables (set before build):
- * - VITE_DATA_MODE_LINES: Lines threshold for data mode (default: 100)
+ * - VITE_PASTE_TO_TEXTPAD_LINES: A paste of this many lines or more goes to the textpad (default: 3, minimum: 2)
  * - VITE_MAX_QUERY_LENGTH: Max input characters (default: 200000 = 200KB, matches backend)
  * - VITE_MAX_FILE_SIZE_MB: Max file size in MB (default: 10, matches backend MAX_UPLOAD_SIZE_MB)
  * - VITE_SESSION_TIMEOUT_MINUTES: Session timeout in minutes (default: 180 = 3 hours)
@@ -60,7 +63,8 @@ const sessionTimeoutMinutes = intFromEnv(import.meta.env.VITE_SESSION_TIMEOUT_MI
 const config: Config = {
   // Input Limits Configuration (build-time only, rarely changed)
   inputLimits: {
-    dataModeLinesThreshold: intFromEnv(import.meta.env.VITE_DATA_MODE_LINES, 100),
+    // One line would send every pasted word or URL to the textpad.
+    pasteToTextpadLines: Math.max(2, intFromEnv(import.meta.env.VITE_PASTE_TO_TEXTPAD_LINES, 3)),
     // Match backend query max_length=200000 (200KB)
     maxQueryLength: intFromEnv(import.meta.env.VITE_MAX_QUERY_LENGTH, 200000),
     textareaMinRows: 2,

@@ -2,7 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_SESSION_TIMEOUT_MINUTES?: string;
-  readonly VITE_DATA_MODE_LINES?: string;
+  readonly VITE_PASTE_TO_TEXTPAD_LINES?: string;
   readonly VITE_MAX_QUERY_LENGTH?: string;
   readonly VITE_MAX_FILE_SIZE_MB?: string;
   readonly VITE_DEBUG?: string;
