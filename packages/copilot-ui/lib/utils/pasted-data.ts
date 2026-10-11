@@ -31,3 +31,18 @@ export function appendBlock(existing: string, addition: string): string {
   if (existing.trim() === '') return addition;
   return existing.endsWith('\n') ? existing + addition : `${existing}\n${addition}`;
 }
+
+/**
+ * Whether `held` already holds `block` as whole lines: every line of `block`,
+ * in order, on consecutive lines of `held`. Never a substring match, so a
+ * held `max: 100` does not hold `max: 10`. An empty block is held by anything.
+ */
+export function holdsBlock(held: string, block: string): boolean {
+  if (block === '') return true;
+  const heldLines = normalizeLineBreaks(held).split('\n');
+  const blockLines = normalizeLineBreaks(block).split('\n');
+  for (let start = 0; start + blockLines.length <= heldLines.length; start++) {
+    if (blockLines.every((line, i) => heldLines[start + i] === line)) return true;
+  }
+  return false;
+}

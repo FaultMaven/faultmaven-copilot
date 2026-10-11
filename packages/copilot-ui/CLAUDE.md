@@ -246,7 +246,12 @@ action** (`opensDataBox`): a click opens the composer's textpad holding it,
 `body` as its placeholder, through `ComposerHandle.openDataBox`
 (`ChatInterface` holds the ref), and sends nothing. Recognised by the field,
 never by label; it is added after what the textpad holds, never in place of
-it, and is not offered where the composer takes no data (read-only, closed).
+it (already held = the same whole lines, `holdsBlock`, never a substring), and
+is not offered where the composer takes no data (read-only, closed). It opens
+exactly when the Paste button is enabled (`canOpenTextpad`): while a turn or a
+capture is in flight the composer reports busy (`onBusyChange`) and the card is
+a disabled button, since a landing turn clears the textpad. Its accessible name
+says it opens Paste data, so it never reads like the sending DECIDE beside it.
 
 **A turn's `case_state` belongs to its case** (#321). The user can open another
 case while a turn is in flight, so both paths apply it through

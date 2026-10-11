@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { ChatWindow } from './ChatWindow';
 import {
   UnifiedInputBar,
@@ -72,8 +72,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const openDataBox = useCallback((prefill: string, hint: string | undefined) => {
     composerRef.current?.openDataBox(prefill, hint);
   }, []);
-  // Where the composer takes no data, the action is not offered at all.
+  // Where the composer takes no data, the action is not offered at all; while
+  // it is busy (a turn or a capture in flight), it is offered disabled.
   const composerTakesData = !readOnly && !isTerminal;
+  const [composerBusy, setComposerBusy] = useState(false);
 
   // Empty state — dark themed
   if (!activeCaseId && !hasUnsavedNewChat) {
@@ -150,6 +152,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           sessionId={sessionId}
           onQuerySubmit={onQuerySubmit}
           onOpenDataBox={composerTakesData ? openDataBox : undefined}
+          dataBoxBusy={composerBusy}
           onDocumentView={onDocumentView}
           setActiveCase={setActiveCase}
           readOnly={readOnly}
@@ -171,6 +174,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       {!readOnly && (
       <UnifiedInputBar
         ref={composerRef}
+        onBusyChange={setComposerBusy}
         // What is typed or staged belongs to this case (#339).
         caseId={activeCaseId ?? null}
         onQuerySubmit={onQuerySubmit}

@@ -134,7 +134,9 @@ function renderChat({
   );
 }
 
-const resubmitButton = () => screen.getByRole('button', { name: 'Not exactly, let me re-submit' });
+const resubmitButton = () => screen.getByRole('button', { name: /^Not exactly, let me re-submit/ });
+/** The card's row, found by its label whether or not it is a button. */
+const cardRow = (label: string) => screen.getByText(label).closest('[data-suggestion-type]') as HTMLElement;
 const textpad = () => screen.getByLabelText('Paste data content') as HTMLTextAreaElement;
 const box = () => screen.getByLabelText(/Type your message/i) as HTMLTextAreaElement;
 const send = () => fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -225,7 +227,7 @@ describe('the chat-data offer (#328)', () => {
     it('opens the data box empty, with the requested output as its hint, and sends nothing', () => {
       renderChat({ suggestedActions: STATE_REQUEST });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Submit the output' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Submit the output/ }));
 
       expect(textpad().value).toBe('');
       expect(textpad().placeholder).toBe(SUBMIT_HINT);
@@ -235,7 +237,7 @@ describe('the chat-data offer (#328)', () => {
 
     it('the hint is the offer\'s only: the Paste button opens the data box with its own', () => {
       renderChat({ suggestedActions: STATE_REQUEST });
-      fireEvent.click(screen.getByRole('button', { name: 'Submit the output' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Submit the output/ }));
       // Closed from the Paste button, then reopened from it.
       fireEvent.click(screen.getByRole('button', { name: 'Paste data' }));
       fireEvent.click(screen.getByRole('button', { name: 'Paste data' }));
@@ -260,8 +262,8 @@ describe('the chat-data offer (#328)', () => {
     it.each(['resolved', 'closed'])('a %s case offers no data-box action; the choice still reads', (state) => {
       renderChat({ suggestedActions: [...OUTPUT_OFFER, ...STATE_REQUEST], state });
 
-      expect(screen.queryByRole('button', { name: 'Not exactly, let me re-submit' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Submit the output' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Not exactly, let me re-submit/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Submit the output/ })).toBeNull();
       expect(screen.getByText('Not exactly, let me re-submit')).toBeInTheDocument();
       fireEvent.click(screen.getByText('Submit the output'));
       expect(screen.queryByLabelText('Paste data content')).toBeNull();
@@ -270,9 +272,9 @@ describe('the chat-data offer (#328)', () => {
     it('a read-only case offers none of the choices', () => {
       renderChat({ suggestedActions: [...OUTPUT_OFFER, ...STATE_REQUEST], readOnly: true });
 
-      expect(screen.queryByRole('button', { name: 'Yes, save it as data' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Not exactly, let me re-submit' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Submit the output' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Yes, save it as data/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Not exactly, let me re-submit/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Submit the output/ })).toBeNull();
     });
   });
 
@@ -283,5 +285,80 @@ describe('the chat-data offer (#328)', () => {
     expect(screen.queryByRole('button', { name: 'Pod list' })).toBeNull();
     fireEvent.click(screen.getByText('Pod list'));
     expect(screen.queryByLabelText('Paste data content')).toBeNull();
+  });
+
+  // #345 review: the offer card stays the current turn's while the next turn is
+  // in flight (its optimistic reply has no text yet). Opening the textpad then
+  // reopened it holding the in-flight paste, and the turn landing cleared the
+  // user's edits without a word.
+  describe('while the composer is busy', () => {
+    it('a turn in flight: the card is offered disabled, a click opens nothing, and it comes back when the turn lands', async () => {
+      let land: (r: TurnSubmitResult) => void = () => {};
+      onTurnSubmit.mockImplementation(() => new Promise<TurnSubmitResult>((resolve) => { land = resolve; }));
+      renderChat();
+      fireEvent.click(screen.getByRole('button', { name: 'Paste data' }));
+      fireEvent.change(textpad(), { target: { value: 'my data' } });
+      send();
+      await waitFor(() => expect(onTurnSubmit).toHaveBeenCalledTimes(1));
+
+      // A disabled button: announced as unavailable, not dropped to plain text.
+      await waitFor(() => expect(resubmitButton()).toHaveAttribute('aria-disabled', 'true'));
+      fireEvent.click(cardRow('Not exactly, let me re-submit'));
+      expect(screen.queryByLabelText('Paste data content')).toBeNull();
+
+      land({ success: true, message: '', sent: true });
+      await waitFor(() => expect(resubmitButton()).not.toHaveAttribute('aria-disabled'));
+      fireEvent.click(resubmitButton());
+      // Only the offer: the paste that was in flight was sent, not reopened.
+      expect(textpad().value).toBe(BLOCKS);
+    });
+
+    it('a page capture in flight: the card is offered disabled', async () => {
+      stub.capture!.mockImplementationOnce(() => new Promise(() => {}));
+      renderChat();
+      fireEvent.click(screen.getByRole('button', { name: 'Analyze current page' }));
+
+      await waitFor(() => expect(cardRow('Not exactly, let me re-submit')).toHaveAttribute('aria-disabled', 'true'));
+      fireEvent.click(cardRow('Not exactly, let me re-submit'));
+      expect(screen.queryByLabelText('Paste data content')).toBeNull();
+    });
+
+    it('the save choice, which sends, is unaffected by the composer: it has its own gate', () => {
+      renderChat();
+      expect(screen.getByRole('button', { name: 'Yes, save it as data' })).toBeInTheDocument();
+    });
+  });
+
+  // #345 review: blocks are matched as whole lines, never as a substring.
+  it('a one-line block inside a longer line already held is still added', () => {
+    renderChat({
+      suggestedActions: [suggestionFromResponse({ label: 'Not exactly, let me re-submit', type: 'EVIDENCE', prefill: 'max: 10' })],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Paste data' }));
+    fireEvent.change(textpad(), { target: { value: 'max: 100' } });
+
+    fireEvent.click(resubmitButton());
+
+    expect(textpad().value).toBe('max: 100\nmax: 10');
+  });
+
+  it('moves focus into the textpad when it is already open', () => {
+    renderChat();
+    fireEvent.click(screen.getByRole('button', { name: 'Paste data' }));
+    box().focus();
+    expect(document.activeElement).toBe(box());
+
+    fireEvent.click(resubmitButton());
+
+    expect(document.activeElement).toBe(textpad());
+  });
+
+  // #345 review: a DECIDE sends and the data-box action does not; a screen
+  // reader must hear the difference, not two identical labels.
+  it('names the data-box card as opening Paste data, and describes it with its body', () => {
+    renderChat();
+    const card = screen.getByRole('button', { name: 'Not exactly, let me re-submit (opens Paste data)' });
+    expect(card).toHaveAccessibleDescription('Correct it, then send it as data (pasted or attached).');
+    expect(screen.getByRole('button', { name: 'Yes, save it as data' })).toBeInTheDocument();
   });
 });

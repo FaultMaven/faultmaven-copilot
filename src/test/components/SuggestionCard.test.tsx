@@ -221,7 +221,7 @@ describe('SuggestionCard — the data-box action (prefill)', () => {
     render(
       <SuggestionCard action={resubmit} isCurrentTurn onOpenDataBox={onOpenDataBox} onClickableSuggestion={onClick} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Not exactly, let me re-submit' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Not exactly, let me re-submit/ }));
     expect(onOpenDataBox).toHaveBeenCalledWith(
       'ERROR pool exhausted\nWARN retrying',
       'Correct it, then send it as data (pasted or attached).',
@@ -238,7 +238,7 @@ describe('SuggestionCard — the data-box action (prefill)', () => {
         onOpenDataBox={onOpenDataBox}
       />,
     );
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Submit the output' }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: /^Submit the output/ }), { key: 'Enter' });
     expect(onOpenDataBox).toHaveBeenCalledWith('', 'Send it as data: the pod list.');
   });
 
@@ -287,5 +287,35 @@ describe('SuggestionCard — the data-box action (prefill)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
     expect(onClick).toHaveBeenCalledWith('Yes', 'DECIDE', undefined);
     expect(onOpenDataBox).not.toHaveBeenCalled();
+  });
+
+  // #345 review: while the composer is busy (a turn or a capture in flight) the
+  // data box cannot open, so the card says so rather than offering a dead click.
+  it('is shown disabled while the composer is busy, and a click opens nothing', () => {
+    const onOpenDataBox = vi.fn();
+    const { container } = render(
+      <SuggestionCard action={resubmit} isCurrentTurn onOpenDataBox={onOpenDataBox} dataBoxBusy />,
+    );
+    const row = container.firstChild as HTMLElement;
+    expect(row.getAttribute('role')).toBe('button');
+    expect(row).toHaveAttribute('aria-disabled', 'true');
+    expect(row).toHaveAttribute('tabindex', '-1');
+    expect(row.className).toContain('opacity-50');
+    fireEvent.click(row);
+    expect(onOpenDataBox).not.toHaveBeenCalled();
+  });
+
+  it('a busy composer leaves a DECIDE alone: it sends through its own path', () => {
+    const onClick = vi.fn();
+    render(
+      <SuggestionCard
+        action={_action({ label: 'Yes', type: 'DECIDE', payload: 'Yes' })}
+        isCurrentTurn
+        dataBoxBusy
+        onClickableSuggestion={onClick}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(onClick).toHaveBeenCalled();
   });
 });

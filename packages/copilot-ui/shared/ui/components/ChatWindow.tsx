@@ -49,6 +49,8 @@ interface ChatWindowProps {
    * composer takes no data: the data-box action is then informational.
    */
   onOpenDataBox?: (prefill: string, hint: string | undefined) => void;
+  /** The composer is busy: the data-box action is shown disabled. */
+  dataBoxBusy?: boolean;
   onDocumentView?: (documentId: string) => void;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;  // Status sync with backend
   /** The viewer may read this case, not write it: nothing here submits a turn. */
@@ -65,6 +67,7 @@ const ChatWindowComponent = function ChatWindow({
   className = '',
   onQuerySubmit,
   onOpenDataBox,
+  dataBoxBusy = false,
   onDocumentView,
   setActiveCase,
   readOnly = false
@@ -466,6 +469,7 @@ const ChatWindowComponent = function ChatWindow({
                               }
                             }}
                             onOpenDataBox={onOpenDataBox}
+                            dataBoxBusy={dataBoxBusy}
                           />
                         ))}
                       </div>
@@ -567,6 +571,7 @@ export const ChatWindow = memo(ChatWindowComponent, (prevProps, nextProps) => {
     prevProps.loading === nextProps.loading &&
     prevProps.sessionId === nextProps.sessionId &&
     prevProps.isNewUnsavedChat === nextProps.isNewUnsavedChat &&
+    prevProps.dataBoxBusy === nextProps.dataBoxBusy &&
     prevProps.readOnly === nextProps.readOnly
   );
 });
