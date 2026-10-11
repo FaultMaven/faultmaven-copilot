@@ -7,8 +7,11 @@
  * - File uploads
  * - Captured page content
  *
- * Only one data source (file, page capture, or pasted data) per turn.
- * Selecting a new source automatically clears the previous one.
+ * A turn carries at most one file, plus either pasted data or a captured page.
+ * A file and a paste go together (core keeps `files` and `pasted_content` as
+ * separate attachments and reads `input_type` only for the paste). A page and a
+ * paste cannot: both travel in `pasted_content`, so one replaces the other. A
+ * file and a page still replace each other, as before.
  * Query-only submissions use the optimistic UI path (onQuerySubmit).
  * Submissions with attachments use the unified turn path (onTurnSubmit).
  *
@@ -121,8 +124,8 @@ interface PasteUndo {
   /** The textpad before and after; the undo is offered while it still holds `textpadAfter`. */
   textpadBefore: string;
   textpadAfter: string;
-  /** A staged file or page the paste replaced (one attachment per message). */
-  replaced: { file: File | null; pageUrl: string | null; pageContent: string } | null;
+  /** A captured page the paste replaced (page and paste share `pasted_content`). */
+  replaced: { pageUrl: string | null; pageContent: string } | null;
 }
 
 /**
@@ -252,9 +255,6 @@ export function UnifiedInputBar({
     }
   };
 
-  /** How the staged file or page is named to the user. */
-  const stagedSourceName = () => selectedFile?.name ?? 'the captured page';
-
   // Unified submit handler
   const handleSubmit = async () => {
     const query = input.trim();
@@ -282,11 +282,12 @@ export function UnifiedInputBar({
       return;
     }
 
-    // One attachment per message. Done in the open textpad would replace the
-    // staged file or page; Send does not choose for the user.
-    if (openDraft && (hasFile || capturedPageUrl !== null)) {
+    // A captured page and pasted data share `pasted_content`, so a turn holds
+    // one or the other. Done in the open textpad would replace the page; Send
+    // does not choose for the user. (A staged file goes with the paste.)
+    if (openDraft && capturedPageUrl !== null) {
       setValidationError({
-        message: `One attachment per message. Press Done to send the pasted data instead of ${stagedSourceName()}, or clear it.`,
+        message: 'A captured page and pasted data can’t go in one message. Press Done to send the pasted data instead of the page, or clear it.',
         type: 'error',
       });
       return;
@@ -338,8 +339,8 @@ export function UnifiedInputBar({
       payload.queryIsGenerated = true;
     }
 
-    // Assemble pasted content (only one source active per turn). Sent as
-    // staged: verbatim, with only blank edge lines removed.
+    // `pasted_content` carries the paste or the page, never both. The paste is
+    // sent as staged: verbatim, with only blank edge lines removed.
     if (hasPasted) {
       payload.pastedContent = pastedData;
       payload.inputType = 'paste';
@@ -351,7 +352,9 @@ export function UnifiedInputBar({
 
     if (hasFile) {
       payload.files = [selectedFile!];
-      payload.inputType = 'file';
+      // `input_type` describes `pasted_content` (core ignores it for files), so
+      // a file says 'file' only when no paste goes with it.
+      if (!hasPasted) payload.inputType = 'file';
     }
 
     // A submission that never reached the server (`sent === false`) keeps the
@@ -434,13 +437,11 @@ export function UnifiedInputBar({
       return;
     }
 
-    // File is valid — clear other data sources (one source per turn)
+    // File is valid. It replaces a captured page; staged pasted data goes with it.
     setValidationError(null);
     setSelectedFile(file);
     setCapturedPageUrl(null);
     setCapturedPageContent("");
-    setStagedPastedContent("");
-    setShowPasteScratchpad(false);
   };
 
   // Handle file upload button click
@@ -478,7 +479,8 @@ export function UnifiedInputBar({
         throw new Error('No page content captured');
       }
 
-      // Clear other data sources (one source per turn)
+      // A page replaces pasted data (both travel in `pasted_content`) and,
+      // as before, a staged file.
       setSelectedFile(null);
       setStagedPastedContent("");
       setShowPasteScratchpad(false);
@@ -517,15 +519,11 @@ export function UnifiedInputBar({
     setStagedPastedContent("");
   };
 
-  // Stage the textpad's text (its Done), replacing a staged file or page.
+  // Stage the textpad's text (its Done). A staged file stays and goes with it;
+  // a captured page is replaced, because both would travel in `pasted_content`.
   const stagePastedData = (content: string) => {
-    // Clear other data sources (one source per turn)
-    setSelectedFile(null);
     setCapturedPageUrl(null);
     setCapturedPageContent("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
     setStagedPastedContent(content);
   };
 
@@ -556,7 +554,7 @@ export function UnifiedInputBar({
 
     const { selectionStart, selectionEnd } = e.currentTarget;
     const moved = { text: normalizeLineBreaks(raw), lines, box: input, selectionStart, selectionEnd };
-    const hadAttachment = selectedFile !== null || capturedPageUrl !== null;
+    const hadPage = capturedPageUrl !== null;
 
     if (showPasteScratchpad) {
       // The open textpad takes it after what it holds; Done or Send stages it.
@@ -565,10 +563,11 @@ export function UnifiedInputBar({
       setPasteUndo({ ...moved, textpadBefore: pasteDraft, textpadAfter: after, replaced: null });
     } else {
       // Added after what the textpad already holds, never in place of it. A
-      // staged file or page is replaced (one attachment per message, as picking
-      // a file replaces a paste); the notice names it and the undo restores it.
-      const replaced = hadAttachment
-        ? { file: selectedFile, pageUrl: capturedPageUrl, pageContent: capturedPageContent }
+      // staged file stays and goes in the same turn. A captured page is
+      // replaced (page and paste both travel in `pasted_content`); the notice
+      // says so and the undo restores it.
+      const replaced = hadPage
+        ? { pageUrl: capturedPageUrl, pageContent: capturedPageContent }
         : null;
       const after = appendBlock(stagedPastedContent, data);
       stagePastedData(after);
@@ -577,7 +576,7 @@ export function UnifiedInputBar({
     log.debug('Multi-line paste moved to the textpad', {
       lines,
       intoOpenTextpad: showPasteScratchpad,
-      replacedAttachment: !showPasteScratchpad && hadAttachment,
+      replacedPage: !showPasteScratchpad && hadPage,
     });
   };
 
@@ -593,7 +592,6 @@ export function UnifiedInputBar({
     if (showPasteScratchpad) setPasteDraft(undo.textpadBefore);
     if (stagedPastedContent === undo.textpadAfter) setStagedPastedContent(undo.textpadBefore);
     if (undo.replaced) {
-      setSelectedFile(undo.replaced.file);
       setCapturedPageUrl(undo.replaced.pageUrl);
       setCapturedPageContent(undo.replaced.pageContent);
     }
@@ -647,13 +645,11 @@ export function UnifiedInputBar({
       return;
     }
 
-    // Clear other data sources (one source per turn)
+    // As a picked file: it replaces a captured page; staged pasted data goes with it.
     setValidationError(null);
     setSelectedFile(file);
     setCapturedPageUrl(null);
     setCapturedPageContent("");
-    setStagedPastedContent("");
-    setShowPasteScratchpad(false);
     log.debug('File dropped', { fileName: file.name });
   };
 
@@ -748,7 +744,7 @@ export function UnifiedInputBar({
             >
               <span>
                 Moved {pasteUndo.lines} pasted lines to Paste data
-                {pasteUndo.replaced ? `, replacing ${pasteUndo.replaced.file?.name ?? 'the captured page'}` : ''}.
+                {pasteUndo.replaced ? ', replacing the captured page' : ''}.
               </span>
               <button
                 type="button"
@@ -768,7 +764,7 @@ export function UnifiedInputBar({
                 <span className="font-semibold text-fm-text-primary font-mono truncate">{selectedFile.name}</span>
                 <span className="text-fm-text-tertiary font-mono">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
               </div>
-              <button onClick={handleRemoveFile} className="text-fm-text-tertiary hover:text-fm-text-primary text-xs ml-2" title="Remove file">✕</button>
+              <button onClick={handleRemoveFile} className="text-fm-text-tertiary hover:text-fm-text-primary text-xs ml-2" title="Remove file" aria-label="Remove file">✕</button>
             </div>
           )}
 

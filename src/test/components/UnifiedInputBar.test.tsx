@@ -180,36 +180,104 @@ describe('UnifiedInputBar — a multi-line paste goes to the textpad (#327)', ()
     expect(payload.query).toBe(lines(3, 'second'));
   });
 
-  it('with a file staged, the paste replaces it (one attachment per message), says so, and undo restores both', async () => {
-    renderBar();
-    const file = await stageFile();
-    fireEvent.change(box(), { target: { value: 'why? ' } });
+  describe('a file and a paste go in one turn', () => {
+    it('a multi-line paste with a file staged keeps the file; both are sent, the paste typed as a paste', async () => {
+      renderBar();
+      const file = await stageFile();
+      fireEvent.change(box(), { target: { value: 'why?' } });
 
-    expect(paste(lines(threshold))).toBe(false);
+      expect(paste(lines(threshold))).toBe(false);
 
-    expect(screen.queryByText('app.log')).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/replacing app\.log/);
-    fireEvent.click(putBack());
-    expect(screen.getByText('app.log')).toBeInTheDocument();
-    expect(box()).toHaveValue(`why? ${lines(threshold)}`);
-    send();
-    await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
-    const payload = mockTurnSubmit.mock.calls[0][0];
-    expect(payload.files).toEqual([file]);
-    expect(payload.pastedContent).toBeUndefined();
+      expect(screen.getByText('app.log')).toBeInTheDocument();
+      expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
+      expect(screen.getByRole('status')).not.toHaveTextContent(/replacing/);
+      send();
+      await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+      const payload = mockTurnSubmit.mock.calls[0][0];
+      expect(payload.query).toBe('why?');
+      expect(payload.files).toEqual([file]);
+      expect(payload.pastedContent).toBe(lines(threshold));
+      expect(payload.inputType).toBe('paste');
+    });
+
+    it('undo puts the paste back and leaves the file staged', async () => {
+      renderBar();
+      const file = await stageFile();
+      paste(lines(threshold));
+      fireEvent.click(putBack());
+      expect(screen.getByText('app.log')).toBeInTheDocument();
+      expect(screen.queryByText(/Pasted context/)).not.toBeInTheDocument();
+      expect(box()).toHaveValue(lines(threshold));
+      send();
+      await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+      const payload = mockTurnSubmit.mock.calls[0][0];
+      expect(payload.files).toEqual([file]);
+      expect(payload.pastedContent).toBeUndefined();
+      expect(payload.inputType).toBe('file');
+    });
+
+    it('picking a file with a paste staged keeps the paste', async () => {
+      renderBar();
+      paste(lines(threshold));
+      const file = await stageFile();
+      expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
+      send();
+      await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+      const payload = mockTurnSubmit.mock.calls[0][0];
+      expect(payload.files).toEqual([file]);
+      expect(payload.pastedContent).toBe(lines(threshold));
+      expect(payload.inputType).toBe('paste');
+    });
+
+    it('Done in the textpad keeps a staged file', async () => {
+      renderBar();
+      const file = await stageFile();
+      fireEvent.click(screen.getByRole('button', { name: /paste data/i }));
+      fireEvent.change(textpad(), { target: { value: 'ERROR x' } });
+      fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+      expect(screen.getByText('app.log')).toBeInTheDocument();
+      send();
+      await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+      expect(mockTurnSubmit.mock.calls[0][0]).toMatchObject({ files: [file], pastedContent: 'ERROR x', inputType: 'paste' });
+    });
+
+    it('each is removable on its own', async () => {
+      renderBar();
+      await stageFile();
+      paste(lines(threshold));
+      fireEvent.click(screen.getByRole('button', { name: /remove file/i }));
+      expect(screen.queryByText('app.log')).not.toBeInTheDocument();
+      expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
+    });
   });
 
-  it('with a file staged, a sent paste goes as data, never as the question', async () => {
-    renderBar();
-    await stageFile();
-    fireEvent.change(box(), { target: { value: 'why?' } });
-    paste(lines(threshold));
-    send();
-    await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
-    const payload = mockTurnSubmit.mock.calls[0][0];
-    expect(payload.query).toBe('why?');
-    expect(payload.pastedContent).toBe(lines(threshold));
-    expect(payload.files).toBeUndefined();
+  describe('a captured page and a paste cannot share a turn (both travel in pasted_content)', () => {
+    const capturePage = async () => {
+      fireEvent.click(screen.getByRole('button', { name: /analyze current page/i }));
+      await waitFor(() => expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument());
+    };
+
+    it('the paste replaces the page, says so, and undo restores the page', async () => {
+      renderBar();
+      await capturePage();
+      expect(paste(lines(threshold))).toBe(false);
+      expect(screen.queryByText(/Captured: https:\/\/grafana/)).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(/replacing the captured page/);
+      fireEvent.click(putBack());
+      expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument();
+      expect(box()).toHaveValue(lines(threshold));
+    });
+
+    it('Send with a page staged beside the open textpad sends nothing and asks the user to choose', async () => {
+      renderBar();
+      await capturePage();
+      fireEvent.click(screen.getByRole('button', { name: /paste data/i }));
+      fireEvent.change(textpad(), { target: { value: 'ERROR x' } });
+      send();
+      expect(await screen.findByRole('alert')).toHaveTextContent(/captured page/);
+      expect(mockTurnSubmit).not.toHaveBeenCalled();
+      expect(textpad()).toHaveValue('ERROR x');
+    });
   });
 
   it('with attachments disabled (a closed case), the paste goes in the box', () => {
@@ -243,16 +311,14 @@ describe('UnifiedInputBar — a multi-line paste goes to the textpad (#327)', ()
       expect(box()).toHaveValue(lines(threshold));
     });
 
-    it('Send with a file staged beside the open textpad sends nothing and asks the user to choose', async () => {
+    it('Send with a file staged beside the open textpad carries both', async () => {
       renderBar();
-      await stageFile();
+      const file = await stageFile();
       fireEvent.click(screen.getByRole('button', { name: /paste data/i }));
       fireEvent.change(textpad(), { target: { value: 'ERROR x' } });
       send();
-      expect(await screen.findByRole('alert')).toHaveTextContent(/app\.log/);
-      expect(mockTurnSubmit).not.toHaveBeenCalled();
-      expect(screen.getByText('app.log')).toBeInTheDocument();
-      expect(textpad()).toHaveValue('ERROR x');
+      await waitFor(() => expect(mockTurnSubmit).toHaveBeenCalledTimes(1));
+      expect(mockTurnSubmit.mock.calls[0][0]).toMatchObject({ files: [file], pastedContent: 'ERROR x', inputType: 'paste' });
     });
   });
 
