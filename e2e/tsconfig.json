@@ -1,0 +1,18 @@
+{
+  // The e2e harness, typechecked by `pnpm compile`. Its own project rather than
+  // a line in the root include, because the specs need the `chrome` global
+  // (globals.d.ts) and the extension source must not get it for free.
+  //
+  // The point is the mock API (fixtures/mock-api/): its routes and bodies are
+  // typed by the generated contract, so a contract adoption that moves a schema
+  // the mock serves fails here rather than leaving the suite exercising a shape
+  // no server sends (#343).
+  "extends": "../tsconfig.json",
+  "include": [
+    "**/*.ts",
+    "../playwright.config.ts",
+    "../.wxt/types/**/*.ts",
+    // The client modules a fixture takes its type from read `import.meta.env`.
+    "../src/vite-env.d.ts"
+  ]
+}

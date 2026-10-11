@@ -1,8 +1,20 @@
 import express from 'express';
 import cors from 'cors';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { paths } from '@faultmaven/copilot-ui/types/api.generated';
+import {
+    authConfig,
+    capabilities,
+    caseCreate,
+    caseMessages,
+    casesList,
+    caseUi,
+    oauthToken,
+    sessionCreate,
+    turnResponse,
+    userMe,
+} from './fixtures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,25 +34,14 @@ app.use(express.json());
 // Serve static HTML fixtures for testing injection rules on localhost
 app.use('/pages', express.static(path.join(__dirname, '../target-pages')));
 
-// Helper to send a stored fixture
-function sendFixture(res: express.Response, fixtureName: string, statusCode = 200) {
-    const filePath = path.join(__dirname, 'responses', `${fixtureName}.json`);
-    if (fs.existsSync(filePath)) {
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        res.status(statusCode).json(data);
-    } else {
-        // Return a default empty response if fixture not found, or error
-        res.status(statusCode).json({ message: `Fixture ${fixtureName} not found` });
-    }
-}
-
 // Memory store for dynamic behavior across tests.
 //
 // ‼ This is the ONLY mutable state shared between tests: the browser context is
 // test-scoped (fresh profile per test), but this process lives for the whole
 // run. A test that sets a flag and dies before clearing it hands the flag to the
-// next test. Specs reset it in `beforeEach` (where it cannot be skipped) and can
-// read it back through `GET /__admin/state` to measure rather than assume.
+// next test. The shared fixture resets it before every test (where it cannot be
+// skipped) and reads it back through `GET /__admin/state` to measure rather
+// than assume.
 const DEFAULT_STATE = {
     shouldFail: false,
     rateLimit: false,
@@ -48,6 +49,17 @@ const DEFAULT_STATE = {
     responseDelayMs: 0,
 };
 let testState = { ...DEFAULT_STATE };
+
+/**
+ * Requests no route answered since the last reset, as `METHOD /path`, once each.
+ *
+ * Every one is a route the client calls and this mock does not serve, which
+ * means the test exercised the client's 404 fallback instead of the path it
+ * meant to (#343: capabilities and /auth/me had been 404ing on every run). The
+ * shared fixture reads this after each test and fails the test on any entry,
+ * naming the route.
+ */
+let unmatched: string[] = [];
 
 // Admin endpoint for tests to change server state
 app.post('/__admin/state', (req, res) => {
@@ -60,9 +72,14 @@ app.get('/__admin/state', (req, res) => {
     res.json(testState);
 });
 
+app.get('/__admin/unmatched', (req, res) => {
+    res.json(unmatched);
+});
+
 // Reset state
 app.post('/__admin/reset', (req, res) => {
     testState = { ...DEFAULT_STATE };
+    unmatched = [];
     res.json({ success: true });
 });
 
@@ -83,88 +100,72 @@ app.use((req, res, next) => {
     next();
 });
 
-// API Routes
-app.post('/api/v1/sessions', (req, res) => {
-    sendFixture(res, 'session_create');
-});
+// ---------------------------------------------------------------------------
+// API routes, registered through `serve`, which takes the path AS THE CONTRACT
+// SPELLS IT and the body the contract declares for that status. A route the
+// contract drops, or a body that no longer matches its schema, fails
+// `pnpm compile`; a route the client calls that nobody registered here fails
+// the test that called it (`unmatched`, above).
+// ---------------------------------------------------------------------------
 
-app.post('/api/v1/auth/oauth/token', (req, res) => {
-    sendFixture(res, 'auth_token');
-});
+type Method = 'get' | 'post' | 'put' | 'delete' | 'patch';
 
-app.get('/api/v1/cases', (req, res) => {
-    sendFixture(res, 'cases_list');
-});
+/** The JSON body `paths[P][M]` declares for `status`. */
+type JsonBody<P extends keyof paths, M extends keyof paths[P], S extends number> =
+    paths[P][M] extends { responses: infer R }
+        ? S extends keyof R
+            ? R[S] extends { content: { 'application/json': infer B } } ? B : never
+            : never
+        : never;
 
-app.post('/api/v1/cases', (req, res) => {
-    sendFixture(res, 'case_create');
-});
+function serve<P extends keyof paths, M extends Method & keyof paths[P], S extends number>(
+    method: M,
+    route: P,
+    status: S,
+    body: (req: express.Request) => JsonBody<P, M, S>,
+): void {
+    // `/api/v1/cases/{case_id}/ui` -> express's `/api/v1/cases/:case_id/ui`
+    const expressPath = (route as string).replace(/\{(\w+)\}/g, ':$1');
+    app[method](expressPath, (req, res) => {
+        res.status(status).json(body(req));
+    });
+}
 
-app.get('/api/v1/cases/:id/queries', (req, res) => {
-    sendFixture(res, 'case_queries');
-});
+// Every panel, at boot.
+serve('get', '/api/v1/meta/capabilities', 200, () => capabilities);
+serve('get', '/api/v1/auth/config', 200, () => authConfig);
+serve('get', '/api/v1/auth/me', 200, () => userMe);
+serve('post', '/api/v1/sessions', 201, () => sessionCreate);
+serve('post', '/api/v1/auth/oauth/token', 200, () => oauthToken);
 
-app.post('/api/v1/cases/:id/queries', (req, res) => {
-    sendFixture(res, 'query_response');
-});
-
-// Current turn-based submission endpoint (replaces legacy queries)
-app.post('/api/v1/cases/:id/turns', async (req, res) => {
+// Cases.
+serve('get', '/api/v1/cases', 200, () => casesList);
+serve('post', '/api/v1/cases', 201, () => caseCreate);
+serve('get', '/api/v1/cases/{case_id}/ui', 200, (req) => caseUi(String(req.params.case_id)));
+serve('get', '/api/v1/cases/{case_id}/messages', 200, () => caseMessages);
+// A turn is held by `responseDelayMs`, so a spec can watch the in-flight indicator.
+app.post('/api/v1/cases/:case_id/turns', async (req, res, next) => {
     if (testState.responseDelayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, testState.responseDelayMs));
     }
-    sendFixture(res, 'turn_response');
+    next();
 });
-
-// Case conversation messages
-app.get('/api/v1/cases/:id/messages', (req, res) => {
-    sendFixture(res, 'case_messages');
-});
-
-// Case UI endpoint (used by ChatWindow for state reconciliation).
-// `state` is the discriminator of CaseUIResponse_* — the header crashes
-// if it is missing (this fixture drifted when the API renamed
-// status -> state, which is what broke e2e from 2026-06-04 on).
-app.get('/api/v1/cases/:id/ui', (req, res) => {
-    res.json({
-        case_id: req.params.id,
-        title: 'E2E Test Case',
-        state: 'inquiry',
-        created_at: '2026-02-20T21:42:36.236Z',
-        updated_at: '2026-02-20T21:42:36.236Z',
-        current_turn: 0,
-        // The server lists only CLOSED. ``investigating`` stopped being a
-        // user action in #1608 and ``resolved`` in contract 9.0.0 — both are
-        // earned from case content and offered by the agent through a
-        // handshake, and both are refused as requests.
-        valid_next_states: ['closed']
-    });
-});
-
-// Backend capabilities (sidepanel boot fetch — without this the panel
-// falls back to cached capabilities and logs a 404 on every test).
-app.get('/v1/meta/capabilities', (req, res) => {
-    res.json({
-        deploymentMode: 'self-hosted',
-        kbManagement: 'dashboard',
-        dashboardUrl: 'http://localhost:3333',
-        features: {
-            extensionKB: false,
-            adminKB: true,
-            teamSharing: false,
-            caseHistory: true,
-            sso: false
-        }
-    });
-});
-
-app.get('/api/v1/users/me', (req, res) => {
-    sendFixture(res, 'user_me');
-});
+serve('post', '/api/v1/cases/{case_id}/turns', 200, () => turnResponse);
 
 // Health check
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
+});
+
+// Nothing above answered. Record it for the fixture, and 404 as before.
+// `/favicon.ico` is the browser's own request for the static /pages fixtures,
+// not the client's.
+app.use((req, res) => {
+    const request = `${req.method} ${req.path}`;
+    if (req.path !== '/favicon.ico' && !unmatched.includes(request)) {
+        unmatched.push(request);
+    }
+    res.status(404).json({ detail: `The e2e mock API does not serve ${req.method} ${req.path}` });
 });
 
 app.listen(port, () => {

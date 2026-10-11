@@ -14,7 +14,7 @@ pnpm install                  # also runs `wxt prepare`
 pnpm dev / pnpm dev:firefox   # HMR dev build
 pnpm build / pnpm build:firefox
 pnpm zip / pnpm zip:firefox   # store-ready zips in .output/
-pnpm compile                  # tsc --noEmit for src/ AND the package
+pnpm compile                  # tsc --noEmit for src/, e2e/ AND the package
 pnpm lint                     # eslint src packages
 pnpm test                     # vitest (add --watch); test:ui, test:coverage
 pnpm test:e2e                 # playwright e2e/ (needs `pnpm build` first)

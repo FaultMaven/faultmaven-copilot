@@ -6,7 +6,12 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const MOCK_API = 'http://localhost:8091';
+/**
+ * The mock API for THIS run. The port is chosen once per run in
+ * playwright.config.ts (a free one locally, so parallel worktrees never share a
+ * server and its state) and inherited here through `E2E_MOCK_PORT`.
+ */
+export const MOCK_API = `http://localhost:${process.env.E2E_MOCK_PORT ?? '8091'}`;
 
 /** What `POST /__admin/reset` restores (e2e/fixtures/mock-api/server.ts). */
 export const DEFAULT_MOCK_STATE = {
@@ -15,6 +20,15 @@ export const DEFAULT_MOCK_STATE = {
     authExpired: false,
     responseDelayMs: 0,
 };
+
+// The `context` fixture's bounds (#343). Together they fit inside the 30 s test
+// timeout, so a stuck step fails as that step, by name, before the test does.
+/** How long Chromium may take to launch with the extension loaded. */
+const LAUNCH_TIMEOUT_MS = 15_000;
+/** How long the extension's service worker may take to register. */
+const SERVICE_WORKER_TIMEOUT_MS = 10_000;
+/** One wait for the `serviceworker` event before the list is read again. */
+const SERVICE_WORKER_POLL_MS = 1_000;
 
 export const test = base.extend<{
     context: BrowserContext;
@@ -39,6 +53,16 @@ export const test = base.extend<{
         const state = await (await request.get(`${MOCK_API}/__admin/state`)).json();
         base.expect(state, 'mock API state at the start of the test').toEqual(DEFAULT_MOCK_STATE);
         await use();
+        // Every request no mock route answered during the test (the context is
+        // closed by now, so nothing more arrives). Each one is a route the
+        // client calls and the mock does not serve: the test ran the client's
+        // 404 fallback instead of the path it meant to (#343). Fails the test
+        // naming the route.
+        const unmatched = await (await request.get(`${MOCK_API}/__admin/unmatched`)).json();
+        base.expect(
+            unmatched,
+            'requests the mock API has no route for: serve them in e2e/fixtures/mock-api/server.ts',
+        ).toEqual([]);
     }, { auto: true }],
     context: async ({ }, use) => {
         // The extension is built to .output/chrome-mv3 by WXT
@@ -49,19 +73,23 @@ export const test = base.extend<{
             throw new Error(`Extension build not found at ${pathToExtension}. Run 'pnpm build' first.`);
         }
 
+        // Bounded, and each step named: a hang here used to surface only as
+        // "Test timeout of 30000ms exceeded while setting up context" (#343),
+        // which does not say whether Chromium never launched or the extension's
+        // worker never registered.
         const context = await chromium.launchPersistentContext('', {
             headless: false, // Required for extensions
             args: [
                 `--disable-extensions-except=${pathToExtension}`,
                 `--load-extension=${pathToExtension}`,
             ],
+            timeout: LAUNCH_TIMEOUT_MS,
+        }).catch((error: Error) => {
+            throw new Error(`context fixture: launchPersistentContext did not complete within ${LAUNCH_TIMEOUT_MS} ms: ${error.message}`);
         });
 
-        // Wait for the background service worker to register
-        let [background] = context.serviceWorkers();
-        if (!background) {
-            background = await context.waitForEvent('serviceworker');
-        }
+        // The extension's background service worker has registered.
+        await backgroundWorker(context);
 
         await use(context);
 
@@ -76,9 +104,40 @@ export const test = base.extend<{
 
 export const expect = test.expect;
 
+/**
+ * The extension's background service worker, waited for with a bound.
+ *
+ * Reads `context.serviceWorkers()` and, while it is empty, waits for the
+ * `serviceworker` event in short slices, re-reading the list after each. The
+ * list is the source of truth: a worker whose event fired while nothing was
+ * listening is still in it. The plain "list, else wait for the event" form
+ * waited with no bound of its own if the registration landed in that gap,
+ * which is one candidate for the rare `context` fixture hang (#343), so a
+ * worker found only by a re-read is logged, to measure whether the gap is
+ * ever hit.
+ */
 export async function backgroundWorker(context: BrowserContext): Promise<Worker> {
-    const [background] = context.serviceWorkers();
-    return background ?? context.waitForEvent('serviceworker');
+    const startedAt = Date.now();
+    for (;;) {
+        const [listed] = context.serviceWorkers();
+        if (listed) {
+            const waited = Date.now() - startedAt;
+            if (waited > SERVICE_WORKER_POLL_MS) {
+                console.warn(`[e2e fixture] extension service worker found by re-reading the list after ${waited} ms (its registration event was not observed)`);
+            }
+            return listed;
+        }
+        const waited = Date.now() - startedAt;
+        if (waited >= SERVICE_WORKER_TIMEOUT_MS) {
+            throw new Error(
+                `context fixture: the extension's service worker did not register within ${SERVICE_WORKER_TIMEOUT_MS} ms ` +
+                `(Chromium launched; pages open: ${context.pages().length}).`,
+            );
+        }
+        const slice = Math.min(SERVICE_WORKER_POLL_MS, SERVICE_WORKER_TIMEOUT_MS - waited);
+        const worker = await context.waitForEvent('serviceworker', { timeout: slice }).catch(() => undefined);
+        if (worker) return worker;
+    }
 }
 
 /**

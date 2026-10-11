@@ -1,11 +1,11 @@
-import { test, expect } from '../setup/extension-context';
+import { test, expect, MOCK_API } from '../setup/extension-context';
 
 test.describe('Content Script Injection', () => {
     test('Content script injects on allowed target pages', async ({ context }) => {
         const page = await context.newPage();
 
         // Navigate to local generic html file
-        await page.goto('http://localhost:8091/pages/generic-page.html');
+        await page.goto(`${MOCK_API}/pages/generic-page.html`);
 
         let hasConsoleErrors = false;
         page.on('console', msg => {
@@ -22,7 +22,7 @@ test.describe('Content Script Injection', () => {
     test('Dashboard mock limits auth-bridge origin validation', async ({ context }) => {
         const page = await context.newPage();
         // The auth-bridge runs on specific patterns like app.faultmaven.ai and localhost
-        await page.goto('http://localhost:8091/pages/dashboard.html');
+        await page.goto(`${MOCK_API}/pages/dashboard.html`);
 
         // Verify the page loaded correctly without extension errors breaking it
         await expect(page.locator('h1')).toContainText('Dashboard Mock');
@@ -37,7 +37,7 @@ test.describe('Content Script Injection', () => {
 
     test('Content script respects restrictive CSP', async ({ context }) => {
         const page = await context.newPage();
-        await page.goto('http://localhost:8091/pages/restricted-csp.html');
+        await page.goto(`${MOCK_API}/pages/restricted-csp.html`);
 
         // Ensure the page with strict CSP doesn't trigger continuous extension crash loops
         await expect(page.locator('h1')).toContainText('Strict CSP');
