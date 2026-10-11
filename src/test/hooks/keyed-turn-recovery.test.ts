@@ -401,13 +401,17 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
   });
 
   it('sends the turn with the request timeout derived from the published bound', async () => {
-    vi.spyOn(capabilitiesManager, 'getTurnTiming').mockImplementation((bytes = 0) => deriveTurnTiming(150, bytes));
+    const timingFor = vi
+      .spyOn(capabilitiesManager, 'getTurnTiming')
+      .mockImplementation((_apiUrl, bytes = 0) => deriveTurnTiming(150, bytes));
     routeWire([async () => replay()]);
     await submit();
     const [[, , timeoutMs]] = (fetchWithTimeout.mock.calls as [string, RequestInit, number][]).filter(
       ([url, init]) => url === TURNS_URL && init.method === 'POST',
     );
     expect(timeoutMs).toBe(211_000); // 150 + 60 + ceil(26 / 125000) s
+    // The bound is the one published by the server the turn goes to (#324).
+    expect(timingFor).toHaveBeenCalledWith(BASE, 26);
   });
 
   it('with no published bound the turn keeps the 300 s request timeout (+1 s: the 26-byte body rounds up)', async () => {

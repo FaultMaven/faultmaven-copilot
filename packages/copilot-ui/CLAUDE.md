@@ -52,7 +52,12 @@ This file holds the rules that constrain code *inside* the package.
   ceil(body bytes / 125 000) s (1 Mbps; the server binds its deadline after
   reading the body); recovery deadline = 2 x that. Capabilities are re-read
   before a turn when the network read held is older than 5 minutes
-  (`refreshIfStale`; a failed re-read keeps the earlier read). With no usable
+  (`refreshIfStale`; a failed re-read keeps the earlier read). The manager
+  is keyed on the API URL (#324): what is held, the in-flight probe, the
+  persisted offline copy (`backendCapabilitiesApiUrl` tags it) and the
+  fallback warning all belong to one server, every read names its URL (the
+  turn's is the transport's `baseUrl`), and nothing held for a URL (the user
+  changed it) is read before the turn. With no usable
   bound the old constants apply (300 s / 660 s, plus the same allowance) and a
   warning is logged once per capabilities object. The deadline bounds the START
   of a retry, so the worst case is about deadline + one request timeout.
