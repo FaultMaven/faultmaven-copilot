@@ -29,9 +29,26 @@ import { useAppStore } from './store';
 
 const log = createLogger('lazy-case');
 
+type ClaimListener = (optimisticId: string) => void;
+const claimListeners = new Set<ClaimListener>();
+
+/**
+ * Hear each lazy case as it is claimed; returns the unsubscribe. The composer
+ * listens while its own send is in flight, so it can tell the case that send
+ * created from one the user opened meanwhile (#339).
+ */
+export function onLazyCaseClaimed(listener: ClaimListener): () => void {
+  claimListeners.add(listener);
+  return () => {
+    claimListeners.delete(listener);
+  };
+}
+
 /** Point the panel at a case about to be created; returns its optimistic id. */
 export function claimLazyCase(): string {
   const optimisticId = OptimisticIdGenerator.generateCaseId();
+  // Before the pointer moves, so a listener knows the id when the panel shows it.
+  claimListeners.forEach((listener) => listener(optimisticId));
   const store = useAppStore.getState();
   void store.setActiveCaseId(optimisticId);
   store.setHasUnsavedNewChat(false);

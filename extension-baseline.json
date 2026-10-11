@@ -27,7 +27,7 @@
   },
   "package": {
     "fileCount": 127,
-    "sha256": "20d3930eabef2308bf16eb80be90c64fea6052f5cecbab61bddaea6e801c8c07"
+    "sha256": "2e9bed430ac5156d892e61b4dd941e7f2cdd1f2620720d043f52ad9428561659"
   },
   "iconSources": {
     "fileCount": 8,
@@ -177,7 +177,7 @@
     "chunks/requirementDiagram-LRYGKXZP-MAZBzVOX.js": "d6de9faa6549bbd548b9cbaa6aa5c829bc35390ac07c430b032658f915e30c74",
     "chunks/sankeyDiagram-W5VNT64P-C4dWhcK1.js": "6bdc90448683b04ebe5a2d21036797f2ec8a23ddc97c3999f0b67752a2b54cc7",
     "chunks/sequenceDiagram-SI44F4Z6-CDV36Rie.js": "3688d13bcf07501470602845c92f19dac0bfae960461d4d3024536371375f029",
-    "chunks/sidepanel_manual-DKOnSV-H.js": "99e0de91b768f1d2eb8865b26c39e4cf2964c9a3a2f5e3ddafedb09c6c9de94b",
+    "chunks/sidepanel_manual-BKhMrijX.js": "88063c397e10fdd25a19f4326f58c2116063f5d9b4276a8c34e78696ce91a73f",
     "chunks/sizeCapture-X5ZJPWSS-D_FfA_Ju.js": "c838cacfc5720e3456353a77a728b30f18ccdfaee42a43f5aa1eacae397a9a8d",
     "chunks/stateDiagram-OKZ733FA-D6FyF_3e.js": "b7720b36968ecf12425f1473ed5ef9d07570aa707201bb3e10f84b50614d4b9a",
     "chunks/stateDiagram-v2-UEYNNEHI-DG29u0-b.js": "bba21cbbbdee6f12eba50e0b4369ed2606d330ca3428428ca11211723f522fc6",
@@ -200,6 +200,6 @@
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "87fc053028a569815b4cb5703c4ef0c5937983df816b860549556f256132214c",
     "options.html": "b4ea05eb1c722d618376f00e9c713795f2184eccbe701e99f5bbfd3dea4c8a6d",
-    "sidepanel_manual.html": "2213c490f8809f039eb90513deb975c20ae6f0529a508f987ae8180f36361b93"
+    "sidepanel_manual.html": "84874f24dda9307f0c673b48c7a77a4e66a1561f1ff4f2d0c1d28da59df36062"
   }
 }
