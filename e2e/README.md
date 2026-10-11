@@ -54,6 +54,15 @@ The tests rely on a Mock API server that intercepts `http://localhost:8091`. Thi
      data: { shouldFail: true }
    });
    ```
+   You do not need to clean up afterwards: the shared fixture (`mockApiState` in
+   `e2e/setup/extension-context.ts`) resets the server before **every** test and
+   asserts the result via `GET /__admin/state`. The server is the only state that
+   outlives a test, so the reset lives where a failing test cannot skip it.
+
+3. To start a test signed in, seed storage from the background worker with
+   `seedExtensionStorage(context, signedInStorage())` **before** opening any panel
+   page. Writing it from a panel page that has just loaded races the panel's
+   startup session repair, which can sweep the credential you just wrote.
 
 ## Handling Port Conflicts
 
