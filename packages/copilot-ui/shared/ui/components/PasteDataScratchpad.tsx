@@ -4,24 +4,30 @@
  * Staging area for pasting data (logs, configs, error traces) to attach
  * alongside a query. Data is staged locally and submitted with the main
  * Send button via the unified /turns endpoint.
+ *
+ * Controlled: the composer owns the text, because a multi-line paste into the
+ * chat box lands here while it is open, and Send carries what it holds (#327).
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
+import { stripBlankEdgeLines } from '../../../lib/utils/pasted-data';
 
 export interface PasteDataScratchpadProps {
-  initialContent?: string;
+  value: string;
+  onChange: (value: string) => void;
+  /** Receives the text verbatim, less blank leading and trailing lines. */
   onStage: (content: string) => void;
   onClear: () => void;
   onClose: () => void;
 }
 
 export function PasteDataScratchpad({
-  initialContent = '',
+  value: pastedContent,
+  onChange,
   onStage,
   onClear,
   onClose,
 }: PasteDataScratchpadProps) {
-  const [pastedContent, setPastedContent] = useState(initialContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-focus the textarea on mount
@@ -30,14 +36,16 @@ export function PasteDataScratchpad({
   }, []);
 
   const handleDone = () => {
-    if (pastedContent.trim()) {
-      onStage(pastedContent.trim());
+    // Not `trim()`: the first line's indentation is part of the data.
+    const content = stripBlankEdgeLines(pastedContent);
+    if (content) {
+      onStage(content);
     }
     onClose();
   };
 
   const handleClear = () => {
-    setPastedContent('');
+    onChange('');
     onClear();
     onClose();
   };
@@ -85,7 +93,7 @@ export function PasteDataScratchpad({
       <textarea
         ref={textareaRef}
         value={pastedContent}
-        onChange={(e) => setPastedContent(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         placeholder="Paste logs, error traces, configs, or any data here..."
         rows={6}
         className="block w-full p-2 text-xs font-mono border border-fm-accent-border rounded resize-y focus:outline-none focus:ring-2 focus:ring-fm-accent bg-fm-surface"

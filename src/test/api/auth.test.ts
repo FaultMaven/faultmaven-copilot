@@ -17,7 +17,7 @@ vi.mock('@faultmaven/copilot-ui/config', () => ({
       timeoutMs: 180 * 60 * 1000
     },
     inputLimits: {
-      dataModeLinesThreshold: 100,
+      pasteToTextpadLines: 3,
       maxQueryLength: 200000,
       maxFileSize: 10 * 1024 * 1024
     }

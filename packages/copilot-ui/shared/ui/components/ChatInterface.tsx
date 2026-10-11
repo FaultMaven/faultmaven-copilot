@@ -174,7 +174,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               ? "Select a case to start chatting..."
               : isTerminal
                 ? "Ask about this case, or request a report..."
-                : "Ask FaultMaven..."
+                // Says where data goes (#327): a multi-line paste lands in
+                // Paste data, which also takes logs typed or pasted there.
+                : "Ask FaultMaven. Logs, command output and config go in Paste data."
         }
       />
       )}

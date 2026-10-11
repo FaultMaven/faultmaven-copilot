@@ -37,12 +37,25 @@ describe('config env parsing', () => {
   );
 
   it('falls back to the defaults for unparseable input limits', async () => {
-    vi.stubEnv('VITE_DATA_MODE_LINES', 'many');
+    vi.stubEnv('VITE_PASTE_TO_TEXTPAD_LINES', 'many');
     vi.stubEnv('VITE_MAX_QUERY_LENGTH', 'lots');
     vi.stubEnv('VITE_MAX_FILE_SIZE_MB', 'big');
     const config = await loadConfig();
-    expect(config.inputLimits.dataModeLinesThreshold).toBe(100);
+    expect(config.inputLimits.pasteToTextpadLines).toBe(3);
     expect(config.inputLimits.maxQueryLength).toBe(200000);
     expect(config.inputLimits.maxFileSize).toBe(10 * 1024 * 1024);
+  });
+
+  it('honours VITE_PASTE_TO_TEXTPAD_LINES, never below two lines', async () => {
+    vi.stubEnv('VITE_PASTE_TO_TEXTPAD_LINES', '5');
+    expect((await loadConfig()).inputLimits.pasteToTextpadLines).toBe(5);
+    // One line would send every pasted word to the textpad.
+    vi.stubEnv('VITE_PASTE_TO_TEXTPAD_LINES', '1');
+    expect((await loadConfig()).inputLimits.pasteToTextpadLines).toBe(2);
+  });
+
+  it('has no whole-box data mode knob any more (#327)', async () => {
+    const config = await loadConfig();
+    expect(config.inputLimits).not.toHaveProperty('dataModeLinesThreshold');
   });
 });

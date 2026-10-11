@@ -68,7 +68,7 @@ export const Z_INDEX = {
 import config from '../../../config';
 
 export const INPUT_LIMITS = {
-  DATA_MODE_LINE_THRESHOLD: config.inputLimits.dataModeLinesThreshold,
+  PASTE_TO_TEXTPAD_LINE_THRESHOLD: config.inputLimits.pasteToTextpadLines,
   MAX_QUERY_LENGTH: config.inputLimits.maxQueryLength,
   TEXTAREA_MIN_ROWS: config.inputLimits.textareaMinRows,
   TEXTAREA_MAX_ROWS: config.inputLimits.textareaMaxRows,
