@@ -87,6 +87,16 @@ export type { ApiTransport } from './lib/api/transport';
 export { clearPersistedSession } from './lib/api/session-core';
 export type { ClearPersistedSessionOptions } from './lib/api/session-core';
 
+/**
+ * What a host's `session.accessToken()` throws when its stored credential is
+ * ANOTHER user's than the session's (copilot#350): the request is not sent and
+ * nothing is torn down. Re-exported, never copied — `getAuthHeaders` tells it
+ * apart with `instanceof`, so a host must throw this very class. The extension
+ * reaches it by path; a host outside this repository has only the entry
+ * (faultmaven-dashboard#212).
+ */
+export { SessionSwitchedError } from './lib/errors/types';
+
 /** The shapes a host renders or hands in. */
 export type { UserCase, UserCaseState, Message, CaseDetail } from './types/case';
 export type { OptimisticConversationItem, PendingOperation } from './lib/optimistic';

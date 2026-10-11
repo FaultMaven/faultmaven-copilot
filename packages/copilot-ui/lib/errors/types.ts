@@ -180,19 +180,30 @@ export class AuthenticationError extends UserFacingError {
  * The request was NOT sent: the host's stored session belongs to a different
  * user than the one the request was built for (copilot#350).
  *
- * Another account signed in on this browser profile a moment ago and the panel
- * has not re-scoped to it yet. Not an authentication failure — nobody's session
- * has ended, and treating it as one (`category: 'authentication'`) would offer
- * a "Sign In" whose action signs the NEW user out. Nothing to recover either:
- * the panel switches to the new account when the host reports it. A notice.
+ * Another account signed in on this browser profile a moment ago and the host
+ * has not moved the panel off the old one yet. Not an authentication failure —
+ * nobody's session has ended, and treating it as one (`category:
+ * 'authentication'`) would offer a "Sign In" whose action signs the NEW user
+ * out. Nothing to recover either: the host moves the panel off the old account
+ * when it reports the switch. A notice.
+ *
+ * ‼ The copy REASSURES and asks for nothing. What happens next is the host's —
+ * the extension re-scopes its panel to the new account, the Dashboard ends the
+ * tab and routes it to sign-in (faultmaven-dashboard#212) — so it names no
+ * mechanism. It recommends no sign-in, for the reason above, and no resend:
+ * by the time it shows, the panel is the other account's or gone, so a resend
+ * is impossible or goes out AS the other account — the very write this error
+ * exists to stop. And the refused request may be a background read nobody
+ * started.
  *
  * `getAuthHeaders` propagates it so the request is never sent; a host throws
- * it from `accessToken()` when it can tell the two users apart.
+ * it from `accessToken()` when it can tell the two users apart. A host outside
+ * this repository reaches it through the package entry.
  */
 export class SessionSwitchedError extends UserFacingError {
   readonly userTitle = 'Signed in as another account';
   readonly userMessage = 'Another account signed in on this browser, so this was not sent.';
-  readonly userAction = 'The panel is switching to that account.';
+  readonly userAction = 'Nothing was sent as the other account, and no one was signed out.';
   readonly category: ErrorCategory = 'notice';
   readonly recovery: RecoveryStrategy = 'none';
 

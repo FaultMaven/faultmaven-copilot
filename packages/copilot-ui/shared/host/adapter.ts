@@ -137,11 +137,15 @@ export interface HostSession {
    *
    *   - `AuthenticationError` (or a subclass) — the session is OVER. The request
    *     is not sent; the caller gets it, and its recovery is `show_modal`.
-   *   - `SessionSwitchedError` — the stored session is ANOTHER user's than
-   *     `user` (another account signed in, and this panel has not re-scoped
-   *     yet). The request is not sent and nothing is torn down; the host
-   *     reports the new identity through `subscribeAuthState` as usual
-   *     (copilot#350). A host that cannot tell users apart never throws it.
+   *   - `SessionSwitchedError` (exported by the package entry) — the stored
+   *     session is ANOTHER user's than `user` (another account signed in, and
+   *     the host has not moved this panel off the old one yet). The request is
+   *     not sent and nothing is torn down. The host then reports the switch
+   *     through `subscribeAuthState` as usual — the new identity, from a host
+   *     that re-scopes the panel in place (the extension), or `null` from one
+   *     that ends this panel's session instead (the Dashboard) (copilot#350,
+   *     faultmaven-dashboard#212). A host that cannot tell users apart never
+   *     throws it.
    *   - anything else — nothing available RIGHT NOW. The request goes out
    *     header-less and its 401 takes the recoverable session path, so a blip at
    *     the token endpoint cannot destroy a credential the next request could
