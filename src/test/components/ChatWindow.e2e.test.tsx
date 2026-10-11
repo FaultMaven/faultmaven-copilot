@@ -259,6 +259,40 @@ describe('ChatInterface e2e', () => {
       expect(screen.getByText('Case Resolved')).toBeInTheDocument()
     );
   });
+
+  it('opening another case clears what was typed in the composer for the first (#339)', async () => {
+    const user = userEvent.setup();
+    const caseFor = (id: string) => ({
+      case_id: id,
+      title: id,
+      state: 'inquiry' as const,
+      created_at: new Date().toISOString(),
+      owner_id: 'user-1',
+      enterprise_id: 'ent-1',
+      closure_reason: null,
+      closed_at: null,
+    });
+    const props = (id: string) => ({
+      activeCaseId: id,
+      activeCase: caseFor(id),
+      conversations: { [id]: [] },
+      loading: false,
+      submitting: false,
+      sessionId,
+      onQuerySubmit: vi.fn(),
+      onTurnSubmit: vi.fn(),
+      failedOperations: [],
+      onRetryFailedOperation: vi.fn(),
+      onDismissFailedOperation: vi.fn(),
+      getErrorMessageForOperation: () => ({ title: '', message: '', recoveryHint: '' }),
+    });
+
+    const { rerender } = renderWithQueryClient(<ChatInterface {...props('case-a')} />);
+    const box = screen.getByLabelText(/Type your message/i);
+    await user.type(box, 'about case A');
+    rerender(<ChatInterface {...props('case-b')} />);
+    expect(screen.getByLabelText(/Type your message/i)).toHaveValue('');
+  });
 });
 
 

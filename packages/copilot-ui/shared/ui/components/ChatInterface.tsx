@@ -154,6 +154,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )}
       {!readOnly && (
       <UnifiedInputBar
+        // What is typed or staged belongs to this case (#339).
+        caseId={activeCaseId ?? null}
         onQuerySubmit={onQuerySubmit}
         onTurnSubmit={onTurnSubmit}
         loading={loading}
