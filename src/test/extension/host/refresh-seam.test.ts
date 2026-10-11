@@ -47,7 +47,7 @@ vi.mock('../../../extension/auth/auth-config', () => ({
 }));
 
 vi.mock('@faultmaven/copilot-ui/lib/cache/case-cache', () => ({
-  caseCacheManager: { invalidateCache: vi.fn().mockResolvedValue(undefined) },
+  caseCacheManager: { invalidateCache: vi.fn().mockResolvedValue(undefined), fence: vi.fn() },
 }));
 
 import { readSessionAccessToken } from '../../../extension/host/session-credential';

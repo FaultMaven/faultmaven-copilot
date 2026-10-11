@@ -197,22 +197,24 @@ describe('CaseCacheManager', () => {
             expect(mockStorage.set).not.toHaveBeenCalled();
         });
 
+        // Not awaited: the invalidation comes from another caller while the
+        // edit's read is out. Its removal queues behind the edit (#330), but
+        // the generation moves at once, so the edit's write is refused.
         it('an optimistic edit whose read straddles an invalidation writes nothing', async () => {
             mockStorage.get.mockImplementation(async () => {
-                await manager.invalidateCache();
+                void manager.invalidateCache();
                 return {
                     faultmaven_case_cache: { cases: mockCases, timestamp: Date.now(), version: CASE_CACHE_VERSION }
                 };
             });
             await manager.updateOptimisticCase('123', { title: 'Updated Title' });
-            await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
             expect(mockStorage.set).not.toHaveBeenCalled();
         });
     });
 
     // #325. The slot's timestamp is when its page was FETCHED from the server,
     // and the TTL bounds how long a list the user did not change can be served.
-    // A local edit (a rename, a generated title, a created case) changes a row
+    // A local edit (a rename, a generated title) changes a row
     // the user already knows about; re-stamping it restarted the TTL for the
     // whole page, so a case reassigned to or away from the user (fm#1898) stayed
     // hidden for as long as they kept renaming.
@@ -249,24 +251,12 @@ describe('CaseCacheManager', () => {
             expect(await manager.getCachedCases()).toBeNull();
         });
 
-        it('an optimistically added case does not extend the TTL', async () => {
-            await manager.setCachedCases(mockCases, manager.currentGeneration());
-            vi.advanceTimersByTime(4 * MINUTE);
-
-            await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
-            expect((await manager.getCachedCases())?.map(c => c.case_id)).toEqual(['456', '123']);
-
-            vi.advanceTimersByTime(2 * MINUTE);
-            expect(await manager.getCachedCases()).toBeNull();
-        });
-
         it('an edit keeps the stored fetch time exactly', async () => {
             await manager.setCachedCases(mockCases, manager.currentGeneration());
             const fetchedAt = fetchedAtInStorage();
             vi.advanceTimersByTime(3 * MINUTE);
 
             await manager.updateOptimisticCase('123', { title: 'Renamed' });
-            await manager.addOptimisticCase({ ...mockCases[0], case_id: '456' });
             expect(fetchedAtInStorage()).toBe(fetchedAt);
         });
 
@@ -304,32 +294,6 @@ describe('CaseCacheManager', () => {
             mockStorage.get.mockResolvedValue({});
             await manager.updateOptimisticCase('123', { title: 'Updated Title' });
             expect(mockStorage.set).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('addOptimisticCase', () => {
-        it('adds new case to beginning of cache', async () => {
-            mockStorage.get.mockResolvedValue({
-                faultmaven_case_cache: {
-                    cases: mockCases,
-                    timestamp: Date.now(),
-                    version: CASE_CACHE_VERSION
-                }
-            });
-
-            const newCase: UserCase = {
-                ...mockCases[0],
-                case_id: '456',
-                title: 'New Case'
-            };
-
-            await manager.addOptimisticCase(newCase);
-
-            expect(mockStorage.set).toHaveBeenCalled();
-            const setCall = mockStorage.set.mock.calls[0][0];
-            const storedCases = setCall.faultmaven_case_cache.cases;
-            expect(storedCases.length).toBe(2);
-            expect(storedCases[0].case_id).toBe('456');
         });
     });
 });

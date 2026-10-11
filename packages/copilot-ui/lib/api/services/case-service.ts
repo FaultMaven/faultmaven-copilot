@@ -614,10 +614,11 @@ export async function createCase(
   // Invalidate the list cache so the sidebar refresh the create flows trigger
   // actually network-fetches and includes the new case. (The reconcile effect
   // no longer invalidates on case select, so creation must not rely on it.)
+  // That is the whole mechanism: nothing is added to the slot here. After the
+  // invalidation the slot is empty, so an optimistic add could only land on a
+  // sidebar page fetched since — which already holds the case — and list it
+  // twice (#330).
   await caseCacheManager.invalidateCache();
-
-  // Optimistically add to cache
-  await caseCacheManager.addOptimisticCase(userCase);
 
   return userCase;
 }

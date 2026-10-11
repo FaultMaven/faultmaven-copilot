@@ -57,14 +57,16 @@ class AuthManager {
     // Row first — its removal is what makes the sign-out observable — but the
     // cache purge runs either way: stopping on a failed row-removal would leave
     // the previous user's case list at rest on a shared machine.
-    // `invalidateCache()` swallows its own errors and cannot reject, so only the
+    // `fence()` is synchronous and cannot throw: it moves the cache generation
+    // and queues the removal without waiting on it, so a storage call that
+    // never settles cannot hold the teardown back from its broadcast. Only the
     // storage write needs catching here.
     try {
       await browser.storage.local.remove([AUTH_STATE_KEY]);
     } catch (error) {
       log.error('Could not remove authState during teardown', error);
     }
-    await caseCacheManager.invalidateCache();
+    caseCacheManager.fence();
   }
 
   /**
