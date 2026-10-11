@@ -82,21 +82,23 @@ describe('Intent-Based Turn System', () => {
       });
     });
 
-    it('should send confirmation intent', async () => {
+    // #291: a confirmation is a server card's intent forwarded whole. The server
+    // executes it only when `proposal_id` names the standing offer
+    // (faultmaven#1812), so the key must reach `intent_data` untouched.
+    it("should send a confirmation card's intent with its offer key", async () => {
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(mockTurnResponse());
+      const cardIntent = { type: 'confirmation', confirmation_value: true, proposal_id: 'gate1:7f3a9c0e1d2b4a56' };
 
       await caseService.submitTurn('case-123', {
-        query: 'Yes',
-        intentType: 'confirmation',
-        intentData: { confirmation_value: true }
+        query: "Yes, that's correct. Let's investigate.",
+        intentType: cardIntent.type,
+        intentData: { ...cardIntent }
       });
 
       const callArgs = (client.authenticatedFetchWithRetry as any).mock.calls[0];
       const body = callArgs[1].body as FormData;
       expect(body.get('intent_type')).toBe('confirmation');
-      expect(JSON.parse(body.get('intent_data') as string)).toEqual({
-        confirmation_value: true
-      });
+      expect(JSON.parse(body.get('intent_data') as string)).toEqual(cardIntent);
     });
 
     it('should send hypothesis_action intent', async () => {

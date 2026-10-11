@@ -7,15 +7,12 @@ import type { Components } from 'react-markdown';
 import { cleanResponseText } from '../../../lib/utils/text-processor';
 import { formatSource } from '../../../lib/utils/response-handlers';
 import { isRestrictedSource, RESTRICTED_SOURCE_LABEL } from '../../../lib/state/turn-sources';
-import { ConfirmationButtons } from './ConfirmationButtons';
 import { MermaidDiagram } from './MermaidDiagram';
 
 interface InlineSourcesRendererProps {
   content: string;
   sources?: Source[];
   onDocumentView?: (documentId: string) => void;
-  onConfirmationYes?: () => void;
-  onConfirmationNo?: () => void;
   className?: string;
 }
 
@@ -133,23 +130,6 @@ const PIIBadge: React.FC<PIIBadgeProps> = memo(({ label }) => {
 PIIBadge.displayName = 'PIIBadge';
 
 /**
- * Detects if content contains confirmation button pattern
- * Pattern: [✅ Yes]  [❌ No]
- */
-function hasConfirmationButtons(text: string): boolean {
-  const buttonPattern = /\[✅\s*Yes\]\s*\[❌\s*No\]/;
-  return buttonPattern.test(text);
-}
-
-/**
- * Strips confirmation button pattern from content
- */
-function stripConfirmationButtons(text: string): string {
-  const buttonPattern = /\[✅\s*Yes\]\s*\[❌\s*No\]/g;
-  return text.replace(buttonPattern, '').trim();
-}
-
-/**
  * Process text to replace PII token markers with React components
  */
 function processPIITokens(text: string): React.ReactNode[] {
@@ -223,19 +203,14 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
   content,
   sources = [],
   onDocumentView,
-  onConfirmationYes,
-  onConfirmationNo,
   className = ''
 }) => {
-  // Clean the response text before rendering
+  // Clean the response text before rendering. A reply is rendered as written:
+  // no text in it becomes a control. A confirmation is answered only through
+  // the card the server attaches (`SuggestionCard`), whose intent names the
+  // offer it presents; a button drawn from a pattern in the text could name
+  // none, and the server refuses such a click (#291, faultmaven#1812).
   const cleanedContent = useMemo(() => cleanResponseText(content), [content]);
-
-  // Detect and strip confirmation buttons
-  const hasButtons = useMemo(() => hasConfirmationButtons(cleanedContent), [cleanedContent]);
-  const contentWithoutButtons = useMemo(() =>
-    hasButtons ? stripConfirmationButtons(cleanedContent) : cleanedContent,
-    [cleanedContent, hasButtons]
-  );
 
   return (
     <div className={className}>
@@ -246,16 +221,8 @@ const InlineSourcesRenderer: React.FC<InlineSourcesRendererProps> = memo(({
         disallowedElements={DISALLOWED_ELEMENTS}
         unwrapDisallowed
       >
-        {contentWithoutButtons}
+        {cleanedContent}
       </ReactMarkdown>
-
-      {/* Render confirmation buttons if detected */}
-      {hasButtons && onConfirmationYes && onConfirmationNo && (
-        <ConfirmationButtons
-          onConfirm={onConfirmationYes}
-          onCancel={onConfirmationNo}
-        />
-      )}
 
       {sources.length > 0 && <SourcesInContext sources={sources} onDocumentView={onDocumentView} />}
     </div>
