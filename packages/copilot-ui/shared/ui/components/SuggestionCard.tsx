@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import type { SuggestedAction, ClickableSuggestionType, SuggestionIntent } from '../../../lib/api/types';
+import { opensDataBox } from '../../../lib/state/turn-items';
 
 // =============================================================================
 // Public Interface
@@ -11,6 +12,13 @@ export interface SuggestionCardProps {
   isCurrentTurn?: boolean;
   disabled?: boolean;
   onClickableSuggestion?: (payload: string, type: ClickableSuggestionType, intent?: SuggestionIntent) => void;
+  /**
+   * Opens the composer's data box holding `prefill`, `hint` (the action's
+   * `body`) as its placeholder; sends nothing (#328). Absent where the composer
+   * takes no data (a closed case, a read-only viewer): the data-box action is
+   * then informational, like any other EVIDENCE.
+   */
+  onOpenDataBox?: (prefill: string, hint: string | undefined) => void;
 }
 
 export function SuggestionCard({
@@ -18,11 +26,15 @@ export function SuggestionCard({
   isCurrentTurn = false,
   disabled = false,
   onClickableSuggestion,
+  onOpenDataBox,
 }: SuggestionCardProps) {
-  // Clickable by name: every other type, including UNRECOGNIZED, is plain text.
+  // Clickable by name: every other type, including UNRECOGNIZED, is plain text,
+  // except the data-box action (an EVIDENCE carrying `prefill`) where the
+  // composer can take data.
   const clickableType: ClickableSuggestionType | null =
     action.type === 'DECIDE' || action.type === 'RUN' ? action.type : null;
-  const isClickableType = clickableType !== null;
+  const opensBox = opensDataBox(action) && onOpenDataBox !== undefined;
+  const isClickableType = clickableType !== null || opensBox;
   const isClickable = isClickableType && isCurrentTurn && !disabled;
   const isCommand = clickableType === 'RUN';
   // Phase 6 visual linkage: EVIDENCE-type suggestions that derive from a
@@ -34,8 +46,14 @@ export function SuggestionCard({
   const [copied, setCopied] = useState(false);
 
   const handleClick = useCallback(() => {
+    if (!isClickable) return;
+    // Nothing is sent: the user corrects what the box holds and sends it.
+    if (opensBox) {
+      onOpenDataBox?.(action.prefill ?? '', action.body);
+      return;
+    }
     // payload exists only on the clickable types (DECIDE/RUN).
-    if (!isClickable || clickableType === null || !action.payload) return;
+    if (clickableType === null || !action.payload) return;
 
     if (clickableType === 'RUN') {
       navigator.clipboard.writeText(action.payload);
@@ -44,7 +62,7 @@ export function SuggestionCard({
     }
 
     onClickableSuggestion?.(action.payload, clickableType, action.intent);
-  }, [isClickable, clickableType, action.payload, action.intent, onClickableSuggestion]);
+  }, [isClickable, opensBox, clickableType, action.payload, action.prefill, action.body, action.intent, onClickableSuggestion, onOpenDataBox]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && isClickable) {
@@ -99,6 +117,9 @@ export function SuggestionCard({
           <span className="ml-1.5 text-fm-xs text-fm-text-tertiary leading-snug">
             {copied ? '✓ Copied — paste in terminal' : '(click to copy command)'}
           </span>
+        )}
+        {opensBox && isClickable && (
+          <span className="ml-1.5 text-fm-xs text-fm-text-tertiary leading-snug">(opens Paste data)</span>
         )}
       </div>
     </div>

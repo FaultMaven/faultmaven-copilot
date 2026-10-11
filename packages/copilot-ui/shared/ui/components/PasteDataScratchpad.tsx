@@ -19,6 +19,8 @@ export interface PasteDataScratchpadProps {
   onStage: (content: string) => void;
   onClear: () => void;
   onClose: () => void;
+  /** The placeholder while empty: the output an offer asked for (#328). */
+  hint?: string;
 }
 
 export function PasteDataScratchpad({
@@ -27,6 +29,7 @@ export function PasteDataScratchpad({
   onStage,
   onClear,
   onClose,
+  hint,
 }: PasteDataScratchpadProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,7 +95,7 @@ export function PasteDataScratchpad({
         ref={textareaRef}
         value={pastedContent}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Paste logs, error traces, configs, or any data here..."
+        placeholder={hint ?? "Paste logs, error traces, configs, or any data here..."}
         rows={6}
         className="block w-full p-2 text-xs font-mono border border-fm-accent-border rounded resize-y focus:outline-none focus:ring-2 focus:ring-fm-accent bg-fm-surface"
         aria-label="Paste data content"

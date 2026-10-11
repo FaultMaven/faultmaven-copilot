@@ -239,8 +239,14 @@ mapping. `suggestionFromResponse` narrows each suggestion: a `type` this build
 does not know becomes `UNRECOGNIZED` (plain text, never clickable). A
 suggestion's `intent` is kept **whole** and sent back verbatim on click: core
 routes on keys and intent types this client does not declare (an offer key,
-`file_reclassification`'s `file_id`), so it is never rebuilt from known fields
-or checked against `IntentType`.
+`file_reclassification`'s `file_id`, `save_chat_data`'s `offer_id`), so it is
+never rebuilt from known fields or checked against `IntentType`. An EVIDENCE
+carrying `prefill` (contract 13.3.0, #328; `""` included) is the **data-box
+action** (`opensDataBox`): a click opens the composer's textpad holding it,
+`body` as its placeholder, through `ComposerHandle.openDataBox`
+(`ChatInterface` holds the ref), and sends nothing. Recognised by the field,
+never by label; it is added after what the textpad holds, never in place of
+it, and is not offered where the composer takes no data (read-only, closed).
 
 **A turn's `case_state` belongs to its case** (#321). The user can open another
 case while a turn is in flight, so both paths apply it through

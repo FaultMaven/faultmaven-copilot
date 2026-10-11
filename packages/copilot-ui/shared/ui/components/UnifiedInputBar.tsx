@@ -18,9 +18,12 @@
  * What the user types is a message, never data (#327): only the textpad, a file
  * or a captured page is. A multi-line paste EVENT into the box goes to the
  * textpad and leaves the typed words in place; one action puts it back.
+ *
+ * The transcript's data-box action (#328) opens the textpad through
+ * `ComposerHandle.openDataBox`: the user corrects what it holds and sends it.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle } from 'react';
 import { useHost } from '../../host';
 import { createLogger } from '../../../lib/utils/logger';
 import {
@@ -76,7 +79,28 @@ export interface TurnPayload {
   sourceUrl?: string;
 }
 
+/**
+ * What the composer's parent may ask of it. One action, so the transcript can
+ * reach the data box without the composer's state leaving the composer.
+ */
+export interface ComposerHandle {
+  /**
+   * Open the textpad (Paste data) holding `prefill`, for the user to correct
+   * and send as data; `hint` is its placeholder while it is empty. The data-box
+   * action of a chat-data offer (#328, contract 13.3.0). Sends nothing.
+   *
+   * Nothing staged is dropped: `prefill` is added after what the textpad
+   * already holds (as a multi-line paste is), unless it already holds it; a
+   * staged file stays and goes with it. A no-op where the composer takes no
+   * data (disabled, or a closed case).
+   */
+  openDataBox: (prefill: string, hint?: string) => void;
+}
+
 export interface UnifiedInputBarProps {
+  /** The handle a parent opens the data box through (#328). */
+  ref?: React.Ref<ComposerHandle>;
+
   // State
   disabled?: boolean;
   disableAttachments?: boolean;
@@ -186,6 +210,7 @@ export function UnifiedInputBar({
   maxLength = INPUT_LIMITS.MAX_QUERY_LENGTH,
   placeholder = "Ask a question or paste data...",
   caseId = null,
+  ref,
 }: UnifiedInputBarProps) {
   // Input state
   const [input, setInput] = useState("");
@@ -206,6 +231,8 @@ export function UnifiedInputBar({
   const [showPasteScratchpad, setShowPasteScratchpad] = useState(false);
   // The open textpad's text. It is staged on Done, and Send carries it too.
   const [pasteDraft, setPasteDraft] = useState("");
+  /** The open textpad's placeholder when a data-box action opened it; else its own. */
+  const [textpadHint, setTextpadHint] = useState<string | null>(null);
   const [pasteUndo, setPasteUndo] = useState<PasteUndo | null>(null);
 
   // Refs
@@ -277,6 +304,7 @@ export function UnifiedInputBar({
     setStagedPastedContent("");
     setShowPasteScratchpad(false);
     setPasteDraft("");
+    setTextpadHint(null);
     setPasteUndo(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -597,8 +625,29 @@ export function UnifiedInputBar({
 
   const openTextpad = () => {
     setPasteDraft(stagedPastedContent);
+    setTextpadHint(null);
     setShowPasteScratchpad(true);
   };
+
+  // The data-box action (#328). The textpad opens holding what it held, staged
+  // or open, with `prefill` after it: an offer never replaces data the user
+  // put there. A second click on the same offer adds nothing. A staged file
+  // stays; a captured page stays until Done chooses the paste (Send asks).
+  useImperativeHandle(ref, () => ({
+    openDataBox: (prefill: string, hint?: string) => {
+      if (disabled || disableAttachments) {
+        log.debug('Data box not opened: the composer takes no data', { disabled, disableAttachments });
+        return;
+      }
+      const held = showPasteScratchpad ? pasteDraft : stagedPastedContent;
+      const data = stripBlankEdgeLines(prefill);
+      const next = data === '' || held.includes(data) ? held : appendBlock(held, data);
+      setPasteDraft(next);
+      setTextpadHint(hint ?? null);
+      setShowPasteScratchpad(true);
+      log.debug('Data box opened from an offer', { prefillLines: countLines(data), held: held !== '' });
+    },
+  }));
 
   // Closing from the Paste button stages what the textpad holds, like its own
   // close button and Escape, so a paste that landed there is not dropped.
@@ -915,6 +964,7 @@ export function UnifiedInputBar({
           onStage={stagePastedData}
           onClear={() => setStagedPastedContent("")}
           onClose={() => setShowPasteScratchpad(false)}
+          hint={textpadHint ?? undefined}
         />
       )}
 
