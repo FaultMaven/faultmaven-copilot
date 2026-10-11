@@ -27,7 +27,10 @@ This file holds the rules that constrain code *inside* the package.
 - `resilientOperation` (`lib/utils/resilient-operation.ts`): non-idempotent
   writes pass `idempotent: false` and are not auto-retried on `network`
   failures (an ambiguous POST may already have committed). `deadlineMs` is a
-  wall-clock bound counting in-request time (the `POLL_MAX_TOTAL_MS` rule); a
+  wall-clock bound counting in-request time (the `POLL_MAX_TOTAL_MS` rule),
+  enforced in `retryWithBackoff` on the wait it actually sleeps,
+  max(backoff, `Retry-After`), from the one `retryDelay` that computes it
+  (never sleep in `onRetry`: that wait escapes the bound, #324); a
   `retryOptions.shouldRetry` override replaces the default decision, so one
   that adds cases calls `defaultRetryDecision` for the rest.
 - **Keyed turns** (`lib/utils/keyed-turn-retry.ts`, contract 12.2.0). Both turn

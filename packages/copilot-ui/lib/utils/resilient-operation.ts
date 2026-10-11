@@ -10,8 +10,12 @@ export interface ResilientOperationOptions<T> {
   /** Context for error classification */
   context: ErrorContext;
   
-  /** Optional specific retry options (overrides defaults) */
-  retryOptions?: Partial<RetryOptions>;
+  /**
+   * Optional specific retry options (overrides defaults). The wait between
+   * attempts and the deadline are this function's own (`deadlineMs` below):
+   * one place decides the wait, so the deadline is judged on what is slept.
+   */
+  retryOptions?: Partial<Omit<RetryOptions, 'retryDelay' | 'deadlineMs'>>;
   
   /** Callback for when an error occurs (even if retried) */
   onError?: (error: UserFacingError, attempt: number) => void;
@@ -38,11 +42,13 @@ export interface ResilientOperationOptions<T> {
    * them, measured with `Date.now()` like `POLL_MAX_TOTAL_MS`: a bound that
    * counted only the sleeps would let a request that hangs to its own timeout
    * spend nothing of it. No retry is started once the elapsed time plus the
-   * server-directed wait before it would reach the bound; an attempt already
-   * running is not cut short (its own request timeout bounds it), so the worst
-   * case is about `deadlineMs` + one request timeout.
+   * wait actually slept before it — the backoff, or the server-directed wait
+   * when that is longer — would reach the bound; an attempt already running is
+   * not cut short (its own request timeout bounds it), so the worst case is
+   * about `deadlineMs` + one request timeout.
    *
-   * Applied before `retryOptions.shouldRetry`, so an override cannot outlive it.
+   * Enforced by `retryWithBackoff` once any `retryOptions.shouldRetry`
+   * override has said yes, so an override cannot outlive it.
    */
   deadlineMs?: number;
 }
@@ -93,7 +99,6 @@ export async function resilientOperation<T>(
   options: ResilientOperationOptions<T>
 ): Promise<T> {
   const { operation, context, retryOptions = {}, onError, onFailure, idempotent = true, deadlineMs } = options;
-  const startedAt = Date.now();
 
   const performOperation = async () => {
     return await operation();
@@ -116,14 +121,6 @@ export async function resilientOperation<T>(
           onError(classifiedError, attempt);
         }
 
-        // The wall-clock bound comes first: nothing below may outlive it.
-        if (deadlineMs !== undefined) {
-          const wait = hasServerDirectedWait(classifiedError) ? classifiedError.retryAfterMs : 0;
-          if (Date.now() - startedAt + wait >= deadlineMs) {
-            return false;
-          }
-        }
-
         // Check explicit retry options first
         if (retryOptions.shouldRetry) {
           return retryOptions.shouldRetry(error, attempt);
@@ -132,32 +129,28 @@ export async function resilientOperation<T>(
         return defaultRetryDecision(classifiedError, { idempotent });
       },
       
-      onRetry: async (error, attempt, delay) => {
-        if (retryOptions.onRetry) {
-          await retryOptions.onRetry(error, attempt, delay);
-        }
-
-        // Honor Retry-After for any classified error that carries the server's
-        // wait as `retryAfterMs` (`ServerDirectedWait`: a 429's RateLimitError,
-        // a 409 TURN_IN_PROGRESS's TurnInProgressError). retryWithBackoff
-        // sleeps `delay` (generic exponential backoff, ~1–2s) after this callback,
-        // so wait only the remainder beyond it — otherwise a 429 carrying a 60s
-        // window is retried after ~1s and simply burns its bounded attempts.
-        //
-        // The wait is honored as given. Whether it is worth sitting on at all
-        // was already decided upstream by the error's recovery: a 429 wait past
-        // MAX_AUTO_RETRY_WAIT_MS is `manual_retry`, which the decision above
-        // declines, so nothing that reaches here carries a window this client
-        // is unwilling to wait out. Clamping it again here would only shorten
-        // an honest wait into a guaranteed refusal.
+      // The wait before the next attempt: the generic exponential backoff, or
+      // the server's wait when that is longer. Any classified error carrying it
+      // as `retryAfterMs` (`ServerDirectedWait`: a 429's RateLimitError, a 409
+      // TURN_IN_PROGRESS's TurnInProgressError) is honoured — otherwise a 429
+      // carrying a 60s window is retried after ~1s and simply burns its bounded
+      // attempts. retryWithBackoff sleeps exactly this and judges `deadlineMs`
+      // on it, so the bound sees the backoff too (#324: it used to add only the
+      // server's wait, and a backoff-only retry started past the deadline).
+      //
+      // The wait is honored as given. Whether it is worth sitting on at all
+      // was already decided upstream by the error's recovery: a 429 wait past
+      // MAX_AUTO_RETRY_WAIT_MS is `manual_retry`, which the decision above
+      // declines, so nothing that reaches here carries a window this client
+      // is unwilling to wait out. Clamping it again here would only shorten
+      // an honest wait into a guaranteed refusal.
+      retryDelay: (error, _attempt, backoffDelay) => {
         const classified = ErrorClassifier.classify(error, context);
-        if (hasServerDirectedWait(classified)) {
-          const retryAfterMs = classified.retryAfterMs;
-          if (retryAfterMs > delay) {
-            await new Promise(resolve => setTimeout(resolve, retryAfterMs - delay));
-          }
-        }
-      }
+        return hasServerDirectedWait(classified)
+          ? Math.max(backoffDelay, classified.retryAfterMs)
+          : backoffDelay;
+      },
+      deadlineMs,
     });
   } catch (finalError) {
     const classifiedError = ErrorClassifier.classify(finalError, context);
