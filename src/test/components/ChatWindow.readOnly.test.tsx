@@ -44,7 +44,7 @@ const activeCase = {
 const conversation = [
   {
     id: 'a1',
-    response: 'Restart the pool?\n\n[✅ Yes]  [❌ No]',
+    response: 'Restart the pool?',
     timestamp: '2026-08-01T10:00:05Z',
     turn_number: 2,
     optimistic: false,
@@ -77,17 +77,14 @@ beforeEach(() => {
 });
 
 describe('ChatWindow — readOnly', () => {
-  it('contrast: a writable case has Yes/No, a clickable suggestion and the status callback', () => {
+  it('contrast: a writable case has a clickable suggestion and the status callback', () => {
     render(chat(false));
-    expect(screen.getByRole('button', { name: /yes/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Restart the pool' })).toBeInTheDocument();
     expect(headerProps.last?.onStatusChangeRequest).toBeTypeOf('function');
   });
 
   it('a read-only case has none of them', () => {
     render(chat(true));
-    expect(screen.queryByRole('button', { name: /^(✅\s*)?yes/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /no$/i })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Restart the pool' })).toBeNull();
     expect(headerProps.last?.onStatusChangeRequest).toBeUndefined();
     // The transcript itself is still there.
@@ -129,7 +126,7 @@ describe('ChatInterface — readOnly', () => {
 
 describe('ChatWindow — memo', () => {
   // Every other prop equal: only the verdict changes. A comparator that ignored
-  // it would keep the live Yes/No on screen after the case turned out to be someone else's to drive.
+  // it would keep a live suggestion on screen after the case turned out to be someone else's to drive.
   it('re-renders when only readOnly flips', () => {
     const onQuerySubmit = vi.fn();
     const props = { conversation, activeCase, loading: false, sessionId: 'sid', onQuerySubmit };
@@ -142,8 +139,8 @@ describe('ChatWindow — memo', () => {
       </QueryClientProvider>
     );
     const view = render(tree(false));
-    expect(screen.getByRole('button', { name: /yes/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restart the pool' })).toBeInTheDocument();
     view.rerender(tree(true));
-    expect(screen.queryByRole('button', { name: /yes/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Restart the pool' })).toBeNull();
   });
 });

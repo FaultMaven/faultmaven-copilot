@@ -219,24 +219,6 @@ const ChatWindowComponent = function ChatWindow({
     onQuerySubmit(message, intent);
   }, [activeCase, fullCaseData, onQuerySubmit]);
 
-  const handleConfirmationYes = useCallback(() => {
-    log.info('User confirmed with Yes');
-    const intent: QueryIntent = {
-      type: IntentType.Confirmation,
-      confirmation_value: true
-    };
-    onQuerySubmit('Yes', intent);
-  }, [onQuerySubmit]);
-
-  const handleConfirmationNo = useCallback(() => {
-    log.info('User declined with No');
-    const intent: QueryIntent = {
-      type: IntentType.Confirmation,
-      confirmation_value: false
-    };
-    onQuerySubmit('No', intent);
-  }, [onQuerySubmit]);
-
   // handleViewAnalysis removed — case header handles evidence display.
 
   const canInteract = !readOnly && (Boolean(activeCase) || Boolean(isNewUnsavedChat));
@@ -459,8 +441,6 @@ const ChatWindowComponent = function ChatWindow({
                       content={item.response || ''}
                       sources={item.sources}
                       onDocumentView={onDocumentView}
-                      onConfirmationYes={readOnly ? undefined : handleConfirmationYes}
-                      onConfirmationNo={readOnly ? undefined : handleConfirmationNo}
                       className="break-words text-body"
                     />
 

@@ -113,16 +113,22 @@ import { CaseState } from "../../../types/case"; // Import for usage in types
  * ‼ `closed` is the ONLY target this client may send. The example used to
  * build `to_state: 'resolved'`, which is no longer a user-selectable case
  * action — RESOLVED is earned and the agent offers it through the
- * confirm/decline pair, which the client answers with a `confirmation`
- * intent, not a `status_transition`. A copied example is a producer.
+ * confirm/decline pair, not a `status_transition`. A copied example is a
+ * producer.
+ *
+ * There is no `confirmation` member, on purpose: this client never mints a
+ * confirmation. The server's confirm/decline cards carry a `confirmation`
+ * intent naming the offer they present (`proposal_id`), and the server executes
+ * a click only when it names the offer standing when it arrives
+ * (faultmaven#1812). The click forwards that card's intent whole, as a
+ * `SuggestionIntent`; a confirmation built here could name no offer and would
+ * always be refused (#291).
  */
 export enum IntentType {
   /** Natural language query - use LLM */
   Conversation = 'conversation',
   /** Explicit state transition — `closed` only; see the note above */
   StatusTransition = 'status_transition',
-  /** Yes/No confirmation response */
-  Confirmation = 'confirmation',
   /** Validate/refute/retire hypothesis */
   HypothesisAction = 'hypothesis_action',
 }
@@ -149,9 +155,6 @@ export interface QueryIntent {
 
   /** For hypothesis_action: action to perform */
   action?: 'validate' | 'refute' | 'retire';
-
-  /** For confirmation: yes/no value */
-  confirmation_value?: boolean;
 }
 
 /**

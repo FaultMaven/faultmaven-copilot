@@ -227,6 +227,34 @@ describe('useMessageSubmission', () => {
     );
   });
 
+  // #291: the server executes a confirmation click only when it names the
+  // standing offer (faultmaven#1812). The key travels on the card's intent, so
+  // a click that lost it would always be refused.
+  it("sends a confirmation card's offer key with its intent", async () => {
+    const { result } = render();
+    const confirm = { type: 'confirmation', confirmation_value: true, proposal_id: 'gate1:7f3a9c0e1d2b4a56' };
+
+    (api.submitTurn as any).mockResolvedValue({
+      agent_response: 'Starting the investigation.',
+      turn_number: 2,
+      milestones_completed: [],
+      case_state: 'investigating',
+      progress_made: true,
+    });
+
+    await act(async () => {
+      await result.current.handleQuerySubmit("Yes, that's correct. Let's investigate.", confirm);
+    });
+
+    const request = (api.submitTurn as any).mock.calls[0][1];
+    expect(request.intentType).toBe('confirmation');
+    expect(request.intentData).toEqual({
+      type: 'confirmation',
+      confirmation_value: true,
+      proposal_id: 'gate1:7f3a9c0e1d2b4a56',
+    });
+  });
+
   // The KB pre-fetch's citations arrive on TurnResponse.sources; until they were
   // copied onto the item, InlineSourcesRenderer's citation path never ran.
   it('carries TurnResponse.sources onto the assistant item', async () => {
