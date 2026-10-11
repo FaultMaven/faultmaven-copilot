@@ -333,6 +333,11 @@ close, reports); delete is the creator's.
   an optimistic edit before its read); `invalidateCache` moves it, and
   `setCachedCases` refuses a write captured before the move — a sidebar fetch
   in flight across an invalidation cannot refill the slot with its older page.
+  The slot's `timestamp` is when its page was **fetched**, and the 5-minute
+  TTL runs from it: only `setCachedCases` (a fresh page) stamps now; a local
+  edit (`updateOptimisticCase` for a rename or generated title,
+  `addOptimisticCase`) keeps it, so editing rows never extends how long the
+  page's membership is served (#325).
 - **Rows**: every row came from `access=write` (or its slot), so the user
   drives it: no "Shared" mark, rename and title generation always offered;
   delete only where `isCreatedBy(row, viewer)`.
