@@ -8,7 +8,7 @@
  * about each one.
  */
 import { getApiTransport } from "./transport";
-import { AuthenticationError } from "../errors/types";
+import { AuthenticationError, SessionSwitchedError } from "../errors/types";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger('FetchUtils');
@@ -30,6 +30,9 @@ const log = createLogger('FetchUtils');
  * where the honest answer is a sign-in prompt. It propagates, so the request is
  * never sent and the caller gets an error whose recovery is `show_modal`.
  *
+ * Likewise `SessionSwitchedError`: the host's stored session is another user's,
+ * and the request — built for the previous one — must not go out at all.
+ *
  * Opt-in: a host that throws anything else keeps the old behaviour exactly.
  */
 export async function getAuthHeaders(): Promise<HeadersInit> {
@@ -42,6 +45,11 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
   } catch (error) {
     // The session is over — not "no token right now". Do not send the request.
     if (error instanceof AuthenticationError) throw error;
+    // The stored session is another user's (copilot#350). Not "no token right
+    // now" either: header-less, the request would still go out — a
+    // `POST /cases` built for the previous user, answered by the session path.
+    // It is not sent.
+    if (error instanceof SessionSwitchedError) throw error;
     // See the note above: header-less is the transient path, not an error to
     // surface here.
   // ‼ LOAD-BEARING, and not only here. Contract 7.0.0 closed four session

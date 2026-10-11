@@ -11,13 +11,16 @@ import { extensionStore } from './extension-store';
 import { setApiTransport, type ApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
-import { endSessionOnRejectedCredential } from './session-credential';
+import { endSessionOnRejectedCredential, readSessionAccessToken } from './session-credential';
 
 export function createExtensionTransport(session: HostSession): ApiTransport {
   return {
     baseUrl: () => getApiUrl(),
 
-    accessToken: () => session.accessToken(),
+    // For THIS session's user, always (copilot#350): every request this
+    // transport sends was built for `session.user`, so a credential that a
+    // different user's sign-in has put in storage is refused, not sent.
+    accessToken: () => readSessionAccessToken(session.user?.id ?? null),
 
     // Through the same store everything else reads and writes this key from.
     // A direct `browser.storage.local` read here would work in the extension

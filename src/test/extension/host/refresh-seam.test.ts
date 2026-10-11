@@ -96,7 +96,7 @@ function extensionSession(): HostSession {
   return {
     user: { id: 'u1', username: 'op', roles: ['user'] },
     // The real thing, not a mirror — see host/session-credential.ts.
-    accessToken: readSessionAccessToken,
+    accessToken: () => readSessionAccessToken(null),
     signOut: async () => {},
     subscribeAuthState: () => () => {},
     onUnauthorized: () => endSessionOnRejectedCredential(null, null),
@@ -130,6 +130,8 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     Object.assign(store, {
       access_token: 'stale-token',
       token_type: 'bearer',
+      // Every writer stores the owner beside the token (#350).
+      user: { user_id: 'u1' },
       expires_at: Date.now() - 60_000,
       refresh_token: 'good-refresh',
       refresh_expires_at: Date.now() + 86_400_000,
@@ -167,6 +169,8 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     Object.assign(store, {
       access_token: 'stale-token',
       token_type: 'bearer',
+      // Every writer stores the owner beside the token (#350).
+      user: { user_id: 'u1' },
       expires_at: Date.now() - 60_000,
       refresh_token: 'good-refresh',
       refresh_expires_at: Date.now() + 86_400_000,
@@ -206,6 +210,8 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     Object.assign(store, {
       access_token: 'live-token',
       token_type: 'bearer',
+      // Every writer stores the owner beside the token (#350).
+      user: { user_id: 'u1' },
       expires_at: Date.now() + 3_600_000,
       refresh_token: 'revoked-refresh',
       refresh_expires_at: Date.now() + 86_400_000,
@@ -254,6 +260,8 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     Object.assign(store, {
       access_token: 'expiring-token',
       token_type: 'bearer',
+      // Every writer stores the owner beside the token (#350).
+      user: { user_id: 'u1' },
       // Inside the proactive-refresh window, so the request path refreshes.
       expires_at: Date.now() + 60_000,
       refresh_token: 'revoked-by-the-watermark',

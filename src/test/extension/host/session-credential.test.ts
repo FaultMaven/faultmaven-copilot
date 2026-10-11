@@ -14,8 +14,16 @@ const { mockGetValidAccessToken, mockClearAllAuthData } = vi.hoisted(() => ({
   mockClearAllAuthData: vi.fn().mockResolvedValue('ended'),
 }));
 
+// The act-site reads the token together with its owner; these tests stage
+// the token and give every one to the panel's user unless they say otherwise.
+const { mockOwner } = vi.hoisted(() => ({ mockOwner: { userId: 'user-a' as string | null } }));
 vi.mock('../../../extension/auth/token-manager', () => ({
-  tokenManager: { getValidAccessToken: mockGetValidAccessToken },
+  tokenManager: {
+    getValidCredential: async () => {
+      const accessToken = await mockGetValidAccessToken();
+      return accessToken ? { accessToken, userId: mockOwner.userId } : null;
+    },
+  },
 }));
 vi.mock('../../../extension/auth/auth-manager', () => ({
   authManager: { clearAllAuthData: mockClearAllAuthData },
@@ -23,17 +31,41 @@ vi.mock('../../../extension/auth/auth-manager', () => ({
 
 import { readSessionAccessToken } from '../../../extension/host/session-credential';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
+import { SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 describe('readSessionAccessToken', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockClearAllAuthData.mockResolvedValue('ended');
+    mockOwner.userId = 'user-a';
+  });
+
+  it('refuses a token that belongs to another user, and tears nothing down (#350)', async () => {
+    mockGetValidAccessToken.mockResolvedValue('b-token');
+    mockOwner.userId = 'user-b';
+
+    await expect(readSessionAccessToken('user-a')).rejects.toBeInstanceOf(SessionSwitchedError);
+    expect(mockClearAllAuthData).not.toHaveBeenCalled();
+  });
+
+  it('refuses a token whose owner is unknown to a caller that names a user', async () => {
+    mockGetValidAccessToken.mockResolvedValue('anon-token');
+    mockOwner.userId = null;
+
+    await expect(readSessionAccessToken('user-a')).rejects.toBeInstanceOf(SessionSwitchedError);
+  });
+
+  it('compares nothing for a caller that acts for no particular user', async () => {
+    mockGetValidAccessToken.mockResolvedValue('b-token');
+    mockOwner.userId = 'user-b';
+
+    expect(await readSessionAccessToken(null)).toBe('b-token');
   });
 
   it('returns the bearer when there is one', async () => {
     mockGetValidAccessToken.mockResolvedValue('a-token');
 
-    expect(await readSessionAccessToken()).toBe('a-token');
+    expect(await readSessionAccessToken('user-a')).toBe('a-token');
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
   });
 
@@ -44,14 +76,14 @@ describe('readSessionAccessToken', () => {
     // transient/definitive split exists to prevent.
     mockGetValidAccessToken.mockResolvedValue(null);
 
-    await expect(readSessionAccessToken()).rejects.toThrow();
+    await expect(readSessionAccessToken('user-a')).rejects.toThrow();
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
   });
 
   it('tears down on a session verdict, and still reports it', async () => {
     mockGetValidAccessToken.mockRejectedValue(new SessionEndedError('refresh rejected', 'a-token'));
 
-    await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
+    await expect(readSessionAccessToken('user-a')).rejects.toThrow(SessionEndedError);
     expect(mockClearAllAuthData).toHaveBeenCalledTimes(1);
     // Judged: the teardown is told which credential the verdict was about.
     expect(mockClearAllAuthData).toHaveBeenCalledWith({ accessToken: 'a-token', userId: null });
@@ -63,7 +95,7 @@ describe('readSessionAccessToken', () => {
       .mockResolvedValueOnce('b-token');
     mockClearAllAuthData.mockResolvedValueOnce('superseded');
 
-    expect(await readSessionAccessToken()).toBe('b-token');
+    expect(await readSessionAccessToken('user-a')).toBe('b-token');
   });
 
   it("does not retry when ANOTHER user's session replaced the judged one", async () => {
@@ -72,7 +104,7 @@ describe('readSessionAccessToken', () => {
     mockGetValidAccessToken.mockRejectedValue(new SessionEndedError('refresh rejected', 'a-token', 'user-a'));
     mockClearAllAuthData.mockResolvedValue('replaced');
 
-    await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
+    await expect(readSessionAccessToken('user-a')).rejects.toThrow(SessionEndedError);
     expect(mockGetValidAccessToken).toHaveBeenCalledTimes(1);
   });
 
@@ -82,14 +114,14 @@ describe('readSessionAccessToken', () => {
       .mockRejectedValueOnce(new SessionEndedError('refresh rejected', 'b-token'));
     mockClearAllAuthData.mockResolvedValueOnce('superseded').mockResolvedValueOnce('superseded');
 
-    await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
+    await expect(readSessionAccessToken('user-a')).rejects.toThrow(SessionEndedError);
     expect(mockGetValidAccessToken).toHaveBeenCalledTimes(2);
   });
 
   it('passes an ordinary failure through untouched', async () => {
     mockGetValidAccessToken.mockRejectedValue(new Error('network down'));
 
-    await expect(readSessionAccessToken()).rejects.toThrow('network down');
+    await expect(readSessionAccessToken('user-a')).rejects.toThrow('network down');
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
   });
 });

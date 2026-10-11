@@ -177,6 +177,41 @@ export class AuthenticationError extends UserFacingError {
 }
 
 /**
+ * The request was NOT sent: the host's stored session belongs to a different
+ * user than the one the request was built for (copilot#350).
+ *
+ * Another account signed in on this browser profile a moment ago and the panel
+ * has not re-scoped to it yet. Not an authentication failure — nobody's session
+ * has ended, and treating it as one (`category: 'authentication'`) would offer
+ * a "Sign In" whose action signs the NEW user out. Nothing to recover either:
+ * the panel switches to the new account when the host reports it. A notice.
+ *
+ * `getAuthHeaders` propagates it so the request is never sent; a host throws
+ * it from `accessToken()` when it can tell the two users apart.
+ */
+export class SessionSwitchedError extends UserFacingError {
+  readonly userTitle = 'Signed in as another account';
+  readonly userMessage = 'Another account signed in on this browser, so this was not sent.';
+  readonly userAction = 'The panel is switching to that account.';
+  readonly category: ErrorCategory = 'notice';
+  readonly recovery: RecoveryStrategy = 'none';
+
+  constructor() {
+    super('The stored session belongs to a different user than this request was built for');
+    this.name = 'SessionSwitchedError';
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return {
+      displayType: 'toast',
+      duration: 6000,
+      dismissible: true,
+      icon: 'info'
+    };
+  }
+}
+
+/**
  * Authorization / permission error (403 Forbidden).
  *
  * The request WAS authenticated, but the account lacks permission for this

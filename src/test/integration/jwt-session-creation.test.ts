@@ -69,7 +69,7 @@ function installHostChainTransport() {
   setApiTransport({
     baseUrl: async () => API,
     // The real thing, not a mirror — see host/session-credential.ts.
-    accessToken: readSessionAccessToken,
+    accessToken: () => readSessionAccessToken(null),
     sessionId: async () => {
       const stored = await mockBrowser.storage.local.get(['sessionId']);
       return (stored?.sessionId as string | undefined) ?? null;

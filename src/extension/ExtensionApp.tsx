@@ -160,7 +160,8 @@ export function ExtensionApp() {
       //
       // The act-site lives in `host/session-credential.ts`: it is a contract two
       // test harnesses also model, and inline copies of it drifted.
-      accessToken: readSessionAccessToken,
+      // For this panel's user — see readSessionAccessToken (copilot#350).
+      accessToken: () => readSessionAccessToken(currentUser.id),
       // The extension owns sign-out because it owns the credential. The panel
       // tears down its own state and asks for this; nothing about the token
       // chain, its storage key or its revocation reaches the panel.

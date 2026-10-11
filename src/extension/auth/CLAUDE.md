@@ -89,6 +89,20 @@ plus "session expired, retrying" — the request is not sent and the caller gets
 an error whose recovery is a sign-in prompt. A host that throws anything else
 keeps the old behaviour (the Dashboard host is unaffected).
 
+**A request carries the user it was built for (copilot#350).** The credential
+read for a request is `readSessionAccessToken(forUserId)`, called by the
+extension's transport with `HostSession.user.id`. It hands out the token only
+if the `user` stored beside it, read in the same storage read
+(`TokenManager.getValidCredential`), is that user. Otherwise it throws the
+package's `SessionSwitchedError`, which `getAuthHeaders` propagates, so nothing
+is sent and nothing is torn down. Another user's sign-in lands in storage some
+milliseconds before the panel hears its broadcast and reloads (7–58 ms measured
+on the bridge path). A `POST /cases` built for the previous user in that window
+would otherwise create their content in the new user's account. A stored
+credential naming no user is refused to a panel that has one (unknown is never
+the same user). `forUserId === null` compares nothing. A refusal is not a
+verdict: TokenManager still only reports, and the act-site ends nothing.
+
 **`readSessionAccessToken()` (`../host/session-credential.ts`) is the one place
 that acts**, catching `SessionEndedError` and calling `clearAllAuthData()` —
 JUDGED against the error's `judgedAccessToken` and `judgedUserId` (the `user`
@@ -103,10 +117,11 @@ the request for (`HostSession.user.id`). Only `'superseded'` answers
 `'refreshed'` (the client retries once, the epoch does not move); `'replaced'`
 and `'ended'` answer `'ended'`. Identity is compared by `user_id`, the stored
 side read from the `authState` row (falling back to the `user` key); an unknown
-identity is never the same user. It is a module rather than inline in `ExtensionApp` because two test harnesses
-model this contract and inline copies drifted; all three import the same
-function.
-`getValidAccessToken` has exactly two callers — the act-site, and `logoutAuth`,
+identity is never the same user. It is a module rather than inline in
+`ExtensionApp` because two test harnesses model this contract and inline copies
+drifted; all three import the same function.
+`getValidAccessToken` has exactly two callers — the act-site (through its
+`getValidCredential` form), and `logoutAuth`,
 which deliberately **swallows** the verdict so its own POST can never tear the
 session down. `background.ts` uses `fetchWithTimeout` directly and has no path
 to cover.

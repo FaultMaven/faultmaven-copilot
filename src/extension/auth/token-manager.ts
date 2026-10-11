@@ -44,8 +44,8 @@ function userIdOf(tokens: { user?: unknown }): string | null {
  */
 export type CredentialState =
   | { kind: 'absent' }
-  | { kind: 'usable'; accessToken: string }
-  | { kind: 'refreshable'; refreshToken: string; spendableToken: string | null }
+  | { kind: 'usable'; accessToken: string; userId: string | null }
+  | { kind: 'refreshable'; refreshToken: string; spendableToken: string | null; userId: string | null }
   | { kind: 'dead'; reason: string; accessToken: string; userId: string | null };
 
 interface StoredTokens {
@@ -148,6 +148,7 @@ export class TokenManager {
         ? {
             kind: 'refreshable',
             refreshToken: tokens.refresh_token as string,
+            userId: userIdOf(tokens),
             // NOT spendable as a fallback. We cannot say how old this token is,
             // so if the refresh fails, going header-less is right: presenting an
             // unvouchable bearer whose 401 CARRIES a credential routes to the
@@ -156,11 +157,11 @@ export class TokenManager {
             // different case: there, header-less is not an option.
             spendableToken: null,
           }
-        : { kind: 'usable', accessToken: tokens.access_token };
+        : { kind: 'usable', accessToken: tokens.access_token, userId: userIdOf(tokens) };
     }
 
     if (expiry - now > TokenManager.REFRESH_WHEN_WITHIN_MS) {
-      return { kind: 'usable', accessToken: tokens.access_token };
+      return { kind: 'usable', accessToken: tokens.access_token, userId: userIdOf(tokens) };
     }
 
     // Below the margin a token is worth no more than none: the request would go
@@ -174,12 +175,13 @@ export class TokenManager {
         kind: 'refreshable',
         refreshToken: tokens.refresh_token as string,
         spendableToken,
+        userId: userIdOf(tokens),
       };
     }
 
     // Spend what is left before anything else — we get here inside the
     // proactive-refresh window, not at expiry, so minutes can remain.
-    if (spendableToken) return { kind: 'usable', accessToken: spendableToken };
+    if (spendableToken) return { kind: 'usable', accessToken: spendableToken, userId: userIdOf(tokens) };
 
     // Nothing left to present. A refresh token we HOLD is still worth
     // presenting, even past the window we recorded for it: the backend is the
@@ -191,7 +193,7 @@ export class TokenManager {
     // costs one doomed request when the window really has closed, after which
     // `invalid_grant` ends the session for real.
     if (tokens.refresh_token) {
-      return { kind: 'refreshable', refreshToken: tokens.refresh_token, spendableToken: null };
+      return { kind: 'refreshable', refreshToken: tokens.refresh_token, spendableToken: null, userId: userIdOf(tokens) };
     }
 
     // The only death this side can declare: nothing to present, and nothing to
@@ -221,6 +223,18 @@ export class TokenManager {
    * moving the owner does not move the call path; see `logoutAuth`.
    */
   async getValidAccessToken(): Promise<string | null> {
+    return (await this.getValidCredential())?.accessToken ?? null;
+  }
+
+  /**
+   * `getValidAccessToken`, plus WHOSE the token is: the `user` stored beside it,
+   * read in the same storage read as the token itself (copilot#350).
+   *
+   * Reports, like everything here. The act-site compares it with the user the
+   * request is for and refuses a token that belongs to someone else; this
+   * class has no notion of "the user a request is for" and decides nothing.
+   */
+  async getValidCredential(): Promise<{ accessToken: string; userId: string | null } | null> {
     const state = await this.assess();
 
     switch (state.kind) {
@@ -228,7 +242,7 @@ export class TokenManager {
         log.debug('No tokens stored');
         return null;
       case 'usable':
-        return state.accessToken;
+        return { accessToken: state.accessToken, userId: state.userId };
       case 'dead':
         throw new SessionEndedError(state.reason, state.accessToken, state.userId);
       case 'refreshable':
@@ -269,11 +283,11 @@ export class TokenManager {
     const after = await this.assess();
     switch (after.kind) {
       case 'usable':
-        return after.accessToken;
+        return { accessToken: after.accessToken, userId: after.userId };
       case 'refreshable':
         // Still refreshable and we just failed: spend the token if it is worth
         // spending, otherwise go out header-less and let a later call retry.
-        return after.spendableToken;
+        return after.spendableToken ? { accessToken: after.spendableToken, userId: after.userId } : null;
       case 'dead':
         // Reachable only if the credential vanished mid-flight; a transient
         // failure leaves the refresh token in place, so the re-assessment above
