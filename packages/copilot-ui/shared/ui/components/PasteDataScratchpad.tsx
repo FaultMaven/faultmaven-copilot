@@ -15,7 +15,7 @@ import { stripBlankEdgeLines } from '../../../lib/utils/pasted-data';
 export interface PasteDataScratchpadProps {
   value: string;
   onChange: (value: string) => void;
-  /** Receives the text verbatim, less blank leading and trailing lines. */
+  /** Receives the text verbatim, less blank leading and trailing lines; empty means none. */
   onStage: (content: string) => void;
   onClear: () => void;
   onClose: () => void;
@@ -36,11 +36,9 @@ export function PasteDataScratchpad({
   }, []);
 
   const handleDone = () => {
-    // Not `trim()`: the first line's indentation is part of the data.
-    const content = stripBlankEdgeLines(pastedContent);
-    if (content) {
-      onStage(content);
-    }
+    // Not `trim()`: the first line's indentation is part of the data. What the
+    // textpad shows IS the paste, so an emptied textpad stages none.
+    onStage(stripBlankEdgeLines(pastedContent));
     onClose();
   };
 

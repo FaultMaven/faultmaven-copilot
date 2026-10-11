@@ -121,9 +121,12 @@ interface PasteUndo {
   box: string;
   selectionStart: number;
   selectionEnd: number;
-  /** The textpad before and after; the undo is offered while it still holds `textpadAfter`. */
+  /** The textpad before and after the paste. */
   textpadBefore: string;
   textpadAfter: string;
+  /** The staged file and page right after the paste. */
+  fileAfter: File | null;
+  pageUrlAfter: string | null;
   /** A captured page the paste replaced (page and paste share `pasted_content`). */
   replaced: { pageUrl: string | null; pageContent: string } | null;
 }
@@ -179,7 +182,12 @@ export function UnifiedInputBar({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [capturedPageUrl, setCapturedPageUrl] = useState<string | null>(null);
   const [capturedPageContent, setCapturedPageContent] = useState<string>("");
-  const [stagedPastedContent, setStagedPastedContent] = useState<string>("");
+  const [stagedPastedContent, setStagedPastedContentRaw] = useState<string>("");
+  /**
+   * Staged pasted data is always held normalised (blank edge lines stripped,
+   * nothing else), so every emptiness test is on exactly what would be sent.
+   */
+  const setStagedPastedContent = (value: string) => setStagedPastedContentRaw(stripBlankEdgeLines(value));
   const { pageCapture } = useHost();
   const [validationError, setValidationError] = useState<ValidationError | null>(null);
   const [isCapturingPage, setIsCapturingPage] = useState(false);
@@ -259,10 +267,9 @@ export function UnifiedInputBar({
   const handleSubmit = async () => {
     const query = input.trim();
     const hasQuery = query.length > 0;
-    // The open textpad holds data the user can see: Send carries it as Done
-    // would, so a paste that landed there is never left behind.
-    const openDraft = showPasteScratchpad ? stripBlankEdgeLines(pasteDraft) : '';
-    const pastedData = openDraft || stagedPastedContent;
+    // While the textpad is open, what it shows IS the paste: Send carries it as
+    // Done would, and an emptied textpad means no pasted data.
+    const pastedData = showPasteScratchpad ? stripBlankEdgeLines(pasteDraft) : stagedPastedContent;
     const hasFile = selectedFile !== null;
     const hasPage = capturedPageUrl !== null && capturedPageContent.length > 0;
     const hasPasted = pastedData.length > 0;
@@ -271,6 +278,18 @@ export function UnifiedInputBar({
     // Nothing to submit
     if (!hasQuery && !hasAnyAttachment) return;
     if (disabled || loading || submitting || isUploadingData) return;
+
+    // One limit for the message on every route. The box's own maxLength only
+    // stops typing; text set by the component is checked here.
+    if (query.length > maxLength) {
+      const sizeKB = (query.length / 1000).toFixed(1);
+      const maxKB = (maxLength / 1000).toFixed(0);
+      setValidationError({
+        message: `Query too long (${sizeKB}KB). Maximum size is ${maxKB}KB.`,
+        type: 'error',
+      });
+      return;
+    }
 
     // An attachment staged before the case turned terminal: the server would
     // refuse it, so send nothing and leave the staged content in place.
@@ -285,30 +304,20 @@ export function UnifiedInputBar({
     // A captured page and pasted data share `pasted_content`, so a turn holds
     // one or the other. Done in the open textpad would replace the page; Send
     // does not choose for the user. (A staged file goes with the paste.)
-    if (openDraft && capturedPageUrl !== null) {
+    if (showPasteScratchpad && hasPasted && capturedPageUrl !== null) {
       setValidationError({
         message: 'A captured page and pasted data can’t go in one message. Press Done to send the pasted data instead of the page, or clear it.',
         type: 'error',
       });
       return;
     }
-    if (openDraft) {
-      setStagedPastedContent(openDraft);
+    if (showPasteScratchpad) {
+      setStagedPastedContent(pastedData);
       setShowPasteScratchpad(false);
     }
 
     // ROUTE 1: Query-only, no attachments → optimistic path
     if (hasQuery && !hasAnyAttachment) {
-      if (query.length > maxLength) {
-        const sizeKB = (query.length / 1000).toFixed(1);
-        const maxKB = (maxLength / 1000).toFixed(0);
-        setValidationError({
-          message: `Query too long (${sizeKB}KB). Maximum size is ${maxKB}KB.`,
-          type: 'error',
-        });
-        return;
-      }
-
       setValidationError(null);
       const pending = onQuerySubmit(query);
       setInput("");
@@ -519,12 +528,16 @@ export function UnifiedInputBar({
     setStagedPastedContent("");
   };
 
-  // Stage the textpad's text (its Done). A staged file stays and goes with it;
-  // a captured page is replaced, because both would travel in `pasted_content`.
+  // Stage the textpad's text (its Done). Empty means no pasted data. A staged
+  // file stays and goes with it; a captured page is replaced by real data,
+  // because both would travel in `pasted_content`.
   const stagePastedData = (content: string) => {
-    setCapturedPageUrl(null);
-    setCapturedPageContent("");
-    setStagedPastedContent(content);
+    const data = stripBlankEdgeLines(content);
+    if (data) {
+      setCapturedPageUrl(null);
+      setCapturedPageContent("");
+    }
+    setStagedPastedContent(data);
   };
 
   const openTextpad = () => {
@@ -535,8 +548,7 @@ export function UnifiedInputBar({
   // Closing from the Paste button stages what the textpad holds, like its own
   // close button and Escape, so a paste that landed there is not dropped.
   const closeTextpad = () => {
-    const content = stripBlankEdgeLines(pasteDraft);
-    if (content) stagePastedData(content);
+    stagePastedData(pasteDraft);
     setShowPasteScratchpad(false);
   };
 
@@ -560,7 +572,14 @@ export function UnifiedInputBar({
       // The open textpad takes it after what it holds; Done or Send stages it.
       const after = appendBlock(pasteDraft, data);
       setPasteDraft(after);
-      setPasteUndo({ ...moved, textpadBefore: pasteDraft, textpadAfter: after, replaced: null });
+      setPasteUndo({
+        ...moved,
+        textpadBefore: pasteDraft,
+        textpadAfter: after,
+        fileAfter: selectedFile,
+        pageUrlAfter: capturedPageUrl,
+        replaced: null,
+      });
     } else {
       // Added after what the textpad already holds, never in place of it. A
       // staged file stays and goes in the same turn. A captured page is
@@ -569,9 +588,16 @@ export function UnifiedInputBar({
       const replaced = hadPage
         ? { pageUrl: capturedPageUrl, pageContent: capturedPageContent }
         : null;
-      const after = appendBlock(stagedPastedContent, data);
+      const after = stripBlankEdgeLines(appendBlock(stagedPastedContent, data));
       stagePastedData(after);
-      setPasteUndo({ ...moved, textpadBefore: stagedPastedContent, textpadAfter: after, replaced });
+      setPasteUndo({
+        ...moved,
+        textpadBefore: stagedPastedContent,
+        textpadAfter: after,
+        fileAfter: selectedFile,
+        pageUrlAfter: null,
+        replaced,
+      });
     }
     log.debug('Multi-line paste moved to the textpad', {
       lines,
@@ -580,25 +606,44 @@ export function UnifiedInputBar({
     });
   };
 
+  // The undo reverses one paste against the staged set it left behind. Any
+  // other change to that set (a file picked, dropped or removed, a page
+  // captured or removed, the textpad edited, staged or cleared) withdraws it
+  // for good, so it can never restore an attachment the current set excludes.
   const pasteUndoAvailable =
     pasteUndo !== null &&
-    (showPasteScratchpad ? pasteDraft : stagedPastedContent) === pasteUndo.textpadAfter;
+    (showPasteScratchpad ? pasteDraft : stagedPastedContent) === pasteUndo.textpadAfter &&
+    selectedFile === pasteUndo.fileAfter &&
+    capturedPageUrl === pasteUndo.pageUrlAfter;
+
+  useEffect(() => {
+    if (pasteUndo !== null && !pasteUndoAvailable) setPasteUndo(null);
+  }, [pasteUndo, pasteUndoAvailable]);
 
   // Put the paste back in the box: at the caret it was pasted at when the box
   // is as it was then, otherwise after what the box now holds.
   const handleUndoPaste = () => {
     const undo = pasteUndo;
-    if (!undo) return;
+    if (!undo || !pasteUndoAvailable) return;
+    const unchanged = input === undo.box;
+    const next = unchanged
+      ? input.slice(0, undo.selectionStart) + undo.text + input.slice(undo.selectionEnd)
+      : input + (input === '' || input.endsWith('\n') ? '' : '\n') + undo.text;
+    // Never truncate the user's text to fit: refuse, and leave both where they are.
+    if (next.length > maxLength) {
+      setValidationError({
+        message: `Putting the paste back would take the message past the ${maxLength.toLocaleString()}-character limit, so it stays in Paste data.`,
+        type: 'error',
+      });
+      return;
+    }
     if (showPasteScratchpad) setPasteDraft(undo.textpadBefore);
+    // Normalised by the setter: a whitespace-only textpad stages nothing.
     if (stagedPastedContent === undo.textpadAfter) setStagedPastedContent(undo.textpadBefore);
     if (undo.replaced) {
       setCapturedPageUrl(undo.replaced.pageUrl);
       setCapturedPageContent(undo.replaced.pageContent);
     }
-    const unchanged = input === undo.box;
-    const next = unchanged
-      ? input.slice(0, undo.selectionStart) + undo.text + input.slice(undo.selectionEnd)
-      : input + (input === '' || input.endsWith('\n') ? '' : '\n') + undo.text;
     pendingCaretRef.current = unchanged ? undo.selectionStart + undo.text.length : next.length;
     setInput(next);
     setPasteUndo(null);

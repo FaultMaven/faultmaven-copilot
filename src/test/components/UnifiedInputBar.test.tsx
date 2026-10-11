@@ -400,6 +400,98 @@ describe('UnifiedInputBar — a multi-line paste goes to the textpad (#327)', ()
   });
 });
 
+describe('UnifiedInputBar — #337 review: undo, the open textpad and the length limit', () => {
+  const renderBar = (props: Record<string, unknown> = {}) => {
+    const query = vi.fn().mockResolvedValue({ sent: true });
+    const turn = vi.fn().mockResolvedValue({ success: true, message: '', sent: true });
+    render(<UnifiedInputBar onQuerySubmit={query} onTurnSubmit={turn} {...props} />, {
+      wrapper: hostWrapper(createStubHost().host),
+    });
+    return { query, turn };
+  };
+  const pickFile = async () => {
+    const file = new File(['boom'], 'app.log', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('File input'), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('app.log')).toBeInTheDocument());
+    return file;
+  };
+
+  it('undo is withdrawn once the staged attachments change: it never restores a page beside a file', async () => {
+    const { turn } = renderBar();
+    fireEvent.click(screen.getByRole('button', { name: /analyze current page/i }));
+    await waitFor(() => expect(screen.getByText(/Captured: https:\/\/grafana/)).toBeInTheDocument());
+    paste(lines(3));
+    expect(putBack()).toBeInTheDocument();
+    const file = await pickFile();
+    expect(screen.queryByRole('button', { name: /put back in message/i })).not.toBeInTheDocument();
+    send();
+    await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
+    const payload = turn.mock.calls[0][0];
+    expect(payload).toMatchObject({ files: [file], pastedContent: lines(3), inputType: 'paste' });
+    expect(payload.sourceUrl).toBeUndefined();
+  });
+
+  it('removing the staged file withdraws the undo too', async () => {
+    renderBar();
+    await pickFile();
+    paste(lines(3));
+    fireEvent.click(screen.getByRole('button', { name: /remove file/i }));
+    expect(screen.queryByRole('button', { name: /put back in message/i })).not.toBeInTheDocument();
+  });
+
+  it('Send with an emptied open textpad sends no pasted data', async () => {
+    const { query, turn } = renderBar();
+    fireEvent.change(box(), { target: { value: 'why?' } });
+    paste(lines(3));
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.change(textpad(), { target: { value: '' } });
+    send();
+    await waitFor(() => expect(query).toHaveBeenCalledWith('why?'));
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it('closing an emptied textpad unstages the paste', () => {
+    renderBar();
+    paste(lines(3));
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.change(textpad(), { target: { value: '  \n' } });
+    fireEvent.click(screen.getByRole('button', { name: /close paste scratchpad/i }));
+    expect(screen.queryByText(/Pasted context/)).not.toBeInTheDocument();
+  });
+
+  it('undo never stages whitespace as data', async () => {
+    const { query, turn } = renderBar();
+    fireEvent.click(screen.getByRole('button', { name: /paste data/i }));
+    fireEvent.change(textpad(), { target: { value: '\n' } });
+    paste(lines(3));
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    fireEvent.click(putBack());
+    expect(screen.queryByText(/Pasted context/)).not.toBeInTheDocument();
+    send();
+    await waitFor(() => expect(query).toHaveBeenCalledWith(lines(3)));
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it('a message over the limit is refused on the attachment route too', async () => {
+    const { turn } = renderBar({ maxLength: 20 });
+    paste(lines(3));
+    fireEvent.change(box(), { target: { value: 'x'.repeat(25) } });
+    send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/too long/i);
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it('undo that would overflow the limit is refused, and nothing moves', () => {
+    renderBar({ maxLength: 20 });
+    fireEvent.change(box(), { target: { value: 'hello' } });
+    paste(lines(3)); // 20 characters
+    fireEvent.click(putBack());
+    expect(screen.getByRole('alert')).toHaveTextContent(/limit/i);
+    expect(box()).toHaveValue('hello');
+    expect(screen.getByText(/Pasted context/)).toBeInTheDocument();
+  });
+});
+
 describe('UnifiedInputBar — what stays staged when a submission fails (#312)', () => {
   const stage = async (mockTurnSubmit: any) => {
     render(
