@@ -14,7 +14,22 @@ export interface RetryOptions {
   backoffMultiplier?: number;
   /** Function to determine if error is retryable (default: all errors retryable) */
   shouldRetry?: (error: any, attempt: number) => boolean;
-  /** Callback for each retry attempt */
+  /**
+   * The wait slept before the next attempt, given the exponential backoff this
+   * attempt has reached (default: the backoff itself). A caller that honours a
+   * server-directed wait returns the longer of the two. The ONLY place a wait
+   * between attempts comes from: `deadlineMs` is judged on this value, so a
+   * wait taken anywhere else (an `onRetry` that sleeps) would escape it.
+   */
+  retryDelay?: (error: unknown, attempt: number, backoffDelay: number) => number;
+  /**
+   * Wall-clock bound in ms from the first attempt, counting time inside each
+   * attempt as well as the waits (`Date.now()`). No attempt STARTS at or after
+   * it: a retry whose wait would reach it is not made, and the last error is
+   * thrown. An attempt already running is not cut short.
+   */
+  deadlineMs?: number;
+  /** Callback for each retry attempt, with the wait about to be slept before it */
   onRetry?: (error: any, attempt: number, delay: number) => void | Promise<void>;
 }
 
@@ -49,9 +64,12 @@ export async function retryWithBackoff<T>(
     maxDelay = 10000,
     backoffMultiplier = 2,
     shouldRetry = () => true,
+    retryDelay,
+    deadlineMs,
     onRetry
   } = options;
 
+  const startedAt = Date.now();
   let lastError: any;
   let delay = initialDelay;
 
@@ -66,20 +84,25 @@ export async function retryWithBackoff<T>(
         throw error;
       }
 
-      // Calculate next delay with exponential backoff
-      const nextDelay = Math.min(delay * backoffMultiplier, maxDelay);
+      // The wait actually slept, decided once: the deadline is judged on the
+      // same number the timer is set with, so the next attempt cannot start
+      // later than the check allowed.
+      const wait = retryDelay ? retryDelay(error, attempt, delay) : delay;
+      if (deadlineMs !== undefined && Date.now() - startedAt + wait >= deadlineMs) {
+        throw error;
+      }
 
-      // Notify retry callback. Await it: an onRetry callback may return a
-      // promise for an extra Retry-After wait, which was previously discarded.
+      // Notify retry callback. Awaited so an async observer finishes before
+      // the next attempt; a wait belongs in `retryDelay`, not here.
       if (onRetry) {
-        await onRetry(error, attempt, delay);
+        await onRetry(error, attempt, wait);
       }
 
       // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise(resolve => setTimeout(resolve, wait));
 
-      // Update delay for next iteration
-      delay = nextDelay;
+      // Exponential backoff for the next iteration
+      delay = Math.min(delay * backoffMultiplier, maxDelay);
     }
   }
 

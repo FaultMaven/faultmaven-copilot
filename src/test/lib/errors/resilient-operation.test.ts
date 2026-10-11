@@ -242,3 +242,85 @@ describe('resilientOperation', () => {
     expect(onFailure).toHaveBeenCalledTimes(1);
   });
 });
+
+// #324: the deadline bounds the START of a retry, and a retry starts after the
+// wait the scheduler actually sleeps — the exponential backoff, or the server's
+// Retry-After when that is longer. The check used to add only the
+// server-directed wait, so a backoff-only retry (a network blip, a client
+// timeout) could start up to `maxDelay` past the deadline.
+describe('resilientOperation deadlineMs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Run `fail` as every attempt under `options`, recording when each attempt started. */
+  async function attemptStarts(
+    fail: (attempt: number) => Promise<never>,
+    options: { retryOptions: Parameters<typeof resilientOperation>[0]['retryOptions']; deadlineMs: number },
+  ): Promise<number[]> {
+    const t0 = Date.now();
+    const starts: number[] = [];
+    const caught = resilientOperation({
+      operation: () => {
+        starts.push(Date.now() - t0);
+        return fail(starts.length);
+      },
+      context: { operation: 'test' },
+      ...options,
+    }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(options.deadlineMs + 300_000);
+    await caught;
+    return starts;
+  }
+
+  it('starts no attempt at or after the deadline when the wait is the backoff (the #324 probe)', async () => {
+    // The first attempt hangs 111 s; every later one fails at once. Backoff
+    // 1 s, 2 s, 4 s, then 8 s would put a fifth start at 126 s.
+    const starts = await attemptStarts(
+      async (attempt) => {
+        if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 111_000));
+        throw new TypeError('Failed to fetch');
+      },
+      { retryOptions: { maxAttempts: Number.POSITIVE_INFINITY }, deadlineMs: 122_000 },
+    );
+
+    expect(starts).toEqual([0, 112_000, 114_000, 118_000]);
+  });
+
+  it('judges the deadline on the backoff when it is longer than the Retry-After', async () => {
+    // TURN_IN_PROGRESS with Retry-After 1 s, but an 8 s backoff is what is
+    // actually slept, so 8 s is what must fit before the deadline.
+    const starts = await attemptStarts(
+      async () => {
+        throw Object.assign(new Error('Conflict'), {
+          status: 409,
+          retryAfter: 1,
+          headers: { 'x-error-code': 'TURN_IN_PROGRESS' },
+        });
+      },
+      {
+        retryOptions: { maxAttempts: Number.POSITIVE_INFINITY, initialDelay: 8_000, backoffMultiplier: 1 },
+        deadlineMs: 20_000,
+      },
+    );
+
+    expect(starts).toEqual([0, 8_000, 16_000]);
+  });
+
+  it('judges the deadline on the Retry-After when it is longer than the backoff', async () => {
+    const starts = await attemptStarts(
+      async () => {
+        throw Object.assign(new Error('Too Many Requests'), { status: 429, retryAfter: 30 });
+      },
+      { retryOptions: { maxAttempts: Number.POSITIVE_INFINITY, initialDelay: 100 }, deadlineMs: 70_000 },
+    );
+
+    // 30 s between attempts: 0, 30, 60 s; a start at 90 s would cross 70 s.
+    expect(starts).toEqual([0, 30_000, 60_000]);
+  });
+});

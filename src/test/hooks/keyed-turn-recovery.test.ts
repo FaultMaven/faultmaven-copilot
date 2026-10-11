@@ -7,7 +7,7 @@
  * only the wire (`fetchWithTimeout`), so what is asserted is what the server
  * would receive: the same `Idempotency-Key` and the same form on every attempt.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMessageSubmission } from '@faultmaven/copilot-ui/shared/ui/hooks/useMessageSubmission';
 import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpload';
@@ -23,7 +23,7 @@ import {
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
-import { capabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
+import { capabilitiesManager, type CapabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
 import { deriveTurnTiming } from '@faultmaven/copilot-ui/lib/utils/turn-timing';
 import { createStubHost, hostWrapper } from '../support/host';
 
@@ -143,6 +143,7 @@ function timeout(): Error {
 
 describe('keyed turn recovery (contract 12.2.0)', () => {
   let stub: ReturnType<typeof createStubHost>;
+  let refreshIfStale: MockInstance<CapabilitiesManager['refreshIfStale']>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -150,6 +151,9 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
     vi.restoreAllMocks();
     // A module singleton that outlives a render.
     pendingOpsManager.clear();
+    // The capabilities re-read before a turn is not under test here, and the
+    // wire routes only turns: stub it so no unrouted capabilities GET goes out.
+    refreshIfStale = vi.spyOn(capabilitiesManager, 'refreshIfStale').mockResolvedValue(undefined);
     stub = createStubHost();
     setHostStore(stub.store);
     setApiTransport({
@@ -401,13 +405,22 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
   });
 
   it('sends the turn with the request timeout derived from the published bound', async () => {
-    vi.spyOn(capabilitiesManager, 'getTurnTiming').mockImplementation((bytes = 0) => deriveTurnTiming(150, bytes));
+    const timingFor = vi
+      .spyOn(capabilitiesManager, 'getTurnTiming')
+      .mockImplementation((_apiUrl, bytes = 0) => deriveTurnTiming(150, bytes));
     routeWire([async () => replay()]);
     await submit();
     const [[, , timeoutMs]] = (fetchWithTimeout.mock.calls as [string, RequestInit, number][]).filter(
       ([url, init]) => url === TURNS_URL && init.method === 'POST',
     );
     expect(timeoutMs).toBe(211_000); // 150 + 60 + ceil(26 / 125000) s
+    // The bound is the one published by the server the turn goes to (#324):
+    // that server is the one re-read, and the one asked about.
+    expect(refreshIfStale).toHaveBeenCalled();
+    for (const [url] of refreshIfStale.mock.calls) expect(url).toBe(BASE);
+    expect(timingFor).toHaveBeenCalledWith(BASE, 26);
+    // And no capabilities GET reached the wire.
+    expect(fetchWithTimeout.mock.calls.some(([url]) => String(url).includes('/meta/capabilities'))).toBe(false);
   });
 
   it('with no published bound the turn keeps the 300 s request timeout (+1 s: the 26-byte body rounds up)', async () => {

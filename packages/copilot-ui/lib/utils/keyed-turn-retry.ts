@@ -153,10 +153,12 @@ export function turnBodyBytes(request: TurnRequest): number {
 }
 
 /**
- * The timing for sending `request`: capabilities re-read first if the network
- * read held is older than five minutes, then derived for this body.
+ * The timing for sending `request`: the capabilities of the server it goes to
+ * re-read first if the network read held for it is older than five minutes (or
+ * none is held: the API URL changed), then derived for this body.
  */
 export async function turnTimingFor(request: TurnRequest): Promise<TurnTiming> {
-  await capabilitiesManager.refreshIfStale(await getApiTransport().baseUrl());
-  return capabilitiesManager.getTurnTiming(turnBodyBytes(request));
+  const apiUrl = await getApiTransport().baseUrl();
+  await capabilitiesManager.refreshIfStale(apiUrl);
+  return capabilitiesManager.getTurnTiming(apiUrl, turnBodyBytes(request));
 }

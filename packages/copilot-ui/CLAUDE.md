@@ -27,7 +27,10 @@ This file holds the rules that constrain code *inside* the package.
 - `resilientOperation` (`lib/utils/resilient-operation.ts`): non-idempotent
   writes pass `idempotent: false` and are not auto-retried on `network`
   failures (an ambiguous POST may already have committed). `deadlineMs` is a
-  wall-clock bound counting in-request time (the `POLL_MAX_TOTAL_MS` rule); a
+  wall-clock bound counting in-request time (the `POLL_MAX_TOTAL_MS` rule),
+  enforced in `retryWithBackoff` on the wait it actually sleeps,
+  max(backoff, `Retry-After`), from the one `retryDelay` that computes it
+  (never sleep in `onRetry`: that wait escapes the bound, #324); a
   `retryOptions.shouldRetry` override replaces the default decision, so one
   that adds cases calls `defaultRetryDecision` for the rest.
 - **Keyed turns** (`lib/utils/keyed-turn-retry.ts`, contract 12.2.0). Both turn
@@ -49,7 +52,16 @@ This file holds the rules that constrain code *inside* the package.
   ceil(body bytes / 125 000) s (1 Mbps; the server binds its deadline after
   reading the body); recovery deadline = 2 x that. Capabilities are re-read
   before a turn when the network read held is older than 5 minutes
-  (`refreshIfStale`; a failed re-read keeps the earlier read). With no usable
+  (`refreshIfStale`; a failed re-read keeps the earlier read). The manager
+  is keyed on the API URL (#324): what is held, the in-flight probe, the
+  fallback warning and the persisted offline copies (`backendCapabilitiesByUrl`,
+  one per server for the 4 read last: the options page and the panel share the
+  store, and options probes unsaved URLs) all belong to one server, every read
+  names its URL (the turn's is the transport's `baseUrl`), and nothing held for
+  a URL (the user changed it) is read before the turn. A turn is held by one
+  probe at most `REFRESH_WAIT_MS` counted from the PROBE's start, so its
+  repeated timing reads (the hook, then `submitTurn` per attempt) never wait
+  twice on the same probe. With no usable
   bound the old constants apply (300 s / 660 s, plus the same allowance) and a
   warning is logged once per capabilities object. The deadline bounds the START
   of a retry, so the worst case is about deadline + one request timeout.
