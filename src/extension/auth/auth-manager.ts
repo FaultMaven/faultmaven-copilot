@@ -3,7 +3,8 @@ import { AuthState, User } from '@faultmaven/copilot-ui/lib/api/types';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { tokenManager } from './token-manager';
-import { AUTH_STATE_KEY } from './storage-keys';
+import { AUTH_STATE_KEY, CREDENTIAL_KEYS } from './storage-keys';
+import { withSessionWriteLock } from './session-write-lock';
 
 const log = createLogger('AuthManager');
 
@@ -149,10 +150,28 @@ class AuthManager {
   async reconcileSession(): Promise<AuthState | null> {
     if (typeof browser === 'undefined' || !browser.storage) return null;
 
+    // The look AND the act happen inside the session-write lock, which every
+    // sign-in writer also holds (copilot#342). Without it this was
+    // check-then-act against a concurrent sign-in: the look saw no row, the
+    // sign-in landed, and the act found credentials — a session seconds old,
+    // swept as an orphan, and the user who had just signed in on the Dashboard
+    // was shown the sign-in screen. Atomic sign-in writes narrowed that and one
+    // snapshot here narrows it further; neither closes it, because a write can
+    // still land between the look and the `remove()`. Exclusion does: a
+    // sign-in now lands wholly before the look or wholly after the act.
+    //
+    // `clearAllAuthData()` below runs inside the lock and must never take it
+    // itself — see session-write-lock.ts.
+    return withSessionWriteLock(() => this.reconcileSessionLocked());
+  }
+
+  private async reconcileSessionLocked(): Promise<AuthState | null> {
     let authState: AuthState | null = null;
     let live: boolean;
     try {
-      const stored = await browser.storage.local.get([AUTH_STATE_KEY]);
+      // ONE read for the row and the credential keys, so the decision below is
+      // made on a single state of storage rather than on two.
+      const stored = await browser.storage.local.get([AUTH_STATE_KEY, ...CREDENTIAL_KEYS]);
       authState = (stored[AUTH_STATE_KEY] as AuthState | undefined) ?? null;
 
       if (!authState) {
@@ -172,7 +191,7 @@ class AuthManager {
         // teardown can leave `refresh_token` behind on its own, and gating on
         // the access token alone left it at rest forever with nothing that
         // would ever remove it.
-        if (await tokenManager.hasAnyCredential()) {
+        if (CREDENTIAL_KEYS.some((k) => stored[k] !== undefined)) {
           log.warn('Credentials outlived their session row; clearing them');
           await tokenManager.clearTokens();
         }

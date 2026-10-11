@@ -18,6 +18,7 @@ import { errorBodyText } from '@faultmaven/copilot-ui/lib/errors/error-body';
 import { getAuthConfig } from './auth-config';
 import { SessionEndedError } from './session-ended-error';
 import { AUTH_STATE_KEY, CREDENTIAL_KEYS, isUsableDuration, timestampOrNull, type CredentialKey } from './storage-keys';
+import { withSessionWriteLock } from './session-write-lock';
 
 const log = createLogger('TokenManager');
 
@@ -426,52 +427,57 @@ export class TokenManager {
     // `authState.user` — so writing after a different user signed in stamps the
     // previous identity over storage their sign-in just re-seeded.
     //
-    // ⚠️ NARROWED, NOT CLOSED. This is check-then-act, and the sign-in side
-    // holds no lock: `handleStoreAuth`, the OAuth exchange and
-    // `LocalAuthClient.storeTokens` all write storage directly. A sign-in
-    // landing between this check and the write below still loses. Everything
-    // that follows is therefore ONE `set()` — the three separate writes it
-    // replaces could interleave with a sign-in and leave the worse split of B's
-    // credentials paired with A's `authState`.
-    if (!(await this.credentialStillOurs(tokens.refresh_token))) {
-      log.info('A newer credential replaced this one mid-refresh; discarding the rotated tokens');
-      return;
-    }
+    // The check and the write are ONE exclusive section with every sign-in
+    // writer (session-write-lock.ts), so a sign-in lands wholly before the
+    // check — and the check declines — or wholly after the write. Before the
+    // sign-in side took the lock this was check-then-act, narrowed but not
+    // closed. Only the check and the write are held; the network call above is
+    // not, so an outage cannot pin a sign-in behind it. The write is still ONE
+    // `set()`, so a reader outside the lock never sees B's credentials paired
+    // with A's `authState`.
+    const swapped = await withSessionWriteLock(async () => {
+      if (!(await this.credentialStillOurs(tokens.refresh_token))) {
+        log.info('A newer credential replaced this one mid-refresh; discarding the rotated tokens');
+        return false;
+      }
 
-    const now = Date.now();
-    const expiresAt = now + newTokens.expires_in * 1000;
-    const rotated: Partial<Record<CredentialKey, any>> & { authState?: any } = {
-      access_token: newTokens.access_token,
-      token_type: newTokens.token_type,
-      expires_at: expiresAt,
-      refresh_token: newTokens.refresh_token,
-      // Keep existing session_id and user
-      session_id: tokens.session_id,
-      user: tokens.user,
-      // The composite row, kept in sync so authManager's getters do not go
-      // stale. NOT request auth — `fetch-utils.ts` reads only
-      // `transport.accessToken()` and never mentions authState.
-      [AUTH_STATE_KEY]: {
+      const now = Date.now();
+      const expiresAt = now + newTokens.expires_in * 1000;
+      const rotated: Partial<Record<CredentialKey, any>> & { authState?: any } = {
         access_token: newTokens.access_token,
         token_type: newTokens.token_type,
         expires_at: expiresAt,
+        refresh_token: newTokens.refresh_token,
+        // Keep existing session_id and user
+        session_id: tokens.session_id,
         user: tokens.user,
-      },
-    };
+        // The composite row, kept in sync so authManager's getters do not go
+        // stale. NOT request auth — `fetch-utils.ts` reads only
+        // `transport.accessToken()` and never mentions authState.
+        [AUTH_STATE_KEY]: {
+          access_token: newTokens.access_token,
+          token_type: newTokens.token_type,
+          expires_at: expiresAt,
+          user: tokens.user,
+        },
+      };
 
-    const hasRefreshWindow = isUsableDuration(newTokens.refresh_expires_in);
-    if (hasRefreshWindow) {
-      rotated.refresh_expires_at = now + newTokens.refresh_expires_in * 1000;
-    }
+      const hasRefreshWindow = isUsableDuration(newTokens.refresh_expires_in);
+      if (hasRefreshWindow) {
+        rotated.refresh_expires_at = now + newTokens.refresh_expires_in * 1000;
+      }
 
-    await browser.storage.local.set(rotated);
+      await browser.storage.local.set(rotated);
 
-    if (!hasRefreshWindow) {
-      // Local mode has no refresh expiry. Drop any stale value so it cannot be
-      // read as a closed window — after the write, so a failure here cannot
-      // leave the new credential unwritten.
-      await browser.storage.local.remove(['refresh_expires_at']);
-    }
+      if (!hasRefreshWindow) {
+        // Local mode has no refresh expiry. Drop any stale value so it cannot be
+        // read as a closed window — after the write, so a failure here cannot
+        // leave the new credential unwritten.
+        await browser.storage.local.remove(['refresh_expires_at']);
+      }
+      return true;
+    });
+    if (!swapped) return;
 
     log.info('Access token refreshed successfully', { mode: isLocal ? 'local' : 'oauth' });
   }
@@ -520,12 +526,6 @@ export class TokenManager {
   async peekAccessToken(): Promise<string | null> {
     const { access_token } = await browser.storage.local.get(['access_token']);
     return typeof access_token === 'string' ? access_token : null;
-  }
-
-  /** Is ANY credential key still at rest? Used by the orphan sweep. */
-  async hasAnyCredential(): Promise<boolean> {
-    const stored = await browser.storage.local.get([...CREDENTIAL_KEYS]);
-    return CREDENTIAL_KEYS.some((k) => stored[k] !== undefined);
   }
 
   /**

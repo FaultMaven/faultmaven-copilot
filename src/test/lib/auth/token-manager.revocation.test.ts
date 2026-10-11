@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TokenManager } from '../../../extension/auth/token-manager';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
+import { withSessionWriteLock } from '../../../extension/auth/session-write-lock';
 
 /**
  * What happens to this client when the OTHER one signs out.
@@ -488,6 +489,55 @@ describe('TokenManager — a sign-in landing mid-refresh', () => {
     expect(stored.refresh_token).toBe('b-refresh-token');
     expect(stored.session_id).toBe('b-session');
     expect(stored.user).toEqual({ user_id: 'user-b' });
+  });
+
+  it('a sign-in landing between the compare-and-swap and the rotated write is not overwritten (#342)', async () => {
+    // The test above has the sign-in land BEFORE the check. This one lands it
+    // after the check passed and before the write — the window the CAS alone
+    // only narrowed. The sign-in writes the way every real sign-in writer does,
+    // inside the session-write lock; the refresh's check and write hold the
+    // same lock, so the sign-in lands after the write and wins.
+    await seedSession();
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'a-rotated-access-token',
+        token_type: 'bearer',
+        expires_in: 900,
+        refresh_token: 'a-rotated-refresh-token',
+      }),
+    });
+    let signIn: Promise<void> | null = null;
+    const realGetRefreshToken = tokenManager.getRefreshToken.bind(tokenManager);
+    vi.spyOn(tokenManager, 'getRefreshToken').mockImplementation(async () => {
+      const current = await realGetRefreshToken();
+      if (!signIn) {
+        signIn = withSessionWriteLock(async () => {
+          await mockBrowserStorage.local.set({
+            access_token: 'b-access-token',
+            expires_at: Date.now() + 60 * 60 * 1000,
+            refresh_token: 'b-refresh-token',
+            session_id: 'b-session',
+            user: { user_id: 'user-b' },
+          });
+        });
+        for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+      }
+      return current;
+    });
+
+    await tokenManager.getValidAccessToken();
+    await signIn;
+
+    const stored = await mockBrowserStorage.local.get([
+      'access_token', 'refresh_token', 'session_id', 'user',
+    ]);
+    expect(stored).toEqual({
+      access_token: 'b-access-token',
+      refresh_token: 'b-refresh-token',
+      session_id: 'b-session',
+      user: { user_id: 'user-b' },
+    });
   });
 
   it('does not report a dead chain when the refresh token vanishes before the lock is held', async () => {
