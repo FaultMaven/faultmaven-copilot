@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FaultMaven Dashboard</title>
+    <script>
+        // A Dashboard that is ALREADY signed in: its session sits in
+        // localStorage under `fm_auth_state` before any extension code runs.
+        // The auth bridge reads it at document_end (`checkLocalStorage` in
+        // src/entrypoints/auth-bridge.content.ts) and forwards it to the
+        // background worker's `handleStoreAuth`. Shape mirrors the Dashboard's
+        // AuthState: tokens, an absolute epoch-ms expiry and the user.
+        localStorage.setItem('fm_auth_state', JSON.stringify({
+            access_token: 'e2e-bridge-access-token',
+            token_type: 'bearer',
+            expires_at: Date.now() + 3600000,
+            refresh_token: 'e2e-bridge-refresh-token',
+            user: {
+                user_id: 'e2e-bridge-user',
+                username: 'bridge_user',
+                email: 'bridge@faultmaven.ai',
+                roles: ['user']
+            }
+        }));
+    </script>
+</head>
+
+<body>
+    <div id="root">
+        <h1>Dashboard Mock (signed in)</h1>
+    </div>
+</body>
+
+</html>
