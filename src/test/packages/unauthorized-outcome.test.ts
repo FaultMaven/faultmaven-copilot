@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
+import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 
 const unauthorized = () =>
   ({
@@ -32,7 +33,7 @@ const ok = () =>
   }) as unknown as Response;
 
 function install(outcome: AuthOutcome, tokens: string[]) {
-  const onUnauthorized = vi.fn(async () => outcome);
+  const onUnauthorized = vi.fn(async (_rejectedBearer: string) => outcome);
   let call = 0;
   setApiTransport({
     baseUrl: async () => 'https://api.test',
@@ -81,6 +82,43 @@ describe('onUnauthorized decides what a 401 means', () => {
     );
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // The host is told WHICH credential was rejected (copilot#346). Its teardown
+  // must end that credential's session and no other: by the time a 401 comes
+  // back, a sign-in may already have replaced the bearer this request carried,
+  // and a teardown that cannot tell them apart signs the new user out.
+  it('hands the host the bearer the rejected request actually carried', async () => {
+    const { onUnauthorized } = install('ended', ['stale-token']);
+    global.fetch = vi.fn().mockResolvedValue(unauthorized()) as never;
+
+    await expect(authenticatedFetch('https://api.test/api/v1/cases')).rejects.toThrow();
+
+    expect(onUnauthorized).toHaveBeenCalledWith('stale-token');
+  });
+
+  // The session epoch fences writers of an ENDED session (session-epoch.ts).
+  // 'refreshed' is the same session continuing: moving the epoch there drops
+  // that session's own in-flight writes — an optimistic case never reconciled,
+  // a turn's result discarded — for nothing.
+  it("'refreshed' leaves the session epoch alone", async () => {
+    install('refreshed', ['stale-token', 'fresh-token']);
+    global.fetch = vi.fn().mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok()) as never;
+    const before = getEpoch();
+
+    await authenticatedFetch('https://api.test/api/v1/cases');
+
+    expect(getEpoch()).toBe(before);
+  });
+
+  it("'ended' moves the session epoch", async () => {
+    install('ended', ['stale-token']);
+    global.fetch = vi.fn().mockResolvedValue(unauthorized()) as never;
+    const before = getEpoch();
+
+    await expect(authenticatedFetch('https://api.test/api/v1/cases')).rejects.toThrow();
+
+    expect(getEpoch()).toBeGreaterThan(before);
   });
 
   // The retry is a retry, not a loop: a request still rejected with a freshly

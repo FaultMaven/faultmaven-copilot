@@ -52,10 +52,14 @@ export interface ApiTransport {
    * The API rejected our credential. The host decides what that means, and
    * SAYS which it decided.
    *
-   *   'refreshed'  the host renewed the credential and the session continues.
-   *                The client retries the request once with a fresh bearer and
-   *                the user sees nothing.
-   *   'ended'      the session is over. The client surfaces it.
+   *   'refreshed'  the SAME session continues — same user — with a newer
+   *                credential. The client retries the request once with it and
+   *                the user sees nothing, and the session epoch does not move.
+   *                Never answer it for a credential that belongs to someone
+   *                else: the retry replays a request built for the rejected
+   *                session (a turn, a `POST /cases`) into that account.
+   *   'ended'      the session is over. The client fences this context's
+   *                in-flight writers (moves the epoch) and surfaces it.
    *
    * The answer is load-bearing. Without it the client threw
    * `AuthenticationError` after the callback regardless, so a host that
@@ -65,8 +69,14 @@ export interface ApiTransport {
    * Awaited: the teardown this replaced completed before the error was thrown,
    * and a fire-and-forget clear would race the next request into reading a
    * credential that was on its way out.
+   *
+   * `rejectedBearer` is the token the rejected request CARRIED. By the time
+   * the 401 is back, the host may already hold a newer credential (a sign-in
+   * in the meantime); a host that tears down must tear down this one's
+   * session, not that one's (copilot#346). A host with no use for it ignores
+   * it.
    */
-  onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
+  onUnauthorized(rejectedBearer: string): AuthOutcome | Promise<AuthOutcome>;
 }
 
 /** What the host did about a rejected credential. */

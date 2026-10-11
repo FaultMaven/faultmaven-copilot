@@ -9,6 +9,36 @@ import { withSessionWriteLock } from './session-write-lock';
 const log = createLogger('AuthManager');
 
 /**
+ * The credential a teardown's verdict was about (copilot#346): the access token
+ * a dead chain was read with, or the bearer a 401 rejected — and WHOSE it was.
+ *
+ * `userId` is the identity the verdict's caller acts for: the user the dead
+ * chain belonged to (`SessionEndedError.judgedUserId`), or the user the panel
+ * built the rejected request for (the transport's `HostSession.user.id`).
+ * `null` when it is not known, which never counts as the same user.
+ */
+export interface JudgedCredential {
+  accessToken: string;
+  userId: string | null;
+}
+
+/**
+ * - `'ended'` — the judged session was torn down.
+ * - `'superseded'` — the SAME user's session now holds a newer credential (a
+ *   rotation, or that user signing in again). Left alone, and it continues:
+ *   a caller may answer from it.
+ * - `'replaced'` — a DIFFERENT user's session (or one whose user cannot be
+ *   established) replaced the judged one. Left alone too — but the judged
+ *   session is over, and nothing built for it may be sent with the newer
+ *   credential: a retry would land the old user's request in the new user's
+ *   account.
+ */
+export type TeardownOutcome = 'ended' | 'superseded' | 'replaced';
+
+/** How long a teardown waits for the session-write lock before going without. */
+export const TEARDOWN_LOCK_WAIT_MS = 2_000;
+
+/**
  * Auth manager for centralized authentication state
  */
 class AuthManager {
@@ -81,25 +111,97 @@ class AuthManager {
    * machine. (It is TokenManager that re-mints, not `getAuthHeaders`: that
    * reads only `transport.accessToken()` and never touches `authState`.)
    */
-  async clearAllAuthData(): Promise<void> {
-    // SINGLE-FLIGHTED HERE, not at one call site. Four places tear a session
+  async clearAllAuthData(judged?: JudgedCredential): Promise<TeardownOutcome> {
+    // SINGLE-FLIGHTED HERE, not at one call site. Several places tear a session
     // down — the act-site on a session verdict, `onUnauthorized` on a hard 401,
-    // `logoutAuth`, and `reconcileSession` — and the first two fire once per
-    // failing request. The panel routinely has a heartbeat, a turn poll and a
-    // case fetch in flight, so a revoked credential otherwise means three
-    // teardowns, three cache purges and three sign-out notifications.
+    // `logoutAuth`, the options page — and the first two fire once per failing
+    // request. The panel routinely has a heartbeat, a turn poll and a case
+    // fetch in flight, so a revoked credential otherwise means three teardowns,
+    // three cache purges and three sign-out notifications.
     //
-    // Per-JS-context, not cross-context. Sufficient because the act-site and
-    // `onUnauthorized` both run in the panel, which is the only context that
-    // issues panel requests. (It replaces no lock — `clearAllAuthData` never
-    // held one.)
-    this.teardownInFlight ??= this.runTeardown().finally(() => {
-      this.teardownInFlight = null;
+    // Keyed by WHAT is being torn down: N verdicts about the same credential
+    // join one teardown, but a deliberate sign-out never joins a conditional
+    // teardown that may stand down — it would inherit a "superseded" that was
+    // never about it. Per-JS-context; the lock below is what is cross-context.
+    const key = judged ? `judged:${judged.userId ?? ''}:${judged.accessToken}` : 'unconditional';
+    const inFlight = this.teardownsInFlight.get(key);
+    if (inFlight) return inFlight;
+    const run = this.runTeardownLocked(judged).finally(() => {
+      this.teardownsInFlight.delete(key);
     });
-    return this.teardownInFlight;
+    this.teardownsInFlight.set(key, run);
+    return run;
   }
 
-  private teardownInFlight: Promise<void> | null = null;
+  private teardownsInFlight = new Map<string, Promise<TeardownOutcome>>();
+
+  /**
+   * The teardown inside the session-write lock (copilot#346).
+   *
+   * Held so a sign-in and a refresh's compare-and-swap-and-write each land
+   * wholly before or wholly after it: a refresh can no longer put a signed-out
+   * user's credentials back, and the verdict check below is made against the
+   * storage the teardown then removes.
+   *
+   * A JUDGED teardown — one acting on a verdict about a particular credential:
+   * a dead chain, or a 401 for the bearer a request carried — stands down when
+   * the stored access token is no longer that one. A sign-in (or a refresh)
+   * replaced it after the verdict was formed, and the verdict is not about the
+   * session that exists now. It then says WHOSE session that is:
+   * `'superseded'` when the stored row names the judged user, `'replaced'`
+   * otherwise (see `TeardownOutcome`). An unconditional teardown — the user
+   * signing out — removes whatever is there.
+   *
+   * The wait for the lock is BOUNDED (`TEARDOWN_LOCK_WAIT_MS`): past it, the
+   * teardown runs without the lock rather than wait on a holder wedged on a
+   * storage call. Every caller broadcasts or answers right after this, and a
+   * sign-out that never completes is the worse failure (#335).
+   *
+   * Never rejects: `runTeardown` cannot, and the comparison read is guarded —
+   * if it fails, the teardown proceeds, which is what it did before it could
+   * compare at all.
+   */
+  private runTeardownLocked(judged?: JudgedCredential): Promise<TeardownOutcome> {
+    return withSessionWriteLock(
+      async () => {
+        const standing = judged ? await this.compareWithStored(judged) : 'same';
+        if (standing !== 'same') {
+          log.info('A newer session replaced the credential this teardown was about; standing down', {
+            sameUser: standing === 'superseded',
+          });
+          return standing;
+        }
+        await this.runTeardown();
+        return 'ended' as const;
+      },
+      { waitMs: TEARDOWN_LOCK_WAIT_MS },
+    );
+  }
+
+  /**
+   * Is the judged credential still the stored one — and if not, is the stored
+   * session the same user's?
+   *
+   * Identity is read from the stored `authState` row (the identity row every
+   * sign-in writer and the refresh write together with the credential), falling
+   * back to the `user` credential key. Compared by `user_id` only.
+   */
+  private async compareWithStored(
+    judged: JudgedCredential,
+  ): Promise<'same' | 'superseded' | 'replaced'> {
+    try {
+      const stored = await browser.storage.local.get(['access_token', AUTH_STATE_KEY, 'user']);
+      const current = stored.access_token;
+      if (typeof current !== 'string' || current === judged.accessToken) return 'same';
+      const row = stored[AUTH_STATE_KEY] as { user?: { user_id?: unknown } } | undefined;
+      const key = stored.user as { user_id?: unknown } | undefined;
+      const storedUserId = row?.user?.user_id ?? key?.user_id;
+      return judged.userId !== null && storedUserId === judged.userId ? 'superseded' : 'replaced';
+    } catch (error) {
+      log.warn('Could not compare the stored credential before teardown; tearing down', error);
+      return 'same';
+    }
+  }
 
   /**
    * NEVER REJECTS, and that is a contract, not laziness.
@@ -160,8 +262,9 @@ class AuthManager {
     // still land between the look and the `remove()`. Exclusion does: a
     // sign-in now lands wholly before the look or wholly after the act.
     //
-    // `clearAllAuthData()` below runs inside the lock and must never take it
-    // itself — see session-write-lock.ts.
+    // The repair below calls `runTeardown` directly: the public
+    // `clearAllAuthData()` takes this same lock, and Web Locks are not
+    // re-entrant — see session-write-lock.ts.
     return withSessionWriteLock(() => this.reconcileSessionLocked());
   }
 
@@ -222,7 +325,10 @@ class AuthManager {
       log.warn('Stored session has no live credential behind it; clearing it');
     }
 
-    await this.clearAllAuthData();
+    // `runTeardown`, not `clearAllAuthData()`: this already holds the
+    // session-write lock, Web Locks are not re-entrant, and the verdict above
+    // was formed inside it — there is nothing newer for it to be stale against.
+    await this.runTeardown();
     return null;
   }
 

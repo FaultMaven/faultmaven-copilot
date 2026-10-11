@@ -21,7 +21,18 @@
 import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 export class SessionEndedError extends AuthenticationError {
-  constructor(reason: string) {
+  /**
+   * @param judgedAccessToken the access token of the chain this verdict is
+   *   about. The act-site hands it to the teardown, which stands down if a
+   *   newer sign-in has replaced it since (copilot#346) — a verdict on the
+   *   previous session must never end the next one.
+   */
+  constructor(
+    reason: string,
+    readonly judgedAccessToken: string,
+    /** Whose chain it was — `user.user_id` from the credential read; `null` if absent. */
+    readonly judgedUserId: string | null = null,
+  ) {
     super(`Session ended: ${reason}`);
   }
 }

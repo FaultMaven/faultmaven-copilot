@@ -48,15 +48,19 @@ export function prepareBody(body: unknown): string | undefined {
 /**
  * Handles authentication errors and triggers re-authentication
  */
-async function handleAuthError(): Promise<'refreshed' | 'ended'> {
-  // A hard 401 ends the session. Fence it synchronously (before the await below)
-  // so any in-flight background writer in THIS context whose continuation is
-  // already queued skips its post-await writes rather than repopulating state
-  // we're about to tear down. When handleAuthError runs in the background
-  // context instead, this bumps the background epoch; the sidepanel bumps its
-  // own epoch off the resulting `{ isAuthenticated: false }` broadcast/storage
-  // change (see auth-slice).
-  bumpEpoch();
+async function handleAuthError(rejectedBearer: string): Promise<'refreshed' | 'ended'> {
+  // The epoch moves only when the session ENDS — below, on 'ended', never
+  // before the host has answered. A 401 is not yet a verdict: the host may
+  // hold a newer credential for the same session ('refreshed'), and bumping
+  // here then discarded that session's own in-flight writes — an optimistic
+  // case never reconciled, a turn's result dropped — for a session that
+  // carried on (copilot#346 review).
+  //
+  // What the early bump used to fence — writers landing while the host tears
+  // down — belongs to the user being signed out, and the purge that follows
+  // removes it: on 'ended' the session's `authState` goes, the panel hears
+  // it through `subscribeAuthState`, and `signOutLocally` fences (bumps the
+  // epoch, fences the case slot) and purges memory and storage after them.
 
   // A hard 401 means the credential itself is no longer valid. This module used
   // to clear the token keys here. It does not any more, and the change is the
@@ -64,7 +68,7 @@ async function handleAuthError(): Promise<'refreshed' | 'ended'> {
   // credential it does not own was it acting on someone else's behalf with none
   // of the context — no knowledge of an in-flight rotation, no access to the
   // lock serialising one. It reports, and the host decides.
-  const outcome = await getApiTransport().onUnauthorized();
+  const outcome = await getApiTransport().onUnauthorized(rejectedBearer);
 
   // The host renewed the credential and kept the session. Say so, and let the
   // caller retry: throwing here regardless is what put a blocking "session
@@ -73,6 +77,12 @@ async function handleAuthError(): Promise<'refreshed' | 'ended'> {
     log.info('Host refreshed the credential after a 401; retrying once');
     return 'refreshed';
   }
+
+  // Ended. Fence THIS context's in-flight writers now, before the purge
+  // notification arrives: their continuations must not land for a session the
+  // host has just ended. `signOutLocally` bumps again when it runs; a second
+  // bump is harmless.
+  bumpEpoch();
 
   // Trigger re-authentication flow
   // This will be handled by the UI components
@@ -216,9 +226,15 @@ export async function authenticatedFetch(
     // during a transient renewal-endpoint outage where the host DELIBERATELY
     // preserves the tokens (mid-session resilience). A 401 on such a header-less
     // request means "we had no token", not "the token is invalid" (see #99).
-    const sentAuthHeader = Object.keys(mergedHeaders).some(
+    const sentAuthKey = Object.keys(mergedHeaders).find(
       (k) => k.toLowerCase() === 'authorization' && !!(mergedHeaders as any)[k]
     );
+    const sentAuthHeader = sentAuthKey !== undefined;
+    // The bearer itself, for the host: a 401 is a verdict on THIS token, and
+    // the host may hold a newer one by the time it lands (copilot#346).
+    const sentBearer = sentAuthKey
+      ? String((mergedHeaders as any)[sentAuthKey]).replace(/^Bearer\s+/i, '')
+      : '';
 
     // The session id this request actually carried — used for the compare-and-
     // remove in handleSessionExpired so a late 401 can't wipe a fresher session (#104).
@@ -255,7 +271,7 @@ export async function authenticatedFetch(
       // A 401 on a request that DID carry a credential. Whether that ends the
       // session is the HOST's call, not ours — it owns the token chain and may
       // have renewed it already.
-      const outcome = await handleAuthError();
+      const outcome = await handleAuthError(sentBearer);
       if (outcome === 'refreshed') {
         // Once. `getAuthHeaders` now reads the renewed bearer. A second 401
         // after a successful refresh is a real rejection and falls through to

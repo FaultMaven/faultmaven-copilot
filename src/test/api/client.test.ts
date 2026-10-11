@@ -22,9 +22,9 @@ const fetchWithTimeout = vi.fn();
 vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
   fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
 }));
-// The synchronous fence handleAuthError raises before tearing down, so an
-// in-flight writer whose continuation is already queued skips its post-await
-// writes instead of repopulating state that is about to be cleared.
+// The synchronous fence handleAuthError raises once the host has ENDED the
+// session, so an in-flight writer whose continuation is already queued skips its
+// post-await writes instead of repopulating state that is about to be cleared.
 const bumpEpoch = vi.fn().mockReturnValue(1);
 vi.mock('@faultmaven/copilot-ui/lib/state/session-epoch', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -84,10 +84,15 @@ describe('authenticatedFetch — error branding', () => {
 
   // The revoked-token case, which account-scoped logout (faultmaven#1065) turned
   // from a rare admin action into what a sign-out on the OTHER client does to
-  // this one. The teardown has to fence BEFORE it clears: a turn already
-  // in flight resumes after its await and would otherwise write the previous
-  // user's message back into a store that had just been emptied.
-  it('fences in-flight writers before clearing, on a revoked credential', async () => {
+  // this one. A turn already in flight resumes after its await and must not
+  // write the previous user's message back into a store that has been emptied.
+  //
+  // The fence comes once the host has answered 'ended' — not before it is
+  // asked, which also fenced a session the host then CONTINUED ('refreshed',
+  // copilot#346 review). The store is emptied by `signOutLocally`, which bumps
+  // the epoch itself before purging; a writer landing while the host tears down
+  // writes into a store that purge then clears.
+  it('fences in-flight writers once the host ends the session, on a revoked credential', async () => {
     (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer revoked-token' });
     fetchWithTimeout.mockResolvedValue({
       ok: false,
@@ -100,13 +105,11 @@ describe('authenticatedFetch — error branding', () => {
       AuthenticationError
     );
 
-    // Both, and in this order. Clearing without fencing leaves the race open;
-    // fencing without clearing leaves a dead credential attached to every
-    // later request.
-    expect(bumpEpoch).toHaveBeenCalled();
+    // Both, and in this order: the host decides, then the client fences.
     expect(onUnauthorized).toHaveBeenCalled();
-    expect(bumpEpoch.mock.invocationCallOrder[0]).toBeLessThan(
-      onUnauthorized.mock.invocationCallOrder[0]
+    expect(bumpEpoch).toHaveBeenCalled();
+    expect(onUnauthorized.mock.invocationCallOrder[0]).toBeLessThan(
+      bumpEpoch.mock.invocationCallOrder[0]
     );
   });
 

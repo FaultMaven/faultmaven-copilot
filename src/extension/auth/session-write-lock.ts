@@ -28,17 +28,25 @@
  *   write is overwritten with the pre-flight identity. The network call stays
  *   OUTSIDE; only the CAS and the `set()` are held.
  *
- * WHO DOES NOT, deliberately:
- * - `clearAllAuthData()`, the teardown. `reconcileSession` calls it while holding
- *   this lock, and Web Locks are not re-entrant, so a teardown that took it
- *   would deadlock the repair. Its other callers act on a verdict about a
- *   credential they already read (a 401, a dead chain, a sign-out); a sign-in
- *   landing just before one of those is a different race — the verdict being
- *   stale — that a lock around the write alone would not fix.
- * - Readers. `assess()` and the getters only read, and a read that lands either
- *   side of a whole write sees a consistent session.
+ * - The teardown, `authManager.clearAllAuthData()` (copilot#346). Inside the
+ *   lock it compares the stored credential with the one its verdict judged and
+ *   stands down if a newer sign-in replaced it; and a refresh's CAS-and-write can
+ *   no longer straddle it and put a signed-out user's credentials back.
+ *   `reconcileSession` already holds the lock when it repairs, so it calls the
+ *   private `runTeardown` directly — Web Locks are not re-entrant.
+ *
+ * WHO DOES NOT: readers. `assess()` and the getters only read, and a read that
+ * lands either side of a whole write sees a consistent session.
  *
  * Nothing awaited inside the lock may itself take it.
+ *
+ * BOUNDED WAITS. A caller that must not hang passes `waitMs`: if the lock is
+ * not granted in time the work runs WITHOUT it, logged at warn. The teardown
+ * does — a sign-out is followed by the broadcast that makes it observable, and
+ * a holder wedged on a storage call that never settles must not keep a user
+ * signed in (the #335 lesson). Losing exclusion in that pathological case is
+ * the smaller failure. Writers wait without a bound: a sign-in that waits is
+ * late, not lost.
  *
  * Cross-context by construction: the worker and every extension page share one
  * origin, and Web Locks are scoped to the origin (`navigator.locks` exists in
@@ -59,18 +67,71 @@ export const SESSION_WRITE_LOCK = 'faultmaven-session-write';
 let fallbackTail: Promise<unknown> = Promise.resolve();
 let warnedNoLocks = false;
 
-export function withSessionWriteLock<T>(work: () => Promise<T>): Promise<T> {
+export interface SessionWriteLockOptions {
+  /**
+   * Give up waiting after this long and run `work` without the lock. For
+   * callers that must complete — the teardown — rather than be late.
+   */
+  waitMs?: number;
+}
+
+export function withSessionWriteLock<T>(
+  work: () => Promise<T>,
+  { waitMs }: SessionWriteLockOptions = {},
+): Promise<T> {
   if (typeof navigator !== 'undefined' && navigator.locks) {
-    return navigator.locks.request(SESSION_WRITE_LOCK, { mode: 'exclusive' }, work) as Promise<T>;
+    if (waitMs === undefined) {
+      return navigator.locks.request(SESSION_WRITE_LOCK, { mode: 'exclusive' }, work) as Promise<T>;
+    }
+    return requestWithin(work, waitMs);
   }
   if (!warnedNoLocks) {
     warnedNoLocks = true;
     log.warn('Web Locks unavailable; session writes are serialized within this context only');
   }
-  const run = fallbackTail.then(work, work);
+  const turn = waitMs === undefined ? fallbackTail : raceWait(fallbackTail, waitMs);
+  const run = turn.then(work, work);
   fallbackTail = run.then(
     () => undefined,
     () => undefined,
   );
   return run;
+}
+
+/** Web Locks with a bounded wait for the GRANT — the work itself is not timed. */
+async function requestWithin<T>(work: () => Promise<T>, waitMs: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), waitMs);
+  let granted = false;
+  try {
+    return (await navigator.locks.request(
+      SESSION_WRITE_LOCK,
+      { mode: 'exclusive', signal: controller.signal },
+      () => {
+        granted = true;
+        clearTimeout(timer);
+        return work();
+      },
+    )) as T;
+  } catch (error) {
+    if (granted) throw error;
+    log.warn('Session-write lock not granted in time; proceeding without it', { waitMs });
+    return work();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The fallback's wait, bounded: settles when the tail does or the time is up. */
+function raceWait(tail: Promise<unknown>, waitMs: number): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      log.warn('Session-write lock not granted in time; proceeding without it', { waitMs });
+      resolve();
+    }, waitMs);
+  });
+  return Promise.race([tail.then(() => undefined, () => undefined), timeout]).finally(() =>
+    clearTimeout(timer),
+  );
 }

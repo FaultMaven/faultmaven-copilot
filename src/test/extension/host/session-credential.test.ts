@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockGetValidAccessToken, mockClearAllAuthData } = vi.hoisted(() => ({
   mockGetValidAccessToken: vi.fn(),
-  mockClearAllAuthData: vi.fn().mockResolvedValue(undefined),
+  mockClearAllAuthData: vi.fn().mockResolvedValue('ended'),
 }));
 
 vi.mock('../../../extension/auth/token-manager', () => ({
@@ -27,7 +27,7 @@ import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 describe('readSessionAccessToken', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockClearAllAuthData.mockResolvedValue(undefined);
+    mockClearAllAuthData.mockResolvedValue('ended');
   });
 
   it('returns the bearer when there is one', async () => {
@@ -49,10 +49,41 @@ describe('readSessionAccessToken', () => {
   });
 
   it('tears down on a session verdict, and still reports it', async () => {
-    mockGetValidAccessToken.mockRejectedValue(new SessionEndedError('refresh rejected'));
+    mockGetValidAccessToken.mockRejectedValue(new SessionEndedError('refresh rejected', 'a-token'));
 
     await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
     expect(mockClearAllAuthData).toHaveBeenCalledTimes(1);
+    // Judged: the teardown is told which credential the verdict was about.
+    expect(mockClearAllAuthData).toHaveBeenCalledWith({ accessToken: 'a-token', userId: null });
+  });
+
+  it('answers from the newer session, once, when the teardown stands down (#346)', async () => {
+    mockGetValidAccessToken
+      .mockRejectedValueOnce(new SessionEndedError('refresh rejected', 'a-token'))
+      .mockResolvedValueOnce('b-token');
+    mockClearAllAuthData.mockResolvedValueOnce('superseded');
+
+    expect(await readSessionAccessToken()).toBe('b-token');
+  });
+
+  it("does not retry when ANOTHER user's session replaced the judged one", async () => {
+    // 'replaced': answering from the newer credential would send a request
+    // built for the user whose session ended with someone else's bearer.
+    mockGetValidAccessToken.mockRejectedValue(new SessionEndedError('refresh rejected', 'a-token', 'user-a'));
+    mockClearAllAuthData.mockResolvedValue('replaced');
+
+    await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
+    expect(mockGetValidAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a second verdict — that one is about the newer session', async () => {
+    mockGetValidAccessToken
+      .mockRejectedValueOnce(new SessionEndedError('refresh rejected', 'a-token'))
+      .mockRejectedValueOnce(new SessionEndedError('refresh rejected', 'b-token'));
+    mockClearAllAuthData.mockResolvedValueOnce('superseded').mockResolvedValueOnce('superseded');
+
+    await expect(readSessionAccessToken()).rejects.toThrow(SessionEndedError);
+    expect(mockGetValidAccessToken).toHaveBeenCalledTimes(2);
   });
 
   it('passes an ordinary failure through untouched', async () => {

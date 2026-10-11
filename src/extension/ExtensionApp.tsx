@@ -24,7 +24,7 @@ import {
   clearSessionEnding,
   markSessionEnding,
 } from '@faultmaven/copilot-ui/lib/state/session-epoch';
-import { readSessionAccessToken } from './host/session-credential';
+import { endSessionOnRejectedCredential, readSessionAccessToken } from './host/session-credential';
 
 import { authManager } from './auth/auth-manager';
 import { logoutAuth } from './auth/auth-service';
@@ -188,20 +188,14 @@ export function ExtensionApp() {
           applyHostAuthState(null);
         }
       },
-      // A hard 401. Clearing ALL local auth data — the token keys included — is
-      // what stops a stale refresh_token silently re-authenticating, and it is
-      // the extension's call to make because the extension owns that chain.
-      // Awaited by the client, so the next request cannot read a credential on
-      // its way out.
-      // 'ended', always. The extension's answer to a rejected credential is to
-      // destroy the whole local chain — a stale refresh_token that could
-      // silently re-authenticate is the thing that teardown exists to prevent —
-      // so there is no session left to continue. Behaviour is unchanged; it is
-      // now SAID rather than assumed by the client.
-      onUnauthorized: async () => {
-        await authManager.clearAllAuthData();
-        return 'ended' as const;
-      },
+      // A hard 401 whose bearer this signature cannot name. The API client does
+      // not come through here: the extension's transport sends a 401 straight
+      // to `endSessionOnRejectedCredential` WITH the bearer the request
+      // carried, so a verdict on a session a sign-in has since replaced stands
+      // down (copilot#346). This is the same act-site, unconditional for want
+      // of the bearer — clearing ALL local auth data, the token keys included,
+      // is what stops a stale refresh_token silently re-authenticating.
+      onUnauthorized: () => endSessionOnRejectedCredential(null, null),
       // Runtime messaging and the credential key disappearing — both the
       // extension's own transports, both meaning the same thing, and neither
       // named on the other side of the boundary. What crosses is the fact: who
