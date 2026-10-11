@@ -10,21 +10,33 @@
  * pass every test that only checks the name, while `getAuthHeaders`'
  * `instanceof` let the request through.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as entry from '@faultmaven/copilot-ui';
 import { SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
-import { getAuthHeaders } from '@faultmaven/copilot-ui/lib/api/fetch-utils';
+import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
+
+const fetchWithTimeout = vi.fn();
+vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
+  fetchWithTimeout: (...args: unknown[]) => fetchWithTimeout(...args),
+}));
+
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}));
 
 afterEach(() => {
   entry.clearApiTransport();
+  fetchWithTimeout.mockReset();
 });
 
 describe('SessionSwitchedError through the package entry', () => {
   it('is exported, and is the same class the request path checks', () => {
+    // Identity, not a subclass or a look-alike: either would pass a test that
+    // only checks `instanceof` against the original.
     expect(entry.SessionSwitchedError).toBe(SessionSwitchedError);
   });
 
-  it('thrown by a host that has only the entry, stops the request', async () => {
+  it('thrown by a host that has only the entry, the request is NOT SENT', async () => {
     entry.setApiTransport({
       baseUrl: async () => 'http://localhost:8090',
       accessToken: async () => {
@@ -35,17 +47,22 @@ describe('SessionSwitchedError through the package entry', () => {
       onUnauthorized: async () => 'ended' as const,
     });
 
-    await expect(getAuthHeaders()).rejects.toBeInstanceOf(SessionSwitchedError);
+    await expect(authenticatedFetch('http://localhost:8090/api/v1/cases', { method: 'POST' })).rejects.toBeInstanceOf(
+      SessionSwitchedError,
+    );
+    expect(fetchWithTimeout).not.toHaveBeenCalled();
   });
 
-  it('says nothing only one host does — and offers no sign-in', () => {
-    // The extension re-scopes its panel; the Dashboard ends the tab. And a
-    // sign-in prompt is what the `notice` category exists to avoid: acting on
-    // it signs the NEW account out.
+  it('reassures, and asks for nothing only one host could honour', () => {
+    // No host mechanism: the extension re-scopes its panel; the Dashboard ends
+    // the tab. No sign-in: acting on it signs the NEW account out. No resend:
+    // the panel is the other account's or gone by then, so a resend goes out
+    // AS the other account — the write this error exists to stop.
     const { userTitle, userMessage, userAction } = new entry.SessionSwitchedError();
     const copy = `${userTitle} ${userMessage} ${userAction}`;
 
-    expect(copy).not.toMatch(/panel|tab|extension|dashboard|switching/i);
-    expect(copy).not.toMatch(/\bsign[ -]?in\b/i);
+    expect(copy).not.toMatch(/\b(panel|tab|extension|dashboard|switching)\b/i);
+    expect(copy).not.toMatch(/\b(sign|log)\s*(back\s+)?(in|on)\b|\bre-?auth/i);
+    expect(copy).not.toMatch(/\b(send|submit|try)\b[^.]*\bagain\b|\bresend\b|\bretry\b/i);
   });
 });

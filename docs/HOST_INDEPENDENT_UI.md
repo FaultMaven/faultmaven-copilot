@@ -136,9 +136,11 @@ setApiTransport({
 
 The transport's `accessToken()` is for the session's user. A host that can see
 that its stored credential now belongs to someone else (another account signed
-in, and the panel has not re-scoped yet) throws `SessionSwitchedError`, which the
-package entry exports. The request is then not sent, and nothing is torn down
-(copilot#350). The extension does this.
+in, and the host has not moved the panel off the old one yet) throws
+`SessionSwitchedError`, which the package entry exports. The request is then not
+sent, and nothing is torn down (copilot#350). What the host does next is its own:
+the extension re-scopes its panel to the new account in place; a host that ends
+the old account's session instead reports `null` through `subscribeAuthState`.
 
 The transport's `onUnauthorized` is called with the bearer the rejected request
 carried. A host that tears down on a 401 should end only that credential's
