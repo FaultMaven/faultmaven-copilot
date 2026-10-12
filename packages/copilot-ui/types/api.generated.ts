@@ -1328,6 +1328,12 @@ export interface paths {
          *     A user of another organization answers exactly what an unknown username
          *     answers (#1318), and nothing is revoked or deleted — the refusal must not
          *     confirm that the account exists.
+         *
+         *     An account that created cases cannot be deleted (#1923): the answer is 409
+         *     `x-error-code: ACCOUNT_OWNS_CASES`, naming how many and the
+         *     `fm-reassign-cases` command that moves them, and nothing is revoked or
+         *     deleted. Deleting an account that only DRIVES other people's cases hands
+         *     each back to its creator.
          */
         delete: operations["delete_user_api_v1_auth_users__username__delete"];
         options?: never;
@@ -4025,6 +4031,8 @@ export interface components {
             created_at: string;
             /** Current Turn */
             current_turn: number;
+            /** Driver Id */
+            driver_id?: string | null;
             /** Enterprise Id */
             enterprise_id: string;
             /** Investigation Turn */
@@ -9209,6 +9217,15 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description `x-error-code: ACCOUNT_OWNS_CASES`: the account created cases, so it cannot be deleted until they are moved to another account with `fm-reassign-cases`. Nothing was deleted. */
+            409: {
+                headers: {
+                    /** @description Which conflict. */
+                    "x-error-code"?: "ACCOUNT_OWNS_CASES";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
