@@ -1903,303 +1903,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/cases/{case_id}/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Sessions
-         * @description List sessions for case.
-         *
-         *     Retrieves all investigation sessions for a case with optional filtering.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Query Parameters:
-         *         status: Filter by session status (active, paused, completed, abandoned)
-         *         limit: Maximum number of results (1-100, default 50)
-         *         offset: Pagination offset (default 0)
-         *
-         *     Args:
-         *         case_id: Case to list sessions for
-         *         current_user: Authenticated user from JWT
-         *         status_filter: Optional status filter
-         *         limit: Page size
-         *         offset: Pagination offset
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         List of sessions for the case
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Case not found
-         */
-        get: operations["list_sessions_api_v1_cases__case_id__sessions_get"];
-        put?: never;
-        /**
-         * Create Session
-         * @description Create investigation session for case.
-         *
-         *     Creates a new investigation session for the specified case.
-         *     Only one active session is allowed per case at a time.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Args:
-         *         case_id: Case to create session for
-         *         request: Session creation request
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Created session details
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Case not found
-         *         409: Active session already exists
-         *         422: Validation error
-         */
-        post: operations["create_session_api_v1_cases__case_id__sessions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cases/{case_id}/sessions/active": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Active Session
-         * @description Get currently active session for case.
-         *
-         *     Returns the currently active investigation session for a case,
-         *     if one exists. Each case can have at most one active session.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Args:
-         *         case_id: Case to get active session for
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Active session if exists, null otherwise
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Case not found
-         */
-        get: operations["get_active_session_api_v1_cases__case_id__sessions_active_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cases/{case_id}/sessions/{session_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session
-         * @description Get session by ID.
-         *
-         *     Retrieves a specific investigation session by its ID.
-         *     The session must belong to a case owned by the enterprise.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Args:
-         *         case_id: Case the session belongs to
-         *         session_id: Unique session identifier
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Session details if found and authorized
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Session not found or case not found
-         */
-        get: operations["get_session_api_v1_cases__case_id__sessions__session_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Session
-         * @description Update session.
-         *
-         *     Updates specified fields of an investigation session.
-         *     Only session_goal, token_budget_limit, and metadata can be updated.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Args:
-         *         case_id: Case the session belongs to
-         *         session_id: Unique session identifier
-         *         request: Fields to update
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Updated session details
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Session not found
-         *         422: Validation error
-         */
-        patch: operations["update_session_api_v1_cases__case_id__sessions__session_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/cases/{case_id}/sessions/{session_id}/complete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Complete Session
-         * @description Complete session with findings.
-         *
-         *     Completes an investigation session with a findings summary.
-         *     This is a terminal action - completed sessions cannot be modified.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Body:
-         *         findings_summary: Summary of investigation findings
-         *
-         *     Args:
-         *         case_id: Case the session belongs to
-         *         session_id: Unique session identifier
-         *         findings_summary: Summary of investigation findings
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Updated session with completed status
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Session not found
-         *         400: Session already in terminal state
-         *         422: Missing findings summary
-         */
-        post: operations["complete_session_api_v1_cases__case_id__sessions__session_id__complete_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cases/{case_id}/sessions/{session_id}/pause": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Pause Session
-         * @description Pause active session.
-         *
-         *     Pauses an active investigation session. Only active sessions
-         *     can be paused. Paused sessions can be resumed later.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Args:
-         *         case_id: Case the session belongs to
-         *         session_id: Unique session identifier
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Updated session with paused status
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Session not found
-         *         400: Session not active (cannot pause)
-         */
-        post: operations["pause_session_api_v1_cases__case_id__sessions__session_id__pause_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/cases/{case_id}/sessions/{session_id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Resume Session
-         * @description Resume paused session.
-         *
-         *     Resumes a paused investigation session. Only paused sessions
-         *     can be resumed.
-         *
-         *     Authentication:
-         *         - JWT Bearer token: Authorization: Bearer <token>
-         *
-         *     Args:
-         *         case_id: Case the session belongs to
-         *         session_id: Unique session identifier
-         *         current_user: Authenticated user from JWT
-         *         session_service: Injected session service
-         *
-         *     Returns:
-         *         Updated session with active status
-         *
-         *     Raises:
-         *         401: Authentication required
-         *         404: Session not found
-         *         400: Session not paused (cannot resume)
-         */
-        post: operations["resume_session_api_v1_cases__case_id__sessions__session_id__resume_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/cases/{case_id}/team-shares": {
         parameters: {
             query?: never;
@@ -3039,14 +2742,19 @@ export interface paths {
         put?: never;
         /**
          * Scan For Runbooks
-         * @description Scan data/knowledge/ for .md files not tracked in the database.
+         * @description Import the .md files under data/knowledge/ as drafts (standalone only).
          *
-         *     Discovers runbooks created by the KB Toolkit or placed on disk manually.
-         *     Creates draft records so they appear in the Drafts tab for review.
+         *     Each file that is not already a live draft or a published runbook becomes a
+         *     draft holding the file's text, so it appears in the Drafts tab for review.
+         *     The import never changes an existing draft (#1950).
+         *
+         *     Under ``TENANT_PROVIDER=multi`` the API has no runbook directory — its
+         *     replicas share no disk — so the service refuses with a
+         *     ``ValidationException``, which the global handler answers as 422.
          *
          *     Global-scope files (the platform corpus) are minted into drafts only for a
-         *     platform operator — an admin in single-tenant, and never a tenant session
-         *     under multi (#770). Non-global (personal/team) discovery is unaffected.
+         *     platform operator (#770). Non-global (personal/team) discovery is
+         *     unaffected.
          */
         post: operations["scan_for_runbooks_api_v1_knowledge_scan_post"];
         delete?: never;
@@ -4236,9 +3944,8 @@ export interface components {
          * AuthSessionCreateRequest
          * @description Request model for authentication session creation.
          *
-         *     This schema is for auth sessions (user authentication), not investigation sessions.
-         *     Investigation sessions use a different schema in the case module.
-         *     See: docs/architecture/case-and-session-concepts.md for the three-tier architecture.
+         *     This schema is for auth sessions (user authentication).
+         *     See: docs/architecture/case-and-session/case-and-session-concepts.md.
          */
         AuthSessionCreateRequest: {
             /**
@@ -4268,9 +3975,7 @@ export interface components {
         };
         /**
          * AuthSessionStatus
-         * @description Defines the status of authentication sessions (not investigation sessions).
-         *
-         *     For investigation session status, see faultmaven.models.investigation_session.SessionState
+         * @description Defines the status of authentication sessions.
          * @enum {string}
          */
         AuthSessionStatus: "active" | "expired" | "terminated";
@@ -4487,11 +4192,6 @@ export interface components {
         BatchVerifyRequest: {
             /** Draft Ids */
             draft_ids: components["schemas"]["BatchDraftRef"][];
-        };
-        /** Body_complete_session_api_v1_cases__case_id__sessions__session_id__complete_post */
-        Body_complete_session_api_v1_cases__case_id__sessions__session_id__complete_post: {
-            /** Findings Summary */
-            findings_summary: string;
         };
         /** Body_convert_document_api_v1_knowledge_convert_post */
         Body_convert_document_api_v1_knowledge_convert_post: {
@@ -5788,55 +5488,6 @@ export interface components {
             turns_without_progress: number;
         };
         /**
-         * InvestigationSessionResponse
-         * @description Response model for investigation session.
-         */
-        InvestigationSessionResponse: {
-            /** Case Id */
-            case_id: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Ended At */
-            ended_at?: string | null;
-            /** Enterprise Id */
-            enterprise_id: string;
-            /** Findings Summary */
-            findings_summary?: string | null;
-            /**
-             * Last Activity At
-             * Format: date-time
-             */
-            last_activity_at: string;
-            /** Session Goal */
-            session_goal?: string | null;
-            /** Session Id */
-            session_id: string;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            state: components["schemas"]["SessionState"];
-            /** Token Budget Limit */
-            token_budget_limit?: number | null;
-            /** Total Agent Executions */
-            total_agent_executions: number;
-            /** Total Duration Ms */
-            total_duration_ms?: number | null;
-            /** Total Token Usage */
-            total_token_usage: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-            /** User Id */
-            user_id: string;
-        };
-        /**
          * InvestigationStage
          * @description Investigation stage within the Investigating Phase.
          *
@@ -7090,20 +6741,6 @@ export interface components {
             tags?: string | null;
         };
         /**
-         * SessionCreateRequest
-         * @description Request model for creating investigation session.
-         */
-        SessionCreateRequest: {
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /** Session Goal */
-            session_goal?: string | null;
-            /** Token Budget Limit */
-            token_budget_limit?: number | null;
-        };
-        /**
          * SessionResponse
          * @description Response payload for auth session operations - API spec compliance.
          */
@@ -7132,28 +6769,6 @@ export interface components {
             status: components["schemas"]["AuthSessionStatus"];
             /** User Id */
             user_id?: string | null;
-        };
-        /**
-         * SessionState
-         * @description Investigation session status.
-         *
-         *     Tracks the lifecycle of an investigation session from active to completion.
-         * @enum {string}
-         */
-        SessionState: "active" | "paused" | "completed" | "abandoned";
-        /**
-         * SessionUpdateRequest
-         * @description Request model for updating session.
-         */
-        SessionUpdateRequest: {
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /** Session Goal */
-            session_goal?: string | null;
-            /** Token Budget Limit */
-            token_budget_limit?: number | null;
         };
         /**
          * SolutionSummary
@@ -10123,275 +9738,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_sessions_api_v1_cases__case_id__sessions_get: {
-        parameters: {
-            query?: {
-                state?: components["schemas"]["SessionState"] | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_session_api_v1_cases__case_id__sessions_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SessionCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_active_session_api_v1_cases__case_id__sessions_active_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"] | null;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_api_v1_cases__case_id__sessions__session_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_session_api_v1_cases__case_id__sessions__session_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SessionUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    complete_session_api_v1_cases__case_id__sessions__session_id__complete_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Body_complete_session_api_v1_cases__case_id__sessions__session_id__complete_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    pause_session_api_v1_cases__case_id__sessions__session_id__pause_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resume_session_api_v1_cases__case_id__sessions__session_id__resume_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvestigationSessionResponse"];
                 };
             };
             /** @description Validation Error */
