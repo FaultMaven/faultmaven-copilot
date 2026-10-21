@@ -51,6 +51,31 @@ describe('mermaid routing in chat markdown', () => {
         suppressErrorRendering: true,
       })
     );
+    // mermaid 12 re-lays out and resizes nodes unless these are pinned; they
+    // keep the pre-12 look (fm#2118).
+    expect(initializeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layout: 'dagre',
+        look: 'classic',
+        theme: 'dark',
+        flowchart: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
+        state: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
+        // The root layout must not replace these types' own layouts.
+        swimlane: expect.objectContaining({ layout: 'swimlane' }),
+        mindmap: expect.objectContaining({ layout: 'cose-bilkent' }),
+        // A diagram's front matter or %%{init}%% must not pick a layout,
+        // and mermaid's default secure keys stay secure.
+        secure: expect.arrayContaining([
+          'secure',
+          'securityLevel',
+          'startOnLoad',
+          'maxTextSize',
+          'suppressErrorRendering',
+          'maxEdges',
+          'layout',
+        ]),
+      })
+    );
   });
 
   it('leaves other fences as code blocks', () => {

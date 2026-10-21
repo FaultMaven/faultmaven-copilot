@@ -20,6 +20,16 @@ function loadMermaid() {
         suppressErrorRendering: true,
         theme: 'dark',
         fontFamily: 'inherit',
+        // Pin the pre-12 layout and look (owner ruling, fm#2118).
+        layout: 'dagre',
+        look: 'classic',
+        flowchart: { minNodeWidth: 0, wrappingWidth: 200 },
+        state: { minNodeWidth: 0, wrappingWidth: 200 },
+        // The top-level layout would otherwise replace swimlanes' and mindmaps' own (mermaid 11 ships both).
+        swimlane: { layout: 'swimlane' },
+        mindmap: { layout: 'cose-bilkent' },
+        // Chat- or LLM-authored front matter and %%{init}%% must not pick a layout (ELK is a 1.48 MB main-thread chunk).
+        secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges', 'layout'],
       });
       return mod;
     })
