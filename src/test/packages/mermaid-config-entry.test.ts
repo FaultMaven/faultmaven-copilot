@@ -29,20 +29,32 @@ function transpile(code: string): string {
   }).outputText;
 }
 
-/** Every `import`, `require` or re-export `from` token in emitted code, comments skipped. */
+/**
+ * Every import the emitted code makes: an import or re-export declaration, a
+ * dynamic `import()`, or a `require()`. Parsed, not scanned: a bare scanner loses
+ * its place after a template literal with a substitution, or a regex literal.
+ */
 function runtimeImports(code: string): string[] {
-  const scanner = ts.createScanner(ts.ScriptTarget.ESNext, true, ts.LanguageVariant.Standard, transpile(code));
+  const file = ts.createSourceFile('m.js', transpile(code), ts.ScriptTarget.ESNext, true);
   const found: string[] = [];
-  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
-    const text = scanner.getTokenText();
-    if (token === ts.SyntaxKind.ImportKeyword || token === ts.SyntaxKind.FromKeyword || text === 'require') {
-      found.push(text);
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isImportDeclaration(node) ||
+      ts.isImportEqualsDeclaration(node) ||
+      (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) ||
+      (ts.isCallExpression(node) &&
+        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+          (ts.isIdentifier(node.expression) && node.expression.text === 'require')))
+    ) {
+      found.push(node.getText(file));
     }
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
   return found;
 }
 
-/** Each typechecks, and each leaves a runtime import behind. */
+/** Each is only transpiled, never typechecked, and each leaves a runtime import behind. */
 const RUNTIME_IMPORTS = [
   "import type from 'mermaid';\nexport const x = type;", // a default import whose binding is named `type`
   "import type , { a } from 'mermaid';\nexport const x = [type, a];", // the same, plus named imports
@@ -51,6 +63,10 @@ const RUNTIME_IMPORTS = [
   "import { A } from 'mermaid';\nexport const x: A = {} as A;",
   "import { type A } from 'mermaid';\nexport const x: A = {} as A;", // emits `import {} from 'mermaid'`
   "export { x } from './lib/x';",
+  // After a template literal with a substitution, or a regex literal holding a backtick.
+  "const K = 'm';\nexport const a = `fm-${K}`;\nexport const f = () => import('mermaid');",
+  "const K = 'm';\nexport const a = `fm-${K}`;\nimport m from 'mermaid';\nexport const b = m;",
+  "export const r = /`/;\nexport const f = () => import('mermaid');",
 ];
 
 describe('the mermaid-config entry point', () => {
