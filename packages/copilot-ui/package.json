@@ -11,6 +11,7 @@
     "contract.ts",
     "index.ts",
     "lib",
+    "mermaid-config.ts",
     "public",
     "shared",
     "styles",

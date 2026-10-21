@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import type { MermaidConfig } from 'mermaid';
 import InlineSourcesRenderer from '@faultmaven/copilot-ui/shared/ui/components/InlineSourcesRenderer';
+import { MERMAID_CONFIG } from '@faultmaven/copilot-ui/mermaid-config';
 
 // jsdom cannot lay out real diagrams, so pin the routing contract instead:
 // ```mermaid fences reach mermaid.render, other fences stay code blocks,
@@ -14,8 +16,8 @@ vi.mock('mermaid', () => ({
 describe('mermaid routing in chat markdown', () => {
   beforeEach(() => {
     // Reset call history AND queued one-shot results so tests stay
-    // order-independent. initializeMock is deliberately not reset: the
-    // module-level mermaid cache runs initialize once per file.
+    // order-independent. initializeMock is reset only by the test that
+    // counts it, which takes a fresh module registry for the purpose.
     renderMock.mockReset();
     renderMock.mockResolvedValue({ svg: '<svg data-testid="mmd-svg"></svg>' });
   });
@@ -37,45 +39,27 @@ describe('mermaid routing in chat markdown', () => {
     expect(container.querySelector('pre')).not.toBeInTheDocument();
   });
 
-  it('initializes mermaid with the untrusted-content config', async () => {
-    render(
-      <InlineSourcesRenderer content={'```mermaid\nflowchart LR\n  a --> b\n```'} />
+  it('initializes mermaid exactly once, with the one site config', async () => {
+    // A fresh registry, so the loader's memo and the svg cache start empty.
+    // Under the file's earlier renders, a lost memo would go unseen.
+    vi.resetModules();
+    initializeMock.mockClear();
+    const { MermaidDiagram } = await import(
+      '@faultmaven/copilot-ui/shared/ui/components/MermaidDiagram'
     );
-    await waitFor(() => expect(initializeMock).toHaveBeenCalled());
-    // securityLevel 'strict' is the premise of rendering mermaid output via
-    // dangerouslySetInnerHTML — a change here is a security regression.
-    expect(initializeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        startOnLoad: false,
-        securityLevel: 'strict',
-        suppressErrorRendering: true,
-      })
+    const fresh = await import('@faultmaven/copilot-ui/mermaid-config');
+    // Two charts no other test renders, so both reach the loader.
+    const { container } = render(
+      <>
+        <MermaidDiagram chart={'flowchart LR\n  once1 --> once2'} />
+        <MermaidDiagram chart={'flowchart LR\n  once3 --> once4'} />
+      </>
     );
-    // mermaid 12 re-lays out and resizes nodes unless these are pinned; they
-    // keep the pre-12 look (fm#2118).
-    expect(initializeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        layout: 'dagre',
-        look: 'classic',
-        theme: 'dark',
-        flowchart: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
-        state: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
-        // The root layout must not replace these types' own layouts.
-        swimlane: expect.objectContaining({ layout: 'swimlane' }),
-        mindmap: expect.objectContaining({ layout: 'cose-bilkent' }),
-        // A diagram's front matter or %%{init}%% must not pick a layout,
-        // and mermaid's default secure keys stay secure.
-        secure: expect.arrayContaining([
-          'secure',
-          'securityLevel',
-          'startOnLoad',
-          'maxTextSize',
-          'suppressErrorRendering',
-          'maxEdges',
-          'layout',
-        ]),
-      })
-    );
+    await waitFor(() => expect(container.querySelectorAll('[role="img"]')).toHaveLength(2));
+    expect(renderMock).toHaveBeenCalledTimes(2);
+    expect(initializeMock).toHaveBeenCalledTimes(1);
+    // The same object, not an equal copy: every host initializes from it.
+    expect(initializeMock.mock.calls[0][0]).toBe(fresh.MERMAID_CONFIG);
   });
 
   it('leaves other fences as code blocks', () => {
@@ -105,5 +89,81 @@ describe('mermaid routing in chat markdown', () => {
     await waitFor(() =>
       expect(screen.getByText(/flowchart TD/)).toBeInTheDocument()
     );
+  });
+
+  it('reuses the cached SVG when a rendered chart mounts again', async () => {
+    const content = '```mermaid\nflowchart LR\n  cached1 --> cached2\n```';
+    const first = render(<InlineSourcesRenderer content={content} />);
+    await waitFor(() => expect(first.container.querySelector('[role="img"]')).toBeInTheDocument());
+    expect(renderMock).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    const second = render(<InlineSourcesRenderer content={content} />);
+    // The cached SVG is there on the first paint, with no loading placeholder.
+    expect(second.container.querySelector('[role="img"]')).toBeInTheDocument();
+    // Drain the effect's promise chain: a render it started would land here.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(renderMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MERMAID_CONFIG', () => {
+  it('pins the untrusted-content config and the pre-12 look', () => {
+    // Strict: an added key set to undefined would replace mermaid's default.
+    expect(MERMAID_CONFIG).toStrictEqual({
+      startOnLoad: false,
+      // securityLevel 'strict' is the premise of rendering mermaid output via
+      // dangerouslySetInnerHTML — a change here is a security regression.
+      securityLevel: 'strict',
+      suppressErrorRendering: true,
+      theme: 'dark',
+      fontFamily: 'inherit',
+      // mermaid 12 re-lays out and resizes nodes unless these are pinned; they
+      // keep the pre-12 look (fm#2118).
+      layout: 'dagre',
+      look: 'classic',
+      flowchart: { minNodeWidth: 0, wrappingWidth: 200 },
+      state: { minNodeWidth: 0, wrappingWidth: 200 },
+      // The root layout must not replace these types' own layouts.
+      swimlane: { layout: 'swimlane' },
+      mindmap: { layout: 'cose-bilkent' },
+      // A diagram's front matter or %%{init}%% must not pick a layout,
+      // and mermaid's default secure keys stay secure.
+      secure: [
+        'secure',
+        'securityLevel',
+        'startOnLoad',
+        'maxTextSize',
+        'suppressErrorRendering',
+        'maxEdges',
+        'layout',
+      ],
+    });
+  });
+
+  it('is read-only to the type checker (`pnpm compile` fails on a write)', () => {
+    // Never called: only tsc reads this, and it must reject the write.
+    const rewrite = () => {
+      // @ts-expect-error -- a host must not rewrite what every later initializer reads
+      MERMAID_CONFIG.theme = 'default';
+    };
+    expect(rewrite).toBeTypeOf('function');
+  });
+
+  it('is frozen all the way down, so a host write throws', () => {
+    const writable = MERMAID_CONFIG as MermaidConfig;
+    const secure = MERMAID_CONFIG.secure as string[];
+    const flowchart = MERMAID_CONFIG.flowchart as { wrappingWidth?: number };
+    expect(() => {
+      writable.theme = 'default';
+    }).toThrow(TypeError);
+    expect(() => secure.push('x')).toThrow(TypeError);
+    expect(() => {
+      secure.length = 0;
+    }).toThrow(TypeError);
+    expect(() => {
+      flowchart.wrappingWidth = 1;
+    }).toThrow(TypeError);
+    expect([MERMAID_CONFIG.theme, secure.length, flowchart.wrappingWidth]).toEqual(['dark', 7, 200]);
   });
 });

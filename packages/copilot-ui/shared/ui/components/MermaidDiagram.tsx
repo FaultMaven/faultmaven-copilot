@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createLogger } from '../../../lib/utils/logger';
+import { MERMAID_CONFIG } from '../../../mermaid-config';
 
 const log = createLogger('MermaidDiagram');
 
@@ -10,27 +11,7 @@ let mermaidModule: Promise<typeof import('mermaid')> | null = null;
 function loadMermaid() {
   mermaidModule ??= import('mermaid')
     .then((mod) => {
-      mod.default.initialize({
-        startOnLoad: false,
-        // Chat markdown is user/LLM-authored — treat diagram sources as
-        // untrusted content.
-        securityLevel: 'strict',
-        // Without this, a parse failure strands mermaid's error-bomb SVG
-        // in document.body (render() throws before its own cleanup).
-        suppressErrorRendering: true,
-        theme: 'dark',
-        fontFamily: 'inherit',
-        // Pin the pre-12 layout and look (owner ruling, fm#2118).
-        layout: 'dagre',
-        look: 'classic',
-        flowchart: { minNodeWidth: 0, wrappingWidth: 200 },
-        state: { minNodeWidth: 0, wrappingWidth: 200 },
-        // The top-level layout would otherwise replace swimlanes' and mindmaps' own (mermaid 11 ships both).
-        swimlane: { layout: 'swimlane' },
-        mindmap: { layout: 'cose-bilkent' },
-        // Chat- or LLM-authored front matter and %%{init}%% must not pick a layout (ELK is a 1.48 MB main-thread chunk).
-        secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges', 'layout'],
-      });
+      mod.default.initialize(MERMAID_CONFIG);
       return mod;
     })
     .catch((error) => {
