@@ -20,6 +20,11 @@ function loadMermaid() {
         suppressErrorRendering: true,
         theme: 'dark',
         fontFamily: 'inherit',
+        // Pin the pre-12 layout and look (owner ruling, fm#2118).
+        layout: 'dagre',
+        look: 'classic',
+        flowchart: { minNodeWidth: 0, wrappingWidth: 200 },
+        state: { minNodeWidth: 0, wrappingWidth: 200 },
       });
       return mod;
     })
