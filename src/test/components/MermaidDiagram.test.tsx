@@ -60,6 +60,20 @@ describe('mermaid routing in chat markdown', () => {
         theme: 'dark',
         flowchart: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
         state: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
+        // The root layout must not replace these types' own layouts.
+        swimlane: expect.objectContaining({ layout: 'swimlane' }),
+        mindmap: expect.objectContaining({ layout: 'cose-bilkent' }),
+        // A diagram's front matter or %%{init}%% must not pick a layout,
+        // and mermaid's default secure keys stay secure.
+        secure: expect.arrayContaining([
+          'secure',
+          'securityLevel',
+          'startOnLoad',
+          'maxTextSize',
+          'suppressErrorRendering',
+          'maxEdges',
+          'layout',
+        ]),
       })
     );
   });
