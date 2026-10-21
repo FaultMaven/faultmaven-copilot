@@ -38,6 +38,8 @@ packages/copilot-ui/      @faultmaven/copilot-ui — the panel and everything it
                           the Dashboard as a git dependency pinned by SHA.
   index.ts                the supported entry for a host
   contract.ts             cross-repo handshake names (import from '/contract' in content scripts)
+  turn-label.ts           the turn-label rules, for a host that must not load the entry
+  mermaid-config.ts       MERMAID_CONFIG, the one mermaid site config for every initialize
   shared/host/adapter.ts  the HostAdapter contract a host implements
   shared/ui/              CopilotPanel.tsx, components/, hooks/, layouts/
   lib/                    api/ (client, services, session-core), state/ (Zustand store + slices),

@@ -222,9 +222,10 @@ github:FaultMaven/faultmaven-copilot#<sha>&path:packages/copilot-ui
 pnpm fetches `https://codeload.github.com/FaultMaven/faultmaven-copilot/tar.gz/<sha>`,
 extracts the subdirectory, and records both the tarball and the path in the
 lockfile. The package's `files` list is honoured, so a consumer receives
-`index.ts`, `lib/`, `shared/`, `types/`, `styles/`, `public/`,
-`tailwind-preset.cjs` and `config.ts` — and none of this repository's tests,
-docs or extension.
+`index.ts`; the three root modules a host imports without the entry
+(`contract.ts`, `turn-label.ts` and `mermaid-config.ts`); `lib/`, `shared/`,
+`types/`, `styles/`, `public/`, `tailwind-preset.cjs` and `config.ts` — and
+none of this repository's tests, docs or extension.
 
 The one thing a consumer must supply: **`vite/client` in its `types`**, because
 the package reads `import.meta.env` for its build-time constants. Nothing else

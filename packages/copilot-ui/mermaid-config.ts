@@ -1,7 +1,8 @@
 /**
- * The one definition of the mermaid site config. Every `initialize` in a page
- * that hosts this package passes this object: `MermaidDiagram`'s, and a host's
- * own diagram component (the Dashboard has one).
+ * The one definition of the mermaid site config. This package's
+ * `MermaidDiagram` initializes mermaid with this object, and a host's own
+ * diagram component should pass it too; the Dashboard's switches to it in
+ * fm#2119 Part B.
  *
  * mermaid's site config is one global, and `setSiteConfig` resets it to the
  * defaults before applying a config, so the last initializer wins whole. Two
@@ -9,11 +10,15 @@
  *
  * The pre-12 layout and look pins are the owner's ruling (fm#2118, fm#2119).
  * Like `contract.ts`, it imports nothing at runtime, so a host can take it
- * without `index.ts`'s eager graph (ADR-016 D3).
+ * without `index.ts`'s eager graph (ADR-016 D3); `mermaid-config-entry.test.ts`
+ * pins that, and that the module ships.
  */
 import type { MermaidConfig } from 'mermaid';
 
-export const MERMAID_CONFIG: MermaidConfig = {
+// Read-only to the type checker only: every later initializer reads this
+// object. mermaid copies a config two levels deep, so its own copies share the
+// nested objects here, and a runtime freeze could throw inside its merges.
+export const MERMAID_CONFIG: Readonly<MermaidConfig> = {
   startOnLoad: false,
   // Chat markdown is user/LLM-authored — treat diagram sources as
   // untrusted content.

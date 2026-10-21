@@ -15,8 +15,8 @@ vi.mock('mermaid', () => ({
 describe('mermaid routing in chat markdown', () => {
   beforeEach(() => {
     // Reset call history AND queued one-shot results so tests stay
-    // order-independent. initializeMock is deliberately not reset: the
-    // module-level mermaid cache runs initialize once per file.
+    // order-independent. initializeMock is reset only by the test that
+    // counts it, which takes a fresh module registry for the purpose.
     renderMock.mockReset();
     renderMock.mockResolvedValue({ svg: '<svg data-testid="mmd-svg"></svg>' });
   });
@@ -39,13 +39,26 @@ describe('mermaid routing in chat markdown', () => {
   });
 
   it('initializes mermaid exactly once, with the one site config', async () => {
-    render(
-      <InlineSourcesRenderer content={'```mermaid\nflowchart LR\n  a --> b\n```'} />
+    // A fresh registry, so the loader's memo and the svg cache start empty.
+    // Under the file's earlier renders, a lost memo would go unseen.
+    vi.resetModules();
+    initializeMock.mockClear();
+    const { MermaidDiagram } = await import(
+      '@faultmaven/copilot-ui/shared/ui/components/MermaidDiagram'
     );
-    await waitFor(() => expect(initializeMock).toHaveBeenCalled());
+    const fresh = await import('@faultmaven/copilot-ui/mermaid-config');
+    // Two charts no other test renders, so both reach the loader.
+    const { container } = render(
+      <>
+        <MermaidDiagram chart={'flowchart LR\n  once1 --> once2'} />
+        <MermaidDiagram chart={'flowchart LR\n  once3 --> once4'} />
+      </>
+    );
+    await waitFor(() => expect(container.querySelectorAll('[role="img"]')).toHaveLength(2));
+    expect(renderMock).toHaveBeenCalledTimes(2);
     expect(initializeMock).toHaveBeenCalledTimes(1);
     // The same object, not an equal copy: every host initializes from it.
-    expect(initializeMock.mock.calls[0][0]).toBe(MERMAID_CONFIG);
+    expect(initializeMock.mock.calls[0][0]).toBe(fresh.MERMAID_CONFIG);
   });
 
   it('leaves other fences as code blocks', () => {
@@ -80,7 +93,8 @@ describe('mermaid routing in chat markdown', () => {
 
 describe('MERMAID_CONFIG', () => {
   it('pins the untrusted-content config and the pre-12 look', () => {
-    expect(MERMAID_CONFIG).toEqual({
+    // Strict: an added key set to undefined would replace mermaid's default.
+    expect(MERMAID_CONFIG).toStrictEqual({
       startOnLoad: false,
       // securityLevel 'strict' is the premise of rendering mermaid output via
       // dangerouslySetInnerHTML — a change here is a security regression.
@@ -109,5 +123,14 @@ describe('MERMAID_CONFIG', () => {
         'layout',
       ],
     });
+  });
+
+  it('is read-only to the type checker (`pnpm compile` fails on a write)', () => {
+    // Never called: only tsc reads this, and it must reject the write.
+    const rewrite = () => {
+      // @ts-expect-error -- a host must not rewrite what every later initializer reads
+      MERMAID_CONFIG.theme = 'default';
+    };
+    expect(rewrite).toBeTypeOf('function');
   });
 });
