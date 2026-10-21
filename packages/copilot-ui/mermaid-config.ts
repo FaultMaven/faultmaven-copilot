@@ -15,10 +15,19 @@
  */
 import type { MermaidConfig } from 'mermaid';
 
-// Read-only to the type checker only: every later initializer reads this
-// object. mermaid copies a config two levels deep, so its own copies share the
-// nested objects here, and a runtime freeze could throw inside its merges.
-export const MERMAID_CONFIG: Readonly<MermaidConfig> = {
+/** Freezes an object and every object or array inside it. */
+function deepFreeze<T extends object>(value: T): T {
+  for (const child of Object.values(value)) {
+    if (child !== null && typeof child === 'object') deepFreeze(child);
+  }
+  return Object.freeze(value);
+}
+
+// Frozen all the way down, `secure` included, because every later initializer
+// reads this one object: a host write throws (modules are strict) instead of
+// changing every diagram after it. mermaid 12.2.0 copies the config into fresh
+// objects at both levels and never writes to it, so the freeze is safe there.
+export const MERMAID_CONFIG: Readonly<MermaidConfig> = deepFreeze<MermaidConfig>({
   startOnLoad: false,
   // Chat markdown is user/LLM-authored — treat diagram sources as
   // untrusted content.
@@ -38,4 +47,4 @@ export const MERMAID_CONFIG: Readonly<MermaidConfig> = {
   mindmap: { layout: 'cose-bilkent' },
   // Chat- or LLM-authored front matter and %%{init}%% must not pick a layout (ELK is a 1.48 MB main-thread chunk).
   secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges', 'layout'],
-};
+});

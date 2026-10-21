@@ -224,8 +224,8 @@ extracts the subdirectory, and records both the tarball and the path in the
 lockfile. The package's `files` list is honoured, so a consumer receives
 `index.ts`; the three root modules a host imports without the entry
 (`contract.ts`, `turn-label.ts` and `mermaid-config.ts`); `lib/`, `shared/`,
-`types/`, `styles/`, `public/`, `tailwind-preset.cjs` and `config.ts` — and
-none of this repository's tests, docs or extension.
+`types/`, `styles/`, `public/`, `tailwind-preset.cjs`, `tsconfig.json` and
+`config.ts` — and none of this repository's tests, docs or extension.
 
 The one thing a consumer must supply: **`vite/client` in its `types`**, because
 the package reads `import.meta.env` for its build-time constants. Nothing else

@@ -4,50 +4,53 @@
  * Both properties are why it is a root module, as for `contract.ts`
  * (`contract-entry.test.ts`): the Dashboard imports it for its own diagrams and
  * must not pull the entry's eager graph with it (ADR-016 D3). Its one import is
- * the config's TYPE, which is erased. That carve-out is exact: a value import of
- * the same name, or an inline `import { type X }` (a side-effect import under
- * `verbatimModuleSyntax`), would bundle mermaid with it.
+ * the config's TYPE, which is erased.
+ *
+ * Checked on the TRANSPILED module, not by matching the source: TypeScript
+ * decides what is erased, so the output either imports something or it does
+ * not. `verbatimModuleSyntax` keeps every import that is not written as a type
+ * import, as a host compiling under it would.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const PKG = join(process.cwd(), 'packages/copilot-ui');
 const source = readFileSync(join(PKG, 'mermaid-config.ts'), 'utf8');
 
-/** The one import erasure removes: a statement-level `import type … from 'mermaid'`. */
-const TYPE_ONLY_MERMAID = /^\s*import\s+type\s+[^;'"]*?from\s*['"]mermaid['"];?[ \t]*$/gm;
-
-/** Import specifiers a bundler would follow out of a module (as in `contract-entry.test.ts`). */
-function specifiersOf(code: string): string[] {
-  const stripped = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  const patterns = [
-    /(?:^|\s)import\s+[^;]*?from\s*['"]([^'"]+)['"]/g,
-    /(?:^|\s)import\s*['"]([^'"]+)['"]/g,
-    /(?:^|\s)export\s+[^;]*?from\s*['"]([^'"]+)['"]/g,
-    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  ];
-  return [...new Set(patterns.flatMap((p) => [...stripped.matchAll(p)].map((m) => m[1])))];
+function transpile(code: string): string {
+  return ts.transpileModule(code, {
+    compilerOptions: {
+      verbatimModuleSyntax: true,
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ESNext,
+    },
+  }).outputText;
 }
 
-/** What survives erasure. */
-function runtimeSpecifiers(code: string): string[] {
-  return specifiersOf(code.replace(TYPE_ONLY_MERMAID, ''));
+/** Every `import`, `require` or re-export `from` token in emitted code, comments skipped. */
+function runtimeImports(code: string): string[] {
+  const scanner = ts.createScanner(ts.ScriptTarget.ESNext, true, ts.LanguageVariant.Standard, transpile(code));
+  const found: string[] = [];
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    const text = scanner.getTokenText();
+    if (token === ts.SyntaxKind.ImportKeyword || token === ts.SyntaxKind.FromKeyword || text === 'require') {
+      found.push(text);
+    }
+  }
+  return found;
 }
 
-/** [module source, what must survive erasure]. The first two are the carve-out; the rest must not pass it. */
-const CARVE_OUT_CASES: Array<[string, string[]]> = [
-  ["import type { MermaidConfig } from 'mermaid';", []],
-  ['import type {\n  MermaidConfig,\n} from "mermaid"', []],
-  ["import { MermaidConfig } from 'mermaid';", ['mermaid']],
-  ["import { type MermaidConfig } from 'mermaid';", ['mermaid']],
-  ["import mermaid from 'mermaid';", ['mermaid']],
-  ["import 'mermaid';", ['mermaid']],
-  ["const m = require('mermaid');", ['mermaid']],
-  ["const m = import('mermaid');", ['mermaid']],
-  ["export { x } from './lib/x';", ['./lib/x']],
-  ["import type { X } from './lib/x';", ['./lib/x']],
+/** Each typechecks, and each leaves a runtime import behind. */
+const RUNTIME_IMPORTS = [
+  "import type from 'mermaid';\nexport const x = type;", // a default import whose binding is named `type`
+  "import type , { a } from 'mermaid';\nexport const x = [type, a];", // the same, plus named imports
+  'export const f = () => import(`mermaid`);',
+  'declare const name: string;\nexport const m = require(name);',
+  "import { A } from 'mermaid';\nexport const x: A = {} as A;",
+  "import { type A } from 'mermaid';\nexport const x: A = {} as A;", // emits `import {} from 'mermaid'`
+  "export { x } from './lib/x';",
 ];
 
 describe('the mermaid-config entry point', () => {
@@ -56,12 +59,16 @@ describe('the mermaid-config entry point', () => {
     expect(manifest.files).toContain('mermaid-config.ts');
   });
 
-  it('imports NOTHING at runtime: its only import is the erased config type', () => {
-    expect(specifiersOf(source), 'the type import is what the carve-out is for').toEqual(['mermaid']);
-    expect(runtimeSpecifiers(source)).toEqual([]);
+  it('imports NOTHING at runtime', () => {
+    expect(transpile(source), 'the transpile must emit the module').toContain('MERMAID_CONFIG');
+    expect(runtimeImports(source)).toEqual([]);
   });
 
-  it.each(CARVE_OUT_CASES)('the carve-out admits only a type import of mermaid: %j', (code, expected) => {
-    expect(runtimeSpecifiers(code)).toEqual(expected);
+  it('erases a type-only import', () => {
+    expect(runtimeImports("import type { A } from 'mermaid';\nexport const x: A = {} as A;")).toEqual([]);
+  });
+
+  it.each(RUNTIME_IMPORTS)('catches %j', (code) => {
+    expect(runtimeImports(code)).not.toEqual([]);
   });
 });

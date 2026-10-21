@@ -41,6 +41,8 @@ The codebase follows a modular, domain-driven structure:
 packages/copilot-ui/          # @faultmaven/copilot-ui — the shared UI package
 ├── index.ts                  # The supported entry for a host
 ├── contract.ts               # Cross-repo handshake names
+├── turn-label.ts             # The turn-label rules, without the entry
+├── mermaid-config.ts         # The one mermaid site config (MERMAID_CONFIG)
 ├── shared/
 │   ├── host/adapter.ts       # The HostAdapter contract a host implements
 │   └── ui/

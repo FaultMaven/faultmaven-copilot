@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import type { MermaidConfig } from 'mermaid';
 import InlineSourcesRenderer from '@faultmaven/copilot-ui/shared/ui/components/InlineSourcesRenderer';
 import { MERMAID_CONFIG } from '@faultmaven/copilot-ui/mermaid-config';
 
@@ -89,6 +90,21 @@ describe('mermaid routing in chat markdown', () => {
       expect(screen.getByText(/flowchart TD/)).toBeInTheDocument()
     );
   });
+
+  it('reuses the cached SVG when a rendered chart mounts again', async () => {
+    const content = '```mermaid\nflowchart LR\n  cached1 --> cached2\n```';
+    const first = render(<InlineSourcesRenderer content={content} />);
+    await waitFor(() => expect(first.container.querySelector('[role="img"]')).toBeInTheDocument());
+    expect(renderMock).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    const second = render(<InlineSourcesRenderer content={content} />);
+    // The cached SVG is there on the first paint, with no loading placeholder.
+    expect(second.container.querySelector('[role="img"]')).toBeInTheDocument();
+    // Drain the effect's promise chain: a render it started would land here.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(renderMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('MERMAID_CONFIG', () => {
@@ -132,5 +148,22 @@ describe('MERMAID_CONFIG', () => {
       MERMAID_CONFIG.theme = 'default';
     };
     expect(rewrite).toBeTypeOf('function');
+  });
+
+  it('is frozen all the way down, so a host write throws', () => {
+    const writable = MERMAID_CONFIG as MermaidConfig;
+    const secure = MERMAID_CONFIG.secure as string[];
+    const flowchart = MERMAID_CONFIG.flowchart as { wrappingWidth?: number };
+    expect(() => {
+      writable.theme = 'default';
+    }).toThrow(TypeError);
+    expect(() => secure.push('x')).toThrow(TypeError);
+    expect(() => {
+      secure.length = 0;
+    }).toThrow(TypeError);
+    expect(() => {
+      flowchart.wrappingWidth = 1;
+    }).toThrow(TypeError);
+    expect([MERMAID_CONFIG.theme, secure.length, flowchart.wrappingWidth]).toEqual(['dark', 7, 200]);
   });
 });
