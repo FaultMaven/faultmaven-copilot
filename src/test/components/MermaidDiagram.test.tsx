@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import InlineSourcesRenderer from '@faultmaven/copilot-ui/shared/ui/components/InlineSourcesRenderer';
+import { MERMAID_CONFIG } from '@faultmaven/copilot-ui/mermaid-config';
 
 // jsdom cannot lay out real diagrams, so pin the routing contract instead:
 // ```mermaid fences reach mermaid.render, other fences stay code blocks,
@@ -37,45 +38,14 @@ describe('mermaid routing in chat markdown', () => {
     expect(container.querySelector('pre')).not.toBeInTheDocument();
   });
 
-  it('initializes mermaid with the untrusted-content config', async () => {
+  it('initializes mermaid exactly once, with the one site config', async () => {
     render(
       <InlineSourcesRenderer content={'```mermaid\nflowchart LR\n  a --> b\n```'} />
     );
     await waitFor(() => expect(initializeMock).toHaveBeenCalled());
-    // securityLevel 'strict' is the premise of rendering mermaid output via
-    // dangerouslySetInnerHTML — a change here is a security regression.
-    expect(initializeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        startOnLoad: false,
-        securityLevel: 'strict',
-        suppressErrorRendering: true,
-      })
-    );
-    // mermaid 12 re-lays out and resizes nodes unless these are pinned; they
-    // keep the pre-12 look (fm#2118).
-    expect(initializeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        layout: 'dagre',
-        look: 'classic',
-        theme: 'dark',
-        flowchart: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
-        state: expect.objectContaining({ minNodeWidth: 0, wrappingWidth: 200 }),
-        // The root layout must not replace these types' own layouts.
-        swimlane: expect.objectContaining({ layout: 'swimlane' }),
-        mindmap: expect.objectContaining({ layout: 'cose-bilkent' }),
-        // A diagram's front matter or %%{init}%% must not pick a layout,
-        // and mermaid's default secure keys stay secure.
-        secure: expect.arrayContaining([
-          'secure',
-          'securityLevel',
-          'startOnLoad',
-          'maxTextSize',
-          'suppressErrorRendering',
-          'maxEdges',
-          'layout',
-        ]),
-      })
-    );
+    expect(initializeMock).toHaveBeenCalledTimes(1);
+    // The same object, not an equal copy: every host initializes from it.
+    expect(initializeMock.mock.calls[0][0]).toBe(MERMAID_CONFIG);
   });
 
   it('leaves other fences as code blocks', () => {
@@ -105,5 +75,39 @@ describe('mermaid routing in chat markdown', () => {
     await waitFor(() =>
       expect(screen.getByText(/flowchart TD/)).toBeInTheDocument()
     );
+  });
+});
+
+describe('MERMAID_CONFIG', () => {
+  it('pins the untrusted-content config and the pre-12 look', () => {
+    expect(MERMAID_CONFIG).toEqual({
+      startOnLoad: false,
+      // securityLevel 'strict' is the premise of rendering mermaid output via
+      // dangerouslySetInnerHTML — a change here is a security regression.
+      securityLevel: 'strict',
+      suppressErrorRendering: true,
+      theme: 'dark',
+      fontFamily: 'inherit',
+      // mermaid 12 re-lays out and resizes nodes unless these are pinned; they
+      // keep the pre-12 look (fm#2118).
+      layout: 'dagre',
+      look: 'classic',
+      flowchart: { minNodeWidth: 0, wrappingWidth: 200 },
+      state: { minNodeWidth: 0, wrappingWidth: 200 },
+      // The root layout must not replace these types' own layouts.
+      swimlane: { layout: 'swimlane' },
+      mindmap: { layout: 'cose-bilkent' },
+      // A diagram's front matter or %%{init}%% must not pick a layout,
+      // and mermaid's default secure keys stay secure.
+      secure: [
+        'secure',
+        'securityLevel',
+        'startOnLoad',
+        'maxTextSize',
+        'suppressErrorRendering',
+        'maxEdges',
+        'layout',
+      ],
+    });
   });
 });
