@@ -1,9 +1,11 @@
 name: Lockfile audit
 description: >-
   Audits pnpm-lock.yaml with `pnpm audit` at moderate and above, retrying only
-  while npm's advisory endpoint is unreachable. The level lives here and nowhere
-  else. Keep this directory byte-identical in faultmaven-dashboard,
-  faultmaven-copilot and faultmaven-website (faultmaven#2159).
+  while npm's advisory endpoint is unreachable or failing. audit.sh sets the
+  level that both the PR gate and the daily scheduled-audit.yml run; step names
+  and docs that state it change with it. Keep this directory byte-identical in
+  faultmaven-dashboard, faultmaven-copilot and faultmaven-website
+  (faultmaven#2159).
 inputs:
   on-unreachable:
     description: >-

@@ -9,11 +9,18 @@ name: Scheduled Dependency Audit
 # next. This audits main every day through the same lockfile-audit action, so
 # it uses the gate's level by construction.
 #
-# It always fails when npm's advisory endpoint stays unreachable: a scheduled
-# run that never audited must not read as clean. A failure emails whoever last
-# edited the cron line, and core's Security-tab sweep
+# It always fails when the audit could not run (npm's advisory endpoint
+# unreachable, failing or stalled for all four attempts): a scheduled run that
+# never audited must not read as clean. Core's Security-tab sweep
 # (faultmaven scripts/security_alert_sweep.py) reports this workflow's latest
-# scheduled run every round.
+# scheduled run every round, and counts it as failing when it failed or is
+# over two days old. GitHub may also email a failed scheduled run to whoever
+# last edited the cron line, under that account's notification settings.
+#
+# A dispatch audits the ref it is started from; only the schedule audits main.
+# GitHub disables a public repository's schedules after 60 days without
+# activity, which the sweep then reports as stale; re-enable it from the
+# Actions tab.
 # =============================================================================
 
 on:
@@ -37,7 +44,7 @@ jobs:
   audit:
     name: Scheduled Dependency Audit
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
