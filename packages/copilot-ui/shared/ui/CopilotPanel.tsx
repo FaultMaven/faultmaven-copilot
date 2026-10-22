@@ -259,8 +259,8 @@ function CopilotPanelContent({
   // to gate on. The account row reads `session.user` too — the second copy the
   // store used to hold is gone, so there is no pair that could disagree.
   // The panel only ever mounts once its host says the environment is ready, so
-  // the session initialises unconditionally here.
-  const { sessionId, clearSession } = useSessionManagement(true);
+  // the session initialises unconditionally here, for this user only.
+  const { sessionId, clearSession } = useSessionManagement(true, session.user.id);
 
   // --- Case Management ---
   const {

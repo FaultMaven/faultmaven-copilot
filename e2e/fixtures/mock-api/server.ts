@@ -11,7 +11,7 @@ import {
     casesList,
     caseUi,
     oauthToken,
-    sessionCreate,
+    sessionCreateFor,
     turnResponse,
     userMe,
 } from './fixtures';
@@ -135,7 +135,7 @@ function serve<P extends keyof paths, M extends Method & keyof paths[P], S exten
 serve('get', '/api/v1/meta/capabilities', 200, () => capabilities);
 serve('get', '/api/v1/auth/config', 200, () => authConfig);
 serve('get', '/api/v1/auth/me', 200, () => userMe);
-serve('post', '/api/v1/sessions', 201, () => sessionCreate);
+serve('post', '/api/v1/sessions', 201, (req) => sessionCreateFor(req.get('authorization')));
 serve('post', '/api/v1/auth/oauth/token', 200, () => oauthToken);
 
 // Cases.

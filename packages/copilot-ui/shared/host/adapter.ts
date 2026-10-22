@@ -147,9 +147,10 @@ export interface HostSession {
    *     faultmaven-dashboard#212). A host that cannot tell users apart never
    *     throws it.
    *   - anything else — nothing available RIGHT NOW. The request goes out
-   *     header-less and its 401 takes the recoverable session path, so a blip at
-   *     the token endpoint cannot destroy a credential the next request could
-   *     have used (#99).
+   *     header-less, and its 401 keeps both the credential and the stored
+   *     session and mints nothing, so a blip at the token endpoint cannot
+   *     destroy a credential the next request could have used (#99). The
+   *     session mint itself is not sent without a bearer (faultmaven#1460).
    *
    * A host that never throws the first keeps the old behaviour exactly; the
    * distinction is opt-in.

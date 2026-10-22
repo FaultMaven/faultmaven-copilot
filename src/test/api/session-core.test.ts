@@ -15,7 +15,11 @@ vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession, clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import {
+  refreshSession,
+  clearPersistedSession,
+  clearPersistedSessionIf,
+} from '@faultmaven/copilot-ui/lib/api/session-core';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 // session-core reaches storage through the host, so the spies above are
@@ -53,12 +57,14 @@ describe('refreshSession', () => {
   });
 
   it('persists the new session_id so subsequent requests carry X-Session-Id', async () => {
-    await refreshSession();
+    await refreshSession('u1');
 
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(1);
+    expect(createSessionWithRecovery).toHaveBeenCalledWith('u1', undefined);
     expect(storageSet).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'sess-new',
+        sessionUserId: 'u1',
         sessionResumed: false,
         clientId: 'client-1'
       })
@@ -70,8 +76,8 @@ describe('refreshSession', () => {
     let resolveCreate!: (v: any) => void;
     createSessionWithRecovery.mockReturnValueOnce(new Promise(r => { resolveCreate = r; }));
 
-    const a = refreshSession();
-    const b = refreshSession();
+    const a = refreshSession('u1');
+    const b = refreshSession('u1');
     resolveCreate(sessionResponse());
     await Promise.all([a, b]);
 
@@ -81,31 +87,42 @@ describe('refreshSession', () => {
   });
 
   it('skips creating when a fresh session already exists (re-check)', async () => {
-    storageGet.mockResolvedValue({ sessionId: 'already-fresh' });
+    storageGet.mockResolvedValue({ sessionId: 'already-fresh', sessionUserId: 'u1' });
 
-    await refreshSession();
+    await refreshSession('u1');
 
     expect(createSessionWithRecovery).not.toHaveBeenCalled();
     expect(storageSet).not.toHaveBeenCalled();
   });
 
   it('resets the single-flight guard so a later refresh can run again', async () => {
-    await refreshSession();
+    await refreshSession('u1');
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(1);
 
     // A subsequent, non-overlapping refresh should create again (guard cleared).
-    await refreshSession();
+    await refreshSession('u1');
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(2);
   });
 
   it('resets the in-context guard even when the refresh fails', async () => {
     createSessionWithRecovery.mockRejectedValueOnce(new Error('network down'));
-    await expect(refreshSession()).rejects.toThrow('network down');
+    await expect(refreshSession('u1')).rejects.toThrow('network down');
 
     // Guard must be cleared so a later refresh can retry.
     createSessionWithRecovery.mockResolvedValueOnce(sessionResponse());
-    await expect(refreshSession()).resolves.toBeUndefined();
+    await expect(refreshSession('u1')).resolves.toBeUndefined();
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(2);
+  });
+
+  // The owner is the caller's to pass (faultmaven#1460): `client.ts`'s retry
+  // wrapper passes none, and must neither mint nor clear.
+  it('with no owner neither mints nor clears', async () => {
+    storageGet.mockResolvedValue({ sessionId: 'someone-elses', sessionUserId: 'u2' });
+
+    await refreshSession();
+
+    expect(createSessionWithRecovery).not.toHaveBeenCalled();
+    expect(storageRemove).not.toHaveBeenCalled();
   });
 
   it('uses the Web Locks mutex when available (production path)', async () => {
@@ -113,7 +130,7 @@ describe('refreshSession', () => {
     const request = vi.fn(async (_name: string, _opts: any, cb: () => Promise<void>) => cb());
     (navigator as any).locks = { request };
 
-    await refreshSession();
+    await refreshSession('u1');
 
     expect(request).toHaveBeenCalledWith(
       'faultmaven-session-refresh',
@@ -142,7 +159,12 @@ describe('clearPersistedSession', () => {
   it('clears the session keys and KEEPS clientId by default', async () => {
     await clearPersistedSession();
 
-    expect(storageRemove).toHaveBeenCalledWith(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
+    expect(storageRemove).toHaveBeenCalledWith([
+      'sessionId',
+      'sessionUserId',
+      'sessionCreatedAt',
+      'sessionResumed',
+    ]);
   });
 
   it('takes clientId too only when asked', async () => {
@@ -150,9 +172,46 @@ describe('clearPersistedSession', () => {
 
     expect(storageRemove).toHaveBeenCalledWith([
       'sessionId',
+      'sessionUserId',
       'sessionCreatedAt',
       'sessionResumed',
       'clientId',
     ]);
+  });
+});
+
+/** The one clear of a session a 401 or a dead heartbeat was about (#104). */
+describe('clearPersistedSessionIf', () => {
+  beforeEach(() => {
+    storageRemove.mockClear();
+    storageGet.mockReset();
+    Reflect.deleteProperty(navigator, 'locks');
+  });
+
+  it('clears the session when storage still holds that id', async () => {
+    storageGet.mockResolvedValue({ sessionId: 'S1' });
+
+    await clearPersistedSessionIf('S1');
+
+    expect(storageRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a session another caller has stored since', async () => {
+    storageGet.mockResolvedValue({ sessionId: 'S2' });
+
+    await clearPersistedSessionIf('S1');
+
+    expect(storageRemove).not.toHaveBeenCalled();
+  });
+
+  it('runs under the session lock', async () => {
+    const request = vi.fn(async (_name: string, _opts: unknown, cb: () => Promise<void>) => cb());
+    Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true });
+    storageGet.mockResolvedValue({ sessionId: 'S1' });
+
+    await clearPersistedSessionIf('S1');
+
+    expect(request).toHaveBeenCalledWith('faultmaven-session-refresh', { mode: 'exclusive' }, expect.any(Function));
+    expect(storageRemove).toHaveBeenCalledTimes(1);
   });
 });

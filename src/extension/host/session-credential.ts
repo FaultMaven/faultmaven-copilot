@@ -22,8 +22,9 @@ const log = createLogger('SessionCredential');
  * Read a bearer for the shared panel.
  *
  * TokenManager reports; this acts. `null` from it means "nothing usable right
- * now" — transient, so throwing a plain error sends the request out header-less
- * and its 401 takes the recoverable session path (#99). `SessionEndedError`
+ * now" — transient, so throwing a plain error sends the request out header-less,
+ * and its 401 keeps the credential and the stored session and mints nothing
+ * (#99, faultmaven#1460). `SessionEndedError`
  * means the chain is definitively dead, and the teardown belongs here rather
  * than inside TokenManager, where it ran inside the refresh lock and inside the
  * refresh verdict.

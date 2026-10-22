@@ -25,7 +25,7 @@ import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-
 import { enforceUserDataScope } from '../../extension/auth/user-scope';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
-const SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed'];
+const SESSION_KEYS = ['sessionId', 'sessionUserId', 'sessionCreatedAt', 'sessionResumed'];
 
 /** The other store: what every non-owner path used to reach for. */
 const otherStore = () => (global as any).browser.storage.local;
@@ -78,11 +78,11 @@ describe('the session pointer has a single writer', () => {
     owner.set.mock.calls.filter(([items]) => items && 'sessionId' in items);
 
   it('is written exactly once when a session is minted, and on the owner store', async () => {
-    await refreshSession();
+    await refreshSession('u1');
 
     const writes = writesOfSessionId();
     expect(writes).toHaveLength(1);
-    expect(writes[0][0]).toMatchObject({ sessionId: 'sess-1', clientId: 'client-1' });
+    expect(writes[0][0]).toMatchObject({ sessionId: 'sess-1', sessionUserId: 'u1', clientId: 'client-1' });
     expect(owner.data.sessionId).toBe('sess-1');
     expect(keysWrittenElsewhere()).not.toContain('sessionId');
   });

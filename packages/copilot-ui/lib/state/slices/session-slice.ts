@@ -1,11 +1,14 @@
 import { StateCreator } from 'zustand';
-import { refreshSession as coreRefreshSession } from '../../api/session-core';
+import {
+  clearPersistedSession,
+  clearPersistedSessionIf,
+  refreshSession as coreRefreshSession,
+} from '../../api/session-core';
 import { heartbeatSession } from '../../api/services/session-service';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
-import { clearPersistedSession } from '../../api/session-core';
 
 const log = createLogger('SessionSlice');
 
@@ -21,90 +24,105 @@ const HEARTBEAT_INTERVAL_MS = Number(
   import.meta.env.VITE_HEARTBEAT_INTERVAL_MS ?? 10 * 60 * 1000
 );
 
+// After a failed ensure at init (a mint refused while the credential was
+// briefly unreadable), one early retry rather than a full interval's wait.
+const EARLY_ENSURE_MS = 15_000;
+
 export interface SessionSlice {
   sessionId: string | null;
   isSessionInitialized: boolean;
   sessionError: string | null;
 
   // Actions
-  initializeSession: (shouldInitialize?: boolean) => Promise<void>;
+  initializeSession: (shouldInitialize: boolean, ownerId: string) => Promise<void>;
   refreshSession: () => Promise<string>;
   clearSession: () => Promise<void>;
 }
 
 export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> = (set, get) => {
-  let heartbeatInterval: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  let earlyEnsure: ReturnType<typeof setTimeout> | null = null;
+  // The panel's signed-in user: the only user this slice mints for, and the
+  // owner a stored session must have to be reused (faultmaven#1460).
+  let owner: string | null = null;
+
+  const stopHeartbeat = () => {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (earlyEnsure) clearTimeout(earlyEnsure);
+    heartbeatInterval = null;
+    earlyEnsure = null;
+  };
 
   return {
     sessionId: null,
     isSessionInitialized: false,
     sessionError: null,
 
-    initializeSession: async (shouldInitialize: boolean = true) => {
+    initializeSession: async (shouldInitialize: boolean, ownerId: string) => {
       if (!shouldInitialize) {
         log.debug('Session initialization skipped - waiting for first-run completion');
         return;
       }
 
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
+      // Synchronously, before any await: an overlapping init then replaces
+      // this timer instead of adding a second, and a sign-out during the
+      // ensure below finds a timer to stop.
+      stopHeartbeat();
+      owner = ownerId;
+
+      // Keep-alive heartbeat, started whatever the ensure below concludes: a
+      // mint refused at mount is retried by the tick. Pings the server so an
+      // open-but-idle panel keeps its investigation session warm. Fully
+      // non-fatal: heartbeatSession does not route through the auto-logout
+      // fetch wrapper, and any error is swallowed.
+      //
+      // The epoch this started under is what STOPS it. It used to ask
+      // TokenManager whether anyone was still signed in, which is a question
+      // about a credential this slice does not own — and it only skipped a
+      // beat, so a sign-out in another context left the timer running
+      // forever. A sign-out anywhere bumps the epoch, so comparing it both
+      // answers the question the shared UI is allowed to ask and lets the
+      // interval clear itself.
+      const startedEpoch = getEpoch();
+      const interval = setInterval(async () => {
+        try {
+          if (getEpoch() !== startedEpoch) {
+            stopHeartbeat();
+            log.debug('Session ended; heartbeat stopped');
+            return;
+          }
+          // A no-op when the stored session is this user's; mints when not, so
+          // a beat is only ever sent for a session the user owns.
+          await get().refreshSession();
+          const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
+          if (stored.sessionId) {
+            try {
+              await heartbeatSession(stored.sessionId);
+            } catch (error) {
+              // Gone (404) or not ours (403): drop it so the next tick mints.
+              const status = (error as { status?: number }).status;
+              if (status === 404 || status === 403) {
+                await clearPersistedSessionIf(stored.sessionId);
+                if (get().sessionId === stored.sessionId) set({ sessionId: null });
+              }
+              throw error;
+            }
+            log.debug('Session heartbeat sent', { sessionId: stored.sessionId });
+          }
+        } catch (error) {
+          log.warn('Session heartbeat failed (non-fatal)', error);
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+      heartbeatInterval = interval;
 
       try {
-        const result = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
-
-        if (result.sessionId) {
-          log.debug('Using existing session', { sessionId: result.sessionId });
-          set({
-            sessionId: result.sessionId,
-            isSessionInitialized: true,
-            sessionError: null
-          });
-        } else {
-          log.info('No stored session; ensuring one via the single-flighted refresh');
-          // Delegate to refreshSession, which routes through
-          // session-core.refreshSession (cross-context Web-Locks single-flight +
-          // idempotent storage re-check + persist) and updates the store.
-          // Calling createSession() directly here let two contexts — e.g. a
-          // sidepanel in each of several browser windows — herd parallel
-          // /sessions POSTs. A thrown "no session_id persisted" propagates to
-          // the catch below and becomes sessionError (init never rejects).
-          await get().refreshSession();
-        }
-
-        // Start keep-alive heartbeat. Pings the server so an open-but-idle panel
-        // keeps its investigation session warm. Fully non-fatal: heartbeatSession
-        // does not route through the auto-logout fetch wrapper, and any error is
-        // swallowed — if the session is already gone the next real request
-        // recreates it (SESSION_EXPIRED).
-        //
-        // The epoch this started under is what STOPS it. It used to ask
-        // TokenManager whether anyone was still signed in, which is a question
-        // about a credential this slice does not own — and it only skipped a
-        // beat, so a sign-out in another context left the timer running
-        // forever. A sign-out anywhere bumps the epoch, so comparing it both
-        // answers the question the shared UI is allowed to ask and lets the
-        // interval clear itself.
-        const startedEpoch = getEpoch();
-        heartbeatInterval = setInterval(async () => {
-          try {
-            if (getEpoch() !== startedEpoch) {
-              if (heartbeatInterval) clearInterval(heartbeatInterval);
-              heartbeatInterval = null;
-              log.debug('Session ended; heartbeat stopped');
-              return;
-            }
-            const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
-            if (stored.sessionId) {
-              await heartbeatSession(stored.sessionId);
-              log.debug('Session heartbeat sent', { sessionId: stored.sessionId });
-            }
-          } catch (error) {
-            log.warn('Session heartbeat failed (non-fatal)', error);
-          }
-        }, HEARTBEAT_INTERVAL_MS);
-
+        // Through refreshSession, which routes through session-core.refreshSession
+        // (cross-context Web-Locks single-flight + owner re-check + persist) and
+        // updates the store. Calling createSession() directly here let two
+        // contexts — e.g. a sidepanel in each of several browser windows — herd
+        // parallel /sessions POSTs. A thrown "no session_id persisted" propagates
+        // to the catch below and becomes sessionError (init never rejects).
+        await get().refreshSession();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         log.error('Session initialization failed', error);
@@ -113,6 +131,14 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
           isSessionInitialized: false,
           sessionError: errorMessage
         });
+        // Only while this init's timer runs and its session has not ended.
+        if (heartbeatInterval === interval && getEpoch() === startedEpoch) {
+          earlyEnsure = setTimeout(() => {
+            earlyEnsure = null;
+            if (getEpoch() !== startedEpoch) return;
+            get().refreshSession().catch(() => {});
+          }, EARLY_ENSURE_MS);
+        }
       }
     },
 
@@ -126,13 +152,17 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       try {
         log.info('Refreshing session');
 
+        // Never read back a session for nobody: a stored one may be another
+        // user's (faultmaven#1460).
+        if (!owner) throw new Error('No signed-in user to ensure a session for');
+
         // Route through session-core's refresh, which is single-flighted across
         // contexts via the Web Locks API and persists the new session_id.
         // Calling createSession() directly here bypassed that mutex, so
         // concurrent callers (this slice's refresh + the 401-retry path in
         // client.ts, or two panels) herded parallel /sessions POSTs; it also
         // duplicated the persistence logic that could drift from session-core.
-        await coreRefreshSession();
+        await coreRefreshSession(owner);
 
         const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
         const sessionId = stored.sessionId as string | undefined;
@@ -159,10 +189,8 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
     },
 
     clearSession: async () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
+      stopHeartbeat();
+      owner = null;
 
       try {
         // The single clear. A local key list here is how three call sites came

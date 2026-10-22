@@ -216,9 +216,9 @@ describe('TokenManager — refresh against a revoked token', () => {
  *
  * TokenManager discovers that a session is over — it presents the refresh token
  * and hears the backend refuse it — but it does not end one. It answers `null`
- * for "nothing usable right now" (transient: the request goes out header-less
- * and recovers) and throws SessionEndedError for "definitively dead". The host
- * acts on the latter, in ExtensionApp.accessToken().
+ * for "nothing usable right now" (transient: the request goes out header-less,
+ * keeping the credential and the session) and throws SessionEndedError for
+ * "definitively dead". The host acts on the latter, in ExtensionApp.accessToken().
  *
  * Collapsing both into `null` is what forced the teardown to live in here,
  * where it ran inside the refresh lock, inside the refresh verdict, and during
@@ -332,7 +332,8 @@ describe('TokenManager — reports a dead chain, does not act on it', () => {
     // post-ladder arm, so the preserved session was ruled `dead` by the very
     // next credential read — including the one inside the failing request's own
     // recovery path (header-less 401 → refreshSession → createSession →
-    // getAuthHeaders → here). The protection lasted exactly one call.
+    // getAuthHeaders → here, which now refuses to mint without a bearer). The
+    // protection lasted exactly one call.
     await seedSession({
       expires_at: Date.now() - 1000,
       refresh_expires_at: Date.now() - 1000,

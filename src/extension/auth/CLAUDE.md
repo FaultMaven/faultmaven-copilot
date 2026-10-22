@@ -87,13 +87,14 @@ matters — refreshability is decided before an unmeasurable expiry is ruled on:
 
 **TokenManager reports; it never ends a session.** `getValidAccessToken()`
 answers a token, or `null` meaning *nothing usable right now* (transient — a
-header-less request whose 401 routes to the recoverable path; a later call
-retries), or throws `SessionEndedError` (`session-ended-error.ts`), which extends
-the package's `AuthenticationError`. That inheritance is the contract:
-`getAuthHeaders` swallows every other throw into a header-less request and
-propagates this one, so a dead session never becomes a doomed `POST /sessions`
-plus "session expired, retrying" — the request is not sent and the caller gets
-an error whose recovery is a sign-in prompt. A host that throws anything else
+header-less request whose 401 keeps the credential and the stored session and
+mints nothing; a later call retries. The session mint itself is never sent
+header-less, faultmaven#1460), or throws `SessionEndedError`
+(`session-ended-error.ts`), which extends the package's `AuthenticationError`.
+That inheritance is the contract: `getAuthHeaders` swallows every other throw
+into a header-less request and propagates this one, so a dead session never
+becomes a "session expired, retrying" — the request is not sent and the caller
+gets an error whose recovery is a sign-in prompt. A host that throws anything else
 keeps the old behaviour (the Dashboard host is unaffected).
 
 **A request carries the user it was built for (copilot#350).** The credential
@@ -183,7 +184,7 @@ maps it so startup reads storage once.
   `logoutAuth()`, options `handleSignOut()`, `LocalAuthClient.signOut()` (all
   unconditional), and the two act-sites, judged: `readSessionAccessToken` on a
   session verdict and `endSessionOnRejectedCredential` on a hard 401 (what
-  `client.ts handleAuthError()` delegates to through the transport; also behind
+  `auth-verdict.ts handleAuthError()` delegates to through the transport; also behind
   `ExtensionApp`'s `HostSession.onUnauthorized`, unconditionally, since that
   signature carries no bearer).
   It runs inside the session-write lock with a **bounded wait**

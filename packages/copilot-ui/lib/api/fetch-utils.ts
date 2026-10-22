@@ -17,18 +17,19 @@ const log = createLogger('FetchUtils');
  * Authorization + X-Session-Id, where the host can supply them.
  *
  * A MISSING Authorization header is a meaningful state, not a failure to
- * handle: `client.ts` routes a 401 on a header-less request to the transient
- * session path rather than to a hard teardown, which is what stops a blip at
- * the token endpoint from destroying a credential the next request could have
- * used (#99). `accessToken()` throws when the host cannot produce one, so that
- * throw is caught here and turned into exactly that state.
+ * handle: `client.ts` answers a 401 on a header-less request by keeping both
+ * the credential and the stored session and minting nothing, rather than by a
+ * hard teardown, which is what stops a blip at the token endpoint from
+ * destroying a credential the next request could have used (#99).
+ * `accessToken()` throws when the host cannot produce one, so that throw is
+ * caught here and turned into exactly that state.
  *
  * ⚠️ WITH ONE EXCEPTION, and it is the whole distinction. A host that throws
  * `AuthenticationError` is not saying "not right now" — it is saying the session
  * is OVER. Swallowing that produced a header-less request whose 401 took the
- * recoverable path: a doomed `POST /sessions` and a "session expired, retrying"
- * where the honest answer is a sign-in prompt. It propagates, so the request is
- * never sent and the caller gets an error whose recovery is `show_modal`.
+ * transient path: a "session expired, retrying" where the honest answer is a
+ * sign-in prompt. It propagates, so the request is never sent and the caller
+ * gets an error whose recovery is `show_modal`.
  *
  * Likewise `SessionSwitchedError`: the host's stored session is another user's,
  * and the request — built for the previous one — must not go out at all.
@@ -52,19 +53,12 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     if (error instanceof SessionSwitchedError) throw error;
     // See the note above: header-less is the transient path, not an error to
     // surface here.
-  // ‼ LOAD-BEARING, and not only here. Contract 7.0.0 closed four session
-  // routes that admitted an anonymous caller, and deliberately left
-  // `POST /api/v1/sessions` — the mint — open, citing THIS behaviour: the
-  // client goes out header-less when the token read stumbles, and `client.ts`
-  // treats a 401 on a credential-less request as the RECOVERABLE path and
-  // re-mints. Compose the two and requiring auth on the mint is a
-  // mint -> 401 -> re-mint loop in the field. The stated order is "client
-  // tolerant first, confirmed deployed, server after" (faultmaven #1460).
-  //
-  // So making this throw, or routing the mint through `authenticatedFetch`,
-  // is not a local cleanup: it silently removes the premise blocking a
-  // server-side change, and the anonymous-mint surface on self-hosted stays
-  // open for exactly as long as this client does not move.
+    //
+    // The mint never goes out header-less: `ClientSessionManager.createSession`
+    // refuses to send without a bearer, and `client.ts` answers a header-less
+    // 401 without clearing the session or minting. That is what lets the
+    // server require auth on `POST /api/v1/sessions` (faultmaven#1460) with no
+    // mint -> 401 -> re-mint loop. Other requests still go out header-less.
     log.warn('No access token available - the request goes out unauthenticated', error);
   }
 

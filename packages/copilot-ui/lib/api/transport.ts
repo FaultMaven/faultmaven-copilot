@@ -41,11 +41,12 @@ export interface ApiTransport {
   /** The FaultMaven session id for `X-Session-Id`, or null before one exists. */
   sessionId(): Promise<string | null>;
   /**
-   * Discard the stored FaultMaven session so the next request mints a fresh one.
+   * Discard the stored FaultMaven session.
    *
-   * Clearing only — there is deliberately no setter. The session is CREATED by
-   * `session-core`, and a second writer for the same key is the shape this
-   * migration exists to retire.
+   * No longer called by the package: a stale session is cleared by
+   * `session-core`'s `clearPersistedSessionIf`, under the session lock
+   * (faultmaven#1460). Kept until it is retired from the host contract
+   * (faultmaven#2166).
    */
   clearSession(): Promise<void>;
   /**

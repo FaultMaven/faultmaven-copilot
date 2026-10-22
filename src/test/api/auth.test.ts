@@ -5,7 +5,7 @@ import { AuthState, getUserCases, createCase } from '@faultmaven/copilot-ui/lib/
 // directly, which is what the extension itself does.
 import { getCurrentUser, logoutAuth } from '../../extension/auth/auth-service';
 import { authManager } from '../../extension/auth/auth-manager';
-import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { AuthenticationError, SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 // Build-time constants only. Where the API lives is the host's answer, which
 // this file installs below.
@@ -498,31 +498,31 @@ describe('Authentication API', () => {
     });
 
     // #99: a 401 on a header-less request (no token attached — transient refresh
-    // outage that preserved the tokens) is a recoverable session condition, not
-    // a hard auth failure. It must NOT run the full teardown.
+    // outage that preserved the tokens) is a transient condition, not a hard
+    // auth failure. It must NOT run the full teardown, and it mints nothing
+    // (faultmaven#1460).
     it('does NOT tear down auth on a 401 when no credential was attached (#99)', async () => {
-      mockBrowserStorage.local.get.mockResolvedValue({}); // no stored token
+      // No stored token; a stored session.
+      mockBrowserStorage.local.get.mockResolvedValue({ sessionId: 's1' });
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         status: 401,
         ok: false,
-        json: { detail: 'Unauthorized' }
+        json: { detail: 'Authentication required. Please log in to access this resource.' }
       }));
 
-      // The recoverable classification routes into the retry wrapper's refresh,
-      // which fails here too (everything 401s) — so what surfaces is that
-      // failure, not the original SessionExpiredError.
-      await expect(getCurrentUser()).rejects.toThrow();
-      // The token-clearing teardown must not have fired.
-      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
+      // The transient answer, not the host's verdict: the retry wrapper
+      // retries once and the retry 401s the same way.
+      await expect(getCurrentUser()).rejects.toBeInstanceOf(SessionExpiredError);
+      // Nothing is cleared: neither the credential nor the session.
+      expect(mockBrowserStorage.local.remove).not.toHaveBeenCalled();
     });
 
     // getCurrentUser goes through authenticatedFetchWithRetry, not the bare
-    // authenticatedFetch. The bare helper REMOVES sessionId from storage and
-    // throws; a caller reading this for display swallows the rejection, so
-    // without the wrapper's refresh the panel would be left with no persisted
-    // session id and the next real request would have to 401 its way to one.
-    it('refreshes and retries on an expired session rather than leaving it cleared', async () => {
+    // authenticatedFetch, which throws on the first 401: a caller reading this
+    // for display would swallow the rejection. The wrapper retries once; it
+    // mints nothing (faultmaven#1460), since minting is the session slice's.
+    it('retries once on an expired session', async () => {
       mockBrowserStorage.local.get.mockResolvedValue({
         authState: { access_token: 'valid-token', token_type: 'bearer', expires_at: Date.now() + 86400000 },
         access_token: 'valid-token',
@@ -547,21 +547,10 @@ describe('Authentication API', () => {
           }
           return mockFetchResponse({ json: userResponse });
         }
-        if (String(url).includes('/sessions')) {
-          return mockFetchResponse({
-            json: { session_id: 'session-new', created_at: 'now', status: 'active', last_activity: 'now' }
-          });
-        }
         return mockFetchResponse({ json: {} });
       });
 
       await expect(getCurrentUser()).resolves.toEqual(userResponse);
-
-      // The replacement session was persisted, so the retry (and everything
-      // after it) carries X-Session-Id.
-      expect(mockBrowserStorage.local.set).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'session-new' })
-      );
       expect(meCalls).toBe(2);
     });
   });

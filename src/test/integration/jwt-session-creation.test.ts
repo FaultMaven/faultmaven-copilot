@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
 import type { AuthState } from '@faultmaven/copilot-ui/lib/api/types';
+import { SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 // Mock browser environment
 const { mockBrowser } = vi.hoisted(() => {
@@ -136,7 +137,7 @@ describe('JWT Token in Session Creation', () => {
     });
 
     // 2. Act: Create session
-    const session = await clientSessionManager.createSession();
+    const session = await clientSessionManager.createSession('3f0dfb95-3711-4974-ba85-a9373cbf749b');
 
     // 3. Assert: Verify Authorization header was sent
     expect(global.fetch).toHaveBeenCalledWith(
@@ -154,8 +155,9 @@ describe('JWT Token in Session Creation', () => {
     expect(session.user_id).toBe('3f0dfb95-3711-4974-ba85-a9373cbf749b');
   });
 
-  it('should NOT include Authorization header when user is not authenticated', async () => {
-    // 1. Setup: No auth state (anonymous user)
+  // The server would mint for nobody (faultmaven#1460): an unauthenticated
+  // mint is not sent at all.
+  it('does not send the mint when the user is not authenticated', async () => {
     mockBrowser.storage.local.get.mockImplementation((keys: string[]) => {
       if (keys.includes('faultmaven_client_id')) {
         return Promise.resolve({ faultmaven_client_id: 'client-456' });
@@ -163,42 +165,10 @@ describe('JWT Token in Session Creation', () => {
       return Promise.resolve({});
     });
 
-    // Mock anonymous session response
-    const mockSessionResponse = {
-      session_id: 'session-456',
-      user_id: 'user_bb548749', // Auto-generated anonymous user
-      status: 'active',
-      created_at: new Date().toISOString(),
-      session_type: 'troubleshooting',
-      message: 'Session created successfully'
-    };
-
-    (global.fetch as any).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockSessionResponse)
-    });
-
-    // 2. Act: Create session
-    const session = await clientSessionManager.createSession();
-
-    // 3. Assert: Verify NO Authorization header was sent
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/sessions',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json'
-        })
-      })
+    await expect(clientSessionManager.createSession('some-user')).rejects.toBeInstanceOf(
+      SessionExpiredError,
     );
-
-    // Verify Authorization header is NOT present
-    const fetchCall = (global.fetch as any).mock.calls[0];
-    const headers = fetchCall[1].headers;
-    expect(headers['Authorization']).toBeUndefined();
-
-    // 4. Verify session was created as anonymous
-    expect(session.user_id).toMatch(/^user_[a-z0-9]+$/);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('should use TokenManager tokens when available', async () => {
@@ -235,7 +205,7 @@ describe('JWT Token in Session Creation', () => {
     });
 
     // 2. Act: Create session
-    await clientSessionManager.createSession();
+    await clientSessionManager.createSession('oauth-user-123');
 
     // 3. Assert: Verify OAuth token was used
     expect(global.fetch).toHaveBeenCalledWith(
@@ -306,17 +276,16 @@ describe('JWT Token in Session Creation', () => {
     });
 
     // 2. Act: Create session
-    await clientSessionManager.createSession();
+    const attempt = clientSessionManager.createSession('auth-user-789');
 
-    // 3. Assert: the orphaned row was NOT used as a credential. The request goes
-    //    out header-less, which routes its 401 to the recoverable session path
-    //    rather than a hard teardown. REMOVING the row is `reconcileSession()`'s
-    //    job, covered in test/api/auth.test.ts — this asserts only that the
-    //    transport never treats the row as a credential.
+    // 3. Assert: the orphaned row was NOT used as a credential. With no bearer
+    //    the mint is not sent at all (faultmaven#1460). REMOVING the row is
+    //    `reconcileSession()`'s job, covered in test/api/auth.test.ts — this
+    //    asserts only that the transport never treats the row as a credential.
+    await expect(attempt).rejects.toBeInstanceOf(SessionExpiredError);
     const sessionCall = (global.fetch as any).mock.calls.find(
       ([url]: [string]) => url === 'http://localhost:8000/api/v1/sessions'
     );
-    expect(sessionCall).toBeDefined();
-    expect(sessionCall[1].headers).not.toHaveProperty('Authorization');
+    expect(sessionCall).toBeUndefined();
   });
 });

@@ -29,7 +29,7 @@ describe('session refresh → X-Session-Id bridge', () => {
   beforeEach(() => {
     for (const k of Object.keys(store)) delete store[k];
     createSessionWithRecovery.mockReset().mockResolvedValue({
-      session_id: 'sess-refreshed', client_id: 'c1', session_resumed: false, status: 'active'
+      session_id: 'sess-refreshed', user_id: 'u1', client_id: 'c1', session_resumed: false, status: 'active'
     });
     getValidAccessToken.mockReset().mockResolvedValue(null);
     getAuthState.mockReset().mockResolvedValue(null);
@@ -69,7 +69,7 @@ describe('session refresh → X-Session-Id bridge', () => {
     let headers = await getAuthHeaders();
     expect((headers as Record<string, string>)['X-Session-Id']).toBeUndefined();
 
-    await refreshSession();
+    await refreshSession('u1');
 
     // The very defect: after refresh, the header must now be present.
     headers = await getAuthHeaders();

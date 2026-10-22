@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpload';
 import * as api from '@faultmaven/copilot-ui/lib/api';
@@ -6,7 +6,13 @@ import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { pendingOpsManager, OptimisticIdGenerator } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
-import { DuplicateUploadNotice } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  DuplicateUploadNotice,
+  SessionExpiredError,
+  SessionSwitchedError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
+import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 
 const okTurnResponse = {
   agent_response: 'Analyzed.',
@@ -750,10 +756,35 @@ describe('useDataUpload — a submission that never reached a case says what was
     expect(shown.userMessage).not.toContain('may not have been');
   });
 
-  it('no session tells the user and reports sent: false', async () => {
-    useAppStore.setState({ sessionId: null });
+  // A mint refused at mount leaves no session until the next heartbeat tick:
+  // the gate ensures one before calling a signed-in user signed out (faultmaven#1460).
+  const realRefreshSession = useAppStore.getState().refreshSession;
+  afterEach(() => {
+    useAppStore.setState({ refreshSession: realRefreshSession });
+  });
+
+  it('no session ensures one, and the upload proceeds when it can', async () => {
+    const refreshSession = vi.fn(async () => {
+      useAppStore.setState({ sessionId: 'session-new' });
+      return 'session-new';
+    });
+    useAppStore.setState({ sessionId: null, refreshSession });
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    (api.submitTurn as any).mockResolvedValue(okTurnResponse);
+
     const outcome = await submit({ files: [file('app.log')], query: 'why?' });
 
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(outcome.sent).toBe(true);
+    expect(api.createCase).toHaveBeenCalled();
+  });
+
+  it('no session it cannot ensure tells the user and reports sent: false', async () => {
+    const refreshSession = vi.fn().mockRejectedValue(new AuthenticationError('Authentication required'));
+    useAppStore.setState({ sessionId: null, refreshSession });
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(outcome).toMatchObject({ success: false, sent: false });
     expect(mockShowError).toHaveBeenCalledTimes(1);
     expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)
@@ -761,6 +792,55 @@ describe('useDataUpload — a submission that never reached a case says what was
     expect((mockShowError.mock.calls[0][0] as { userAction: string }).userAction)
       .toBe('Sign in first, then send again.');
     expect(api.createCase).not.toHaveBeenCalled();
+  });
+
+  // The gate decides by the ensure's error (faultmaven#1460): only a session
+  // the host ended asks for sign-in.
+  const failEnsure = (failure: unknown) =>
+    useAppStore.setState({ sessionId: null, refreshSession: vi.fn().mockRejectedValue(failure) });
+  const shown = () => mockShowError.mock.calls[0][0] as { userMessage: string; userAction: string };
+
+  it('a credential unreadable for a moment says not sent, with no sign-in advice', async () => {
+    failEnsure(new SessionExpiredError('No credential to mint a session with'));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(shown().userMessage).toContain('app.log');
+    expect(shown().userMessage).not.toMatch(/signed out|session has expired/i);
+    expect(shown().userAction).toBe('Send again to retry.');
+  });
+
+  it('another account signed in shows that notice itself (#350)', async () => {
+    failEnsure(new SessionSwitchedError());
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(SessionSwitchedError);
+    expect(shown().userAction).not.toMatch(/send again|sign in/i);
+  });
+
+  it('a network failure keeps the classifier copy, with no sign-in advice', async () => {
+    failEnsure(new TypeError('Failed to fetch'));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(shown().userMessage).toContain('Unable to reach FaultMaven server');
+    expect(shown().userAction).toBe('Send again to retry.');
+  });
+
+  // #132: a sign-out while the ensure ran ends the submission there.
+  it('sends nothing when the session ended during the ensure', async () => {
+    const refreshSession = vi.fn(async () => {
+      bumpEpoch();
+      useAppStore.setState({ sessionId: 'session-new' });
+      return 'session-new';
+    });
+    useAppStore.setState({ sessionId: null, refreshSession });
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(api.createCase).not.toHaveBeenCalled();
+    expect(mockShowError).not.toHaveBeenCalled();
   });
 
   it('a text-only submission that cannot create a case still says it was not sent', async () => {

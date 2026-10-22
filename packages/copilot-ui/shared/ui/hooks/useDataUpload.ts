@@ -32,7 +32,9 @@ import {
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
 import {
+  AuthenticationError,
   DuplicateUploadNotice,
+  SessionExpiredError,
   PASTED_TEXT_LABEL,
   PAGE_CAPTURE_LABEL,
   IdempotencyKeyReuseError,
@@ -91,6 +93,7 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
   const conversations = useAppStore((state) => state.conversations);
 
   // Selected store actions
+  const refreshSession = useAppStore((state) => state.refreshSession);
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
   const setConversations = useAppStore((state) => state.setConversations);
 
@@ -332,19 +335,45 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     try {
       setLoading(true);
 
-      if (!sessionId) {
-        showError(notSentError(unsent, 'You are signed out.', undefined, { signIn: true }));
+      // Capture the session epoch before any network round-trip. A logout while
+      // the session ensure, case creation or the turn is in flight must not let
+      // the continuations below re-write state into the just-purged
+      // store/storage (issue #132).
+      const epoch = getEpoch();
+
+      // No session yet (a mint refused at mount waits for the heartbeat): ensure
+      // one now. Only a failure the host ended asks the user to sign in
+      // (faultmaven#1460).
+      let ensureError: unknown;
+      const haveSession = !!sessionId || (await refreshSession().then(
+        () => true,
+        (error: unknown) => { ensureError = error; return false; },
+      ));
+      if (epoch !== getEpoch()) {
+        log.info('Session changed while ensuring a session — not sending');
+        return { success: false, message: '', sent: false };
+      }
+      if (!haveSession) {
+        const generic = 'Something went wrong before it could be sent.';
+        const classified = ErrorClassifier.classify(ensureError);
+        if (classified.category === 'notice') {
+          // A NOTICE is shown whole (#350): another account signed in, and
+          // nothing was sent or ended.
+          showError(classified);
+        } else if (ensureError instanceof AuthenticationError) {
+          showError(notSentError(unsent, 'You are signed out.', ensureError, { signIn: true }));
+        } else if (ensureError instanceof SessionExpiredError) {
+          // The credential was unreadable for a moment: no sign-in advice.
+          showError(notSentError(unsent, generic));
+        } else {
+          showError(notSentError(unsent, generic, ensureError));
+        }
         return {
           success: false,
           message: "Please log in first",
           sent: false,
         };
       }
-
-      // Capture the session epoch before any network round-trip. A logout while
-      // case creation or the turn is in flight must not let the continuations
-      // below re-write state into the just-purged store/storage (issue #132).
-      const epoch = getEpoch();
 
       // Step 1: Ensure case exists
       let targetCaseId = activeCaseId;

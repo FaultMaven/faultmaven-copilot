@@ -70,10 +70,10 @@ describe('readSessionAccessToken', () => {
   });
 
   it('does NOT tear down when there is simply no token right now', async () => {
-    // The transient answer. The request goes out header-less and its 401 takes
-    // the recoverable session path (#99); tearing down here would turn every
-    // renewal blip into a logout, which is the regression the whole
-    // transient/definitive split exists to prevent.
+    // The transient answer. The request goes out header-less and its 401 keeps
+    // the credential and the session (#99, faultmaven#1460); tearing down here
+    // would turn every renewal blip into a logout, which is the regression the
+    // whole transient/definitive split exists to prevent.
     mockGetValidAccessToken.mockResolvedValue(null);
 
     await expect(readSessionAccessToken('user-a')).rejects.toThrow();
