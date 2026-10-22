@@ -451,14 +451,15 @@ jobs:
   # any finding, at any severity — and on 2026-09-04 it was reporting five
   # high advisories while concluding success.
   #
-  # It now fails closed on high/critical, matching faultmaven-dashboard's
-  # `Dependency Audit` job. The job name is unchanged so anything that names
+  # It now fails closed on moderate, high and critical advisories (moderate
+  # since faultmaven#2156). The job name is unchanged so anything that names
   # this check keeps naming it.
   #
   # Escape hatch for a true positive with no upstream patch: add the GHSA id
-  # to `pnpm.auditConfig.ignoreGhsas` in package.json, alongside a comment
-  # saying why. Measured on pnpm 9.15.9 against the lockfile this commit
-  # replaces: ignoring the five high ids takes the exit code to 0 and prints
+  # to `pnpm.auditConfig.ignoreGhsas` in package.json, and give the reason in
+  # the PR that adds it (package.json takes no comments). Measured at
+  # `--audit-level high` on pnpm 9.15.9 against the lockfile #247 replaced:
+  # ignoring the five high ids took the exit code to 0 and printed
   # `5 high (5 ignored)`, so the finding stays visible in the log. An ignore
   # names one advisory; it never widens the threshold.
   # ============================================================================
@@ -490,26 +491,28 @@ jobs:
       # happened to produce. `pnpm install --frozen-lockfile` is still
       # exercised by lint, test and build.
       #
-      # Verified to bite when introduced: against the lockfile this commit
-      # replaces, this exact command exits 1 (5 high); against the lockfile
-      # here it exits 0.
-      - name: Audit lockfile (high/critical, fail closed)
-        run: pnpm audit --audit-level high
+      # Verified to bite when introduced at `--audit-level high` (#247): against
+      # the lockfile #247 replaced it exited 1 (5 high); against its own
+      # lockfile it exited 0.
+      # Moderate since faultmaven#2156: against 6665bad's lockfile (@vitest/mocker
+      # 4.1.11, two moderates) this command exits 1; `--audit-level high` exited 0.
+      - name: Audit lockfile (moderate and above, fail closed)
+        run: pnpm audit --audit-level moderate
 
       - name: Security summary
         if: success()
         run: |
           echo "### 🔒 Dependency Audit Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "No high or critical advisories against \`pnpm-lock.yaml\`." >> $GITHUB_STEP_SUMMARY
+          echo "No moderate, high or critical advisories against \`pnpm-lock.yaml\` outside \`pnpm.auditConfig.ignoreGhsas\`." >> $GITHUB_STEP_SUMMARY
 
       - name: Security failure
         if: failure()
         run: |
           echo "### ❌ Dependency Audit Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "\`pnpm audit --audit-level high\` reported high or critical advisories." >> $GITHUB_STEP_SUMMARY
-          echo "Resolve each one with a targeted \`pnpm.overrides\` entry or a direct bump." >> $GITHUB_STEP_SUMMARY
+          echo "Either \`pnpm audit --audit-level moderate\` found a moderate, high or critical advisory outside \`pnpm.auditConfig.ignoreGhsas\`, or a step could not run (an unreachable registry included). The step log says which." >> $GITHUB_STEP_SUMMARY
+          echo "Resolve each advisory with a targeted \`pnpm.overrides\` entry or a direct bump; one with no fixed version goes in \`pnpm.auditConfig.ignoreGhsas\`, with the reason in the PR that adds it." >> $GITHUB_STEP_SUMMARY
 
   # ============================================================================
   # Pipeline Summary
