@@ -25,7 +25,8 @@ pnpm playground               # the shared UI against a stub web host, :5174
 
 Pre-commit (husky) runs `node scripts/brand-lint.mjs && npm run compile && npm run test`.
 CI (`.github/workflows/ci.yml`) runs `compile`, `api-types-drift`, `test:coverage`,
-and `build` (both zips, manifest version == `package.json`, `extension:digest`).
+`pnpm audit --audit-level moderate` (Security Scan), and `build` (both zips,
+manifest version == `package.json`, `extension:digest`).
 
 ## Layout
 

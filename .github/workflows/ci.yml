@@ -451,8 +451,8 @@ jobs:
   # any finding, at any severity — and on 2026-09-04 it was reporting five
   # high advisories while concluding success.
   #
-  # It now fails closed on high/critical, matching faultmaven-dashboard's
-  # `Dependency Audit` job. The job name is unchanged so anything that names
+  # It now fails closed on moderate, high and critical advisories (moderate
+  # since faultmaven#2156). The job name is unchanged so anything that names
   # this check keeps naming it.
   #
   # Escape hatch for a true positive with no upstream patch: add the GHSA id
@@ -490,9 +490,9 @@ jobs:
       # happened to produce. `pnpm install --frozen-lockfile` is still
       # exercised by lint, test and build.
       #
-      # Verified to bite when introduced: against the lockfile this commit
-      # replaces, this exact command exits 1 (5 high); against the lockfile
-      # here it exits 0.
+      # Verified to bite when introduced at `--audit-level high`: against the
+      # lockfile that commit replaced it exited 1 (5 high); against its own
+      # lockfile it exited 0.
       # Moderate since faultmaven#2156: against 6665bad's lockfile (@vitest/mocker
       # 4.1.11, two moderates) this command exits 1; `--audit-level high` exited 0.
       - name: Audit lockfile (moderate and above, fail closed)
@@ -503,15 +503,15 @@ jobs:
         run: |
           echo "### 🔒 Dependency Audit Passed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "No moderate, high or critical advisories against \`pnpm-lock.yaml\`." >> $GITHUB_STEP_SUMMARY
+          echo "No moderate, high or critical advisories against \`pnpm-lock.yaml\` outside \`pnpm.auditConfig.ignoreGhsas\`." >> $GITHUB_STEP_SUMMARY
 
       - name: Security failure
         if: failure()
         run: |
           echo "### ❌ Dependency Audit Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "\`pnpm audit --audit-level moderate\` reported moderate, high or critical advisories." >> $GITHUB_STEP_SUMMARY
-          echo "Resolve each one with a targeted \`pnpm.overrides\` entry or a direct bump." >> $GITHUB_STEP_SUMMARY
+          echo "Either \`pnpm audit --audit-level moderate\` found a moderate, high or critical advisory outside \`pnpm.auditConfig.ignoreGhsas\`, or a step could not run (an unreachable registry included). The step log says which." >> $GITHUB_STEP_SUMMARY
+          echo "Resolve each advisory with a targeted \`pnpm.overrides\` entry or a direct bump; one with no fixed version goes in \`pnpm.auditConfig.ignoreGhsas\` with a comment saying why." >> $GITHUB_STEP_SUMMARY
 
   # ============================================================================
   # Pipeline Summary
