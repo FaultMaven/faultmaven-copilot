@@ -5,6 +5,8 @@ import { createLogger } from '../utils/logger';
 import { getAuthHeaders } from '../api/fetch-utils';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { errorBodyText } from '../errors/error-body';
+import { AuthenticationError, SessionExpiredError } from '../errors/types';
+import { handleAuthError } from '../api/auth-verdict';
 
 const log = createLogger('ClientSessionManager');
 
@@ -96,8 +98,18 @@ export class ClientSessionManager {
   /**
    * Create a new session or resume existing session based on client_id
    * Implements timeout + resume strategy for crash recovery
+   *
+   * Only ever for `expectedOwner`, and only with a bearer (faultmaven#1460):
+   * with none it throws before sending, since the server would mint for
+   * nobody. A 401, or a session minted for someone else (the server resolved
+   * our bearer to nobody: revoked or invalid), is a rejected credential and
+   * gets the host's verdict, as on every other route.
    */
-  async createSession(userContext?: any, timeoutMinutes?: number): Promise<SessionCreateResponse> {
+  async createSession(
+    expectedOwner: string,
+    userContext?: any,
+    timeoutMinutes?: number,
+  ): Promise<SessionCreateResponse> {
     const clientId = await this.getOrCreateClientId();
     const apiUrl = await getApiTransport().baseUrl();
 
@@ -117,22 +129,52 @@ export class ClientSessionManager {
 
     log.info('Creating session with client_id:', clientId.slice(0, 8) + '...');
 
-    // Include auth headers so backend can associate session with authenticated user
-    const authHeaders = await getAuthHeaders();
+    const send = async () => {
+      // Read per send: after a 'refreshed' verdict this is the renewed bearer.
+      const authHeaders = (await getAuthHeaders()) as Record<string, string>;
+      const bearer = (authHeaders['Authorization'] ?? '').replace(/^Bearer\s+/i, '');
+      if (!bearer) throw new SessionExpiredError('No credential to mint a session with');
+      const response = await fetchWithTimeout(`${apiUrl}/api/v1/sessions`, {
+        method: 'POST',
+        headers: { ...authHeaders },
+        body: JSON.stringify(requestBody),
+      });
+      return { response, bearer };
+    };
 
-    // Debug: log presence only — never any part of the Authorization value
-    log.info('Session creation auth headers:', {
-      hasAuthorization: 'Authorization' in authHeaders
-    });
+    let { response, bearer } = await send();
+    let session = await this.ownedSession(response, expectedOwner);
+    if (!session) {
+      // Throws on 'ended', after its epoch bump.
+      await handleAuthError(bearer);
+      ({ response, bearer } = await send());
+      session = await this.ownedSession(response, expectedOwner);
+      // Rejected again with the bearer the host just renewed: a real
+      // rejection, with no second verdict and no bump (as client.ts's
+      // `authenticatedFetchAfterRefresh`).
+      if (!session) throw new AuthenticationError('Authentication required');
+    }
 
-    const response = await fetchWithTimeout(`${apiUrl}/api/v1/sessions`, {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    // Log session creation/resumption
+    if (session.session_resumed) {
+      log.info('Session resumed:', session.session_id);
+    } else {
+      log.info('New session created:', session.session_id);
+    }
 
+    return session;
+  }
+
+  /**
+   * The minted session if it is `expectedOwner`'s; `null` when the credential
+   * was rejected (a 401, or a session minted for someone else). Any other
+   * failure throws.
+   */
+  private async ownedSession(
+    response: Response,
+    expectedOwner: string,
+  ): Promise<SessionCreateResponse | null> {
+    if (response.status === 401) return null;
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       // `detail` is FastAPI's key; `message` is the one the protection
@@ -157,14 +199,10 @@ export class ClientSessionManager {
     }
 
     const sessionResponse: SessionCreateResponse = await response.json();
-
-    // Log session creation/resumption
-    if (sessionResponse.session_resumed) {
-      log.info('Session resumed:', sessionResponse.session_id);
-    } else {
-      log.info('New session created:', sessionResponse.session_id);
+    if (sessionResponse.user_id !== expectedOwner) {
+      log.warn('Session minted for another user; treating the credential as rejected');
+      return null;
     }
-
     return sessionResponse;
   }
 
@@ -195,9 +233,13 @@ export class ClientSessionManager {
    * Handle session creation with automatic error recovery
    * Implements timeout + resume strategy for crash recovery
    */
-  async createSessionWithRecovery(userContext?: any, timeoutMinutes?: number): Promise<SessionCreateResponse> {
+  async createSessionWithRecovery(
+    expectedOwner: string,
+    userContext?: any,
+    timeoutMinutes?: number,
+  ): Promise<SessionCreateResponse> {
     try {
-      const response = await this.createSession(userContext, timeoutMinutes);
+      const response = await this.createSession(expectedOwner, userContext, timeoutMinutes);
 
       // Log session creation/resumption with timeout info
       const timeoutUsed = this.validateSessionTimeout(timeoutMinutes || ClientSessionManager.DEFAULT_SESSION_TIMEOUT);
@@ -213,7 +255,7 @@ export class ClientSessionManager {
       if (this.isSessionExpiredError(error)) {
         log.warn('Session expired/invalid after browser crash - creating fresh session');
         await this.clearClientId();
-        return await this.createSession(userContext, timeoutMinutes);
+        return await this.createSession(expectedOwner, userContext, timeoutMinutes);
       }
       // Re-throw other errors
       throw error;

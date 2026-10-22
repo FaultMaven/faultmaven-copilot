@@ -150,11 +150,12 @@ export class TokenManager {
             refreshToken: tokens.refresh_token as string,
             userId: userIdOf(tokens),
             // NOT spendable as a fallback. We cannot say how old this token is,
-            // so if the refresh fails, going header-less is right: presenting an
-            // unvouchable bearer whose 401 CARRIES a credential routes to the
-            // hard teardown — destroying the refresh token that would have
-            // renewed the session once the outage ended. `usable` below is the
-            // different case: there, header-less is not an option.
+            // so if the refresh fails, going header-less is right: its 401
+            // keeps the credential and the stored session and mints nothing,
+            // while an unvouchable bearer whose 401 CARRIES a credential routes
+            // to the hard teardown — destroying the refresh token that would
+            // have renewed the session once the outage ended. `usable` below is
+            // the different case: there, header-less is not an option.
             spendableToken: null,
           }
         : { kind: 'usable', accessToken: tokens.access_token, userId: userIdOf(tokens) };
@@ -166,7 +167,7 @@ export class TokenManager {
 
     // Below the margin a token is worth no more than none: the request would go
     // out carrying a bearer, and a 401 that carries one is a hard teardown
-    // rather than the recoverable path.
+    // rather than the transient path that keeps the credential and the session.
     const spendableToken =
       expiry - now > TokenManager.USABLE_TOKEN_MARGIN_MS ? tokens.access_token : null;
 
@@ -212,8 +213,8 @@ export class TokenManager {
    * THREE outcomes, and the distinction between the last two is the point:
    *   - a token           — spend it
    *   - `null`            — nothing usable RIGHT NOW. Transient: the request
-   *                         goes out header-less, its 401 routes to the
-   *                         recoverable session path, a later call retries (#99)
+   *                         goes out header-less, its 401 keeps the credential
+   *                         and the session, a later call retries (#99)
    *   - SessionEndedError — the chain is definitively dead. The HOST tears down
    *                         (ExtensionApp.accessToken); this class only reports
    *

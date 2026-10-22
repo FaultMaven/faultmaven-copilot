@@ -93,6 +93,7 @@ const mockFetchResponse = (response: any = {}) => {
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { setHostEndpoints } from '@faultmaven/copilot-ui/lib/host-endpoints';
+import { setSessionOwner } from '@faultmaven/copilot-ui/lib/api/session-core';
 
 const API = 'https://api.faultmaven.ai';
 
@@ -498,23 +499,23 @@ describe('Authentication API', () => {
     });
 
     // #99: a 401 on a header-less request (no token attached — transient refresh
-    // outage that preserved the tokens) is a recoverable session condition, not
-    // a hard auth failure. It must NOT run the full teardown.
+    // outage that preserved the tokens) is a transient condition, not a hard
+    // auth failure. It must NOT run the full teardown, and it mints nothing
+    // (faultmaven#1460).
     it('does NOT tear down auth on a 401 when no credential was attached (#99)', async () => {
       mockBrowserStorage.local.get.mockResolvedValue({}); // no stored token
 
       global.fetch = vi.fn().mockResolvedValue(mockFetchResponse({
         status: 401,
         ok: false,
-        json: { detail: 'Unauthorized' }
+        json: { detail: 'Authentication required. Please log in to access this resource.' }
       }));
 
-      // The recoverable classification routes into the retry wrapper's refresh,
-      // which fails here too (everything 401s) — so what surfaces is that
-      // failure, not the original SessionExpiredError.
+      // The retry wrapper retries once and the retry 401s the same way.
       await expect(getCurrentUser()).rejects.toThrow();
       // The token-clearing teardown must not have fired.
       expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
+      expect(global.fetch).not.toHaveBeenCalledWith(`${API}/api/v1/sessions`, expect.anything());
     });
 
     // getCurrentUser goes through authenticatedFetchWithRetry, not the bare
@@ -549,11 +550,15 @@ describe('Authentication API', () => {
         }
         if (String(url).includes('/sessions')) {
           return mockFetchResponse({
-            json: { session_id: 'session-new', created_at: 'now', status: 'active', last_activity: 'now' }
+            json: {
+              session_id: 'session-new', user_id: 'user_123', created_at: 'now', status: 'active', last_activity: 'now'
+            }
           });
         }
         return mockFetchResponse({ json: {} });
       });
+      // The panel's user: a session is minted only for a registered owner.
+      setSessionOwner('user_123');
 
       await expect(getCurrentUser()).resolves.toEqual(userResponse);
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpload';
 import * as api from '@faultmaven/copilot-ui/lib/api';
@@ -750,10 +750,35 @@ describe('useDataUpload — a submission that never reached a case says what was
     expect(shown.userMessage).not.toContain('may not have been');
   });
 
-  it('no session tells the user and reports sent: false', async () => {
-    useAppStore.setState({ sessionId: null });
+  // A mint refused at mount leaves no session until the next heartbeat tick:
+  // the gate ensures one before calling a signed-in user signed out (faultmaven#1460).
+  const realRefreshSession = useAppStore.getState().refreshSession;
+  afterEach(() => {
+    useAppStore.setState({ refreshSession: realRefreshSession });
+  });
+
+  it('no session ensures one, and the upload proceeds when it can', async () => {
+    const refreshSession = vi.fn(async () => {
+      useAppStore.setState({ sessionId: 'session-new' });
+      return 'session-new';
+    });
+    useAppStore.setState({ sessionId: null, refreshSession });
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    (api.submitTurn as any).mockResolvedValue(okTurnResponse);
+
     const outcome = await submit({ files: [file('app.log')], query: 'why?' });
 
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(outcome.sent).toBe(true);
+    expect(api.createCase).toHaveBeenCalled();
+  });
+
+  it('no session it cannot ensure tells the user and reports sent: false', async () => {
+    const refreshSession = vi.fn().mockRejectedValue(new Error('No credential to mint a session with'));
+    useAppStore.setState({ sessionId: null, refreshSession });
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(outcome).toMatchObject({ success: false, sent: false });
     expect(mockShowError).toHaveBeenCalledTimes(1);
     expect((mockShowError.mock.calls[0][0] as { userMessage: string }).userMessage)

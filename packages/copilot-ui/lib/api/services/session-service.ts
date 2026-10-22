@@ -12,7 +12,9 @@ export async function heartbeatSession(sessionId: string): Promise<void> {
   // treats a 401 as a hard auth failure, so a missed heartbeat during a
   // token/session hiccup would bounce the user to the login screen. Here we
   // attach auth headers directly and surface any failure to the caller, which
-  // swallows it.
+  // swallows it — after dropping a session answered 404 (gone) or 403 (not
+  // this user's), so the next tick mints one that is. The caller beats only a
+  // session it has checked is the signed-in user's (faultmaven#1460).
   //
   // ⚠️ It is no longer true that this cannot mutate auth state. `getAuthHeaders`
   // asks the HOST for a bearer, and a host may answer that the session is over —

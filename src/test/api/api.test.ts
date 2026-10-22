@@ -82,11 +82,17 @@ describe('API Functions', () => {
   });
 
   describe('createSession', () => {
+    // Signed in: the mint is never sent without a bearer (faultmaven#1460).
+    beforeEach(() => {
+      mockBrowserStorage.local.get.mockResolvedValue({ authState: { access_token: 'tok' } });
+    });
+
     it('creates a session successfully', async () => {
       const mockResponse = {
         session_id: 'test-session-123',
         created_at: '2024-01-01T00:00:00Z',
-        status: 'active'
+        status: 'active',
+        user_id: 'u1'
       };
 
       global.fetch = vi.fn().mockResolvedValue({
@@ -94,7 +100,7 @@ describe('API Functions', () => {
         json: () => Promise.resolve(mockResponse)
       });
 
-      const result = await createSession();
+      const result = await createSession('u1');
 
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/sessions',
@@ -102,6 +108,7 @@ describe('API Functions', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: 'Bearer tok',
           },
           body: expect.stringContaining('client_id')
         })
@@ -113,7 +120,8 @@ describe('API Functions', () => {
       const mockResponse = {
         session_id: 'test-session-123',
         created_at: '2024-01-01T00:00:00Z',
-        status: 'active'
+        status: 'active',
+        user_id: 'u1'
       };
 
       const metadata = { user_id: 'user-123', environment: 'production' };
@@ -123,7 +131,7 @@ describe('API Functions', () => {
         json: () => Promise.resolve(mockResponse)
       });
 
-      await createSession(metadata);
+      await createSession('u1', metadata);
 
       expect(fetch).toHaveBeenCalledWith(
         'https://api.faultmaven.ai/api/v1/sessions',
@@ -131,6 +139,7 @@ describe('API Functions', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: 'Bearer tok',
           },
           body: expect.stringContaining('metadata')
         })
@@ -144,7 +153,7 @@ describe('API Functions', () => {
         json: () => Promise.resolve({ detail: 'Internal server error' })
       });
 
-      await expect(createSession()).rejects.toThrow('Internal server error');
+      await expect(createSession('u1')).rejects.toThrow('Internal server error');
     });
   });
 

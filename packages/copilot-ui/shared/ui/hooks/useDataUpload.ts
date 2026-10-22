@@ -91,6 +91,7 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
   const conversations = useAppStore((state) => state.conversations);
 
   // Selected store actions
+  const refreshSession = useAppStore((state) => state.refreshSession);
   const setActiveCaseId = useAppStore((state) => state.setActiveCaseId);
   const setConversations = useAppStore((state) => state.setConversations);
 
@@ -332,7 +333,10 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     try {
       setLoading(true);
 
-      if (!sessionId) {
+      // No session yet (a mint refused at mount waits for the next heartbeat
+      // tick): ensure one now, before telling a signed-in user they are not.
+      const haveSession = !!sessionId || (await refreshSession().then(() => true, () => false));
+      if (!haveSession) {
         showError(notSentError(unsent, 'You are signed out.', undefined, { signIn: true }));
         return {
           success: false,

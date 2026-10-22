@@ -136,15 +136,17 @@ describe('authenticatedFetch — error branding', () => {
   // Regression: issue #99 — a 401 on a request that carried NO Authorization
   // header (getAuthHeaders returned none during a transient refresh outage that
   // deliberately preserved the tokens) must NOT trigger the hard-auth teardown
-  // that destroys the still-valid refresh_token. It is treated as a recoverable
-  // session-expired condition instead, so the credential survives to recover.
-  it('does NOT tear down auth on a 401 when no Authorization header was sent (#99)', async () => {
-    (getAuthHeaders as any).mockResolvedValue({}); // no credential attached
+  // that destroys the still-valid refresh_token. Nor does it clear the session:
+  // that sent the retry to mint one with no credential (faultmaven#1460).
+  it('keeps the credential and the session on a 401 when no Authorization header was sent (#99)', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' }); // no credential attached
+    storedSessionId.mockResolvedValue('S1');
     fetchWithTimeout.mockResolvedValue({
       ok: false,
       status: 401,
       headers: { get: () => null },
-      json: async () => ({ detail: 'Unauthorized' })
+      // The server's body for a request with no credential.
+      json: async () => ({ detail: 'Authentication required. Please log in to access this resource.' })
     } as any);
 
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
@@ -152,6 +154,7 @@ describe('authenticatedFetch — error branding', () => {
     );
     // The refresh_token-destroying teardown must NOT have run.
     expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(clearSession).not.toHaveBeenCalled();
   });
 });
 

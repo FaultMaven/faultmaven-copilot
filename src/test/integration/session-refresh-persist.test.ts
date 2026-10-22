@@ -19,7 +19,7 @@ vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { refreshSession, setSessionOwner } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { getAuthHeaders } from '@faultmaven/copilot-ui/lib/api/fetch-utils';
 
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
@@ -29,8 +29,9 @@ describe('session refresh → X-Session-Id bridge', () => {
   beforeEach(() => {
     for (const k of Object.keys(store)) delete store[k];
     createSessionWithRecovery.mockReset().mockResolvedValue({
-      session_id: 'sess-refreshed', client_id: 'c1', session_resumed: false, status: 'active'
+      session_id: 'sess-refreshed', user_id: 'u1', client_id: 'c1', session_resumed: false, status: 'active'
     });
+    setSessionOwner('u1');
     getValidAccessToken.mockReset().mockResolvedValue(null);
     getAuthState.mockReset().mockResolvedValue(null);
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;

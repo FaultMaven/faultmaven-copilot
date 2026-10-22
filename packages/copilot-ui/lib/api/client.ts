@@ -2,7 +2,7 @@ import { AuthenticationError, SessionExpiredError, UserFacingError } from '../er
 import { getAuthHeaders } from './fetch-utils';
 import { getApiTransport } from './transport';
 import { refreshSession } from './session-core';
-import { bumpEpoch } from '../state/session-epoch';
+import { handleAuthError } from './auth-verdict';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { errorBodyText } from '../errors/error-body';
@@ -46,50 +46,6 @@ export function prepareBody(body: unknown): string | undefined {
 }
 
 /**
- * Handles authentication errors and triggers re-authentication
- */
-async function handleAuthError(rejectedBearer: string): Promise<'refreshed' | 'ended'> {
-  // The epoch moves only when the session ENDS — below, on 'ended', never
-  // before the host has answered. A 401 is not yet a verdict: the host may
-  // hold a newer credential for the same session ('refreshed'), and bumping
-  // here then discarded that session's own in-flight writes — an optimistic
-  // case never reconciled, a turn's result dropped — for a session that
-  // carried on (copilot#346 review).
-  //
-  // What the early bump used to fence — writers landing while the host tears
-  // down — belongs to the user being signed out, and the purge that follows
-  // removes it: on 'ended' the session's `authState` goes, the panel hears
-  // it through `subscribeAuthState`, and `signOutLocally` fences (bumps the
-  // epoch, fences the case slot) and purges memory and storage after them.
-
-  // A hard 401 means the credential itself is no longer valid. This module used
-  // to clear the token keys here. It does not any more, and the change is the
-  // point: it holds no refresh token and cannot mint one, so tearing down a
-  // credential it does not own was it acting on someone else's behalf with none
-  // of the context — no knowledge of an in-flight rotation, no access to the
-  // lock serialising one. It reports, and the host decides.
-  const outcome = await getApiTransport().onUnauthorized(rejectedBearer);
-
-  // The host renewed the credential and kept the session. Say so, and let the
-  // caller retry: throwing here regardless is what put a blocking "session
-  // expired" modal in front of a user whose session had just been renewed.
-  if (outcome === 'refreshed') {
-    log.info('Host refreshed the credential after a 401; retrying once');
-    return 'refreshed';
-  }
-
-  // Ended. Fence THIS context's in-flight writers now, before the purge
-  // notification arrives: their continuations must not land for a session the
-  // host has just ended. `signOutLocally` bumps again when it runs; a second
-  // bump is harmless.
-  bumpEpoch();
-
-  // Trigger re-authentication flow
-  // This will be handled by the UI components
-  throw new AuthenticationError('Authentication required - please sign in again');
-}
-
-/**
  * Handle session expiration by clearing the stale session and triggering refresh.
  *
  * `sentSessionId` is the session id the failing request actually carried (its
@@ -128,9 +84,10 @@ async function handleSessionExpired(sentSessionId?: string): Promise<void> {
  * Session Expiration Handling (Option C):
  * 1. If backend returns 401 with SESSION_EXPIRED error code
  * 2. Clear stale session_id from storage
- * 3. refreshSession() gets a fresh session (uses client_id for resumption),
- *    single-flighted across concurrent requests/contexts, and PERSISTS the new
- *    session_id to storage
+ * 3. refreshSession() ensures a session owned by the panel's user (minting,
+ *    with client_id for resumption, only when the stored one is missing or not
+ *    theirs), single-flighted across concurrent requests/contexts, and PERSISTS
+ *    the new session_id to storage
  * 4. Retry the request once — getAuthHeaders now reads the persisted session_id
  *    and attaches X-Session-Id
  */
@@ -252,20 +209,22 @@ export async function authenticatedFetch(
     if (response.status === 401) {
       const errorData = await response.json().catch(() => ({ detail: 'Unauthorized' }));
 
-      // Treat as a recoverable session condition when EITHER the backend flags
-      // session expiry OR we sent no credential at all. Routing the header-less
-      // case here (instead of through handleAuthError) preserves the still-valid
-      // the stored credential: a transient renewal blip must not force a full logout by
-      // destroying the credential the next request could have renewed (#99).
-      if (!sentAuthHeader ||
-          errorData.code === 'SESSION_EXPIRED' ||
+      // The backend flags session expiry: clear the session and re-mint.
+      if (errorData.code === 'SESSION_EXPIRED' ||
           errorData.detail?.toLowerCase().includes('session expired') ||
           errorData.detail?.toLowerCase().includes('session not found')) {
-        if (!sentAuthHeader) {
-          log.warn('401 on a request with no Authorization header — treating as transient (token preserved), not a hard auth failure');
-        }
         await handleSessionExpired(sentSessionId);
         throw new SessionExpiredError('Session expired'); // Fallback in case handleSessionExpired doesn't throw
+      }
+
+      // We sent no credential, so the 401 is about that, not about the token
+      // or the session. Both stay: a renewal blip must not destroy the
+      // credential the next request could have used (#99), and clearing the
+      // session would only send the retry to mint one with no credential
+      // (faultmaven#1460). The retry wrapper retries once, minting nothing.
+      if (!sentAuthHeader) {
+        log.warn('401 on a request with no Authorization header — treating as transient (token and session preserved), not a hard auth failure');
+        throw new SessionExpiredError('No credential was sent');
       }
 
       // A 401 on a request that DID carry a credential. Whether that ends the

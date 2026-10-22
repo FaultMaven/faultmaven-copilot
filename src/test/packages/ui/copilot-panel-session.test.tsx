@@ -71,6 +71,22 @@ describe('CopilotPanel requires a session', () => {
     // And no sign-in anywhere in it.
     expect(container.textContent ?? '').not.toMatch(/sign in|log in|password/i);
   });
+
+  // The FaultMaven session is minted and reused for this user only
+  // (faultmaven#1460): not the store's `currentUser`, which the Dashboard never sets.
+  it("initialises the FaultMaven session for the host session's user", () => {
+    const realInitializeSession = useAppStore.getState().initializeSession;
+    const initializeSession = vi.fn().mockResolvedValue(undefined);
+    useAppStore.setState({ initializeSession });
+    try {
+      const { host } = createStubHost();
+      render(<CopilotPanel host={host} />, { wrapper: withQueryClient() });
+
+      expect(initializeSession).toHaveBeenCalledWith(true, host.session.user.id);
+    } finally {
+      useAppStore.setState({ initializeSession: realInitializeSession });
+    }
+  });
 });
 
 /**

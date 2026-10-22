@@ -9,9 +9,12 @@ const log = createLogger('SessionCore');
  * Create a new session with client-based resumption support
  * Uses ClientSessionManager for automatic session resumption across browser restarts
  */
-export async function createSession(metadata?: Record<string, any>): Promise<Session> {
+export async function createSession(
+  expectedOwner: string,
+  metadata?: Record<string, any>,
+): Promise<Session> {
   // Use ClientSessionManager for client-based session management
-  const sessionResponse = await clientSessionManager.createSessionWithRecovery(metadata);
+  const sessionResponse = await clientSessionManager.createSessionWithRecovery(expectedOwner, metadata);
 
   // Return session in the expected format
   return {
@@ -39,12 +42,15 @@ export async function createSession(metadata?: Record<string, any>): Promise<Ses
  * `/sessions` POST presents it to resume rather than start cold, so clearing a
  * stale session must not take it.
  */
-const SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed'] as const;
+const SESSION_KEYS = ['sessionId', 'sessionUserId', 'sessionCreatedAt', 'sessionResumed'] as const;
 const CLIENT_KEY = 'clientId';
 
 async function persistSession(session: Session): Promise<void> {
   await ownedStorage.set({
     sessionId: session.session_id,
+    // Whose session it is: one minted for nobody, or for another user, is
+    // never reused or heartbeated (faultmaven#1460).
+    sessionUserId: session.user_id,
     sessionCreatedAt: Date.now(),
     sessionResumed: session.session_resumed || false,
     [CLIENT_KEY]: session.client_id
@@ -82,26 +88,55 @@ export async function clearPersistedSession(
 // unavailable, e.g. in unit tests). See refreshSession().
 let refreshPromise: Promise<void> | null = null;
 
+// The panel's signed-in user, registered by the session slice: the only user
+// this context mints for, and the owner a stored session must have to be reused.
+let sessionOwner: string | null = null;
+
+export function setSessionOwner(userId: string | null): void {
+  sessionOwner = userId;
+}
+
 async function refreshSessionOnce(metadata?: Record<string, any>): Promise<void> {
+  const owner = sessionOwner;
+  if (!owner) {
+    log.debug('No session owner registered; not minting');
+    return;
+  }
+
   // Re-check: a concurrent request (or another extension context) may have
   // already refreshed the session while we waited for the lock/promise. If a
-  // fresh sessionId is already in storage, don't POST a redundant one.
-  const existing = await ownedStorage.get(['sessionId']);
-  if (existing.sessionId) {
+  // session OWNED by this user is already in storage, don't POST another.
+  // One minted for nobody, for another user, or stored before owners were
+  // recorded is replaced.
+  const existing = (await ownedStorage.get(['sessionId', 'sessionUserId'])) as
+    { sessionId?: string; sessionUserId?: string };
+  if (existing.sessionId && existing.sessionUserId === owner) {
     log.debug('Session already refreshed by a concurrent caller; skipping create');
     return;
   }
 
-  const session = await createSession(metadata);
-  if (!session.session_id) {
-    throw new Error('Invalid session response: missing session_id');
+  try {
+    const session = await createSession(owner, metadata);
+    if (!session.session_id) {
+      throw new Error('Invalid session response: missing session_id');
+    }
+    await persistSession(session);
+    log.info('Session refreshed and persisted', { sessionId: session.session_id });
+  } catch (error) {
+    // Requests must stop carrying a session that is not this user's — but
+    // only the one read above: another context may have stored a fresh one
+    // meanwhile (compare-and-remove, as #104).
+    if (existing.sessionId) {
+      const now = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
+      if (now.sessionId === existing.sessionId) await clearPersistedSession();
+    }
+    throw error;
   }
-  await persistSession(session);
-  log.info('Session refreshed and persisted', { sessionId: session.session_id });
 }
 
 /**
- * Refresh the session after a 401 SESSION_EXPIRED, then PERSIST the new
+ * Ensure a session owned by the registered owner (`setSessionOwner`): a no-op
+ * when storage holds one; otherwise mint it, then PERSIST the new
  * session_id so the retried request — and every request after it — carries
  * `X-Session-Id`. Without persisting, the retry path re-created a session but
  * left storage empty, so subsequent requests went out session-less.

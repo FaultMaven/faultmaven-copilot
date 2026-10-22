@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import * as api from '@faultmaven/copilot-ui/lib/api';
-import { refreshSession as coreRefreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import {
+  refreshSession as coreRefreshSession,
+  setSessionOwner,
+} from '@faultmaven/copilot-ui/lib/api/session-core';
 import { browser } from 'wxt/browser';
 
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
@@ -30,7 +33,8 @@ vi.mock('@faultmaven/copilot-ui/lib/api', () => ({
 // keys were cleared.
 vi.mock('@faultmaven/copilot-ui/lib/api/session-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@faultmaven/copilot-ui/lib/api/session-core')>()),
-  refreshSession: vi.fn().mockResolvedValue(undefined)
+  refreshSession: vi.fn().mockResolvedValue(undefined),
+  setSessionOwner: vi.fn(),
 }));
 
 vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
@@ -68,11 +72,16 @@ describe('session-slice', () => {
     expect(useAppStore.getState().isSessionInitialized).toBe(false);
   });
 
-  it('reuses an existing stored session without creating a new one', async () => {
+  // Whether a stored session may be reused is the owner check under the lock
+  // in session-core (faultmaven#1460), so the slice registers the owner and
+  // ensures through it rather than reusing whatever is stored.
+  it('registers the owner and ensures through the refresh even with a session stored', async () => {
     (browser.storage.local.get as any).mockResolvedValue({ sessionId: 'existing-sess' });
 
-    await useAppStore.getState().initializeSession();
+    await useAppStore.getState().initializeSession(true, 'u1');
 
+    expect(setSessionOwner).toHaveBeenCalledWith('u1');
+    expect(coreRefreshSession).toHaveBeenCalledTimes(1);
     expect(api.createSession).not.toHaveBeenCalled();
     expect(useAppStore.getState().sessionId).toBe('existing-sess');
     expect(useAppStore.getState().isSessionInitialized).toBe(true);
@@ -80,13 +89,10 @@ describe('session-slice', () => {
 
   it('ensures a session via the single-flighted refresh when none is stored (no direct createSession herd)', async () => {
     (coreRefreshSession as any).mockResolvedValue(undefined);
-    // Two reads: the fast-path check (empty) then refreshSession's read-back
-    // after session-core persisted the new id.
-    (browser.storage.local.get as any)
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ sessionId: 'new-sess' });
+    // refreshSession's read-back after session-core persisted the new id.
+    (browser.storage.local.get as any).mockResolvedValueOnce({ sessionId: 'new-sess' });
 
-    await useAppStore.getState().initializeSession();
+    await useAppStore.getState().initializeSession(true, 'u1');
 
     expect(coreRefreshSession).toHaveBeenCalledTimes(1);
     // The slice must NOT create a session itself — that bypassed the Web-Locks
@@ -100,7 +106,7 @@ describe('session-slice', () => {
     (coreRefreshSession as any).mockResolvedValue(undefined);
     (browser.storage.local.get as any).mockResolvedValue({}); // never persisted
 
-    await useAppStore.getState().initializeSession();
+    await useAppStore.getState().initializeSession(true, 'u1');
 
     expect(useAppStore.getState().sessionId).toBeNull();
     expect(useAppStore.getState().isSessionInitialized).toBe(false);
@@ -138,7 +144,7 @@ describe('session-slice', () => {
     // `clientId` included, which is the one key a clear only takes when the
     // caller says so.
     expect(browser.storage.local.remove).toHaveBeenCalledWith(
-      expect.arrayContaining(['sessionId', 'sessionCreatedAt', 'sessionResumed', 'clientId'])
+      expect.arrayContaining(['sessionId', 'sessionUserId', 'sessionCreatedAt', 'sessionResumed', 'clientId'])
     );
     expect(useAppStore.getState().sessionId).toBeNull();
     expect(useAppStore.getState().isSessionInitialized).toBe(false);

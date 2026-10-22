@@ -15,7 +15,11 @@ vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession, clearPersistedSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import {
+  refreshSession,
+  clearPersistedSession,
+  setSessionOwner,
+} from '@faultmaven/copilot-ui/lib/api/session-core';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 
 // session-core reaches storage through the host, so the spies above are
@@ -48,6 +52,8 @@ describe('refreshSession', () => {
     storageRemove.mockClear();
     storageGet.mockReset().mockResolvedValue({});
     createSessionWithRecovery.mockReset().mockResolvedValue(sessionResponse());
+    // The panel's user; a session is minted only for a registered owner.
+    setSessionOwner('u1');
     // Force the in-context fallback path (no Web Locks in the test env).
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;
   });
@@ -56,9 +62,11 @@ describe('refreshSession', () => {
     await refreshSession();
 
     expect(createSessionWithRecovery).toHaveBeenCalledTimes(1);
+    expect(createSessionWithRecovery).toHaveBeenCalledWith('u1', undefined);
     expect(storageSet).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'sess-new',
+        sessionUserId: 'u1',
         sessionResumed: false,
         clientId: 'client-1'
       })
@@ -81,7 +89,7 @@ describe('refreshSession', () => {
   });
 
   it('skips creating when a fresh session already exists (re-check)', async () => {
-    storageGet.mockResolvedValue({ sessionId: 'already-fresh' });
+    storageGet.mockResolvedValue({ sessionId: 'already-fresh', sessionUserId: 'u1' });
 
     await refreshSession();
 
@@ -142,7 +150,12 @@ describe('clearPersistedSession', () => {
   it('clears the session keys and KEEPS clientId by default', async () => {
     await clearPersistedSession();
 
-    expect(storageRemove).toHaveBeenCalledWith(['sessionId', 'sessionCreatedAt', 'sessionResumed']);
+    expect(storageRemove).toHaveBeenCalledWith([
+      'sessionId',
+      'sessionUserId',
+      'sessionCreatedAt',
+      'sessionResumed',
+    ]);
   });
 
   it('takes clientId too only when asked', async () => {
@@ -150,6 +163,7 @@ describe('clearPersistedSession', () => {
 
     expect(storageRemove).toHaveBeenCalledWith([
       'sessionId',
+      'sessionUserId',
       'sessionCreatedAt',
       'sessionResumed',
       'clientId',

@@ -19,13 +19,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { createStubHost } from '../support/host';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { refreshSession, setSessionOwner } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { createExtensionTransport } from '../../extension/host/extension-transport';
 import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
 import { enforceUserDataScope } from '../../extension/auth/user-scope';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
-const SESSION_KEYS = ['sessionId', 'sessionCreatedAt', 'sessionResumed'];
+const SESSION_KEYS = ['sessionId', 'sessionUserId', 'sessionCreatedAt', 'sessionResumed'];
 
 /** The other store: what every non-owner path used to reach for. */
 const otherStore = () => (global as any).browser.storage.local;
@@ -56,6 +56,7 @@ describe('the session pointer has a single writer', () => {
     vi.clearAllMocks();
     owner = createStubHost();
     setHostStore(owner.store);
+    setSessionOwner('u1');
     // Force the in-context single-flight path (no Web Locks in the test env).
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;
     vi.spyOn(clientSessionManager, 'createSessionWithRecovery').mockResolvedValue({
@@ -82,7 +83,7 @@ describe('the session pointer has a single writer', () => {
 
     const writes = writesOfSessionId();
     expect(writes).toHaveLength(1);
-    expect(writes[0][0]).toMatchObject({ sessionId: 'sess-1', clientId: 'client-1' });
+    expect(writes[0][0]).toMatchObject({ sessionId: 'sess-1', sessionUserId: 'u1', clientId: 'client-1' });
     expect(owner.data.sessionId).toBe('sess-1');
     expect(keysWrittenElsewhere()).not.toContain('sessionId');
   });

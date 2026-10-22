@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { ClientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 
 // Hoist mock browser
 const { mockBrowser } = vi.hoisted(() => {
@@ -76,6 +77,17 @@ global.fetch = vi.fn();
 // Global stub just in case
 vi.stubGlobal('browser', mockBrowser);
 
+// A signed-in host: the mint is never sent without a bearer (faultmaven#1460).
+beforeEach(() => {
+  setApiTransport({
+    baseUrl: async () => 'http://localhost:8090',
+    accessToken: async () => 'test-token',
+    sessionId: async () => null,
+    clearSession: async () => {},
+    onUnauthorized: () => 'ended' as const,
+  });
+});
+
 describe('ClientSessionManager', () => {
   beforeEach(() => {
     localStorageMock.clear();
@@ -131,6 +143,7 @@ describe('ClientSessionManager', () => {
   test('handles session creation with client_id and timeout', async () => {
     const mockSessionResponse = {
       session_id: 'session-123',
+      user_id: 'u1',
       client_id: 'test-uuid-12345678-1234-5678-9012-123456789012',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -145,13 +158,13 @@ describe('ClientSessionManager', () => {
     } as Response);
 
     const manager = ClientSessionManager.getInstance();
-    const session = await manager.createSession();
+    const session = await manager.createSession('u1');
 
     expect(fetch).toHaveBeenCalledWith(
       'http://localhost:8090/api/v1/sessions',
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
         body: expect.stringContaining('timeout_minutes'),
       })
     );
@@ -162,6 +175,7 @@ describe('ClientSessionManager', () => {
   test('handles session resumption', async () => {
     const mockResumedSession = {
       session_id: 'resumed-session-456',
+      user_id: 'u1',
       client_id: 'test-uuid-12345678-1234-5678-9012-123456789012',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -176,7 +190,7 @@ describe('ClientSessionManager', () => {
     } as Response);
 
     const manager = ClientSessionManager.getInstance();
-    const session = await manager.createSession();
+    const session = await manager.createSession('u1');
 
     expect(session.session_resumed).toBe(true);
     expect(session.message).toBe('Session resumed successfully');
@@ -195,6 +209,7 @@ describe('ClientSessionManager', () => {
     // Second call succeeds after clearing client ID
     const mockNewSession = {
       session_id: 'new-session-789',
+      user_id: 'u1',
       client_id: '12345678-after-clear-9012-123456789012',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -209,7 +224,7 @@ describe('ClientSessionManager', () => {
       json: () => Promise.resolve(mockNewSession),
     } as Response);
 
-    const session = await manager.createSessionWithRecovery();
+    const session = await manager.createSessionWithRecovery('u1');
 
     expect(mockBrowser.storage.local.remove).toHaveBeenCalledWith(['faultmaven_client_id']);
     expect(session.session_id).toBe('new-session-789');
@@ -221,6 +236,7 @@ describe('ClientSessionManager', () => {
 
     const mockSessionResponse = {
       session_id: 'session-123',
+      user_id: 'u1',
       client_id: 'test-client-id',
       status: 'active',
       created_at: '2024-01-01T00:00:00Z',
@@ -235,17 +251,17 @@ describe('ClientSessionManager', () => {
     } as Response);
 
     // Test with timeout too low (should clamp to minimum)
-    await manager.createSession(undefined, 30);
+    await manager.createSession('u1', undefined, 30);
     let lastCall = vi.mocked(fetch).mock.calls.pop();
     expect(lastCall?.[1]?.body).toContain('"timeout_minutes":60');
 
     // Test with timeout too high (should clamp to maximum)
-    await manager.createSession(undefined, 600);
+    await manager.createSession('u1', undefined, 600);
     lastCall = vi.mocked(fetch).mock.calls.pop();
     expect(lastCall?.[1]?.body).toContain('"timeout_minutes":480');
 
     // Test with valid timeout (should use as-is)
-    await manager.createSession(undefined, 120);
+    await manager.createSession('u1', undefined, 120);
     lastCall = vi.mocked(fetch).mock.calls.pop();
     expect(lastCall?.[1]?.body).toContain('"timeout_minutes":120');
   });
@@ -288,7 +304,7 @@ describe('ClientSessionManager — a refused session create', () => {
     // The status and retryAfter are what let ErrorClassifier produce a
     // RateLimitError; without them a 429 here becomes a generic error with no
     // countdown and no honoured Retry-After.
-    await expect(manager.createSession()).rejects.toMatchObject({
+    await expect(manager.createSession('u1')).rejects.toMatchObject({
       message: 'Rate limit exceeded: per_session (11/10)',
       status: 429,
       retryAfter: 45
@@ -304,7 +320,7 @@ describe('ClientSessionManager — a refused session create', () => {
     } as unknown as Response);
 
     const manager = ClientSessionManager.getInstance();
-    await expect(manager.createSession()).rejects.toMatchObject({
+    await expect(manager.createSession('u1')).rejects.toMatchObject({
       message: 'Session quota reached for this account',
       status: 403
     });
@@ -319,6 +335,6 @@ describe('ClientSessionManager — a refused session create', () => {
     } as unknown as Response);
 
     const manager = ClientSessionManager.getInstance();
-    await expect(manager.createSession()).rejects.toThrow('Failed to create session: 500');
+    await expect(manager.createSession('u1')).rejects.toThrow('Failed to create session: 500');
   });
 });
