@@ -4,20 +4,30 @@
 # Each attempt is classified, first match wins:
 #   exit 0                                      clean
 #   the audit's own summary line is printed     advisories (an audit completed)
-#   the endpoint is unreachable, answers 5xx,   retried; after the last attempt,
-#   408 or 429, or the attempt times out        unreachable
+#   the endpoint is unreachable, every status   retried; after the last attempt,
+#   it answered is 5xx, 408 or 429, or the      unreachable
+#   attempt ran out its time limit
 #   anything else                               error
 # Every path sets the step output `result` and writes one job-summary block.
 # ON_UNREACHABLE (`fail` or `warn`) decides whether "unreachable" fails the step.
 set -uo pipefail
 
-audit=(pnpm audit --audit-level=moderate)
+level=moderate
+audit=(pnpm audit "--audit-level=$level")
 attempts=4
 attempt_seconds=90
 # The transport failures seen when npm's advisory endpoint is down
-# (faultmaven-website's outage handling), plus pnpm's own code for an HTTP
-# error from the endpoint when the status is a server-side or rate-limit one.
-transport='ERR_SOCKET_TIMEOUT|FetchError|socket timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|request to .* failed|ERR_PNPM_AUDIT_BAD_RESPONSE.*responded with (5[0-9][0-9]|408|429)'
+# (faultmaven-website's outage handling).
+transport='ERR_SOCKET_TIMEOUT|FetchError|socket timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|request to .* failed'
+
+# Whether every HTTP status pnpm reports from the audit endpoints is one worth
+# retrying (5xx, 408, 429). pnpm 10 names both the quick endpoint's and the
+# fallback's status, so one refusal (403) among them is not an outage.
+only_retryable_statuses() {
+  local statuses
+  statuses=$(grep -oE 'responded with [0-9]{3}' <<<"$1" | grep -oE '[0-9]{3}$')
+  [ -n "$statuses" ] && ! grep -qvE '^(5[0-9][0-9]|408|429)$' <<<"$statuses"
+}
 
 # finish <result> <exit code> <summary line>...
 finish() {
@@ -38,22 +48,28 @@ case "${ON_UNREACHABLE:-}" in
 esac
 
 for i in $(seq 1 "$attempts"); do
+  started=$SECONDS
   out="$(timeout --kill-after=10 "$attempt_seconds" "${audit[@]}" 2>&1)"
   code=$?
-  echo "$out"
+  # 124, or 137 after --kill-after, from the limit itself; not a kill from outside.
+  timed_out=false
+  if { [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; } && [ $((SECONDS - started)) -ge "$attempt_seconds" ]; then
+    timed_out=true
+  fi
+  printf '%s\n' "$out"
   if [ "$code" -eq 0 ]; then
     finish clean 0 "### Dependency audit: clean" "" \
-      "\`${audit[*]}\` found no advisory at or above moderate outside \`pnpm.auditConfig.ignoreGhsas\`."
+      "\`${audit[*]}\` found no advisory at or above $level outside \`pnpm.auditConfig.ignoreGhsas\`."
   fi
   # Checked before the transport patterns, so an advisory whose title names a
   # network error is never taken for an outage.
   if grep -qE '^[0-9]+ vulnerabilit(y|ies) found' <<<"$out"; then
-    echo "::error::pnpm audit found advisories at or above moderate."
+    echo "::error::pnpm audit found advisories at or above $level."
     finish advisories 1 "### Dependency audit: advisories found" "" \
-      "\`${audit[*]}\` reported advisories at or above moderate; the step log lists them." \
+      "\`${audit[*]}\` reported advisories at or above $level; the step log lists them." \
       "Bump or override each one. One with no fixed version may go in \`pnpm.auditConfig.ignoreGhsas\` only as this repository's rule for that list allows (see the gate's comment in ci.yml), with the reason in the PR that adds it."
   fi
-  if [ "$code" -eq 124 ] || [ "$code" -eq 137 ] || grep -qiE "$transport" <<<"$out"; then
+  if $timed_out || grep -qiE "$transport" <<<"$out" || only_retryable_statuses "$out"; then
     echo "::notice::Attempt $i/$attempts: npm's advisory endpoint is unreachable or failing (exit $code)."
     if [ "$i" -lt "$attempts" ]; then sleep $((i * 20)); fi
     continue
