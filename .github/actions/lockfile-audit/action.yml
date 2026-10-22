@@ -1,0 +1,26 @@
+name: Lockfile audit
+description: >-
+  Audits pnpm-lock.yaml with `pnpm audit` at moderate and above, retrying only
+  while npm's advisory endpoint is unreachable. The level lives here and nowhere
+  else. Keep this directory byte-identical in faultmaven-dashboard,
+  faultmaven-copilot and faultmaven-website (faultmaven#2159).
+inputs:
+  on-unreachable:
+    description: >-
+      `fail` or `warn`: what to do when npm's advisory endpoint stays
+      unreachable after every attempt, so that no audit ran.
+    required: true
+outputs:
+  result:
+    description: clean, advisories, error or unreachable.
+    value: ${{ steps.audit.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - id: audit
+      shell: bash
+      env:
+        ON_UNREACHABLE: ${{ inputs.on-unreachable }}
+        # Fail each attempt fast; audit.sh owns the retries and the backoff.
+        npm_config_fetch_retries: '0'
+      run: bash "$GITHUB_ACTION_PATH/audit.sh"
