@@ -20,6 +20,7 @@ import {
   SessionExpiredError,
   SessionSwitchedError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
+import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { createStubHost } from '../support/host';
 
 const { fetchWithTimeout } = vi.hoisted(() => ({ fetchWithTimeout: vi.fn() }));
@@ -217,6 +218,24 @@ describe('the ensure', () => {
     },
   );
 
+  it('without an owner, waits for an owned ensure in flight', async () => {
+    let release!: (response: Response) => void;
+    fetchWithTimeout.mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+    const owned = refreshSession('u1');
+    let ownerlessDone = false;
+    const ownerless = refreshSession().then(() => { ownerlessDone = true; });
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(ownerlessDone).toBe(false);
+    } finally {
+      // Released either way, so a failure here leaves no ensure in flight.
+      release(minted('s-new', 'u1'));
+      await Promise.all([owned, ownerless]);
+    }
+    expect(stub.data.sessionId).toBe('s-new');
+  });
+
   it('mints nothing, and clears nothing, without an owner', async () => {
     Object.assign(stub.data, { sessionId: 's-old', sessionUserId: 'u2' });
 
@@ -368,5 +387,145 @@ describe('the session slice', () => {
 
     expect(mints()).toHaveLength(0);
     expect(stub.data.sessionId).toBe('s-legacy');
+  });
+});
+
+describe('the session slice: its timers and its owner', () => {
+  const heartbeats = () =>
+    fetchWithTimeout.mock.calls.filter(([url]) => String(url).endsWith('/heartbeat'));
+  const init = () => useAppStore.getState().initializeSession(true, 'u1');
+  const HEARTBEAT_MS = Number(import.meta.env.VITE_HEARTBEAT_INTERVAL_MS ?? 10 * 60 * 1000);
+  const mintWhenAsked = () =>
+    fetchWithTimeout.mockImplementation(async (url: string) =>
+      url === MINT ? minted('s-new', 'u1') : reply(200),
+    );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useAppStore.setState({ sessionId: null, isSessionInitialized: false, sessionError: null });
+  });
+
+  afterEach(async () => {
+    await useAppStore.getState().clearSession();
+    vi.useRealTimers();
+  });
+
+  // The host ends the session during the init mint without the panel's
+  // clearSession: only the epoch moves, and the epoch init started under
+  // is what stops its timers.
+  it('mints once, then stops, when the host ends the session during the init mint', async () => {
+    fetchWithTimeout.mockResolvedValue(reply(401));
+    onUnauthorized.mockReturnValue('ended');
+    await init();
+
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+
+    expect(mints()).toHaveLength(1);
+  });
+
+  it("drops a dead heartbeat's session under the session lock", async () => {
+    let held = false;
+    let tail: Promise<unknown> = Promise.resolve();
+    const request = vi.fn((_name: string, _opts: unknown, task: () => Promise<unknown>) => {
+      const run = tail.then(async () => {
+        held = true;
+        try {
+          return await task();
+        } finally {
+          held = false;
+        }
+      });
+      tail = run.catch(() => {});
+      return run;
+    });
+    Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true });
+    const removedUnderLock: boolean[] = [];
+    stub.remove.mockImplementation(async (keys: string[]) => {
+      removedUnderLock.push(held);
+      for (const key of keys) delete stub.data[key];
+    });
+    Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
+    fetchWithTimeout.mockResolvedValue(reply(404));
+    await init();
+
+    await vi.advanceTimersToNextTimerAsync();
+    await vi.waitFor(() => expect(stub.data.sessionId).toBeUndefined());
+
+    expect(removedUnderLock).toEqual([true]);
+  });
+
+  it('clearSession cancels a pending early ensure', async () => {
+    token = null;
+    await init();
+    await useAppStore.getState().clearSession();
+    expect(vi.getTimerCount()).toBe(0);
+
+    token = 't1';
+    mintWhenAsked();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(mints()).toHaveLength(0);
+  });
+
+  it('a re-init cancels a pending early ensure', async () => {
+    token = null;
+    await init();
+    token = 't1';
+    mintWhenAsked();
+    await init();
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(mints()).toHaveLength(1);
+  });
+
+  it("schedules no early ensure for a superseded init's failure", async () => {
+    let fail!: (response: Response) => void;
+    fetchWithTimeout.mockReturnValueOnce(new Promise<Response>((resolve) => { fail = resolve; }));
+    const first = init(); // its mint is in flight
+    const second = init(); // replaces its timer, and joins its mint
+    fail(reply(500));
+    await Promise.all([first, second]);
+
+    // The second init's interval and its one early ensure.
+    expect(vi.getTimerCount()).toBe(2);
+    await useAppStore.getState().clearSession();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('an early ensure mints nothing once the session has ended', async () => {
+    token = null;
+    await init();
+    bumpEpoch();
+    token = 't1';
+    mintWhenAsked();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mints()).toHaveLength(0);
+  });
+
+  it('with no owner, adopts no stored session', async () => {
+    Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
+    await init();
+    await useAppStore.getState().clearSession();
+    // Another account's panel stores its session.
+    Object.assign(stub.data, { sessionId: 'sB', sessionUserId: 'uB' });
+
+    await expect(useAppStore.getState().refreshSession()).rejects.toThrow();
+
+    expect(useAppStore.getState().sessionId).toBeNull();
+    expect(fetchWithTimeout).not.toHaveBeenCalled();
+  });
+
+  it('never beats a stored session for no owner', async () => {
+    Object.assign(stub.data, { sessionId: 'sB', sessionUserId: 'uB' });
+    fetchWithTimeout.mockResolvedValue(reply(200));
+    // A caller outside the types (plain JS, a stale build) passing no owner.
+    await useAppStore.getState().initializeSession(true, undefined as unknown as string);
+
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+
+    expect(useAppStore.getState().sessionId).toBeNull();
+    expect(heartbeats()).toHaveLength(0);
   });
 });

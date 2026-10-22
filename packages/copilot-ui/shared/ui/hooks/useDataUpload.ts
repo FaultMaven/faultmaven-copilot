@@ -34,6 +34,7 @@ import {
 import {
   AuthenticationError,
   DuplicateUploadNotice,
+  SessionExpiredError,
   PASTED_TEXT_LABEL,
   PAGE_CAPTURE_LABEL,
   IdempotencyKeyReuseError,
@@ -341,8 +342,8 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       const epoch = getEpoch();
 
       // No session yet (a mint refused at mount waits for the heartbeat): ensure
-      // one now. Its failure says why, through the classifier; only one the
-      // host ended asks the user to sign in (faultmaven#1460).
+      // one now. Only a failure the host ended asks the user to sign in
+      // (faultmaven#1460).
       let ensureError: unknown;
       const haveSession = !!sessionId || (await refreshSession().then(
         () => true,
@@ -353,9 +354,20 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         return { success: false, message: '', sent: false };
       }
       if (!haveSession) {
-        showError(notSentError(unsent, 'You are signed out.', ensureError, {
-          signIn: ensureError instanceof AuthenticationError,
-        }));
+        const generic = 'Something went wrong before it could be sent.';
+        const classified = ErrorClassifier.classify(ensureError);
+        if (classified.category === 'notice') {
+          // A NOTICE is shown whole (#350): another account signed in, and
+          // nothing was sent or ended.
+          showError(classified);
+        } else if (ensureError instanceof AuthenticationError) {
+          showError(notSentError(unsent, 'You are signed out.', ensureError, { signIn: true }));
+        } else if (ensureError instanceof SessionExpiredError) {
+          // The credential was unreadable for a moment: no sign-in advice.
+          showError(notSentError(unsent, generic));
+        } else {
+          showError(notSentError(unsent, generic, ensureError));
+        }
         return {
           success: false,
           message: "Please log in first",

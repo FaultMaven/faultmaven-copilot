@@ -37,13 +37,12 @@ export interface LogoutOutcome {
 /**
  * Read the signed-in account's profile from `/auth/me`.
  *
- * Uses `authenticatedFetchWithRetry`, not the bare `authenticatedFetch`. A 401
- * SESSION_EXPIRED inside the bare helper *removes* `sessionId` from storage and
- * throws — so a caller that swallows the rejection (this is read for display,
- * see AccountRow) would leave the panel with no persisted session id and no
- * refresh, and the next real request would have to 401 its way to a new one.
- * The retry wrapper runs the single-flighted `refreshSession()` and persists the
- * replacement, which is the only thing that makes a swallowed failure harmless.
+ * Uses `authenticatedFetchWithRetry`, not the bare `authenticatedFetch`, which
+ * throws on the first 401: this is read for display (see AccountRow), and a
+ * swallowed rejection would show nothing. The retry wrapper retries once. It
+ * mints no replacement session (faultmaven#1460): a session-expired 401 clears
+ * the session id the request carried, and the session slice's heartbeat, or
+ * the upload gate, mints the next one for the panel's user.
  */
 export async function getCurrentUser(): Promise<UserProfile> {
   const response = await authenticatedFetchWithRetry(`${await getHostEndpoints().apiUrl()}/api/v1/auth/me`, {

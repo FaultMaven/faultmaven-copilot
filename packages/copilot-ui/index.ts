@@ -78,11 +78,12 @@ export type { ApiTransport } from './lib/api/transport';
  * WHICH keys a FaultMaven session occupies — and therefore what ending one
  * clears.
  *
- * A host's transport has to answer `clearSession()`, and the only way to do
- * that without this is to restate the key list. Four copies of that list
- * already existed once and had drifted over whether `clientId` survives; the
- * answer is here, in the module that WRITES them, and a host delegates rather
- * than repeating it.
+ * A host's transport still answers `clearSession()`, though the package no
+ * longer calls it (kept until its retirement from the host contract,
+ * faultmaven#2166). The only way to answer it without this is to restate the
+ * key list. Four copies of that list already existed once and had drifted over
+ * whether `clientId` survives; the answer is here, in the module that WRITES
+ * them, and a host delegates rather than repeating it.
  */
 export { clearPersistedSession } from './lib/api/session-core';
 export type { ClearPersistedSessionOptions } from './lib/api/session-core';

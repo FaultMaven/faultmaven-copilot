@@ -63,7 +63,7 @@ describe('session-slice', () => {
   });
 
   it('skips initialization when shouldInitialize is false', async () => {
-    await useAppStore.getState().initializeSession(false);
+    await useAppStore.getState().initializeSession(false, 'u1');
     expect(api.createSession).not.toHaveBeenCalled();
     expect(useAppStore.getState().isSessionInitialized).toBe(false);
   });
@@ -112,10 +112,13 @@ describe('session-slice', () => {
   it('refreshSession routes through the single-flighted session-core refresh (no direct createSession herd)', async () => {
     (coreRefreshSession as any).mockResolvedValue(undefined);
     (browser.storage.local.get as any).mockResolvedValue({ sessionId: 'refreshed-sess' });
+    await useAppStore.getState().initializeSession(true, 'u1'); // the panel's user
+    vi.mocked(coreRefreshSession).mockClear();
 
     const id = await useAppStore.getState().refreshSession();
 
     expect(coreRefreshSession).toHaveBeenCalledTimes(1);
+    expect(coreRefreshSession).toHaveBeenCalledWith('u1');
     // The slice must NOT call createSession() itself — that bypassed the
     // Web-Locks mutex and could herd parallel /sessions POSTs.
     expect(api.createSession).not.toHaveBeenCalled();
@@ -127,6 +130,7 @@ describe('session-slice', () => {
   it('refreshSession throws when the refresh did not persist a session_id', async () => {
     (coreRefreshSession as any).mockResolvedValue(undefined);
     (browser.storage.local.get as any).mockResolvedValue({});
+    await useAppStore.getState().initializeSession(true, 'u1'); // the panel's user
 
     await expect(useAppStore.getState().refreshSession()).rejects.toThrow(/session_id/i);
   });

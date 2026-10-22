@@ -34,7 +34,7 @@ export interface SessionSlice {
   sessionError: string | null;
 
   // Actions
-  initializeSession: (shouldInitialize?: boolean, ownerId?: string | null) => Promise<void>;
+  initializeSession: (shouldInitialize: boolean, ownerId: string) => Promise<void>;
   refreshSession: () => Promise<string>;
   clearSession: () => Promise<void>;
 }
@@ -58,7 +58,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
     isSessionInitialized: false,
     sessionError: null,
 
-    initializeSession: async (shouldInitialize: boolean = true, ownerId: string | null = null) => {
+    initializeSession: async (shouldInitialize: boolean, ownerId: string) => {
       if (!shouldInitialize) {
         log.debug('Session initialization skipped - waiting for first-run completion');
         return;
@@ -152,13 +152,17 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       try {
         log.info('Refreshing session');
 
+        // Never read back a session for nobody: a stored one may be another
+        // user's (faultmaven#1460).
+        if (!owner) throw new Error('No signed-in user to ensure a session for');
+
         // Route through session-core's refresh, which is single-flighted across
         // contexts via the Web Locks API and persists the new session_id.
         // Calling createSession() directly here bypassed that mutex, so
         // concurrent callers (this slice's refresh + the 401-retry path in
         // client.ts, or two panels) herded parallel /sessions POSTs; it also
         // duplicated the persistence logic that could drift from session-core.
-        await coreRefreshSession(owner ?? undefined);
+        await coreRefreshSession(owner);
 
         const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
         const sessionId = stored.sessionId as string | undefined;
