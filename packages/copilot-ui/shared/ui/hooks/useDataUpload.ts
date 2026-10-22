@@ -32,6 +32,7 @@ import {
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
 import {
+  AuthenticationError,
   DuplicateUploadNotice,
   PASTED_TEXT_LABEL,
   PAGE_CAPTURE_LABEL,
@@ -333,22 +334,34 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     try {
       setLoading(true);
 
-      // No session yet (a mint refused at mount waits for the next heartbeat
-      // tick): ensure one now, before telling a signed-in user they are not.
-      const haveSession = !!sessionId || (await refreshSession().then(() => true, () => false));
+      // Capture the session epoch before any network round-trip. A logout while
+      // the session ensure, case creation or the turn is in flight must not let
+      // the continuations below re-write state into the just-purged
+      // store/storage (issue #132).
+      const epoch = getEpoch();
+
+      // No session yet (a mint refused at mount waits for the heartbeat): ensure
+      // one now. Its failure says why, through the classifier; only one the
+      // host ended asks the user to sign in (faultmaven#1460).
+      let ensureError: unknown;
+      const haveSession = !!sessionId || (await refreshSession().then(
+        () => true,
+        (error: unknown) => { ensureError = error; return false; },
+      ));
+      if (epoch !== getEpoch()) {
+        log.info('Session changed while ensuring a session — not sending');
+        return { success: false, message: '', sent: false };
+      }
       if (!haveSession) {
-        showError(notSentError(unsent, 'You are signed out.', undefined, { signIn: true }));
+        showError(notSentError(unsent, 'You are signed out.', ensureError, {
+          signIn: ensureError instanceof AuthenticationError,
+        }));
         return {
           success: false,
           message: "Please log in first",
           sent: false,
         };
       }
-
-      // Capture the session epoch before any network round-trip. A logout while
-      // case creation or the turn is in flight must not let the continuations
-      // below re-write state into the just-purged store/storage (issue #132).
-      const epoch = getEpoch();
 
       // Step 1: Ensure case exists
       let targetCaseId = activeCaseId;

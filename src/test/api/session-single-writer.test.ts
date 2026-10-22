@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { createStubHost } from '../support/host';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { refreshSession, setSessionOwner } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { createExtensionTransport } from '../../extension/host/extension-transport';
 import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
 import { enforceUserDataScope } from '../../extension/auth/user-scope';
@@ -56,7 +56,6 @@ describe('the session pointer has a single writer', () => {
     vi.clearAllMocks();
     owner = createStubHost();
     setHostStore(owner.store);
-    setSessionOwner('u1');
     // Force the in-context single-flight path (no Web Locks in the test env).
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;
     vi.spyOn(clientSessionManager, 'createSessionWithRecovery').mockResolvedValue({
@@ -79,7 +78,7 @@ describe('the session pointer has a single writer', () => {
     owner.set.mock.calls.filter(([items]) => items && 'sessionId' in items);
 
   it('is written exactly once when a session is minted, and on the owner store', async () => {
-    await refreshSession();
+    await refreshSession('u1');
 
     const writes = writesOfSessionId();
     expect(writes).toHaveLength(1);

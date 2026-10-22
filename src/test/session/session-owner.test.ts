@@ -9,17 +9,17 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authenticatedFetchWithRetry } from '@faultmaven/copilot-ui/lib/api/client';
-import {
-  clearPersistedSession,
-  refreshSession,
-  setSessionOwner,
-} from '@faultmaven/copilot-ui/lib/api/session-core';
+import { clearPersistedSession, refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { AuthenticationError, SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  SessionExpiredError,
+  SessionSwitchedError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 import { createStubHost } from '../support/host';
 
 const { fetchWithTimeout } = vi.hoisted(() => ({ fetchWithTimeout: vi.fn() }));
@@ -40,6 +40,7 @@ const mints = () => fetchWithTimeout.mock.calls.filter(([url]) => url === MINT);
 
 let stub: ReturnType<typeof createStubHost>;
 let token: string | null;
+let readToken: () => Promise<string>;
 const onUnauthorized = vi.fn();
 
 beforeEach(() => {
@@ -51,17 +52,17 @@ beforeEach(() => {
   stub = createStubHost({ faultmaven_client_id: 'client-1' });
   setHostStore(stub.store);
   token = 't1';
+  readToken = async () => {
+    if (!token) throw new Error('no token right now');
+    return token;
+  };
   setApiTransport({
     baseUrl: async () => API,
-    accessToken: async () => {
-      if (!token) throw new Error('no token right now');
-      return token;
-    },
+    accessToken: () => readToken(),
     sessionId: async () => (stub.data.sessionId as string | undefined) ?? null,
     clearSession: () => clearPersistedSession(),
     onUnauthorized: (bearer: string) => onUnauthorized(bearer),
   });
-  setSessionOwner('u1');
 });
 
 describe('a 401 on a request sent with no credential mints nothing', () => {
@@ -87,12 +88,12 @@ describe('a 401 on a request sent with no credential mints nothing', () => {
     expect(stub.data.sessionId).toBe('s1');
   });
 
-  it('with nothing stored, refuses the mint before sending it', async () => {
+  it('with nothing stored, retries once, and nothing is minted', async () => {
     await expect(authenticatedFetchWithRetry(`${API}/api/v1/cases`)).rejects.toBeInstanceOf(
       SessionExpiredError,
     );
 
-    expect(requests()).toHaveLength(1);
+    expect(requests()).toHaveLength(2);
     expect(mints()).toHaveLength(0);
   });
 });
@@ -151,13 +152,31 @@ describe('the mint', () => {
     expect(getEpoch()).toBe(before);
   });
 
+  // A 404 on the re-sent mint takes the client-id recovery path; its mint
+  // must not ask the host again.
+  it('takes at most one verdict, the client-id recovery included', async () => {
+    onUnauthorized.mockReturnValue('refreshed');
+    fetchWithTimeout
+      .mockResolvedValueOnce(reply(401))
+      .mockResolvedValueOnce(reply(404))
+      .mockResolvedValue(reply(401));
+    const clearClientId = vi.spyOn(clientSessionManager, 'clearClientId');
+
+    await expect(clientSessionManager.createSessionWithRecovery('u1')).rejects.toBeInstanceOf(
+      AuthenticationError,
+    );
+
+    expect(clearClientId).toHaveBeenCalledTimes(1);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
   // The server resolves a revoked or invalid bearer to nobody and mints an
   // anonymous session for it: a rejected credential, never the user's session.
   it('takes the verdict on a session minted for another user, and never persists it', async () => {
     onUnauthorized.mockReturnValue('ended');
     fetchWithTimeout.mockResolvedValue(minted('s-anon', 'user_ab12cd34'));
 
-    await expect(refreshSession()).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(refreshSession('u1')).rejects.toBeInstanceOf(AuthenticationError);
 
     expect(onUnauthorized).toHaveBeenCalledWith('t1');
     expect(stub.data.sessionId).toBeUndefined();
@@ -169,7 +188,7 @@ describe('the mint', () => {
       .mockResolvedValueOnce(minted('s-anon', 'user_ab12cd34'))
       .mockResolvedValueOnce(minted('s-u1', 'u1'));
 
-    await refreshSession();
+    await refreshSession('u1');
 
     expect(stub.data).toMatchObject({ sessionId: 's-u1', sessionUserId: 'u1' });
   });
@@ -179,7 +198,7 @@ describe('the ensure', () => {
   it("sends nothing when the stored session is the owner's", async () => {
     Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
 
-    await refreshSession();
+    await refreshSession('u1');
 
     expect(fetchWithTimeout).not.toHaveBeenCalled();
   });
@@ -191,47 +210,27 @@ describe('the ensure', () => {
       Object.assign(stub.data, { sessionId: 's-old', sessionUserId: storedOwner });
       fetchWithTimeout.mockResolvedValue(minted('s-new', 'u1'));
 
-      await refreshSession();
+      await refreshSession('u1');
 
       expect(mints()).toHaveLength(1);
       expect(stub.data).toMatchObject({ sessionId: 's-new', sessionUserId: 'u1' });
     },
   );
 
-  it("removes a stale session when the mint fails, so requests stop carrying it", async () => {
+  it('mints nothing, and clears nothing, without an owner', async () => {
     Object.assign(stub.data, { sessionId: 's-old', sessionUserId: 'u2' });
-    fetchWithTimeout.mockResolvedValue(reply(500));
-
-    await expect(refreshSession()).rejects.toThrow();
-
-    expect(stub.data.sessionId).toBeUndefined();
-    expect(stub.data.sessionUserId).toBeUndefined();
-  });
-
-  it('keeps an id another context stored while the mint was failing', async () => {
-    Object.assign(stub.data, { sessionId: 's-old', sessionUserId: 'u2' });
-    fetchWithTimeout.mockImplementation(async () => {
-      Object.assign(stub.data, { sessionId: 's-other', sessionUserId: 'u1' });
-      return reply(500);
-    });
-
-    await expect(refreshSession()).rejects.toThrow();
-
-    expect(stub.data.sessionId).toBe('s-other');
-  });
-
-  it('mints nothing with no owner registered', async () => {
-    setSessionOwner(null);
 
     await refreshSession();
 
     expect(fetchWithTimeout).not.toHaveBeenCalled();
+    expect(stub.data.sessionId).toBe('s-old');
   });
 });
 
 describe('the session slice', () => {
   const heartbeats = () =>
     fetchWithTimeout.mock.calls.filter(([url]) => String(url).endsWith('/heartbeat'));
+  const init = () => useAppStore.getState().initializeSession(true, 'u1');
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -243,16 +242,32 @@ describe('the session slice', () => {
     vi.useRealTimers();
   });
 
-  it('keeps the heartbeat after a refused mint at init, and the next tick mints', async () => {
-    token = null;
-    await useAppStore.getState().initializeSession(true, 'u1');
-    expect(mints()).toHaveLength(0);
-    expect(vi.getTimerCount()).toBe(1);
-
-    token = 't1';
+  const mintWhenAsked = () =>
     fetchWithTimeout.mockImplementation(async (url: string) =>
       url === MINT ? minted('s-new', 'u1') : reply(200),
     );
+
+  it('retries a mint refused at init 15 s later, once a bearer is available', async () => {
+    token = null;
+    await init();
+    expect(mints()).toHaveLength(0);
+
+    token = 't1';
+    mintWhenAsked();
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    await vi.waitFor(() => expect(useAppStore.getState().sessionId).toBe('s-new'));
+    expect(mints()).toHaveLength(1);
+  });
+
+  it('keeps the heartbeat when the early retry is refused too, and the next tick mints', async () => {
+    token = null;
+    await init();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(vi.getTimerCount()).toBe(1);
+
+    token = 't1';
+    mintWhenAsked();
     await vi.advanceTimersToNextTimerAsync();
 
     await vi.waitFor(() => expect(useAppStore.getState().sessionId).toBe('s-new'));
@@ -262,7 +277,7 @@ describe('the session slice', () => {
   it("beats the owner's session", async () => {
     Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
     fetchWithTimeout.mockResolvedValue(reply(200));
-    await useAppStore.getState().initializeSession(true, 'u1');
+    await init();
 
     await vi.advanceTimersToNextTimerAsync();
 
@@ -276,13 +291,82 @@ describe('the session slice', () => {
     fetchWithTimeout.mockImplementation(async (url: string) =>
       url === MINT ? minted('s2', 'u1') : reply(String(url).includes('/s1/') ? status : 200),
     );
-    await useAppStore.getState().initializeSession(true, 'u1');
+    await init();
 
     await vi.advanceTimersToNextTimerAsync();
     await vi.waitFor(() => expect(stub.data.sessionId).toBeUndefined());
+    // The store too: the upload gate reads it.
+    expect(useAppStore.getState().sessionId).toBeNull();
 
     await vi.advanceTimersToNextTimerAsync();
     await vi.waitFor(() => expect(stub.data.sessionId).toBe('s2'));
     expect(mints()).toHaveLength(1);
+  });
+
+  it('leaves one heartbeat after overlapping inits, and none after clearSession', async () => {
+    Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
+
+    await Promise.all([init(), init()]);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await useAppStore.getState().clearSession();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('leaves no timer when the session is signed out during the mint at init', async () => {
+    fetchWithTimeout.mockResolvedValue(reply(401));
+    onUnauthorized.mockImplementation(async () => {
+      // The host tears down, and the panel hears it, before init's catch runs.
+      await useAppStore.getState().clearSession();
+      return 'ended';
+    });
+
+    await init();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('mints nothing for the previous user after clearSession', async () => {
+    Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
+    await init();
+    await useAppStore.getState().clearSession();
+
+    // Another user signs in on the same page.
+    token = 't-u2';
+    fetchWithTimeout.mockResolvedValue(minted('s-u2', 'u2'));
+    onUnauthorized.mockReturnValue('ended');
+    await expect(useAppStore.getState().refreshSession()).rejects.toThrow();
+
+    expect(mints()).toHaveLength(0);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  // Another account signed in on this browser, and its panel stored its session.
+  it("keeps another user's stored session when the host refuses this user's request", async () => {
+    Object.assign(stub.data, { sessionId: 'sB', sessionUserId: 'uB' });
+    readToken = async () => {
+      throw new SessionSwitchedError();
+    };
+
+    await init();
+
+    expect(mints()).toHaveLength(0);
+    expect(stub.data.sessionId).toBe('sB');
+  });
+
+  it('keeps a session stored before owners were recorded through a header-less 401', async () => {
+    Object.assign(stub.data, { sessionId: 's-legacy' });
+    token = null;
+    fetchWithTimeout.mockImplementation(async (_url: string, req: RequestInit) =>
+      (req.headers as Record<string, string>).Authorization ? reply(200) : reply(401),
+    );
+    await init();
+
+    await expect(authenticatedFetchWithRetry(`${API}/api/v1/cases`)).rejects.toBeInstanceOf(
+      SessionExpiredError,
+    );
+
+    expect(mints()).toHaveLength(0);
+    expect(stub.data.sessionId).toBe('s-legacy');
   });
 });

@@ -7,12 +7,16 @@ This file holds the rules that constrain code *inside* the package.
 ## Requests
 
 - `authenticatedFetch` / `authenticatedFetchWithRetry` (`lib/api/client.ts`).
-  On a `401 SESSION_EXPIRED` the retry variant calls `refreshSession()`
-  (`lib/api/session-core.ts`), which is **single-flighted** — N parallel failing
-  requests trigger one `/sessions` POST — via the Web Locks API with an
-  in-context promise fallback, and **persists the new `session_id`** so the
-  retried request attaches `X-Session-Id`. Do not call `createSession()`
-  directly on this path: it returns a session without persisting it.
+  On a `401 SESSION_EXPIRED`, or a 401 on a request sent with no credential,
+  the retry variant retries once after `refreshSession()` with no owner, which
+  waits for any session ensure in flight and **mints nothing**. Only the
+  session slice mints, through `refreshSession(owner)` (`lib/api/session-core.ts`)
+  for the panel's user (faultmaven#1460): never without a bearer,
+  **single-flighted** — N parallel callers trigger one `/sessions` POST — via
+  the Web Locks API with an in-context promise fallback, and it **persists the
+  new `session_id`** with its owner so later requests attach `X-Session-Id`. A
+  stored session is reused only by its owner. Do not call `createSession()`
+  directly: it returns a session without persisting it.
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as

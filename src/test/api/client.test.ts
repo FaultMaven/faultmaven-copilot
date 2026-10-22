@@ -15,8 +15,10 @@ vi.mock('../../extension/auth/auth-manager', () => ({
 vi.mock('@faultmaven/copilot-ui/lib/api/fetch-utils', () => ({
   getAuthHeaders: vi.fn().mockResolvedValue({})
 }));
+const clearPersistedSessionIf = vi.fn().mockResolvedValue(undefined);
 vi.mock('@faultmaven/copilot-ui/lib/api/session-core', () => ({
-  refreshSession: vi.fn().mockResolvedValue(undefined)
+  refreshSession: vi.fn().mockResolvedValue(undefined),
+  clearPersistedSessionIf: (id: string) => clearPersistedSessionIf(id),
 }));
 const fetchWithTimeout = vi.fn();
 vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
@@ -140,7 +142,6 @@ describe('authenticatedFetch — error branding', () => {
   // that sent the retry to mint one with no credential (faultmaven#1460).
   it('keeps the credential and the session on a 401 when no Authorization header was sent (#99)', async () => {
     (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' }); // no credential attached
-    storedSessionId.mockResolvedValue('S1');
     fetchWithTimeout.mockResolvedValue({
       ok: false,
       status: 401,
@@ -154,14 +155,15 @@ describe('authenticatedFetch — error branding', () => {
     );
     // The refresh_token-destroying teardown must NOT have run.
     expect(onUnauthorized).not.toHaveBeenCalled();
-    expect(clearSession).not.toHaveBeenCalled();
+    expect(clearPersistedSessionIf).not.toHaveBeenCalled();
   });
 });
 
-// Regression: issue #104 — handleSessionExpired must compare-and-remove so a
-// late 401 carrying an OLD session id can't wipe a session a concurrent refresh
-// already rotated to a fresh one.
-describe('authenticatedFetch — session-expired compare-and-remove (#104)', () => {
+// Regression: issue #104 — a session-expired 401 clears only the session id the
+// request carried, so a late 401 carrying an OLD id can't wipe a session a
+// concurrent refresh already rotated to. The compare runs in session-core,
+// under the session lock (`clearPersistedSessionIf`, session-core.test.ts).
+describe('authenticatedFetch — session-expired clears only what it carried (#104)', () => {
   const sessionExpired = {
     ok: false,
     status: 401,
@@ -173,25 +175,22 @@ describe('authenticatedFetch — session-expired compare-and-remove (#104)', () 
     vi.clearAllMocks();
   });
 
-  it('does NOT clear storage when a late 401 carries a superseded session id', async () => {
-    (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' }); // request carried old S1
-    storageGet.mockResolvedValue({ sessionId: 'S2' });                   // storage already rotated to S2
+  it('asks to clear the session id the request carried, and only that', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer live-token', 'X-Session-Id': 'S1' });
     fetchWithTimeout.mockResolvedValue(sessionExpired);
 
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
-    // The fresh S2 must survive.
-    expect(storageRemove).not.toHaveBeenCalled();
+    expect(clearPersistedSessionIf).toHaveBeenCalledWith('S1');
+    expect(clearSession).not.toHaveBeenCalled();
   });
 
-  it('clears storage when the 401 carries the still-current session id', async () => {
-    (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' });
-    storedSessionId.mockResolvedValue('S1');
+  it('clears nothing when the request carried no session id', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer live-token' });
     fetchWithTimeout.mockResolvedValue(sessionExpired);
 
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
-    // Which keys a stale session occupies is the host's business now; the client
-    // asks for it to be cleared and nothing more.
-    expect(clearSession).toHaveBeenCalled();
+    expect(clearPersistedSessionIf).not.toHaveBeenCalled();
+    expect(clearSession).not.toHaveBeenCalled();
   });
 });
 

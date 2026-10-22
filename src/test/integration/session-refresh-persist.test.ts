@@ -19,7 +19,7 @@ vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 }));
 
-import { refreshSession, setSessionOwner } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
 import { getAuthHeaders } from '@faultmaven/copilot-ui/lib/api/fetch-utils';
 
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
@@ -31,7 +31,6 @@ describe('session refresh → X-Session-Id bridge', () => {
     createSessionWithRecovery.mockReset().mockResolvedValue({
       session_id: 'sess-refreshed', user_id: 'u1', client_id: 'c1', session_resumed: false, status: 'active'
     });
-    setSessionOwner('u1');
     getValidAccessToken.mockReset().mockResolvedValue(null);
     getAuthState.mockReset().mockResolvedValue(null);
     if (typeof navigator !== 'undefined') delete (navigator as any).locks;
@@ -70,7 +69,7 @@ describe('session refresh → X-Session-Id bridge', () => {
     let headers = await getAuthHeaders();
     expect((headers as Record<string, string>)['X-Session-Id']).toBeUndefined();
 
-    await refreshSession();
+    await refreshSession('u1');
 
     // The very defect: after refresh, the header must now be present.
     headers = await getAuthHeaders();

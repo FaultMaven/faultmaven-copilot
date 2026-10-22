@@ -88,26 +88,28 @@ export async function clearPersistedSession(
 // unavailable, e.g. in unit tests). See refreshSession().
 let refreshPromise: Promise<void> | null = null;
 
-// The panel's signed-in user, registered by the session slice: the only user
-// this context mints for, and the owner a stored session must have to be reused.
-let sessionOwner: string | null = null;
+const SESSION_LOCK = 'faultmaven-session-refresh';
 
-export function setSessionOwner(userId: string | null): void {
-  sessionOwner = userId;
+/**
+ * `task` under the session lock: the Web Lock across contexts, or, without
+ * Web Locks, after any in-context refresh in flight.
+ */
+async function underSessionLock<T>(task: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(SESSION_LOCK, { mode: 'exclusive' }, task);
+  }
+  if (refreshPromise) await refreshPromise.catch(() => {});
+  return task();
 }
 
-async function refreshSessionOnce(metadata?: Record<string, any>): Promise<void> {
-  const owner = sessionOwner;
-  if (!owner) {
-    log.debug('No session owner registered; not minting');
-    return;
-  }
-
+async function refreshSessionOnce(owner: string, metadata?: Record<string, any>): Promise<void> {
   // Re-check: a concurrent request (or another extension context) may have
   // already refreshed the session while we waited for the lock/promise. If a
   // session OWNED by this user is already in storage, don't POST another.
   // One minted for nobody, for another user, or stored before owners were
-  // recorded is replaced.
+  // recorded is replaced — by `persistSession` overwriting it, never by a
+  // clear: a failed mint leaves it stored, since it may be another user's
+  // perfectly good session (another account signed in on this browser).
   const existing = (await ownedStorage.get(['sessionId', 'sessionUserId'])) as
     { sessionId?: string; sessionUserId?: string };
   if (existing.sessionId && existing.sessionUserId === owner) {
@@ -115,44 +117,35 @@ async function refreshSessionOnce(metadata?: Record<string, any>): Promise<void>
     return;
   }
 
-  try {
-    const session = await createSession(owner, metadata);
-    if (!session.session_id) {
-      throw new Error('Invalid session response: missing session_id');
-    }
-    await persistSession(session);
-    log.info('Session refreshed and persisted', { sessionId: session.session_id });
-  } catch (error) {
-    // Requests must stop carrying a session that is not this user's — but
-    // only the one read above: another context may have stored a fresh one
-    // meanwhile (compare-and-remove, as #104).
-    if (existing.sessionId) {
-      const now = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
-      if (now.sessionId === existing.sessionId) await clearPersistedSession();
-    }
-    throw error;
+  const session = await createSession(owner, metadata);
+  if (!session.session_id) {
+    throw new Error('Invalid session response: missing session_id');
   }
+  await persistSession(session);
+  log.info('Session refreshed and persisted', { sessionId: session.session_id });
 }
 
 /**
- * Ensure a session owned by the registered owner (`setSessionOwner`): a no-op
- * when storage holds one; otherwise mint it, then PERSIST the new
- * session_id so the retried request — and every request after it — carries
- * `X-Session-Id`. Without persisting, the retry path re-created a session but
- * left storage empty, so subsequent requests went out session-less.
+ * Ensure a session owned by `owner` (the panel's signed-in user): a no-op when
+ * storage holds one; otherwise mint it, then PERSIST the new session_id so
+ * every request after it carries `X-Session-Id`.
  *
- * Single-flighted so N parallel failing requests trigger ONE `/sessions` POST
- * instead of a thundering herd with racing storage writes. Uses the Web Locks
- * API for cross-context coordination (MV3 service worker + sidepanel), matching
+ * With no `owner` it never mints and never clears: it only waits for any
+ * ensure in flight, so a caller that retries after it (`client.ts`'s retry
+ * wrapper) carries that ensure's session (faultmaven#1460).
+ *
+ * Single-flighted so N parallel callers trigger ONE `/sessions` POST instead
+ * of a thundering herd with racing storage writes. Uses the Web Locks API for
+ * cross-context coordination (MV3 service worker + sidepanel), matching
  * TokenManager's token-refresh strategy, with an in-context promise fallback.
  */
-export async function refreshSession(metadata?: Record<string, any>): Promise<void> {
+export async function refreshSession(owner?: string, metadata?: Record<string, any>): Promise<void> {
+  if (!owner) return underSessionLock(async () => {});
+
   // Web Locks API: true cross-context mutex.
   if (typeof navigator !== 'undefined' && navigator.locks) {
-    return navigator.locks.request(
-      'faultmaven-session-refresh',
-      { mode: 'exclusive' },
-      () => refreshSessionOnce(metadata)
+    return navigator.locks.request(SESSION_LOCK, { mode: 'exclusive' }, () =>
+      refreshSessionOnce(owner, metadata),
     );
   }
 
@@ -161,10 +154,22 @@ export async function refreshSession(metadata?: Record<string, any>): Promise<vo
     log.debug('Session refresh already in progress, waiting...');
     return refreshPromise;
   }
-  refreshPromise = refreshSessionOnce(metadata);
+  refreshPromise = refreshSessionOnce(owner, metadata);
   try {
     await refreshPromise;
   } finally {
     refreshPromise = null;
   }
+}
+
+/**
+ * Discard the stored session only if it is still `sessionId`: the one a 401
+ * or a dead heartbeat was about. Under the session lock, so a session another
+ * caller has just stored is never the one cleared (#104).
+ */
+export async function clearPersistedSessionIf(sessionId: string): Promise<void> {
+  await underSessionLock(async () => {
+    const stored = (await ownedStorage.get(['sessionId'])) as { sessionId?: string };
+    if (stored.sessionId === sessionId) await clearPersistedSession();
+  });
 }

@@ -1,7 +1,6 @@
 import { AuthenticationError, SessionExpiredError, UserFacingError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
-import { getApiTransport } from './transport';
-import { refreshSession } from './session-core';
+import { clearPersistedSessionIf, refreshSession } from './session-core';
 import { handleAuthError } from './auth-verdict';
 import { createLogger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
@@ -46,33 +45,19 @@ export function prepareBody(body: unknown): string | undefined {
 }
 
 /**
- * Handle session expiration by clearing the stale session and triggering refresh.
+ * Handle session expiration by clearing the stale session.
  *
  * `sentSessionId` is the session id the failing request actually carried (its
- * `X-Session-Id`). When provided we **compare-and-remove**: only clear storage
- * if it still holds that same id. A late 401 from a request carrying an OLD
- * session id must not wipe a sessionId that a concurrent refresh already rotated
- * to a fresh one (#104) — clearing the fresh id would send subsequent requests
- * out header-less and trigger a redundant second `/sessions` POST.
+ * `X-Session-Id`), and only that id is cleared (`clearPersistedSessionIf`,
+ * under the session lock). A late 401 from a request carrying an OLD session
+ * id must not wipe a sessionId that a concurrent refresh already rotated to a
+ * fresh one (#104) — clearing the fresh id would send subsequent requests out
+ * session-less.
  */
 async function handleSessionExpired(sentSessionId?: string): Promise<void> {
-  const transport = getApiTransport();
-
-  if (sentSessionId) {
-    const storedSessionId = await transport.sessionId();
-    if (storedSessionId && storedSessionId !== sentSessionId) {
-      log.info('Late 401 for a superseded session — leaving the fresh session intact', {
-        sentSessionId,
-        storedSessionId
-      });
-      throw new SessionExpiredError('Session expired - please refresh');
-    }
-  }
-  // Clear the stale session (storage still holds the failed id, or we couldn't
-  // identify it — clear to force a fresh refresh either way). This is the
-  // FaultMaven session, not the credential: refreshing it is a thing the shared
-  // UI legitimately does, and `refreshSession` below single-flights it.
-  await transport.clearSession();
+  // This is the FaultMaven session, not the credential: clearing it is a thing
+  // the shared UI legitimately does.
+  if (sentSessionId) await clearPersistedSessionIf(sentSessionId);
 
   log.warn('Session expired - cleared');
   throw new SessionExpiredError('Session expired - please refresh');
@@ -82,14 +67,14 @@ async function handleSessionExpired(sentSessionId?: string): Promise<void> {
  * Wrapper for authenticated fetch with automatic session refresh on expiration
  *
  * Session Expiration Handling (Option C):
- * 1. If backend returns 401 with SESSION_EXPIRED error code
- * 2. Clear stale session_id from storage
- * 3. refreshSession() ensures a session owned by the panel's user (minting,
- *    with client_id for resumption, only when the stored one is missing or not
- *    theirs), single-flighted across concurrent requests/contexts, and PERSISTS
- *    the new session_id to storage
- * 4. Retry the request once — getAuthHeaders now reads the persisted session_id
- *    and attaches X-Session-Id
+ * 1. If backend returns 401 with SESSION_EXPIRED error code, or the request
+ *    went out with no credential
+ * 2. Clear the stale session_id from storage (the expiry case only)
+ * 3. refreshSession() with no owner waits for any session ensure in flight and
+ *    mints nothing: minting is the session slice's, for the panel's user
+ *    (faultmaven#1460)
+ * 4. Retry the request once — getAuthHeaders reads whatever session_id is
+ *    persisted now and attaches X-Session-Id
  */
 export async function authenticatedFetchWithRetry(
   url: string,
@@ -105,8 +90,8 @@ export async function authenticatedFetchWithRetry(
       log.info('Session expired, attempting refresh and retry...');
 
       try {
-        // Single-flighted refresh: N parallel 401s trigger ONE /sessions POST,
-        // and the new session_id is persisted so the retry carries X-Session-Id.
+        // No owner: waits for an ensure in flight, so the retry carries its
+        // X-Session-Id, and never mints itself.
         await refreshSession();
 
         // Retry the request with the same options
@@ -219,9 +204,9 @@ export async function authenticatedFetch(
 
       // We sent no credential, so the 401 is about that, not about the token
       // or the session. Both stay: a renewal blip must not destroy the
-      // credential the next request could have used (#99), and clearing the
-      // session would only send the retry to mint one with no credential
-      // (faultmaven#1460). The retry wrapper retries once, minting nothing.
+      // credential the next request could have used (#99), and the session is
+      // not what was refused. The retry wrapper retries once and mints
+      // nothing (faultmaven#1460).
       if (!sentAuthHeader) {
         log.warn('401 on a request with no Authorization header — treating as transient (token and session preserved), not a hard auth failure');
         throw new SessionExpiredError('No credential was sent');

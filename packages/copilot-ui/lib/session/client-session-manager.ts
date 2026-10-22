@@ -110,6 +110,16 @@ export class ClientSessionManager {
     userContext?: any,
     timeoutMinutes?: number,
   ): Promise<SessionCreateResponse> {
+    return this.mint(expectedOwner, true, userContext, timeoutMinutes);
+  }
+
+  /** `askHost`: whether a rejected credential may still get the host's verdict. */
+  private async mint(
+    expectedOwner: string,
+    askHost: boolean,
+    userContext?: any,
+    timeoutMinutes?: number,
+  ): Promise<SessionCreateResponse> {
     const clientId = await this.getOrCreateClientId();
     const apiUrl = await getApiTransport().baseUrl();
 
@@ -145,6 +155,7 @@ export class ClientSessionManager {
     let { response, bearer } = await send();
     let session = await this.ownedSession(response, expectedOwner);
     if (!session) {
+      if (!askHost) throw new AuthenticationError('Authentication required');
       // Throws on 'ended', after its epoch bump.
       await handleAuthError(bearer);
       ({ response, bearer } = await send());
@@ -255,7 +266,9 @@ export class ClientSessionManager {
       if (this.isSessionExpiredError(error)) {
         log.warn('Session expired/invalid after browser crash - creating fresh session');
         await this.clearClientId();
-        return await this.createSession(expectedOwner, userContext, timeoutMinutes);
+        // At most one host verdict per ensure: the first attempt may already
+        // have taken one.
+        return await this.mint(expectedOwner, false, userContext, timeoutMinutes);
       }
       // Re-throw other errors
       throw error;

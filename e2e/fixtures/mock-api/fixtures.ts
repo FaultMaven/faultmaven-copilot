@@ -97,9 +97,10 @@ export const oauthToken = {
 
 /**
  * `POST /api/v1/sessions`. The contract leaves this body untyped (`unknown`),
- * so it is held to the shape the client parses instead.
+ * so it is held to the shape the client parses instead. Served through
+ * `sessionCreateFor`, below.
  */
-export const sessionCreate = {
+const sessionCreate = {
     session_id: 'e2e-session-12345',
     user_id: E2E_USER_ID,
     client_id: 'e2e-client-12345',
@@ -109,6 +110,28 @@ export const sessionCreate = {
     session_resumed: false,
     message: 'Session created successfully',
 } satisfies SessionCreateResponse;
+
+/**
+ * The user behind each bearer the harness issues. The client refuses a session
+ * minted for anyone but its own user (faultmaven#1460), so the mock mints, as
+ * the API does, for the user the presented bearer belongs to.
+ */
+const BEARER_USERS: Record<string, string> = {
+    [oauthToken.access_token]: oauthToken.user_id, // the OAuth code exchange, above
+    'e2e-mock-token': E2E_USER_ID, // signedInStorage(), e2e/setup/extension-context.ts
+    'e2e-bridge-access-token': 'e2e-bridge-user', // target-pages/dashboard-signed-in.html
+    'race-access-token': 'race-user', // 07-sign-in-during-panel-startup
+    'b-access-token': 'e2e-user-b', // 08-request-carries-its-user, user B
+};
+
+/** What the API mints for no bearer, or one it cannot resolve: an anonymous `user_<8 hex>`. */
+const ANONYMOUS_USER_ID = 'user_0000e2e0';
+
+/** `POST /api/v1/sessions` for the request's `Authorization` header. */
+export function sessionCreateFor(authorization: string | undefined) {
+    const bearer = (authorization ?? '').replace(/^Bearer\s+/i, '');
+    return { ...sessionCreate, user_id: BEARER_USERS[bearer] ?? ANONYMOUS_USER_ID };
+}
 
 function caseSummary(overrides: Pick<Schemas['CaseSummary'], 'case_id' | 'title'> & Partial<Schemas['CaseSummary']>) {
     return {
