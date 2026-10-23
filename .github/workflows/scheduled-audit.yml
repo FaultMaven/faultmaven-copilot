@@ -30,7 +30,6 @@ on:
   pull_request:
     paths:
       - '.github/workflows/scheduled-audit.yml'
-      - '.github/actions/lockfile-audit/**'
 
 permissions:
   contents: read
@@ -55,6 +54,6 @@ jobs:
           node-version-file: package.json
 
       - name: Audit lockfile (fails if the audit could not run)
-        uses: ./.github/actions/lockfile-audit
+        uses: FaultMaven/ci-actions/lockfile-audit@3d24d91b3eff1001ebd151243095efd7bc225ff2 # v1.1.0
         with:
           on-unreachable: fail
