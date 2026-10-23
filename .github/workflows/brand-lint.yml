@@ -33,8 +33,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: FaultMaven/ci-actions/setup-js@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
         with:
-          node-version-file: package.json
+          pnpm: 'false'
+          install: 'false'
       - name: Run brand-messaging lint
         run: node scripts/brand-lint.mjs
