@@ -432,7 +432,7 @@ jobs:
   #
   # It now fails closed on moderate, high and critical advisories (moderate
   # since faultmaven#2156). The job name is unchanged so anything that names
-  # this check keeps naming it. The audit lives in .github/actions/lockfile-audit,
+  # this check keeps naming it. The audit lives in FaultMaven/ci-actions/lockfile-audit,
   # which the daily scheduled-audit.yml also runs against main
   # (faultmaven#2159), so both use one level. The action writes the job
   # summary for every outcome of the audit; a setup step that fails before it
@@ -482,7 +482,7 @@ jobs:
       # (5xx, 408, 429) or stalled (90 s per attempt), and `fail` keeps this gate
       # closed if that lasts all four attempts.
       - name: Audit lockfile (moderate and above, fail closed)
-        uses: ./.github/actions/lockfile-audit
+        uses: FaultMaven/ci-actions/lockfile-audit@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
         with:
           on-unreachable: fail
 
