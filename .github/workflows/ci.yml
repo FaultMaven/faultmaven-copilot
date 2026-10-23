@@ -482,7 +482,7 @@ jobs:
       # (5xx, 408, 429) or stalled (90 s per attempt), and `fail` keeps this gate
       # closed if that lasts all four attempts.
       - name: Audit lockfile (moderate and above, fail closed)
-        uses: FaultMaven/ci-actions/lockfile-audit@3d24d91b3eff1001ebd151243095efd7bc225ff2 # v1.1.0
+        uses: FaultMaven/ci-actions/lockfile-audit@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
         with:
           on-unreachable: fail
 
