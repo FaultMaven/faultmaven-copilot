@@ -32,7 +32,9 @@ jobs:
             conclusions="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100" \
               --jq '[.workflow_runs[] | .conclusion // "pending"] | join(" ")')"
             echo "attempt ${attempt}: CI push runs of ${GITHUB_SHA}: '${conclusions}'"
-            case " ${conclusions} " in
+            # No run at all yet waits like a pending one: the tag can reach
+            # GitHub before the push to main that starts CI.
+            case " ${conclusions:-pending} " in
               *" success "*) exit 0 ;;
               *" pending "*) sleep 30 ;;
               *) break ;;
