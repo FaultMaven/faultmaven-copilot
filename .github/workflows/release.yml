@@ -11,24 +11,48 @@ env:
 jobs:
   release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
+      actions: read  # the CI-verdict lookup below
 
     steps:
+      # A tag names a commit; nothing else here says CI passed on it. v1.0.2
+      # and v1.0.3 were released 2-3 minutes before their own CI runs
+      # finished. This step waits for a green "CI/CD Pipeline" push run of the
+      # tagged commit and refuses one that has none. CI on a push has taken
+      # up to 313s (60 runs to 2026-10-23), so it waits up to 10 minutes.
+      - name: Require a green CI run of the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            conclusions="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100" \
+              --jq '[.workflow_runs[] | .conclusion // "pending"] | join(" ")')"
+            echo "attempt ${attempt}: CI push runs of ${GITHUB_SHA}: '${conclusions}'"
+            case " ${conclusions} " in
+              *" success "*) exit 0 ;;
+              *" pending "*) sleep 30 ;;
+              *) break ;;
+            esac
+          done
+          echo "::error::${GITHUB_SHA} has no successful CI/CD Pipeline push run; push the commit to main, let CI pass, then re-run this release"
+          exit 1
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0  # Fetch all history for changelog generation
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: '9'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '20'
           cache: 'pnpm'
@@ -130,7 +154,7 @@ jobs:
       # Explicit versioned filenames — NOT `.output/*.zip`, which would also
       # publish the Firefox sources zip that `wxt zip -b firefox` emits.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             .output/faultmaven-copilot-${{ steps.version.outputs.version }}-chrome.zip

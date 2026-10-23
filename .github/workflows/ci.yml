@@ -24,7 +24,7 @@ jobs:
   # ============================================================================
   lint:
     name: Lint & Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Checks out the repository and runs tsc. Writes only to
     # $GITHUB_STEP_SUMMARY, which is a runner file, not an API scope.
@@ -33,15 +33,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -81,7 +81,7 @@ jobs:
   # ============================================================================
   api-types-drift:
     name: API Types Drift Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Checks out this repository. The pinned contract is fetched over
     # unauthenticated raw.githubusercontent.com; the hop report below does
@@ -92,7 +92,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # Two commits, so `HEAD^` exists on a push. At the default depth
           # of 1 the hop report's push arm could never resolve a base and
@@ -101,12 +101,12 @@ jobs:
           fetch-depth: 2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -210,7 +210,7 @@ jobs:
   test:
     name: Run Tests
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Checkout plus the Codecov upload. Codecov authenticates with its own
     # token, not GITHUB_TOKEN; its OIDC path is opt-in (`use_oidc`) and needs
@@ -221,15 +221,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -241,7 +241,7 @@ jobs:
         run: pnpm run test:coverage
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           file: ./coverage/coverage-final.json
           flags: copilot
@@ -270,7 +270,7 @@ jobs:
   build:
     name: Build Extension Packages
     needs: [lint, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Checkout plus actions/upload-artifact, which uploads through the runner's
     # own artifact service (it has no `github-token` input at all) — so the
@@ -280,15 +280,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -334,7 +334,7 @@ jobs:
       # The globs deliberately exclude the -sources.zip that `wxt zip -b
       # firefox` also emits.
       - name: Upload extension packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension-packages
           path: |
@@ -364,7 +364,7 @@ jobs:
   validate:
     name: Validate Extension Packages
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # No checkout and no API call: it downloads the artifact this same run
     # produced and unzips it. actions/download-artifact is scoped to the
@@ -374,7 +374,7 @@ jobs:
 
     steps:
       - name: Download extension packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: extension-packages
 
@@ -469,7 +469,7 @@ jobs:
   # ============================================================================
   security:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Checkout plus `pnpm audit`, which queries the npm registry.
     permissions:
@@ -477,16 +477,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -515,7 +515,9 @@ jobs:
     name: Pipeline Summary
     needs: [lint, api-types-drift, test, build, validate, security]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # 60 green runs to 2026-10-23 top out at 5s; the floor is 5m.
+    timeout-minutes: 5
     # Reads `needs.*.result` (workflow context, not an API scope) and writes
     # $GITHUB_STEP_SUMMARY. No checkout, no API call.
     permissions: {}
