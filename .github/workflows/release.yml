@@ -69,6 +69,21 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      # GitHub makes the newest-created release "Latest" by default, so a
+      # hotfix tag on an older line (v1.1.1 cut after v1.2.0) would take it.
+      # Only the highest plain vX.Y.Z tag in the repository may. The remote's
+      # tags are read so a tag pushed since the checkout counts; if that read
+      # fails, the full-history checkout's own tags stand in.
+      - name: Decide whether this release becomes Latest
+        id: latest
+        run: |
+          set -euo pipefail
+          tags="$(git ls-remote --tags --refs origin 'refs/tags/v*' | sed 's#.*refs/tags/##')" || tags="$(git tag -l 'v*')"
+          highest="$(printf '%s\n%s\n' "$tags" "$GITHUB_REF_NAME" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)" || highest=""
+          if [ "$highest" = "$GITHUB_REF_NAME" ]; then latest=true; else latest=false; fi
+          echo "${GITHUB_REF_NAME}: the highest release tag is '${highest}', so make_latest=${latest}"
+          echo "make_latest=${latest}" >> "$GITHUB_OUTPUT"
+
       # `wxt zip` does NOT run the package.json `prebuild` hook (there is no
       # `prezip` script), so icons must be generated explicitly.
       - name: Generate icons
@@ -164,6 +179,7 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           body: ${{ steps.release-notes.outputs.notes }}
           draft: false
+          make_latest: ${{ steps.latest.outputs.make_latest }}
           # A path that stops matching WXT's artifact naming must fail the
           # release, not publish one with zero assets (the action's default).
           fail_on_unmatched_files: true
