@@ -212,10 +212,7 @@ jobs:
     needs: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # Checkout plus the Codecov upload. Codecov authenticates with its own
-    # token, not GITHUB_TOKEN; its OIDC path is opt-in (`use_oidc`) and needs
-    # `id-token: write`, which is never granted by default and is not wanted
-    # here — so no scope is being taken away from it.
+    # Checkout only.
     permissions:
       contents: read
 
@@ -239,14 +236,6 @@ jobs:
 
       - name: Run tests with coverage
         run: pnpm run test:coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          file: ./coverage/coverage-final.json
-          flags: copilot
-          name: copilot-coverage
-          fail_ci_if_error: false
 
       - name: Test summary
         if: success()
