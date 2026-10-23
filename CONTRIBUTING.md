@@ -6,7 +6,7 @@ Thank you for your interest in contributing to FaultMaven Copilot! This guide wi
 
 1.  **Prerequisites**:
     *   Node.js: the major in `package.json` `engines.node`
-    *   pnpm: the version in `package.json` `packageManager` (pnpm switches to it itself)
+    *   pnpm: the version in `package.json` `packageManager` (pnpm 10 or later switches to it by itself; with an older pnpm, run `corepack enable`)
 
 2.  **Clone the repository**:
     ```bash
