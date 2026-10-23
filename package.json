@@ -2,6 +2,10 @@
   "name": "faultmaven-copilot",
   "description": "AI-powered troubleshooting copilot embedded in your browser",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": "24.x"
+  },
   "version": "1.2.0",
   "type": "module",
   "scripts": {
