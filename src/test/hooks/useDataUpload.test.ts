@@ -8,6 +8,7 @@ import { createStubHost, hostWrapper } from '../support/host';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import {
   AuthenticationError,
+  CredentialUnavailableError,
   DuplicateUploadNotice,
   SessionExpiredError,
   SessionSwitchedError,
@@ -794,18 +795,31 @@ describe('useDataUpload — a submission that never reached a case says what was
     expect(api.createCase).not.toHaveBeenCalled();
   });
 
-  // The gate decides by the ensure's error (faultmaven#1460): only a session
-  // the host ended asks for sign-in.
+  // The gate decides by the ensure's error (faultmaven#1460): a session the
+  // host ended, or a mint with no credential, asks for sign-in.
   const failEnsure = (failure: unknown) =>
     useAppStore.setState({ sessionId: null, refreshSession: vi.fn().mockRejectedValue(failure) });
   const shown = () => mockShowError.mock.calls[0][0] as { userMessage: string; userAction: string };
 
-  it('a credential unreadable for a moment says not sent, with no sign-in advice', async () => {
+  // The mint had no credential: the host could not say why, which means
+  // nothing is stored, since a host that keeps the session says so with
+  // `CredentialUnavailableError` (faultmaven#1460). The question path's copy.
+  it('a mint with no credential says not sent, with sign-in advice', async () => {
     failEnsure(new SessionExpiredError('No credential to mint a session with'));
     const outcome = await submit({ files: [file('app.log')], query: 'why?' });
 
     expect(outcome).toMatchObject({ success: false, sent: false });
     expect(shown().userMessage).toContain('app.log');
+    expect(shown().userMessage).toContain('Your session has expired.');
+    expect(shown().userAction).toBe('Sign in first, then send again.');
+  });
+
+  it('a kept session with no credential right now says not sent, with no sign-in advice', async () => {
+    failEnsure(new CredentialUnavailableError());
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(shown().userMessage).toContain('Unable to reach FaultMaven server');
     expect(shown().userMessage).not.toMatch(/signed out|session has expired/i);
     expect(shown().userAction).toBe('Send again to retry.');
   });

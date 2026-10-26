@@ -16,13 +16,18 @@ const { mockGetValidAccessToken, mockClearAllAuthData } = vi.hoisted(() => ({
 
 // The act-site reads the token together with its owner; these tests stage
 // the token and give every one to the panel's user unless they say otherwise.
-const { mockOwner } = vi.hoisted(() => ({ mockOwner: { userId: 'user-a' as string | null } }));
+const { mockOwner, mockPeek } = vi.hoisted(() => ({
+  mockOwner: { userId: 'user-a' as string | null },
+  // The stored credential as-is: nothing stored unless a test says otherwise.
+  mockPeek: vi.fn(),
+}));
 vi.mock('../../../extension/auth/token-manager', () => ({
   tokenManager: {
     getValidCredential: async () => {
       const accessToken = await mockGetValidAccessToken();
       return accessToken ? { accessToken, userId: mockOwner.userId } : null;
     },
+    peekCredential: () => mockPeek(),
   },
 }));
 vi.mock('../../../extension/auth/auth-manager', () => ({
@@ -31,13 +36,18 @@ vi.mock('../../../extension/auth/auth-manager', () => ({
 
 import { readSessionAccessToken } from '../../../extension/host/session-credential';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
-import { SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  CredentialUnavailableError,
+  SessionSwitchedError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 
 describe('readSessionAccessToken', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockClearAllAuthData.mockResolvedValue('ended');
     mockOwner.userId = 'user-a';
+    mockPeek.mockResolvedValue(null);
   });
 
   it('refuses a token that belongs to another user, and tears nothing down (#350)', async () => {
@@ -69,14 +79,30 @@ describe('readSessionAccessToken', () => {
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
   });
 
-  it('does NOT tear down when there is simply no token right now', async () => {
-    // The transient answer. The request goes out header-less and its 401 keeps
-    // the credential and the session (#99, faultmaven#1460); tearing down here
-    // would turn every renewal blip into a logout, which is the regression the
-    // whole transient/definitive split exists to prevent.
+  // No usable token is two states (faultmaven#1460), and neither tears down:
+  // that would turn every renewal blip into a logout (#99).
+  it('signed out (nothing stored): the plain Error, so the request goes out with no bearer', async () => {
     mockGetValidAccessToken.mockResolvedValue(null);
 
-    await expect(readSessionAccessToken('user-a')).rejects.toThrow();
+    const failure = await readSessionAccessToken('user-a').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(CredentialUnavailableError);
+    expect(failure).not.toBeInstanceOf(SessionSwitchedError);
+    expect(mockClearAllAuthData).not.toHaveBeenCalled();
+  });
+
+  // A credential kept through a refresh that failed: not sent at all, so its
+  // 401 cannot read as an expired session.
+  it.each([
+    ['kept for this user', 'user-a', 'user-a', CredentialUnavailableError],
+    ['kept, for a caller acting for no user', null, 'user-b', CredentialUnavailableError],
+    ["another user's", 'user-a', 'user-b', SessionSwitchedError],
+  ] as const)('no usable token, a stored credential %s: refused, nothing torn down', async (_label, forUserId, storedOwner, refusal) => {
+    mockGetValidAccessToken.mockResolvedValue(null);
+    mockPeek.mockResolvedValue({ accessToken: 'expired-token', userId: storedOwner });
+
+    await expect(readSessionAccessToken(forUserId)).rejects.toBeInstanceOf(refusal);
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
   });
 
@@ -118,10 +144,33 @@ describe('readSessionAccessToken', () => {
     expect(mockGetValidAccessToken).toHaveBeenCalledTimes(2);
   });
 
-  it('passes an ordinary failure through untouched', async () => {
-    mockGetValidAccessToken.mockRejectedValue(new Error('network down'));
+  // TokenManager throws nothing but its verdict and a failed storage read, and
+  // a failed read is not a read that the session is gone (faultmaven#1460).
+  it.each([
+    ['the credential', () => mockGetValidAccessToken.mockRejectedValue(new Error('storage unavailable'))],
+    ['the stored credential, after no usable token', () => {
+      mockGetValidAccessToken.mockResolvedValue(null);
+      mockPeek.mockRejectedValue(new Error('storage unavailable'));
+    }],
+  ])('a failed read of %s: refused, keeping the reason, nothing torn down', async (_label, stage) => {
+    stage();
 
-    await expect(readSessionAccessToken('user-a')).rejects.toThrow('network down');
+    const failure = await readSessionAccessToken('user-a').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CredentialUnavailableError);
+    expect((failure as CredentialUnavailableError).originalError?.message).toBe('storage unavailable');
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
+  });
+
+  // What `getAuthHeaders` already tells apart is not a failed read: it passes
+  // through as thrown, a verdict that is not `SessionEndedError` included.
+  it.each([
+    ['an AuthenticationError', () => new AuthenticationError('Authentication required')],
+    ['a SessionSwitchedError', () => new SessionSwitchedError()],
+  ])('%s from the read passes through unchanged', async (_label, make) => {
+    const thrown = make();
+    mockGetValidAccessToken.mockRejectedValue(thrown);
+
+    await expect(readSessionAccessToken('user-a')).rejects.toBe(thrown);
   });
 });

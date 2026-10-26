@@ -8,8 +8,9 @@
  * verdict, and during logout's own authenticated call.
  *
  * With the two distinguishable, TokenManager reports and the host acts:
- * `null` stays the transient answer (#99 — the request goes out header-less and
- * recovers), and this says the session is over.
+ * `null` stays the transient answer (#99 — the request goes out header-less
+ * when nothing is stored, and is not sent while a credential is kept,
+ * faultmaven#1460), and this says the session is over.
  *
  * Extends the SHARED `AuthenticationError` on purpose. That is the package's
  * existing vocabulary for "this session is over, sign in again" — category

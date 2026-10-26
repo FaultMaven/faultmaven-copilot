@@ -162,10 +162,12 @@ export async function authenticatedFetch(
     };
 
     // Did we actually attach a credential? getAuthHeaders returns no
-    // Authorization header when the host cannot produce a token — which happens
-    // during a transient renewal-endpoint outage where the host DELIBERATELY
-    // preserves the tokens (mid-session resilience). A 401 on such a header-less
-    // request means "we had no token", not "the token is invalid" (see #99).
+    // Authorization header when the host could not produce a token and could
+    // not say why: in practice, not signed in. A 401 on such a header-less
+    // request means "we had no token", not "the token is invalid" (see #99). A
+    // host that KEPT the session through a renewal outage says so with
+    // `CredentialUnavailableError`, and that request is never sent
+    // (faultmaven#1460).
     const sentAuthKey = Object.keys(mergedHeaders).find(
       (k) => k.toLowerCase() === 'authorization' && !!(mergedHeaders as any)[k]
     );

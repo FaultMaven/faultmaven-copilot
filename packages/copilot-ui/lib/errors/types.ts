@@ -280,6 +280,11 @@ export class NetworkError extends UserFacingError {
  * mint was refused again with no verdict to say the session ended. `NetworkError`'s copy
  * and recovery, as ruled. Its own class so a loop that would only ask the host
  * to renew again on every iteration (the async-turn poll) stops at once.
+ *
+ * A host also THROWS it from `accessToken()` when it still holds the session
+ * but has no credential right now; `getAuthHeaders` propagates it, so the
+ * request is not sent. A host outside this repository reaches it through the
+ * package entry.
  */
 export class CredentialUnavailableError extends NetworkError {
   constructor(message = 'The credential could not be renewed right now', originalError?: Error) {

@@ -98,6 +98,14 @@ export type { ClearPersistedSessionOptions } from './lib/api/session-core';
  */
 export { SessionSwitchedError } from './lib/errors/types';
 
+/**
+ * What a host's `session.accessToken()` throws when it still holds this user's
+ * session but has no credential right now (a token expired while its renewal
+ * endpoint is down): the request is not sent, and the caller sees a
+ * `NetworkError` (faultmaven#1460). The very class, for the same `instanceof`.
+ */
+export { CredentialUnavailableError } from './lib/errors/types';
+
 /** The shapes a host renders or hands in. */
 export type { UserCase, UserCaseState, Message, CaseDetail } from './types/case';
 export type { OptimisticConversationItem, PendingOperation } from './lib/optimistic';

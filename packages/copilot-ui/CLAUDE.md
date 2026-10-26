@@ -33,6 +33,11 @@ This file holds the rules that constrain code *inside* the package.
   A request or mint refused again with no `'ended'` verdict (a 401 on the
   retry after `'refreshed'`) throws the same error, never a sign-out. The
   async-turn poll stops on it rather than renewing per poll.
+- **The host's reason for no token** (`accessToken()`, `lib/api/fetch-utils.ts`):
+  `AuthenticationError`, `SessionSwitchedError` and `CredentialUnavailableError`
+  (the session is kept, with no credential right now) propagate and the
+  request is not sent. Any other throw sends it with no bearer, the
+  not-signed-in path (faultmaven#1460).
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as
@@ -97,7 +102,10 @@ show_modal · `PermissionError` graceful_degradation · `NetworkError`
 retry_with_backoff (its subclass `CredentialUnavailableError` is a 401 the host
 answered `'unavailable'`: no sign-out, no epoch move; one renewal per request
 attempt, times the caller's retries — `resilientOperation`'s attempt budget, a
-query's one retry — and nothing is duplicated) ·
+query's one retry — and nothing is duplicated; or the host's `accessToken()`
+throwing it for a kept session with no credential now: nothing sent, one host
+read per attempt, which renews once in the Dashboard and runs a 3-POST refresh
+ladder in the extension, so 3 or 9 per action) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
 `QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·

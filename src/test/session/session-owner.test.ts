@@ -119,6 +119,23 @@ describe('the mint', () => {
     expect(clearClientId).not.toHaveBeenCalled();
   });
 
+  // The host holds the session but has no credential right now
+  // (faultmaven#1460): a connection problem the ensure's scheduler retries,
+  // not an expired session, and one host read per attempt.
+  it('rejects the ensure with CredentialUnavailableError when the host has no credential right now', async () => {
+    const read = vi.fn(async (): Promise<string> => {
+      throw new CredentialUnavailableError();
+    });
+    readToken = read;
+
+    const failure = await refreshSession('u1').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CredentialUnavailableError);
+    expect(failure).not.toBeInstanceOf(SessionExpiredError);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(fetchWithTimeout).not.toHaveBeenCalled();
+  });
+
   it("is re-sent once with the renewed bearer when a 401's verdict is 'refreshed'", async () => {
     onUnauthorized.mockImplementation(() => {
       token = 't2';

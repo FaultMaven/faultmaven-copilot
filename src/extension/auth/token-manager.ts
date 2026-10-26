@@ -87,7 +87,8 @@ export class TokenManager {
    * A token about to expire is not a usable credential: the request goes out
    * with an Authorization header, and a 401 that CARRIES one routes to the hard
    * teardown rather than the transient session path. So near-expiry is worse
-   * than no token, which merely goes out header-less and recovers.
+   * than no token, which merely is not sent (the credential kept,
+   * faultmaven#1460) and recovers.
    */
   private static readonly USABLE_TOKEN_MARGIN_MS = 5_000;
 
@@ -150,12 +151,12 @@ export class TokenManager {
             refreshToken: tokens.refresh_token as string,
             userId: userIdOf(tokens),
             // NOT spendable as a fallback. We cannot say how old this token is,
-            // so if the refresh fails, going header-less is right: its 401
-            // keeps the credential and the stored session and mints nothing,
+            // so if the refresh fails, presenting none is right: the request is
+            // not sent and the credential is kept (faultmaven#1460),
             // while an unvouchable bearer whose 401 CARRIES a credential routes
             // to the hard teardown — destroying the refresh token that would
             // have renewed the session once the outage ended. `usable` below is
-            // the different case: there, header-less is not an option.
+            // the different case: there, presenting none is not an option.
             spendableToken: null,
           }
         : { kind: 'usable', accessToken: tokens.access_token, userId: userIdOf(tokens) };
@@ -212,9 +213,9 @@ export class TokenManager {
    *
    * THREE outcomes, and the distinction between the last two is the point:
    *   - a token           — spend it
-   *   - `null`            — nothing usable RIGHT NOW. Transient: the request
-   *                         goes out header-less, its 401 keeps the credential
-   *                         and the session, a later call retries (#99)
+   *   - `null`            — nothing usable RIGHT NOW. Transient: a later call
+   *                         retries (#99). Nothing stored or a credential kept;
+   *                         the act-site tells them apart (faultmaven#1460)
    *   - SessionEndedError — the chain is definitively dead. The HOST tears down
    *                         (ExtensionApp.accessToken); this class only reports
    *
@@ -270,8 +271,8 @@ export class TokenManager {
       if (error instanceof SessionEndedError) throw error;
       // Non-retryable but not a session verdict (a malformed payload, say) falls
       // through to the shared exit like every other arm: the access token may
-      // still have minutes on it, and returning null here would send the request
-      // header-less and burn a session round trip for nothing.
+      // still have minutes on it, and returning null here would fail the request
+      // for nothing.
       log[isRetryableError(error) ? 'warn' : 'error']('Token refresh failed', error);
     }
 
@@ -287,7 +288,8 @@ export class TokenManager {
         return { accessToken: after.accessToken, userId: after.userId };
       case 'refreshable':
         // Still refreshable and we just failed: spend the token if it is worth
-        // spending, otherwise go out header-less and let a later call retry.
+        // spending, otherwise none (the act-site sends nothing for a kept
+        // credential, faultmaven#1460) and let a later call retry.
         return after.spendableToken ? { accessToken: after.spendableToken, userId: after.userId } : null;
       case 'dead':
         // Reachable only if the credential vanished mid-flight; a transient
@@ -547,7 +549,14 @@ export class TokenManager {
    * The stored access token AS-IS, with its owner from the same read — no
    * refresh, no verdict, no teardown.
    *
-   * The FALLBACK for callers that must not let a verdict escape. `logoutAuth`
+   * Every request's null path reads it: when `getValidCredential()` answers
+   * null, the act-site (`readOnce`, faultmaven#1460) asks this which kind. So
+   * its contract is load-bearing: the kept credential while `access_token` is
+   * stored (a refresh that failed transiently keeps it), null only when
+   * nothing is stored, and a throw only when the storage read fails. A null
+   * for a kept credential would send that request with no bearer.
+   *
+   * Also the FALLBACK for callers that must not let a verdict escape. `logoutAuth`
    * asks `getValidCredential()` first — so a healthy near-expiry session still
    * refreshes and the sign-out can actually be confirmed — and falls back here
    * when that answers nothing or reports a dead chain. Sending a possibly-expired
