@@ -61,6 +61,17 @@ export interface ApiTransport {
    *                session (a turn, a `POST /cases`) into that account.
    *   'ended'      the session is over. The client fences this context's
    *                in-flight writers (moves the epoch) and surfaces it.
+   *   'unavailable' the host could not renew the credential NOW and has NOT
+   *                ended the session (its renewal answered 5xx, or the browser
+   *                is offline). The fetch layer does not retry the request,
+   *                the epoch does not move and no sign-out shows: it fails
+   *                with `NetworkError` ("Connection Problem"), recovery
+   *                `retry_with_backoff`. The cost is that retry:
+   *                `resilientOperation` retries a `NetworkError` up to 3 times
+   *                per action, so one action can cost up to 3 renewal
+   *                attempts. Nothing is duplicated: a 401 committed nothing
+   *                (faultmaven#1460). A host that cannot tell a transient
+   *                failure from a definitive one never answers it.
    *
    * The answer is load-bearing. Without it the client threw
    * `AuthenticationError` after the callback regardless, so a host that
@@ -81,7 +92,7 @@ export interface ApiTransport {
 }
 
 /** What the host did about a rejected credential. */
-export type AuthOutcome = 'refreshed' | 'ended';
+export type AuthOutcome = 'refreshed' | 'ended' | 'unavailable';
 
 let transport: ApiTransport | null = null;
 

@@ -214,7 +214,7 @@ export async function authenticatedFetch(
 
       // A 401 on a request that DID carry a credential. Whether that ends the
       // session is the HOST's call, not ours — it owns the token chain and may
-      // have renewed it already.
+      // have renewed it already. 'ended' and 'unavailable' throw inside.
       const outcome = await handleAuthError(sentBearer);
       if (outcome === 'refreshed') {
         // Once. `getAuthHeaders` now reads the renewed bearer. A second 401

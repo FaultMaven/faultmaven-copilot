@@ -279,20 +279,6 @@ describe('the session slice', () => {
     expect(mints()).toHaveLength(1);
   });
 
-  it('keeps the heartbeat when the early retry is refused too, and the next tick mints', async () => {
-    token = null;
-    await init();
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(vi.getTimerCount()).toBe(1);
-
-    token = 't1';
-    mintWhenAsked();
-    await vi.advanceTimersToNextTimerAsync();
-
-    await vi.waitFor(() => expect(useAppStore.getState().sessionId).toBe('s-new'));
-    expect(mints()).toHaveLength(1);
-  });
-
   it("beats the owner's session", async () => {
     Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
     fetchWithTimeout.mockResolvedValue(reply(200));
@@ -303,23 +289,6 @@ describe('the session slice', () => {
     await vi.waitFor(() => expect(heartbeats()).toHaveLength(1));
     expect(heartbeats()[0][0]).toBe(`${API}/api/v1/sessions/s1/heartbeat`);
     expect(mints()).toHaveLength(0);
-  });
-
-  it.each([404, 403])('drops a session whose heartbeat is answered %i, and the next tick mints', async (status) => {
-    Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
-    fetchWithTimeout.mockImplementation(async (url: string) =>
-      url === MINT ? minted('s2', 'u1') : reply(String(url).includes('/s1/') ? status : 200),
-    );
-    await init();
-
-    await vi.advanceTimersToNextTimerAsync();
-    await vi.waitFor(() => expect(stub.data.sessionId).toBeUndefined());
-    // The store too: the upload gate reads it.
-    expect(useAppStore.getState().sessionId).toBeNull();
-
-    await vi.advanceTimersToNextTimerAsync();
-    await vi.waitFor(() => expect(stub.data.sessionId).toBe('s2'));
-    expect(mints()).toHaveLength(1);
   });
 
   it('leaves one heartbeat after overlapping inits, and none after clearSession', async () => {
@@ -441,7 +410,8 @@ describe('the session slice: its timers and its owner', () => {
     Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true });
     const removedUnderLock: boolean[] = [];
     stub.remove.mockImplementation(async (keys: string[]) => {
-      removedUnderLock.push(held);
+      // The session's keys: the re-ensure's refused mint also drops the client id.
+      if (keys.includes('sessionId')) removedUnderLock.push(held);
       for (const key of keys) delete stub.data[key];
     });
     Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
@@ -480,9 +450,11 @@ describe('the session slice: its timers and its owner', () => {
 
   it("schedules no early ensure for a superseded init's failure", async () => {
     let fail!: (response: Response) => void;
-    fetchWithTimeout.mockReturnValueOnce(new Promise<Response>((resolve) => { fail = resolve; }));
+    fetchWithTimeout
+      .mockReturnValueOnce(new Promise<Response>((resolve) => { fail = resolve; }))
+      .mockResolvedValue(reply(500));
     const first = init(); // its mint is in flight
-    const second = init(); // replaces its timer, and joins its mint
+    const second = init(); // replaces its timer, and queues its own mint behind it
     fail(reply(500));
     await Promise.all([first, second]);
 

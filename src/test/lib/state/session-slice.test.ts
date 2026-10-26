@@ -72,7 +72,7 @@ describe('session-slice', () => {
   // in session-core (faultmaven#1460), so the slice registers the owner and
   // ensures through it rather than reusing whatever is stored.
   it("ensures through the refresh, for the panel's user, even with a session stored", async () => {
-    (browser.storage.local.get as any).mockResolvedValue({ sessionId: 'existing-sess' });
+    (browser.storage.local.get as any).mockResolvedValue({ sessionId: 'existing-sess', sessionUserId: 'u1' });
 
     await useAppStore.getState().initializeSession(true, 'u1');
 
@@ -86,7 +86,7 @@ describe('session-slice', () => {
   it('ensures a session via the single-flighted refresh when none is stored (no direct createSession herd)', async () => {
     (coreRefreshSession as any).mockResolvedValue(undefined);
     // refreshSession's read-back after session-core persisted the new id.
-    (browser.storage.local.get as any).mockResolvedValueOnce({ sessionId: 'new-sess' });
+    (browser.storage.local.get as any).mockResolvedValueOnce({ sessionId: 'new-sess', sessionUserId: 'u1' });
 
     await useAppStore.getState().initializeSession(true, 'u1');
 
@@ -111,7 +111,7 @@ describe('session-slice', () => {
 
   it('refreshSession routes through the single-flighted session-core refresh (no direct createSession herd)', async () => {
     (coreRefreshSession as any).mockResolvedValue(undefined);
-    (browser.storage.local.get as any).mockResolvedValue({ sessionId: 'refreshed-sess' });
+    (browser.storage.local.get as any).mockResolvedValue({ sessionId: 'refreshed-sess', sessionUserId: 'u1' });
     await useAppStore.getState().initializeSession(true, 'u1'); // the panel's user
     vi.mocked(coreRefreshSession).mockClear();
 

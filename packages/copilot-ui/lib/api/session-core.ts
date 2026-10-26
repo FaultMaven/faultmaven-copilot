@@ -1,5 +1,6 @@
 import { ownedStorage } from '../owned-storage';
 import { clientSessionManager } from "../session/client-session-manager";
+import { getEpoch } from '../state/session-epoch';
 import { createLogger } from "../utils/logger";
 import { Session } from "./types";
 
@@ -84,7 +85,7 @@ export async function clearPersistedSession(
   await ownedStorage.remove(keys);
 }
 
-// In-context single-flight guard (used only when the Web Locks API is
+// The tail of the in-context ensure chain (used only when the Web Locks API is
 // unavailable, e.g. in unit tests). See refreshSession().
 let refreshPromise: Promise<void> | null = null;
 
@@ -102,7 +103,17 @@ async function underSessionLock<T>(task: () => Promise<T>): Promise<T> {
   return task();
 }
 
-async function refreshSessionOnce(owner: string, metadata?: Record<string, any>): Promise<void> {
+async function refreshSessionOnce(
+  owner: string,
+  epoch: number,
+  metadata?: Record<string, any>,
+): Promise<void> {
+  // The session ended while this waited for the lock: mint nothing for it.
+  if (getEpoch() !== epoch) {
+    log.info('Session ended while waiting for the session lock; not minting');
+    return;
+  }
+
   // Re-check: a concurrent request (or another extension context) may have
   // already refreshed the session while we waited for the lock/promise. If a
   // session OWNED by this user is already in storage, don't POST another.
@@ -121,6 +132,12 @@ async function refreshSessionOnce(owner: string, metadata?: Record<string, any>)
   if (!session.session_id) {
     throw new Error('Invalid session response: missing session_id');
   }
+  // The session ended while the mint was out (a sign-out purge has run, or is
+  // about to): writing it now would put the departed user's session back.
+  if (getEpoch() !== epoch) {
+    log.info('Session ended during the mint; not persisting it', { sessionId: session.session_id });
+    return;
+  }
   await persistSession(session);
   log.info('Session refreshed and persisted', { sessionId: session.session_id });
 }
@@ -137,28 +154,42 @@ async function refreshSessionOnce(owner: string, metadata?: Record<string, any>)
  * Single-flighted so N parallel callers trigger ONE `/sessions` POST instead
  * of a thundering herd with racing storage writes. Uses the Web Locks API for
  * cross-context coordination (MV3 service worker + sidepanel), matching
- * TokenManager's token-refresh strategy, with an in-context promise fallback.
+ * TokenManager's token-refresh strategy, with an in-context fallback that
+ * CHAINS each caller behind the one in flight: a caller for the same owner then
+ * costs a storage read, never a second POST, and a caller for another owner
+ * mints its own session instead of adopting the one in flight
+ * (faultmaven#1460). Residual without Web Locks (Safari before 15.4): a new
+ * user's requests can carry the previous user's `X-Session-Id` between mount
+ * and persist, since `getAuthHeaders` has no owner to compare; step 4 of
+ * faultmaven#1460 ties a session to its bearer on the server.
+ *
+ * Fenced by the session epoch, captured before the lock: a sign-out while this
+ * waits for the lock sends no POST, and one while the mint is out persists
+ * nothing. Same-context only: a mint that resolves here before this context
+ * hears of a sign-out in another is persisted, then removed by that notice's
+ * purge, and the server session it minted (with the bearer) is reaped at TTL.
  */
 export async function refreshSession(owner?: string, metadata?: Record<string, any>): Promise<void> {
   if (!owner) return underSessionLock(async () => {});
 
+  const epoch = getEpoch();
+
   // Web Locks API: true cross-context mutex.
   if (typeof navigator !== 'undefined' && navigator.locks) {
     return navigator.locks.request(SESSION_LOCK, { mode: 'exclusive' }, () =>
-      refreshSessionOnce(owner, metadata),
+      refreshSessionOnce(owner, epoch, metadata),
     );
   }
 
-  // Fallback: in-context deduplication (single JS context only).
-  if (refreshPromise) {
-    log.debug('Session refresh already in progress, waiting...');
-    return refreshPromise;
-  }
-  refreshPromise = refreshSessionOnce(owner, metadata);
+  // Fallback: in-context serialization (single JS context only).
+  const run = (refreshPromise ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => refreshSessionOnce(owner, epoch, metadata));
+  refreshPromise = run;
   try {
-    await refreshPromise;
+    await run;
   } finally {
-    refreshPromise = null;
+    if (refreshPromise === run) refreshPromise = null;
   }
 }
 

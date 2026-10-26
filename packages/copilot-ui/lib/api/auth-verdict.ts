@@ -1,4 +1,4 @@
-import { AuthenticationError } from '../errors/types';
+import { AuthenticationError, NetworkError } from '../errors/types';
 import { getApiTransport } from './transport';
 import { bumpEpoch } from '../state/session-epoch';
 import { createLogger } from '../utils/logger';
@@ -40,6 +40,17 @@ export async function handleAuthError(rejectedBearer: string): Promise<'refreshe
   if (outcome === 'refreshed') {
     log.info('Host refreshed the credential after a 401; retrying once');
     return 'refreshed';
+  }
+
+  // The host could not renew the credential right now and the session goes
+  // on (faultmaven#1460). Not a sign-out, so the epoch stays; not a retry,
+  // since there is no newer credential. The existing NetworkError, carrying
+  // the 401 it was: a received status, so `isAmbiguousFailure` reads a failed
+  // turn as not added rather than "may not have been added".
+  if (outcome === 'unavailable') {
+    log.warn('Host could not renew the credential after a 401; the session continues');
+    const refused = Object.assign(new Error('HTTP 401'), { status: 401 });
+    throw new NetworkError('The credential could not be renewed right now', refused);
   }
 
   // Ended. Fence THIS context's in-flight writers now, before the purge

@@ -156,7 +156,8 @@ export class ClientSessionManager {
     let session = await this.ownedSession(response, expectedOwner);
     if (!session) {
       if (!askHost) throw new AuthenticationError('Authentication required');
-      // Throws on 'ended', after its epoch bump.
+      // Throws on 'ended', after its epoch bump, and on 'unavailable', as a
+      // NetworkError with no bump: the session slice's ensure retries it.
       await handleAuthError(bearer);
       ({ response, bearer } = await send());
       session = await this.ownedSession(response, expectedOwner);

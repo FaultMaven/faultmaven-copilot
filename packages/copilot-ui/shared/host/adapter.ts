@@ -170,6 +170,12 @@ export interface HostSession {
    * answer the client threw regardless, so a host that had just refreshed
    * successfully still got a blocking "session expired" modal whose only action
    * wiped the panel while the surrounding app stayed signed in.
+   *
+   * `'unavailable'` means the host could not renew the credential now but has
+   * not ended the session (a 5xx or offline renewal): the request fails with
+   * `NetworkError`, and nothing is retried at once, fenced or signed out
+   * (`ApiTransport.onUnauthorized` states the cost). A host that cannot tell a
+   * transient failure from a definitive one never answers it.
    */
   onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
   /**
