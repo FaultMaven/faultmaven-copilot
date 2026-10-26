@@ -146,13 +146,20 @@ export interface HostSession {
    *     that ends this panel's session instead (the Dashboard) (copilot#350,
    *     faultmaven-dashboard#212). A host that cannot tell users apart never
    *     throws it.
-   *   - anything else — nothing available RIGHT NOW. The request goes out
-   *     header-less, and its 401 keeps both the credential and the stored
-   *     session and mints nothing, so a blip at the token endpoint cannot
-   *     destroy a credential the next request could have used (#99). The
+   *   - `CredentialUnavailableError` (exported by the package entry) — the
+   *     host still holds `user`'s session but has no credential RIGHT NOW (a
+   *     token expired while its renewal endpoint is down). The request is not
+   *     sent, nothing moves the epoch, and the caller sees the `NetworkError`
+   *     copy and retries (faultmaven#1460). Each attempt costs one call here
+   *     and no request (`ApiTransport.accessToken` gives the figures). The
+   *     heartbeat is not sent either, so a session idle past the server's TTL
+   *     lapses, and the first beat after the outage re-ensures it.
+   *   - anything else — the host cannot say why (in practice, not signed in).
+   *     The request goes out header-less, and its 401 keeps both the
+   *     credential and the stored session and mints nothing (#99). The
    *     session mint itself is not sent without a bearer (faultmaven#1460).
    *
-   * A host that never throws the first keeps the old behaviour exactly; the
+   * A host that throws none of the three keeps the old behaviour exactly; the
    * distinction is opt-in.
    */
   accessToken(): Promise<string>;

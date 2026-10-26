@@ -142,6 +142,13 @@ sent, and nothing is torn down (copilot#350). What the host does next is its own
 the extension re-scopes its panel to the new account in place; a host that ends
 the old account's session instead reports `null` through `subscribeAuthState`.
 
+A host that still holds the user's session but has no credential right now (a
+token expired while its renewal endpoint is down) throws
+`CredentialUnavailableError`, also exported by the entry. Nothing is sent, and
+the user sees a connection problem rather than a sign-in prompt
+(faultmaven#1460). Any other throw sends the request with no bearer: the
+not-signed-in path.
+
 The transport's `onUnauthorized` is called with the bearer the rejected request
 carried. A host that tears down on a 401 should end only that credential's
 session, because a sign-in may have replaced it while the request was out. The

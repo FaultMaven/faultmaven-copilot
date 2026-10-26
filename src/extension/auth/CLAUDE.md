@@ -86,16 +86,21 @@ matters — refreshability is decided before an unmeasurable expiry is ruled on:
   **`dead` means only: nothing to present, and nothing to present it with.**
 
 **TokenManager reports; it never ends a session.** `getValidAccessToken()`
-answers a token, or `null` meaning *nothing usable right now* (transient — a
-header-less request whose 401 keeps the credential and the stored session and
-mints nothing; a later call retries. The session mint itself is never sent
-header-less, faultmaven#1460), or throws `SessionEndedError`
+answers a token, or `null` meaning *nothing usable right now* (transient; a
+later call retries), or throws `SessionEndedError`
 (`session-ended-error.ts`), which extends the package's `AuthenticationError`.
-That inheritance is the contract: `getAuthHeaders` swallows every other throw
-into a header-less request and propagates this one, so a dead session never
+That inheritance is the contract: `getAuthHeaders` propagates it (as it does
+`SessionSwitchedError` and `CredentialUnavailableError`) and swallows every
+other throw into a header-less request, so a dead session never
 becomes a "session expired, retrying" — the request is not sent and the caller
 gets an error whose recovery is a sign-in prompt. A host that throws anything else
 keeps the old behaviour (the Dashboard host is unaffected).
+The act-site reads `null` beside the stored credential (`peekCredential`,
+faultmaven#1460). None stored is signed out: a plain throw, so the request goes
+out header-less and its 401 keeps the stored session and mints nothing (the
+session mint itself is never sent header-less). One KEPT through a failed
+refresh throws `CredentialUnavailableError`: nothing is sent, and the panel
+shows a connection problem, never "Sign in first".
 
 **A request carries the user it was built for (copilot#350).** The credential
 read for a request is `readSessionAccessToken(forUserId)`, called by the

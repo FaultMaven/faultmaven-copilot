@@ -8,7 +8,7 @@
  * about each one.
  */
 import { getApiTransport } from "./transport";
-import { AuthenticationError, SessionSwitchedError } from "../errors/types";
+import { AuthenticationError, CredentialUnavailableError, SessionSwitchedError } from "../errors/types";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger('FetchUtils');
@@ -16,23 +16,27 @@ const log = createLogger('FetchUtils');
 /**
  * Authorization + X-Session-Id, where the host can supply them.
  *
- * A MISSING Authorization header is a meaningful state, not a failure to
- * handle: `client.ts` answers a 401 on a header-less request by keeping both
- * the credential and the stored session and minting nothing, rather than by a
- * hard teardown, which is what stops a blip at the token endpoint from
- * destroying a credential the next request could have used (#99).
- * `accessToken()` throws when the host cannot produce one, so that throw is
- * caught here and turned into exactly that state.
+ * A MISSING Authorization header means the host could not say why it has no
+ * credential: in practice, not signed in. `client.ts` answers a 401 on a
+ * header-less request by keeping both the credential and the stored session
+ * and minting nothing, rather than by a hard teardown (#99). `accessToken()`
+ * throws when the host cannot produce one, and any throw but the three below
+ * is caught here and turned into exactly that state.
  *
- * ⚠️ WITH ONE EXCEPTION, and it is the whole distinction. A host that throws
- * `AuthenticationError` is not saying "not right now" — it is saying the session
- * is OVER. Swallowing that produced a header-less request whose 401 took the
- * transient path: a "session expired, retrying" where the honest answer is a
- * sign-in prompt. It propagates, so the request is never sent and the caller
- * gets an error whose recovery is `show_modal`.
+ * ⚠️ THREE EXCEPTIONS, each a host saying WHY, and each propagates so the
+ * request is never sent:
  *
- * Likewise `SessionSwitchedError`: the host's stored session is another user's,
- * and the request — built for the previous one — must not go out at all.
+ * - `AuthenticationError`: the session is OVER. Swallowed, it produced a
+ *   header-less request whose 401 took the transient path, a "session expired,
+ *   retrying" where the honest answer is a sign-in prompt. The caller gets an
+ *   error whose recovery is `show_modal`.
+ * - `SessionSwitchedError`: the host's stored session is another user's, and
+ *   the request, built for the previous one, must not go out at all.
+ * - `CredentialUnavailableError`: the session is KEPT, but there is no
+ *   credential right now (a token expired while its renewal endpoint is down).
+ *   Swallowed, the request went out header-less and its 401 read as an expired
+ *   session: "Sign in first" in a host still signed in (faultmaven#1460). The
+ *   caller gets a `NetworkError` and retries; the epoch does not move.
  *
  * Opt-in: a host that throws anything else keeps the old behaviour exactly.
  */
@@ -51,8 +55,11 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     // `POST /cases` built for the previous user, answered by the session path.
     // It is not sent.
     if (error instanceof SessionSwitchedError) throw error;
-    // See the note above: header-less is the transient path, not an error to
-    // surface here.
+    // The session is kept, with no credential right now (faultmaven#1460).
+    // Header-less, its 401 would read as an expired session. It is not sent.
+    if (error instanceof CredentialUnavailableError) throw error;
+    // See the note above: header-less is the not-signed-in path, not an error
+    // to surface here.
     //
     // The mint never goes out header-less: `ClientSessionManager.createSession`
     // refuses to send without a bearer, and `client.ts` answers a header-less

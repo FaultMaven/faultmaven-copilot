@@ -55,7 +55,7 @@ import { endSessionOnRejectedCredential, readSessionAccessToken } from '../../..
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
-import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { AuthenticationError, CredentialUnavailableError } from '@faultmaven/copilot-ui/lib/errors/types';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
 const lockRequests: string[] = [];
@@ -123,6 +123,42 @@ describe('401 → host → refresh → retry, across the real seam', () => {
   afterEach(() => {
     delete (navigator as unknown as { locks?: unknown }).locks;
     vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  // The access token spent and the refresh endpoint down (faultmaven#1460).
+  // The credential is kept, so the request is not sent: sent with no bearer,
+  // its 401 read as an expired session, "Sign in first".
+  it('keeps the session through a transient refresh failure, and sends nothing', async () => {
+    vi.useFakeTimers();
+    Object.assign(store, {
+      access_token: 'stale-token',
+      token_type: 'bearer',
+      user: { user_id: 'u1' },
+      expires_at: Date.now() - 60_000,
+      refresh_token: 'good-refresh',
+      refresh_expires_at: Date.now() + 86_400_000,
+    });
+    const refused = (status: number) =>
+      ({ ok: false, status, headers: new Headers(), json: async () => ({}), text: async () => '{}' }) as unknown as Response;
+    global.fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (String(url).includes('/oauth/token')) return refused(503);
+      // The server refuses a request that carries no bearer.
+      return new Headers(init.headers as HeadersInit).has('Authorization')
+        ? (ok({ fine: true }) as unknown as Response)
+        : refused(401);
+    }) as unknown as typeof fetch;
+
+    const failure = authenticatedFetch('/api/v1/whatever').catch((error: unknown) => error);
+    // The refresh ladder's backoff between its three attempts.
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(await failure).toBeInstanceOf(CredentialUnavailableError);
+    const sent = vi.mocked(global.fetch).mock.calls.map(([url]) => String(url));
+    expect(sent.filter((u) => u.includes('/oauth/token'))).toHaveLength(3);
+    expect(sent.filter((u) => u.includes('/api/v1/whatever'))).toHaveLength(0);
+    expect(reportedToHost).not.toHaveBeenCalled();
+    expect(store).toMatchObject({ access_token: 'stale-token', refresh_token: 'good-refresh' });
   });
 
   it('refreshes an expired credential under the lock and carries the NEW bearer', async () => {

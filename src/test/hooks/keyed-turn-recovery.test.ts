@@ -623,4 +623,37 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       }
     });
   });
+
+  // The host still holds the session but has no credential right now
+  // (faultmaven#1460). Sent with no bearer, the case create's 401 read as an
+  // expired session: six requests, then "Sign in first" (faultmaven-dashboard#257).
+  it('a question whose case the host has no credential for right now: nothing sent, no sign-in advice', async () => {
+    const accessToken = vi.fn(async (): Promise<string> => {
+      throw new CredentialUnavailableError();
+    });
+    setApiTransport({
+      baseUrl: async () => BASE,
+      accessToken,
+      sessionId: async () => 'session-123',
+      clearSession: async () => undefined,
+      onUnauthorized: async () => 'ended' as const,
+    });
+    // The server refuses a request that carries no bearer.
+    fetchWithTimeout.mockImplementation(async () => wire(401, { detail: 'Not authenticated' }));
+    useAppStore.setState({ activeCaseId: null, activeCase: null });
+
+    const { result } = renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
+    await act(async () => {
+      const pending = result.current.handleQuerySubmit('why is the pool exhausted?');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+    });
+
+    expect(fetchWithTimeout).not.toHaveBeenCalled();
+    // One host read per attempt of the action (`resilientOperation`'s 3).
+    expect(accessToken).toHaveBeenCalledTimes(3);
+    const shown = mockShowError.mock.calls[0][0] as UserFacingError;
+    expect(shown.userMessage).toContain('Unable to reach FaultMaven server');
+    expect(shown.userAction).toBe('Send again to retry.');
+  });
 });

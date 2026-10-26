@@ -13,7 +13,7 @@ import { tokenManager } from '../auth/token-manager';
 import { authManager, type TeardownOutcome } from '../auth/auth-manager';
 import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
 import { SessionEndedError } from '../auth/session-ended-error';
-import { SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { CredentialUnavailableError, SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('SessionCredential');
@@ -22,9 +22,11 @@ const log = createLogger('SessionCredential');
  * Read a bearer for the shared panel.
  *
  * TokenManager reports; this acts. `null` from it means "nothing usable right
- * now" — transient, so throwing a plain error sends the request out header-less,
- * and its 401 keeps the credential and the stored session and mints nothing
- * (#99, faultmaven#1460). `SessionEndedError`
+ * now", and the stored credential says which kind (faultmaven#1460): none
+ * stored is signed out, so a plain error sends the request out header-less and
+ * its 401 keeps the stored session and mints nothing (#99); one KEPT through a
+ * failed refresh throws `CredentialUnavailableError`, and the request is not
+ * sent. Neither tears anything down. `SessionEndedError`
  * means the chain is definitively dead, and the teardown belongs here rather
  * than inside TokenManager, where it ran inside the refresh lock and inside the
  * refresh verdict.
@@ -65,13 +67,20 @@ export async function readSessionAccessToken(forUserId: string | null): Promise<
 async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<string> {
   try {
     const credential = await tokenManager.getValidCredential();
-    if (!credential) throw new Error('No access token available right now.');
-    if (forUserId !== null && credential.userId !== forUserId) {
+    // `null` is two states (faultmaven#1460): nothing stored (signed out), or
+    // a credential KEPT through a refresh that failed transiently. The stored
+    // one, as-is, says which, and whose.
+    const held = credential ?? (await tokenManager.peekCredential());
+    if (!held) throw new Error('No access token available right now.');
+    if (forUserId !== null && held.userId !== forUserId) {
       log.warn('The stored session is not the user this request was built for; not sending it', {
-        storedUserKnown: credential.userId !== null,
+        storedUserKnown: held.userId !== null,
       });
       throw new SessionSwitchedError();
     }
+    // Kept, with nothing to present now: not sent, so its 401 cannot read as
+    // an expired session.
+    if (!credential) throw new CredentialUnavailableError('No usable access token right now; the session is kept');
     return credential.accessToken;
   } catch (error) {
     if (error instanceof SessionEndedError) {
