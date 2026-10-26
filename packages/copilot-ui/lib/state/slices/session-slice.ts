@@ -9,6 +9,8 @@ import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
+import { ErrorClassifier } from '../../errors/classifier';
+import { hasServerDirectedWait } from '../../errors/types';
 
 const log = createLogger('SessionSlice');
 
@@ -24,9 +26,14 @@ const HEARTBEAT_INTERVAL_MS = Number(
   import.meta.env.VITE_HEARTBEAT_INTERVAL_MS ?? 10 * 60 * 1000
 );
 
-// The first wait after a failed ensure (init, tick or retry); it doubles per
-// failure up to the heartbeat interval and resets on success (faultmaven#1460).
+// After a failed ensure (init, tick or retry) the next waits 15 s, doubling per
+// failure up to 60 s and reset on success, each wait jittered by ±20% so panels
+// that failed together do not retry together (faultmaven#1460). 60 s, not the
+// heartbeat interval: a credential back after a long outage is used within a
+// minute.
 const ENSURE_RETRY_MS = 15_000;
+const ENSURE_RETRY_MAX_MS = 60_000;
+const ENSURE_RETRY_JITTER = 0.2;
 
 export interface SessionSlice {
   sessionId: string | null;
@@ -35,8 +42,13 @@ export interface SessionSlice {
 
   // Actions
   initializeSession: (shouldInitialize: boolean, ownerId: string) => Promise<void>;
-  /** The owner's session id, or `null` when the session ended meanwhile (nothing stored). */
+  /**
+   * The owner's session id, or `null` when the session ended or the panel
+   * moved to another user meanwhile (nothing stored).
+   */
   refreshSession: () => Promise<string | null>;
+  /** Stop the heartbeat and the ensure retries (the panel unmounted). */
+  stopSessionTimers: () => void;
   clearSession: () => Promise<void>;
 }
 
@@ -97,13 +109,13 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
       // re-init) and not outlived by the session they started under.
       const live = () => heartbeatInterval === interval && getEpoch() === startedEpoch;
 
-      // The one ensure scheduler (faultmaven#1460). A failed ensure (at init,
-      // on a tick, or a retry) is retried 15 s later, the wait doubling per
-      // failure up to the heartbeat interval; a success resets it. Before it,
-      // a mint refused at init got one retry and then waited for the next
-      // tick, 10 minutes by default. A retry with no usable token can still
-      // cost one renewal call in a host that renews near expiry (the
-      // Dashboard); the mint itself is not sent without a bearer.
+      // The one ensure scheduler (faultmaven#1460): a failed ensure is retried
+      // on the backoff above, never sooner than a wait the server directed (a
+      // rate-limited mint's Retry-After). Before it, a mint refused at init got
+      // one retry and then waited for the next tick, 10 minutes by default. A
+      // retry with no usable token can still cost one renewal call in a host
+      // that renews near expiry (the Dashboard); the mint itself is not sent
+      // without a bearer.
       const ensure = async (): Promise<string | null> => {
         if (!live()) return null;
         try {
@@ -112,8 +124,11 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
           return sessionId;
         } catch (error) {
           if (live() && !ensureRetry) {
-            const wait = Math.min(ensureRetryMs, HEARTBEAT_INTERVAL_MS);
-            ensureRetryMs = Math.min(wait * 2, HEARTBEAT_INTERVAL_MS);
+            const classified = ErrorClassifier.classify(error);
+            const serverWait = hasServerDirectedWait(classified) ? classified.retryAfterMs : 0;
+            const jitter = 1 + ENSURE_RETRY_JITTER * (2 * Math.random() - 1);
+            const wait = Math.max(ensureRetryMs * jitter, serverWait);
+            ensureRetryMs = Math.min(ensureRetryMs * 2, ENSURE_RETRY_MAX_MS);
             ensureRetry = setTimeout(() => {
               ensureRetry = null;
               ensure().catch(() => {});
@@ -188,6 +203,14 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         // user's (faultmaven#1460).
         if (!owner) throw new Error('No signed-in user to ensure a session for');
         const ownerId = owner;
+        // Whether what this call reads back may still be stored: the session
+        // has not ended (the epoch) and the panel has not moved to another
+        // user (a re-init, which moves no epoch).
+        const superseded = (): boolean => {
+          if (epoch === getEpoch() && owner === ownerId) return false;
+          log.info('Session ended or changed hands during refresh — not repopulating store sessionId');
+          return true;
+        };
 
         // Route through session-core's refresh, which is single-flighted across
         // contexts via the Web Locks API and persists the new session_id.
@@ -199,10 +222,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
 
         // Before requiring a stored id: a mint the session outlived persisted
         // nothing, and that is not a failure.
-        if (epoch !== getEpoch()) {
-          log.info('Session ended during refresh — not repopulating store sessionId');
-          return null;
-        }
+        if (superseded()) return null;
 
         const stored = (await ownedStorage.get(['sessionId', 'sessionUserId'])) as
           { sessionId?: string; sessionUserId?: string };
@@ -212,11 +232,7 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         if (!sessionId || stored.sessionUserId !== ownerId) {
           throw new Error("Session refresh did not persist a session_id for the panel's user");
         }
-
-        if (epoch !== getEpoch()) {
-          log.info('Session ended during refresh — not repopulating store sessionId');
-          return null;
-        }
+        if (superseded()) return null;
 
         set({
           sessionId,
@@ -230,6 +246,8 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         throw error;
       }
     },
+
+    stopSessionTimers: stopHeartbeat,
 
     clearSession: async () => {
       stopHeartbeat();

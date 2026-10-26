@@ -17,6 +17,7 @@ import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import {
   AuthenticationError,
+  CredentialUnavailableError,
   SessionExpiredError,
   SessionSwitchedError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
@@ -46,6 +47,8 @@ const onUnauthorized = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The ensure's retry jitter, held at its midpoint (factor 1).
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
   fetchWithTimeout.mockReset();
   onUnauthorized.mockReset();
   // The in-context single-flight path: no Web Locks in the test env.
@@ -64,6 +67,10 @@ beforeEach(() => {
     clearSession: () => clearPersistedSession(),
     onUnauthorized: (bearer: string) => onUnauthorized(bearer),
   });
+});
+
+afterEach(() => {
+  vi.mocked(Math.random).mockRestore();
 });
 
 describe('a 401 on a request sent with no credential mints nothing', () => {
@@ -139,13 +146,14 @@ describe('the mint', () => {
     expect(mints()).toHaveLength(1);
   });
 
-  it('asks for sign-in when the renewed bearer is refused too, with no second verdict', async () => {
+  // Not a sign-out: the host never said the session ended (faultmaven#1460).
+  it('refuses the mint, with no second verdict and no sign-out, when the renewed bearer is refused too', async () => {
     onUnauthorized.mockReturnValue('refreshed');
     fetchWithTimeout.mockResolvedValue(reply(401));
     const before = getEpoch();
 
     await expect(clientSessionManager.createSession('u1')).rejects.toBeInstanceOf(
-      AuthenticationError,
+      CredentialUnavailableError,
     );
 
     expect(mints()).toHaveLength(2);
@@ -164,7 +172,7 @@ describe('the mint', () => {
     const clearClientId = vi.spyOn(clientSessionManager, 'clearClientId');
 
     await expect(clientSessionManager.createSessionWithRecovery('u1')).rejects.toBeInstanceOf(
-      AuthenticationError,
+      CredentialUnavailableError,
     );
 
     expect(clearClientId).toHaveBeenCalledTimes(1);
@@ -408,20 +416,25 @@ describe('the session slice: its timers and its owner', () => {
       return run;
     });
     Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true });
-    const removedUnderLock: boolean[] = [];
+    const removals: Array<{ keys: string[]; held: boolean }> = [];
     stub.remove.mockImplementation(async (keys: string[]) => {
-      // The session's keys: the re-ensure's refused mint also drops the client id.
-      if (keys.includes('sessionId')) removedUnderLock.push(held);
+      removals.push({ keys, held });
       for (const key of keys) delete stub.data[key];
     });
     Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
+    // A server that answers 404 to every /sessions route (declined: bounded by
+    // the backoff), so the re-ensure's mint takes the client-id recovery.
     fetchWithTimeout.mockResolvedValue(reply(404));
     await init();
 
     await vi.advanceTimersToNextTimerAsync();
-    await vi.waitFor(() => expect(stub.data.sessionId).toBeUndefined());
+    await vi.waitFor(() => expect(removals).toHaveLength(2));
 
-    expect(removedUnderLock).toEqual([true]);
+    expect(stub.data.sessionId).toBeUndefined();
+    expect(removals).toEqual([
+      { keys: ['sessionId', 'sessionUserId', 'sessionCreatedAt', 'sessionResumed'], held: true },
+      { keys: ['faultmaven_client_id'], held: true },
+    ]);
   });
 
   it('clearSession cancels a pending early ensure', async () => {
@@ -448,18 +461,19 @@ describe('the session slice: its timers and its owner', () => {
     expect(mints()).toHaveLength(1);
   });
 
-  it("schedules no early ensure for a superseded init's failure", async () => {
+  it("schedules no retry for a superseded init's failure", async () => {
     let fail!: (response: Response) => void;
     fetchWithTimeout
       .mockReturnValueOnce(new Promise<Response>((resolve) => { fail = resolve; }))
-      .mockResolvedValue(reply(500));
+      .mockResolvedValue(minted('s-new', 'u1'));
     const first = init(); // its mint is in flight
-    const second = init(); // replaces its timer, and queues its own mint behind it
-    fail(reply(500));
+    const second = init(); // replaces its timer, and queues its own mint, which succeeds
+    fail(reply(500)); // the only failure is the superseded init's
     await Promise.all([first, second]);
 
-    // The second init's interval and its one early ensure.
-    expect(vi.getTimerCount()).toBe(2);
+    // The second init's interval alone.
+    expect(useAppStore.getState().sessionId).toBe('s-new');
+    expect(vi.getTimerCount()).toBe(1);
     await useAppStore.getState().clearSession();
     expect(vi.getTimerCount()).toBe(0);
   });

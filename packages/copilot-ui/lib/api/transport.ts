@@ -65,13 +65,16 @@ export interface ApiTransport {
    *                ended the session (its renewal answered 5xx, or the browser
    *                is offline). The fetch layer does not retry the request,
    *                the epoch does not move and no sign-out shows: it fails
-   *                with `NetworkError` ("Connection Problem"), recovery
-   *                `retry_with_backoff`. The cost is that retry:
-   *                `resilientOperation` retries a `NetworkError` up to 3 times
-   *                per action, so one action can cost up to 3 renewal
-   *                attempts. Nothing is duplicated: a 401 committed nothing
-   *                (faultmaven#1460). A host that cannot tell a transient
-   *                failure from a definitive one never answers it.
+   *                with `CredentialUnavailableError`, a `NetworkError`
+   *                ("Connection Problem", `retry_with_backoff`). The cost is
+   *                one renewal per request attempt, times the caller's own
+   *                retries: `resilientOperation` within its attempt budget (3
+   *                by default, a keyed turn's included), a query's one retry,
+   *                and the session ensure on its backoff (15 s doubling to
+   *                60 s). The async-turn poll stops on it. Nothing is
+   *                duplicated: a 401 committed nothing (faultmaven#1460). A
+   *                host that cannot tell a transient failure from a
+   *                definitive one never answers it.
    *
    * The answer is load-bearing. Without it the client threw
    * `AuthenticationError` after the callback regardless, so a host that

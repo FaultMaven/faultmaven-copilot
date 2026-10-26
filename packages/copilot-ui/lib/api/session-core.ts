@@ -106,7 +106,7 @@ async function underSessionLock<T>(task: () => Promise<T>): Promise<T> {
 async function refreshSessionOnce(
   owner: string,
   epoch: number,
-  metadata?: Record<string, any>,
+  metadata?: Record<string, unknown>,
 ): Promise<void> {
   // The session ended while this waited for the lock: mint nothing for it.
   if (getEpoch() !== epoch) {

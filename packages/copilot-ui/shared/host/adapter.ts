@@ -173,9 +173,11 @@ export interface HostSession {
    *
    * `'unavailable'` means the host could not renew the credential now but has
    * not ended the session (a 5xx or offline renewal): the request fails with
-   * `NetworkError`, and nothing is retried at once, fenced or signed out
-   * (`ApiTransport.onUnauthorized` states the cost). A host that cannot tell a
-   * transient failure from a definitive one never answers it.
+   * `CredentialUnavailableError` (a `NetworkError`), and nothing is retried at
+   * once, fenced or signed out (`ApiTransport.onUnauthorized` states the cost:
+   * one renewal per request attempt, times the caller's own retries). A host
+   * that cannot tell a transient failure from a definitive one never answers
+   * it.
    */
   onUnauthorized(): AuthOutcome | Promise<AuthOutcome>;
   /**

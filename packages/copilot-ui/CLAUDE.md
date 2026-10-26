@@ -12,21 +12,26 @@ This file holds the rules that constrain code *inside* the package.
   waits for any session ensure in flight and **mints nothing**. Only the
   session slice mints, through `refreshSession(owner)` (`lib/api/session-core.ts`)
   for the panel's user (faultmaven#1460): never without a bearer,
-  **single-flighted** — N parallel callers trigger one `/sessions` POST — via
-  the Web Locks API with an in-context fallback that chains each caller behind
-  the one in flight, and it **persists the new `session_id`** with its owner so
-  later requests attach `X-Session-Id`. The persist is **epoch-fenced**: a
-  sign-out while the ensure waits for the lock sends no POST, and one while the
-  mint is out writes nothing. A stored session is reused, and read back into
-  the store, only by its owner. A failed ensure is retried by the slice's one
-  scheduler (15 s, doubling, capped at the heartbeat interval), and a session a
-  heartbeat finds gone is re-ensured at once. Do not call `createSession()`
-  directly: it returns a session without persisting it.
+  **single-flighted** via the Web Locks API, with an in-context fallback that
+  chains each caller behind the one in flight (parallel callers cost one
+  `/sessions` POST when it succeeds; after a failed mint each queued caller
+  makes its own attempt, as with Web Locks), and it **persists the new
+  `session_id`** with its owner so later requests attach `X-Session-Id`. The
+  persist is **epoch-fenced**: a sign-out while the ensure waits for the lock
+  sends no POST, and one while the mint is out writes nothing. A stored
+  session is reused, and read back into the store, only by its owner, and only
+  while the panel still has that owner. A failed ensure is retried by the
+  slice's one scheduler (15 s, doubling to 60 s, ±20% jitter, never sooner
+  than a `Retry-After`), a session a heartbeat finds gone is re-ensured at
+  once, and both stop when the panel unmounts (`useSessionManagement`). Do not
+  call `createSession()` directly: it returns a session without persisting it.
 - **The host's verdict on a 401** (`AuthOutcome`, `lib/api/transport.ts`):
   `'refreshed'` retries the request once; `'ended'` moves the epoch and throws
   `AuthenticationError`; `'unavailable'` (the host could not renew now, the
-  session goes on) throws `NetworkError` and moves nothing. The mint takes the
-  same verdict (`lib/api/auth-verdict.ts`).
+  session goes on) throws `CredentialUnavailableError`, a `NetworkError`, and
+  moves nothing. The mint takes the same verdict (`lib/api/auth-verdict.ts`),
+  and a mint refused with no `'ended'` verdict throws the same error, never a
+  sign-out. The async-turn poll stops on it rather than renewing per poll.
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as
@@ -88,9 +93,10 @@ This file holds the rules that constrain code *inside* the package.
 `category`, `recovery` and `getDisplayOptions()`. Recovery per class
 (`types.ts`): `SessionExpiredError` auto_retry_with_delay · `AuthenticationError`
 show_modal · `PermissionError` graceful_degradation · `NetworkError`
-retry_with_backoff (also a 401 the host answers `'unavailable'`: no sign-out,
-no epoch move; `resilientOperation` retries it up to 3 times per action, so
-one action can cost up to 3 renewal attempts, and nothing is duplicated) ·
+retry_with_backoff (its subclass `CredentialUnavailableError` is a 401 the host
+answered `'unavailable'`: no sign-out, no epoch move; one renewal per request
+attempt, times the caller's retries — `resilientOperation`'s attempt budget, a
+query's one retry — and nothing is duplicated) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
 `QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·

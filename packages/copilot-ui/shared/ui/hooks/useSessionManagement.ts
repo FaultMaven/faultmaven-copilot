@@ -16,10 +16,14 @@ export function useSessionManagement(shouldInitialize: boolean, ownerId: string)
   const initializeSession = useAppStore((state) => state.initializeSession);
   const refreshSession = useAppStore((state) => state.refreshSession);
   const clearSession = useAppStore((state) => state.clearSession);
+  const stopSessionTimers = useAppStore((state) => state.stopSessionTimers);
 
   useEffect(() => {
     initializeSession(shouldInitialize, ownerId);
-  }, [shouldInitialize, ownerId, initializeSession]);
+    // The heartbeat and the ensure retries go with the panel: nothing mints or
+    // beats for a panel that is no longer mounted (faultmaven#1460).
+    return () => stopSessionTimers();
+  }, [shouldInitialize, ownerId, initializeSession, stopSessionTimers]);
 
   return {
     sessionId,
