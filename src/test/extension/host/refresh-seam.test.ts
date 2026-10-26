@@ -50,6 +50,7 @@ vi.mock('@faultmaven/copilot-ui/lib/cache/case-cache', () => ({
   caseCacheManager: { invalidateCache: vi.fn().mockResolvedValue(undefined), fence: vi.fn() },
 }));
 
+import { browser } from 'wxt/browser';
 import { authManager } from '../../../extension/auth/auth-manager';
 import { endSessionOnRejectedCredential, readSessionAccessToken } from '../../../extension/host/session-credential';
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
@@ -159,6 +160,33 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     expect(sent.filter((u) => u.includes('/api/v1/whatever'))).toHaveLength(0);
     expect(reportedToHost).not.toHaveBeenCalled();
     expect(store).toMatchObject({ access_token: 'stale-token', refresh_token: 'good-refresh' });
+  });
+
+  // A storage read that fails is not a read that the session is gone
+  // (faultmaven#1460): nothing is sent, and nothing is torn down.
+  it('sends nothing when the stored credential cannot be read', async () => {
+    Object.assign(store, {
+      access_token: 'live-token',
+      token_type: 'bearer',
+      user: { user_id: 'u1' },
+      expires_at: Date.now() + 3_600_000,
+    });
+    global.fetch = vi.fn(async (_url: string, init: RequestInit = {}) =>
+      new Headers(init.headers as HeadersInit).has('Authorization')
+        ? ok({ fine: true })
+        : { ok: false, status: 401, headers: new Headers(), json: async () => ({}), text: async () => '{}' },
+    ) as unknown as typeof fetch;
+    const get = vi.mocked(browser.storage.local.get);
+    const read = get.getMockImplementation();
+    get.mockRejectedValue(new Error('storage unavailable'));
+
+    try {
+      await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(CredentialUnavailableError);
+    } finally {
+      if (read) get.mockImplementation(read);
+    }
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(reportedToHost).not.toHaveBeenCalled();
   });
 
   it('refreshes an expired credential under the lock and carries the NEW bearer', async () => {

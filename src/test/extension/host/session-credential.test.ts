@@ -140,10 +140,21 @@ describe('readSessionAccessToken', () => {
     expect(mockGetValidAccessToken).toHaveBeenCalledTimes(2);
   });
 
-  it('passes an ordinary failure through untouched', async () => {
-    mockGetValidAccessToken.mockRejectedValue(new Error('network down'));
+  // TokenManager throws nothing but its verdict and a failed storage read, and
+  // a failed read is not a read that the session is gone (faultmaven#1460).
+  it.each([
+    ['the credential', () => mockGetValidAccessToken.mockRejectedValue(new Error('storage unavailable'))],
+    ['the stored credential, after no usable token', () => {
+      mockGetValidAccessToken.mockResolvedValue(null);
+      mockPeek.mockRejectedValue(new Error('storage unavailable'));
+    }],
+  ])('a failed read of %s: refused, keeping the reason, nothing torn down', async (_label, stage) => {
+    stage();
 
-    await expect(readSessionAccessToken('user-a')).rejects.toThrow('network down');
+    const failure = await readSessionAccessToken('user-a').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CredentialUnavailableError);
+    expect((failure as CredentialUnavailableError).originalError?.message).toBe('storage unavailable');
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
   });
 });

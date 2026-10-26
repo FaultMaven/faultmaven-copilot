@@ -147,8 +147,9 @@ export interface HostSession {
    *     faultmaven-dashboard#212). A host that cannot tell users apart never
    *     throws it.
    *   - `CredentialUnavailableError` (exported by the package entry) — the
-   *     host still holds `user`'s session but has no credential RIGHT NOW (a
-   *     token expired while its renewal endpoint is down). The request is not
+   *     host still holds `user`'s session, or could not read whether it does,
+   *     but has no credential RIGHT NOW (a token expired while its renewal
+   *     endpoint is down, or its storage read failed). The request is not
    *     sent, nothing moves the epoch, and the caller sees the `NetworkError`
    *     copy and retries (faultmaven#1460). Each attempt costs one call here
    *     and no request (`ApiTransport.accessToken` gives the figures). The

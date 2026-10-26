@@ -100,7 +100,9 @@ faultmaven#1460). None stored is signed out: a plain throw, so the request goes
 out header-less and its 401 keeps the stored session and mints nothing (the
 session mint itself is never sent header-less). One KEPT through a failed
 refresh throws `CredentialUnavailableError`: nothing is sent, and the panel
-shows a connection problem, never "Sign in first".
+shows a connection problem, never "Sign in first". So does a storage read that
+FAILS in either call: TokenManager throws nothing else but its verdict, and a
+failed read is not a read that the session is gone.
 
 **A request carries the user it was built for (copilot#350).** The credential
 read for a request is `readSessionAccessToken(forUserId)`, called by the

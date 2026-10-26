@@ -42,13 +42,15 @@ export interface ApiTransport {
    *
    *   `AuthenticationError`         the session has ended; a sign-in prompt.
    *   `SessionSwitchedError`        the stored session is another user's.
-   *   `CredentialUnavailableError`  this user's session is KEPT, but there is
-   *                no credential right now (a token expired while its renewal
-   *                endpoint is down, faultmaven#1460). Nothing moves the epoch,
-   *                and the caller sees the `NetworkError` copy. Each attempt
-   *                costs one host read and sends no request: per action, up to
-   *                `resilientOperation`'s 3 attempts, 1 s and 2 s apart (sent
-   *                header-less, one action cost up to 6 reads and 6 requests); the
+   *   `CredentialUnavailableError`  this user's session is KEPT, or the host
+   *                could not read whether it is, but there is no credential
+   *                right now (a token expired while its renewal endpoint is
+   *                down, or a storage read failed; faultmaven#1460). Nothing
+   *                moves the epoch, and the caller sees the `NetworkError`
+   *                copy. Each attempt costs one host read and sends no
+   *                request: per action, up to `resilientOperation`'s 3
+   *                attempts, 1 s and 2 s apart (sent header-less, one action
+   *                cost up to 6 reads and 6 requests); the
    *                session ensure on its backoff (15 s doubling to 60 s: at
    *                most 3 in its first minute, then about 1 a minute); the
    *                heartbeat one per beat (10 min). A beat not sent refreshes

@@ -26,7 +26,8 @@ const log = createLogger('SessionCredential');
  * stored is signed out, so a plain error sends the request out header-less and
  * its 401 keeps the stored session and mints nothing (#99); one KEPT through a
  * failed refresh throws `CredentialUnavailableError`, and the request is not
- * sent. Neither tears anything down. `SessionEndedError`
+ * sent; so does a storage read that failed (`readOrRefuse`). None of these
+ * tears anything down. `SessionEndedError`
  * means the chain is definitively dead, and the teardown belongs here rather
  * than inside TokenManager, where it ran inside the refresh lock and inside the
  * refresh verdict.
@@ -64,13 +65,35 @@ export async function readSessionAccessToken(forUserId: string | null): Promise<
  * this extension wrote. `forUserId === null` — a caller acting for no
  * particular user — skips the comparison.
  */
+/**
+ * A credential read, refused when the read itself FAILED (faultmaven#1460).
+ *
+ * TokenManager throws nothing but its verdict and a rejected storage read
+ * (`getStoredTokens` has no catch, and the refresh ladder's failures are its
+ * own). A read that failed is not a read that the session is gone, so the
+ * request is not sent: `CredentialUnavailableError`, never the plain throw
+ * that sends it with no bearer. The verdict passes through to the teardown.
+ */
+async function readOrRefuse<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (error instanceof SessionEndedError) throw error;
+    log.warn('The stored credential could not be read; not sending the request', error);
+    throw new CredentialUnavailableError(
+      'The stored credential could not be read',
+      error instanceof Error ? error : undefined,
+    );
+  }
+}
+
 async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<string> {
   try {
-    const credential = await tokenManager.getValidCredential();
+    const credential = await readOrRefuse(() => tokenManager.getValidCredential());
     // `null` is two states (faultmaven#1460): nothing stored (signed out), or
     // a credential KEPT through a refresh that failed transiently. The stored
     // one, as-is, says which, and whose.
-    const held = credential ?? (await tokenManager.peekCredential());
+    const held = credential ?? (await readOrRefuse(() => tokenManager.peekCredential()));
     if (!held) throw new Error('No access token available right now.');
     if (forUserId !== null && held.userId !== forUserId) {
       log.warn('The stored session is not the user this request was built for; not sending it', {
