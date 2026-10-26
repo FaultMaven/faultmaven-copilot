@@ -29,9 +29,10 @@ This file holds the rules that constrain code *inside* the package.
   `'refreshed'` retries the request once; `'ended'` moves the epoch and throws
   `AuthenticationError`; `'unavailable'` (the host could not renew now, the
   session goes on) throws `CredentialUnavailableError`, a `NetworkError`, and
-  moves nothing. The mint takes the same verdict (`lib/api/auth-verdict.ts`),
-  and a mint refused with no `'ended'` verdict throws the same error, never a
-  sign-out. The async-turn poll stops on it rather than renewing per poll.
+  moves nothing. The mint takes the same verdict (`lib/api/auth-verdict.ts`).
+  A request or mint refused again with no `'ended'` verdict (a 401 on the
+  retry after `'refreshed'`) throws the same error, never a sign-out. The
+  async-turn poll stops on it rather than renewing per poll.
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as

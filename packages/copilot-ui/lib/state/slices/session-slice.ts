@@ -10,7 +10,7 @@ import { createLogger } from '../../../lib/utils/logger';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
 import { ErrorClassifier } from '../../errors/classifier';
-import { hasServerDirectedWait } from '../../errors/types';
+import { hasServerDirectedWait, MAX_AUTO_RETRY_WAIT_MS } from '../../errors/types';
 
 const log = createLogger('SessionSlice');
 
@@ -125,8 +125,15 @@ export const createSessionSlice: StateCreator<StoreState, [], [], SessionSlice> 
         } catch (error) {
           if (live() && !ensureRetry) {
             const classified = ErrorClassifier.classify(error);
-            const serverWait = hasServerDirectedWait(classified) ? classified.retryAfterMs : 0;
+            // Capped at the longest wait this client sits through on its own
+            // (`MAX_AUTO_RETRY_WAIT_MS`): an hourly bucket's longer wait is
+            // retried into every 2 minutes, and a wait past 2^31-1 ms would
+            // overflow the timer, which then fires at once.
+            const serverWait = hasServerDirectedWait(classified)
+              ? Math.min(classified.retryAfterMs, MAX_AUTO_RETRY_WAIT_MS)
+              : 0;
             const jitter = 1 + ENSURE_RETRY_JITTER * (2 * Math.random() - 1);
+            // A floor, not a replacement: never sooner than the backoff or the server's wait.
             const wait = Math.max(ensureRetryMs * jitter, serverWait);
             ensureRetryMs = Math.min(ensureRetryMs * 2, ENSURE_RETRY_MAX_MS);
             ensureRetry = setTimeout(() => {
