@@ -47,13 +47,19 @@ export interface ApiTransport {
    *                right now (a token expired while its renewal endpoint is
    *                down, or a storage read failed; faultmaven#1460). Nothing
    *                moves the epoch, and the caller sees the `NetworkError`
-   *                copy. Each attempt costs one host read and sends no
+   *                copy. Each attempt makes one host read and sends no
    *                request: per action, up to `resilientOperation`'s 3
-   *                attempts, 1 s and 2 s apart (sent header-less, one action
-   *                cost up to 6 reads and 6 requests); the
-   *                session ensure on its backoff (15 s doubling to 60 s: at
-   *                most 3 in its first minute, then about 1 a minute); the
-   *                heartbeat one per beat (10 min). A beat not sent refreshes
+   *                attempts, 1 s and 2 s apart; the session ensure on its
+   *                backoff (15 s doubling to 60 s: at most 3 in its first
+   *                minute, then about 1 a minute); the heartbeat one per beat
+   *                (10 min). A read costs the host's renewal. The Dashboard's
+   *                is one attempt: 3 per action (header-less: 6, plus 6
+   *                requests sent). The extension's is TokenManager's
+   *                3-attempt ladder: 9 refresh POSTs per action (header-less:
+   *                18, plus 6 requests), up to about 2.5 min before the toast
+   *                if the endpoint hangs; the ensure about 9 in its first
+   *                minute, then about 3 a minute per panel; the heartbeat 3
+   *                per beat. A beat not sent refreshes
    *                no server TTL, so a session idle past it (30 min by default)
    *                lapses, and the first beat after the outage answers 404 and
    *                re-ensures at once.

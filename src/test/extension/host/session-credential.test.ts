@@ -36,7 +36,11 @@ vi.mock('../../../extension/auth/auth-manager', () => ({
 
 import { readSessionAccessToken } from '../../../extension/host/session-credential';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
-import { CredentialUnavailableError, SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  CredentialUnavailableError,
+  SessionSwitchedError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 
 describe('readSessionAccessToken', () => {
   beforeEach(() => {
@@ -156,5 +160,17 @@ describe('readSessionAccessToken', () => {
     expect(failure).toBeInstanceOf(CredentialUnavailableError);
     expect((failure as CredentialUnavailableError).originalError?.message).toBe('storage unavailable');
     expect(mockClearAllAuthData).not.toHaveBeenCalled();
+  });
+
+  // What `getAuthHeaders` already tells apart is not a failed read: it passes
+  // through as thrown, a verdict that is not `SessionEndedError` included.
+  it.each([
+    ['an AuthenticationError', () => new AuthenticationError('Authentication required')],
+    ['a SessionSwitchedError', () => new SessionSwitchedError()],
+  ])('%s from the read passes through unchanged', async (_label, make) => {
+    const thrown = make();
+    mockGetValidAccessToken.mockRejectedValue(thrown);
+
+    await expect(readSessionAccessToken('user-a')).rejects.toBe(thrown);
   });
 });

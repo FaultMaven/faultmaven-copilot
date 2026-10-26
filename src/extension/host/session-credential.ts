@@ -13,7 +13,11 @@ import { tokenManager } from '../auth/token-manager';
 import { authManager, type TeardownOutcome } from '../auth/auth-manager';
 import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
 import { SessionEndedError } from '../auth/session-ended-error';
-import { CredentialUnavailableError, SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  CredentialUnavailableError,
+  SessionSwitchedError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 import { createLogger } from '@faultmaven/copilot-ui/lib/utils/logger';
 
 const log = createLogger('SessionCredential');
@@ -51,13 +55,15 @@ export async function readSessionAccessToken(forUserId: string | null): Promise<
  * (`getStoredTokens` has no catch, and the refresh ladder's failures are its
  * own). A read that failed is not a read that the session is gone, so the
  * request is not sent: `CredentialUnavailableError`, never the plain throw
- * that sends it with no bearer. The verdict passes through to the teardown.
+ * that sends it with no bearer. What `getAuthHeaders` already tells apart
+ * passes through as thrown: any `AuthenticationError` (the verdict,
+ * `SessionEndedError`, reaches the teardown) and `SessionSwitchedError`.
  */
 async function readOrRefuse<T>(read: () => Promise<T>): Promise<T> {
   try {
     return await read();
   } catch (error) {
-    if (error instanceof SessionEndedError) throw error;
+    if (error instanceof AuthenticationError || error instanceof SessionSwitchedError) throw error;
     log.warn('The stored credential could not be read; not sending the request', error);
     throw new CredentialUnavailableError(
       'The stored credential could not be read',
@@ -92,7 +98,10 @@ async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<st
     const credential = await readOrRefuse(() => tokenManager.getValidCredential());
     // `null` is two states (faultmaven#1460): nothing stored (signed out), or
     // a credential KEPT through a refresh that failed transiently. The stored
-    // one, as-is, says which, and whose.
+    // one, as-is, says which, and whose. Two reads, so a benign race, as in
+    // the Dashboard: a sign-in landing between them costs one spurious
+    // connection error (the next request reads the new token), and a sign-out
+    // one request sent with no bearer, which is right by then.
     const held = credential ?? (await readOrRefuse(() => tokenManager.peekCredential()));
     if (!held) throw new Error('No access token available right now.');
     if (forUserId !== null && held.userId !== forUserId) {

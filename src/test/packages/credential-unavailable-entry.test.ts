@@ -11,7 +11,12 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as entry from '@faultmaven/copilot-ui';
-import { CredentialUnavailableError, SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  CredentialUnavailableError,
+  NetworkError,
+  SessionExpiredError,
+  TimeoutError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
 import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 
@@ -72,9 +77,14 @@ describe('CredentialUnavailableError from a host', () => {
     expect(getEpoch()).toBe(before);
   });
 
-  // The positive control: any other throw keeps the not-signed-in path.
-  it('a plain throw still sends the request, with no bearer', async () => {
-    hostThrowing(() => new Error('signed out'));
+  // The positive controls: any other throw keeps the not-signed-in path, a
+  // `NetworkError` or `TimeoutError` that is not this class included.
+  it.each([
+    ['a plain Error', () => new Error('signed out')],
+    ['a NetworkError', () => new NetworkError('offline')],
+    ['a TimeoutError', () => new TimeoutError('timed out')],
+  ])('%s still sends the request, with no bearer', async (_label, error) => {
+    hostThrowing(error);
 
     await expect(authenticatedFetch(CASES, { method: 'POST' })).rejects.toBeInstanceOf(SessionExpiredError);
     expect(fetchWithTimeout).toHaveBeenCalledTimes(1);

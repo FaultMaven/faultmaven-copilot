@@ -104,7 +104,8 @@ answered `'unavailable'`: no sign-out, no epoch move; one renewal per request
 attempt, times the caller's retries — `resilientOperation`'s attempt budget, a
 query's one retry — and nothing is duplicated; or the host's `accessToken()`
 throwing it for a kept session with no credential now: nothing sent, one host
-read per attempt) ·
+read per attempt, which renews once in the Dashboard and runs a 3-POST refresh
+ladder in the extension, so 3 or 9 per action) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
 `QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·

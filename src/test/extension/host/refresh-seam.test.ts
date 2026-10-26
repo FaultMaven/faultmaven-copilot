@@ -56,7 +56,11 @@ import { endSessionOnRejectedCredential, readSessionAccessToken } from '../../..
 import { createExtensionTransport } from '../../../extension/host/extension-transport';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
-import { AuthenticationError, CredentialUnavailableError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  CredentialUnavailableError,
+  SessionExpiredError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
 const lockRequests: string[] = [];
@@ -160,6 +164,21 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     expect(sent.filter((u) => u.includes('/api/v1/whatever'))).toHaveLength(0);
     expect(reportedToHost).not.toHaveBeenCalled();
     expect(store).toMatchObject({ access_token: 'stale-token', refresh_token: 'good-refresh' });
+  });
+
+  // Signed out: the read SUCCEEDED and found nothing stored. The one arm that
+  // still sends with no bearer, its 401 the not-signed-in path (faultmaven#1460).
+  it('sends the request with no bearer when nothing is stored', async () => {
+    global.fetch = vi.fn(async () =>
+      ({ ok: false, status: 401, headers: new Headers(), json: async () => ({}), text: async () => '{}' }),
+    ) as unknown as typeof fetch;
+
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
+
+    const calls = vi.mocked(global.fetch).mock.calls;
+    expect(calls.map(([url]) => String(url))).toEqual(['/api/v1/whatever']);
+    expect(new Headers(calls[0][1]?.headers as HeadersInit).has('Authorization')).toBe(false);
+    expect(reportedToHost).not.toHaveBeenCalled();
   });
 
   // A storage read that fails is not a read that the session is gone

@@ -342,8 +342,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       const epoch = getEpoch();
 
       // No session yet (a mint refused at mount waits for the slice's retry):
-      // ensure one now. Only a failure the host ended asks the user to sign in
-      // (faultmaven#1460). `null`: the ensure was superseded (the panel moved
+      // ensure one now. Only a session the host ended, or a mint with no
+      // credential, asks the user to sign in (faultmaven#1460). `null`: the
+      // ensure was superseded (the panel moved
       // to another user) or its session ended; nothing is sent either way.
       let ensureError: unknown;
       const haveSession = !!sessionId || (await refreshSession().then(
@@ -361,11 +362,12 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           // A NOTICE is shown whole (#350): another account signed in, and
           // nothing was sent or ended.
           showError(classified);
-        } else if (ensureError instanceof AuthenticationError) {
+        } else if (ensureError instanceof AuthenticationError || ensureError instanceof SessionExpiredError) {
+          // Ended, or a mint with no credential: the host could not say why,
+          // which means nothing is stored, since a host that keeps the session
+          // throws `CredentialUnavailableError` (the `else` below,
+          // faultmaven#1460). The question path shows the same.
           showError(notSentError(unsent, 'You are signed out.', ensureError, { signIn: true }));
-        } else if (ensureError instanceof SessionExpiredError) {
-          // The credential was unreadable for a moment: no sign-in advice.
-          showError(notSentError(unsent, generic));
         } else {
           showError(notSentError(unsent, generic, ensureError));
         }

@@ -549,7 +549,14 @@ export class TokenManager {
    * The stored access token AS-IS, with its owner from the same read — no
    * refresh, no verdict, no teardown.
    *
-   * The FALLBACK for callers that must not let a verdict escape. `logoutAuth`
+   * Every request's null path reads it: when `getValidCredential()` answers
+   * null, the act-site (`readOnce`, faultmaven#1460) asks this which kind. So
+   * its contract is load-bearing: the kept credential while `access_token` is
+   * stored (a refresh that failed transiently keeps it), null only when
+   * nothing is stored, and a throw only when the storage read fails. A null
+   * for a kept credential would send that request with no bearer.
+   *
+   * Also the FALLBACK for callers that must not let a verdict escape. `logoutAuth`
    * asks `getValidCredential()` first — so a healthy near-expiry session still
    * refreshes and the sign-out can actually be confirmed — and falls back here
    * when that answers nothing or reports a dead chain. Sending a possibly-expired
