@@ -15,6 +15,7 @@ import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
 import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import type { AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
 import { getEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import { CredentialUnavailableError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 const unauthorized = () =>
   ({
@@ -121,16 +122,19 @@ describe('onUnauthorized decides what a 401 means', () => {
     expect(getEpoch()).toBeGreaterThan(before);
   });
 
-  // The retry is a retry, not a loop: a request still rejected with a freshly
-  // minted bearer is a real rejection, and looping would hammer the host's
-  // refresh path.
-  it("a 401 on the retry surfaces rather than refreshing again", async () => {
+  // The retry is a retry, not a loop: looping would hammer the host's refresh
+  // path. Nor a sign-out: the host kept the session (faultmaven#1460).
+  it("a 401 on the retry surfaces rather than refreshing again, and signs nobody out", async () => {
     const { onUnauthorized } = install('refreshed', ['stale-token', 'fresh-token']);
     const fetchMock = vi.fn().mockResolvedValue(unauthorized());
     global.fetch = fetchMock as never;
+    const before = getEpoch();
 
-    await expect(authenticatedFetch('https://api.test/api/v1/cases')).rejects.toThrow();
+    const failure = await authenticatedFetch('https://api.test/api/v1/cases').catch((error: unknown) => error);
 
+    expect(failure).toBeInstanceOf(CredentialUnavailableError);
+    expect((failure as CredentialUnavailableError).userMessage).not.toMatch(/sign|session/i);
+    expect(getEpoch()).toBe(before);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

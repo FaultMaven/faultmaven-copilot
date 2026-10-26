@@ -461,21 +461,25 @@ describe('the session slice: its timers and its owner', () => {
     expect(mints()).toHaveLength(1);
   });
 
-  it("schedules no retry for a superseded init's failure", async () => {
+  // A retry scheduled for the superseded init would take the one retry slot,
+  // and run dead (its init is no longer live), so the live init's own retry
+  // would never be scheduled.
+  it("schedules no retry for a superseded init's failure, so the live init's retry runs", async () => {
     let fail!: (response: Response) => void;
     fetchWithTimeout
       .mockReturnValueOnce(new Promise<Response>((resolve) => { fail = resolve; }))
+      .mockResolvedValueOnce(reply(500))
       .mockResolvedValue(minted('s-new', 'u1'));
     const first = init(); // its mint is in flight
-    const second = init(); // replaces its timer, and queues its own mint, which succeeds
-    fail(reply(500)); // the only failure is the superseded init's
+    const second = init(); // replaces its timer, and queues its own mint, which fails too
+    fail(reply(500));
     await Promise.all([first, second]);
 
-    // The second init's interval alone.
-    expect(useAppStore.getState().sessionId).toBe('s-new');
-    expect(vi.getTimerCount()).toBe(1);
-    await useAppStore.getState().clearSession();
-    expect(vi.getTimerCount()).toBe(0);
+    // The second init's interval and its one retry.
+    expect(vi.getTimerCount()).toBe(2);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.waitFor(() => expect(useAppStore.getState().sessionId).toBe('s-new'));
+    expect(mints()).toHaveLength(3);
   });
 
   it('an early ensure mints nothing once the session has ended', async () => {

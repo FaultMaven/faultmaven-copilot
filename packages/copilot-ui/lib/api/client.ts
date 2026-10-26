@@ -1,4 +1,4 @@
-import { AuthenticationError, SessionExpiredError, UserFacingError } from '../errors/types';
+import { CredentialUnavailableError, SessionExpiredError, UserFacingError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
 import { clearPersistedSessionIf, refreshSession } from './session-core';
 import { handleAuthError } from './auth-verdict';
@@ -113,9 +113,8 @@ export async function authenticatedFetchWithRetry(
  * The one retry after a host said it refreshed the credential.
  *
  * A separate entry point rather than a flag, because what must NOT happen is a
- * second trip through the 401 branch: a request that is still rejected with a
- * freshly minted bearer is a real rejection, and looping on it would hammer the
- * host's refresh path.
+ * second trip through the 401 branch: asking the host again for a request
+ * still rejected with a freshly minted bearer would hammer its refresh path.
  */
 async function authenticatedFetchAfterRefresh(
   url: string,
@@ -129,12 +128,11 @@ async function authenticatedFetchAfterRefresh(
     timeoutMs,
   );
 
-  // Still rejected, with a credential the host minted moments ago. That is a
-  // real rejection rather than an expired token, and it surfaces — going back
-  // round would ask the host to refresh again and again against a server that
-  // is refusing this request on its merits.
+  // Still rejected, with a credential the host renewed moments ago. It
+  // surfaces rather than going back round to the host. Not as a sign-out: the
+  // host kept the session, and only it may end one (faultmaven#1460).
   if (response.status === 401) {
-    throw new AuthenticationError('Authentication required');
+    throw new CredentialUnavailableError('The renewed credential was refused');
   }
   return response;
 }
@@ -216,7 +214,8 @@ export async function authenticatedFetch(
       // session is the HOST's call, not ours — it owns the token chain and may
       // have renewed it already. 'ended' and 'unavailable' throw inside, so
       // this is 'refreshed': retry once. `getAuthHeaders` now reads the
-      // renewed bearer, and a second 401 is a real rejection, not a loop.
+      // renewed bearer, and a second 401 surfaces without asking the host
+      // again, and without a sign-out the host never declared.
       await handleAuthError(sentBearer);
       return await authenticatedFetchAfterRefresh(url, options, timeoutMs);
     }

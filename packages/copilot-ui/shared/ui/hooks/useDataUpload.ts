@@ -343,8 +343,8 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
       // No session yet (a mint refused at mount waits for the slice's retry):
       // ensure one now. Only a failure the host ended asks the user to sign in
-      // (faultmaven#1460). `null`: the session ended meanwhile, which the
-      // epoch check below reports.
+      // (faultmaven#1460). `null`: the ensure was superseded (the panel moved
+      // to another user) or its session ended; nothing is sent either way.
       let ensureError: unknown;
       const haveSession = !!sessionId || (await refreshSession().then(
         (id) => id !== null,

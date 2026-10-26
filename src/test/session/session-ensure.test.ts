@@ -30,6 +30,8 @@ const minted = (sessionId: string, userId: string) =>
   reply(200, { session_id: sessionId, user_id: userId, status: 'active', created_at: 'now' });
 const mints = () => fetchWithTimeout.mock.calls.filter(([url]) => url === MINT);
 const heartbeats = () => fetchWithTimeout.mock.calls.filter(([url]) => String(url).endsWith('/heartbeat'));
+const limited = (seconds: number) =>
+  ({ ok: false, status: 429, headers: new Headers({ 'Retry-After': String(seconds) }), json: async () => ({}) }) as unknown as Response;
 const deferred = () => {
   let resolve!: (response: Response) => void;
   const promise = new Promise<Response>((r) => { resolve = r; });
@@ -114,6 +116,39 @@ describe('a mint the session outlived', () => {
 
     expect(stub.data.sessionId).toBeUndefined();
     expect(stub.data.sessionUserId).toBeUndefined();
+    expect(pkg.useAppStore.getState().sessionId).toBeNull();
+  });
+
+  // The slice's two checks: after the ensure (before it requires a stored id),
+  // and after its read-back.
+  it('returns null, not a failure, from the slice for a mint the session outlived', async () => {
+    token = null;
+    await init(); // the panel's owner, no session yet
+    token = 't1';
+    const mint = deferred();
+    fetchWithTimeout.mockImplementation((url: string) => (url === MINT ? mint.promise : reply(200)));
+    const refreshed = pkg.useAppStore.getState().refreshSession();
+    await settle();
+
+    pkg.bumpEpoch();
+    mint.resolve(minted('s1', 'u1'));
+
+    await expect(refreshed).resolves.toBeNull();
+  });
+
+  it('stores nothing when the session ends during the slice read-back', async () => {
+    let reads = 0;
+    stub.get.mockImplementation(async (keys: string[]) => {
+      // The second read of these keys is the slice's read-back; the first, session-core's.
+      if (keys.join() === 'sessionId,sessionUserId' && ++reads === 2) pkg.bumpEpoch();
+      return Object.fromEntries(keys.filter((k) => k in stub.data).map((k) => [k, stub.data[k]]));
+    });
+    fetchWithTimeout.mockImplementation(async (url: string) => (url === MINT ? minted('s1', 'u1') : reply(200)));
+
+    await init();
+
+    expect(mints()).toHaveLength(1);
+    expect(reads).toBe(2);
     expect(pkg.useAppStore.getState().sessionId).toBeNull();
   });
 
@@ -236,9 +271,12 @@ describe('the ensure scheduler', () => {
     expect(mints()).toHaveLength(3);
   });
 
-  it("waits out a rate-limited mint's Retry-After before the next attempt", async () => {
-    const limited = { ok: false, status: 429, headers: new Headers({ 'Retry-After': '90' }), json: async () => ({}) };
-    fetchWithTimeout.mockResolvedValueOnce(limited).mockResolvedValue(minted('s1', 'u1'));
+  // A floor, not a replacement: the next attempt waits max(backoff × jitter,
+  // the server's wait), so jitter never undercuts the server and a shorter
+  // server wait never shortens the backoff.
+  it("never retries sooner than a rate-limited mint's Retry-After, jitter included", async () => {
+    vi.mocked(Math.random).mockReturnValue(0); // jitter 0.8
+    fetchWithTimeout.mockResolvedValueOnce(limited(90)).mockResolvedValue(minted('s1', 'u1'));
     await init();
     expect(mints()).toHaveLength(1);
 
@@ -250,6 +288,35 @@ describe('the ensure scheduler', () => {
 
     expect(mints()).toHaveLength(2);
     expect(pkg.useAppStore.getState().sessionId).toBe('s1');
+  });
+
+  it('keeps the backoff when the Retry-After is shorter', async () => {
+    fetchWithTimeout.mockResolvedValueOnce(limited(5)).mockResolvedValue(minted('s1', 'u1'));
+    await init();
+
+    await vi.advanceTimersByTimeAsync(14_999);
+    await settle();
+    expect(mints()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+
+    expect(mints()).toHaveLength(2);
+  });
+
+  it('caps an enormous Retry-After at the longest wait the client sits through: one retry, not a loop', async () => {
+    fetchWithTimeout.mockResolvedValue(limited(3_000_000)); // past what a timer can hold
+    await init();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle();
+    expect(mints()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(pkg.MAX_AUTO_RETRY_WAIT_MS - 1_001);
+    await settle();
+    expect(mints()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+
+    expect(mints()).toHaveLength(2);
   });
 
   it('uses a credential back after an 8-minute outage within one capped wait (60 s, +20%)', async () => {
