@@ -45,27 +45,6 @@ export async function readSessionAccessToken(forUserId: string | null): Promise<
 }
 
 /**
- * The credential for a request built for `forUserId`, or a refusal
- * (copilot#350).
- *
- * Another user signing in on this browser profile — the Dashboard bridge, say —
- * lands in storage some milliseconds before the panel hears of it and
- * re-scopes. A request the panel builds in between is still FOR the previous
- * user; handed the new user's bearer, a `POST /cases` would create the previous
- * user's content in the new user's account. So the token is handed out only if
- * the `user` stored beside it — read in the same storage read — is the user the
- * request is for. Otherwise `SessionSwitchedError`: `getAuthHeaders`
- * propagates it, nothing is sent, and NOTHING is torn down — the stored session
- * is the new user's, perfectly good, and the panel applies it when the sign-in's
- * broadcast arrives. A refusal is not a verdict on any credential.
- *
- * Unknown is never the same user (the rule #348's teardown uses): a stored
- * credential that names no user is refused to a panel that has one. Every
- * writer stores `user` beside the token, so this does not happen to a session
- * this extension wrote. `forUserId === null` — a caller acting for no
- * particular user — skips the comparison.
- */
-/**
  * A credential read, refused when the read itself FAILED (faultmaven#1460).
  *
  * TokenManager throws nothing but its verdict and a rejected storage read
@@ -87,6 +66,27 @@ async function readOrRefuse<T>(read: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The credential for a request built for `forUserId`, or a refusal
+ * (copilot#350).
+ *
+ * Another user signing in on this browser profile — the Dashboard bridge, say —
+ * lands in storage some milliseconds before the panel hears of it and
+ * re-scopes. A request the panel builds in between is still FOR the previous
+ * user; handed the new user's bearer, a `POST /cases` would create the previous
+ * user's content in the new user's account. So the token is handed out only if
+ * the `user` stored beside it — read in the same storage read — is the user the
+ * request is for. Otherwise `SessionSwitchedError`: `getAuthHeaders`
+ * propagates it, nothing is sent, and NOTHING is torn down — the stored session
+ * is the new user's, perfectly good, and the panel applies it when the sign-in's
+ * broadcast arrives. A refusal is not a verdict on any credential.
+ *
+ * Unknown is never the same user (the rule #348's teardown uses): a stored
+ * credential that names no user is refused to a panel that has one. Every
+ * writer stores `user` beside the token, so this does not happen to a session
+ * this extension wrote. `forUserId === null` — a caller acting for no
+ * particular user — skips the comparison.
+ */
 async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<string> {
   try {
     const credential = await readOrRefuse(() => tokenManager.getValidCredential());
