@@ -48,7 +48,7 @@ const sessionResponse = (over: Record<string, any> = {}) => ({
 
 describe('refreshSession', () => {
   beforeEach(() => {
-    storageSet.mockClear();
+    storageSet.mockReset().mockResolvedValue(undefined);
     storageRemove.mockClear();
     storageGet.mockReset().mockResolvedValue({});
     createSessionWithRecovery.mockReset().mockResolvedValue(sessionResponse());
@@ -72,6 +72,12 @@ describe('refreshSession', () => {
   });
 
   it('single-flights concurrent refreshes into ONE /sessions create', async () => {
+    // Storage that holds what was written: the second caller, queued behind
+    // the first, finds the owner's session there and creates nothing.
+    const data: Record<string, unknown> = {};
+    storageSet.mockImplementation(async (items: Record<string, unknown>) => { Object.assign(data, items); });
+    storageGet.mockImplementation(async (keys: string[]) =>
+      Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])));
     // Make the create hang until we resolve it, so both callers overlap.
     let resolveCreate!: (v: any) => void;
     createSessionWithRecovery.mockReturnValueOnce(new Promise(r => { resolveCreate = r; }));

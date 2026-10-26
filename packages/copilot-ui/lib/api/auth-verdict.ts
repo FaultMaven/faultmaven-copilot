@@ -1,4 +1,4 @@
-import { AuthenticationError } from '../errors/types';
+import { AuthenticationError, CredentialUnavailableError } from '../errors/types';
 import { getApiTransport } from './transport';
 import { bumpEpoch } from '../state/session-epoch';
 import { createLogger } from '../utils/logger';
@@ -12,7 +12,7 @@ const log = createLogger('APIClient');
  * same verdict as every other route: `client.ts` imports `session-core.ts`,
  * which imports the mint, so the mint cannot import `client.ts`.
  */
-export async function handleAuthError(rejectedBearer: string): Promise<'refreshed' | 'ended'> {
+export async function handleAuthError(rejectedBearer: string): Promise<'refreshed'> {
   // The epoch moves only when the session ENDS — below, on 'ended', never
   // before the host has answered. A 401 is not yet a verdict: the host may
   // hold a newer credential for the same session ('refreshed'), and bumping
@@ -40,6 +40,16 @@ export async function handleAuthError(rejectedBearer: string): Promise<'refreshe
   if (outcome === 'refreshed') {
     log.info('Host refreshed the credential after a 401; retrying once');
     return 'refreshed';
+  }
+
+  // The host could not renew the credential right now and the session goes
+  // on (faultmaven#1460). Not a sign-out, so the epoch stays; not a retry,
+  // since there is no newer credential. NetworkError's copy, as ruled. No
+  // status rides on it: an earlier attempt of the same action may have been
+  // ambiguous, and a received 401 here would make it read as not added.
+  if (outcome === 'unavailable') {
+    log.warn('Host could not renew the credential after a 401; the session continues');
+    throw new CredentialUnavailableError();
   }
 
   // Ended. Fence THIS context's in-flight writers now, before the purge

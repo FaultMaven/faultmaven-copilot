@@ -214,15 +214,11 @@ export async function authenticatedFetch(
 
       // A 401 on a request that DID carry a credential. Whether that ends the
       // session is the HOST's call, not ours — it owns the token chain and may
-      // have renewed it already.
-      const outcome = await handleAuthError(sentBearer);
-      if (outcome === 'refreshed') {
-        // Once. `getAuthHeaders` now reads the renewed bearer. A second 401
-        // after a successful refresh is a real rejection and falls through to
-        // the throw, rather than looping.
-        return await authenticatedFetchAfterRefresh(url, options, timeoutMs);
-      }
-      throw new AuthenticationError('Authentication required');
+      // have renewed it already. 'ended' and 'unavailable' throw inside, so
+      // this is 'refreshed': retry once. `getAuthHeaders` now reads the
+      // renewed bearer, and a second 401 is a real rejection, not a loop.
+      await handleAuthError(sentBearer);
+      return await authenticatedFetchAfterRefresh(url, options, timeoutMs);
     }
 
     // Handle 429 Rate Limit - extract retry-after and throw special error

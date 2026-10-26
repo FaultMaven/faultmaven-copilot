@@ -12,9 +12,10 @@ import { renderHook, act } from '@testing-library/react';
 import { useMessageSubmission } from '@faultmaven/copilot-ui/shared/ui/hooks/useMessageSubmission';
 import { useDataUpload } from '@faultmaven/copilot-ui/shared/ui/hooks/useDataUpload';
 import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
-import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { setApiTransport, type AuthOutcome } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import {
+  CredentialUnavailableError,
   TimeoutError,
   TurnInProgressError,
   TurnTimedOutError,
@@ -25,6 +26,7 @@ import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import { capabilitiesManager, type CapabilitiesManager } from '@faultmaven/copilot-ui/lib/capabilities';
 import { deriveTurnTiming } from '@faultmaven/copilot-ui/lib/utils/turn-timing';
+import { submitTurn } from '@faultmaven/copilot-ui/lib/api/services/case-service';
 import { createStubHost, hostWrapper } from '../support/host';
 
 const mockShowError = vi.fn();
@@ -540,5 +542,85 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
     });
     expect(turnPosts()).toHaveLength(2);
     expect(keyOf(turnPosts()[1][1])).not.toBe(firstKey);
+  });
+
+  // The host could not renew a credential and the session goes on (faultmaven#1460).
+  describe("a host that answers 'unavailable'", () => {
+    const onUnauthorized = vi.fn(async (): Promise<AuthOutcome> => 'unavailable');
+    const refused = () => wire(401, { detail: 'Could not validate credentials' });
+    beforeEach(() => {
+      onUnauthorized.mockClear();
+      setApiTransport({
+        baseUrl: async () => BASE,
+        accessToken: async () => 'test-token',
+        sessionId: async () => null,
+        clearSession: async () => undefined,
+        onUnauthorized,
+      });
+    });
+
+    it('a 202 turn whose poll is refused stops after one renewal', async () => {
+      const JOB = `${BASE}/api/v1/jobs/job-1`;
+      fetchWithTimeout.mockImplementation(async (url: string, init: RequestInit = {}) => {
+        if (url === TURNS_URL && init.method === 'POST') return wire(202, {}, { Location: '/api/v1/jobs/job-1' });
+        if (url === JOB) return refused();
+        throw new Error(`unrouted ${url}`);
+      });
+      let outcome: unknown;
+      submitTurn(CASE, { query: 'why?' }).catch((error: unknown) => { outcome = error; });
+
+      await advance(60_000);
+
+      expect(onUnauthorized).toHaveBeenCalledTimes(1);
+      expect(fetchWithTimeout.mock.calls.filter(([url]) => url === JOB)).toHaveLength(1);
+      expect(outcome).toBeInstanceOf(CredentialUnavailableError);
+    });
+
+    it('upload path: an ambiguous attempt, then a refused one, says the file "may not have been added"', async () => {
+      routeWire([async () => Promise.reject(timeout()), async () => refused()]);
+      const file = new File(['ERROR x'], 'app.log', { type: 'text/plain' });
+      const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+      await act(async () => {
+        const pending = result.current.handleTurnSubmit({ query: '', files: [file], inputType: 'file', queryIsGenerated: true });
+        await vi.advanceTimersByTimeAsync(60_000);
+        await pending;
+      });
+
+      expect(onUnauthorized).toHaveBeenCalled();
+      const failed = rows().find((r) => r.failed);
+      expect(failed?.response).toContain('may not have been added');
+    });
+
+    // The mint refused with no 'ended' verdict: the re-send after 'refreshed',
+    // and the client-id recovery mint, which asks the host nothing.
+    it.each([
+      ['the re-send after a refreshed credential', [401, 401]],
+      ['the client-id recovery mint', [401, 404, 401]],
+    ])('upload path: a mint refused on %s shows the connection copy, not a sign-out', async (_label, statuses) => {
+      onUnauthorized.mockImplementation(async () => 'refreshed');
+      const MINT = `${BASE}/api/v1/sessions`;
+      let minted = 0;
+      fetchWithTimeout.mockImplementation(async (url: string) => {
+        if (url === MINT) return wire(statuses[Math.min(minted++, statuses.length - 1)], {});
+        throw new Error(`unrouted ${url}`);
+      });
+      await useAppStore.getState().initializeSession(true, 'u1');
+      minted = 0;
+      useAppStore.setState({ sessionId: null });
+      const file = new File(['ERROR x'], 'app.log', { type: 'text/plain' });
+      const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+      try {
+        await act(async () => {
+          await result.current.handleTurnSubmit({ query: 'why?', files: [file], inputType: 'file' });
+        });
+
+        const shown = mockShowError.mock.calls[0][0] as UserFacingError;
+        expect(shown.userMessage).toContain('Unable to reach FaultMaven server');
+        expect(shown.userMessage).not.toMatch(/signed out/i);
+        expect(shown.userAction).toBe('Send again to retry.');
+      } finally {
+        await useAppStore.getState().clearSession();
+      }
+    });
   });
 });

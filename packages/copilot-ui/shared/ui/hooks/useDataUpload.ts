@@ -341,12 +341,13 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
       // store/storage (issue #132).
       const epoch = getEpoch();
 
-      // No session yet (a mint refused at mount waits for the heartbeat): ensure
-      // one now. Only a failure the host ended asks the user to sign in
-      // (faultmaven#1460).
+      // No session yet (a mint refused at mount waits for the slice's retry):
+      // ensure one now. Only a failure the host ended asks the user to sign in
+      // (faultmaven#1460). `null`: the session ended meanwhile, which the
+      // epoch check below reports.
       let ensureError: unknown;
       const haveSession = !!sessionId || (await refreshSession().then(
-        () => true,
+        (id) => id !== null,
         (error: unknown) => { ensureError = error; return false; },
       ));
       if (epoch !== getEpoch()) {

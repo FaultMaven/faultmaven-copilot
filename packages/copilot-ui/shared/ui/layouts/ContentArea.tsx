@@ -181,6 +181,9 @@ const arePropsEqual = (prevProps: ContentAreaProps, nextProps: ContentAreaProps)
   if (prevProps.submitting !== nextProps.submitting) return false;
   if (prevProps.hasUnsavedNewChat !== nextProps.hasUnsavedNewChat) return false;
 
+  // A session minted after mount: the case header's query keys on it.
+  if (prevProps.sessionId !== nextProps.sessionId) return false;
+
   // Re-render on conversation content changes
   const prevConv = prevProps.conversations[prevProps.activeCaseId || ''] || [];
   const nextConv = nextProps.conversations[nextProps.activeCaseId || ''] || [];

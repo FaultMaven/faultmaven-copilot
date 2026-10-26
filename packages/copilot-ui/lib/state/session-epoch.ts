@@ -4,8 +4,8 @@
  * A module-level, monotonically-increasing counter that identifies the current
  * authenticated session. It is bumped whenever the session ends — user logout
  * (`handleLogout`) or a hard auth failure the host answers `'ended'`
- * (`auth-verdict.ts handleAuthError`; never on `'refreshed'`, where the session
- * continues) — and,
+ * (`auth-verdict.ts handleAuthError`; never on `'refreshed'` or `'unavailable'`,
+ * where the session continues) — and,
  * cross-context, whenever the sidepanel observes an `{ isAuthenticated: false }`
  * broadcast/storage change (see `auth-slice`).
  *

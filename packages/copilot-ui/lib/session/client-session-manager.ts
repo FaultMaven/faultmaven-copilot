@@ -5,7 +5,7 @@ import { createLogger } from '../utils/logger';
 import { getAuthHeaders } from '../api/fetch-utils';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { errorBodyText } from '../errors/error-body';
-import { AuthenticationError, SessionExpiredError } from '../errors/types';
+import { CredentialUnavailableError, SessionExpiredError } from '../errors/types';
 import { handleAuthError } from '../api/auth-verdict';
 
 const log = createLogger('ClientSessionManager');
@@ -155,15 +155,17 @@ export class ClientSessionManager {
     let { response, bearer } = await send();
     let session = await this.ownedSession(response, expectedOwner);
     if (!session) {
-      if (!askHost) throw new AuthenticationError('Authentication required');
-      // Throws on 'ended', after its epoch bump.
+      // No verdict here (this ensure already had one), so nothing says the
+      // session ended: not a sign-out. The slice's ensure retries it.
+      if (!askHost) throw new CredentialUnavailableError('The session mint was refused');
+      // Throws on 'ended', after its epoch bump, and on 'unavailable', with no
+      // bump: the session slice's ensure retries it.
       await handleAuthError(bearer);
       ({ response, bearer } = await send());
       session = await this.ownedSession(response, expectedOwner);
-      // Rejected again with the bearer the host just renewed: a real
-      // rejection, with no second verdict and no bump (as client.ts's
-      // `authenticatedFetchAfterRefresh`).
-      if (!session) throw new AuthenticationError('Authentication required');
+      // Rejected again with the bearer the host just renewed. Not a second
+      // verdict (no loop), and not a sign-out the host never declared.
+      if (!session) throw new CredentialUnavailableError('The session mint was refused');
     }
 
     // Log session creation/resumption
