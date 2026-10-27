@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm and Node, install dependencies
-        uses: FaultMaven/ci-actions/setup-js@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
+        uses: FaultMaven/ci-actions/setup-js@6d03d98637a9a4ae9d0d57580408c3299f5d5c0f # v1.3.1
 
       - name: Type check
         run: pnpm run compile
@@ -88,7 +88,7 @@ jobs:
           fetch-depth: 2
 
       - name: Set up pnpm and Node, install dependencies
-        uses: FaultMaven/ci-actions/setup-js@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
+        uses: FaultMaven/ci-actions/setup-js@6d03d98637a9a4ae9d0d57580408c3299f5d5c0f # v1.3.1
 
       # The PINNED contract, not `main`. Fetching `main` meant the API
       # repository publishing a change reached this client the moment it
@@ -197,7 +197,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm and Node, install dependencies
-        uses: FaultMaven/ci-actions/setup-js@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
+        uses: FaultMaven/ci-actions/setup-js@6d03d98637a9a4ae9d0d57580408c3299f5d5c0f # v1.3.1
 
       - name: Run tests with coverage
         run: pnpm run test:coverage
@@ -237,7 +237,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm and Node, install dependencies
-        uses: FaultMaven/ci-actions/setup-js@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
+        uses: FaultMaven/ci-actions/setup-js@6d03d98637a9a4ae9d0d57580408c3299f5d5c0f # v1.3.1
 
       - name: Generate icons
         run: pnpm run generate-icons
@@ -423,7 +423,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm and Node
-        uses: FaultMaven/ci-actions/setup-js@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
+        uses: FaultMaven/ci-actions/setup-js@6d03d98637a9a4ae9d0d57580408c3299f5d5c0f # v1.3.1
         with:
           install: 'false'
 
@@ -441,7 +441,7 @@ jobs:
       # (5xx, 408, 429) or stalled (90 s per attempt), and `fail` keeps this gate
       # closed if that lasts all four attempts.
       - name: Audit lockfile (moderate and above, fail closed)
-        uses: FaultMaven/ci-actions/lockfile-audit@4b5989bc5f9e1fcd5eee69cf18cfa0854a6f2894 # v1.2.0
+        uses: FaultMaven/ci-actions/lockfile-audit@6d03d98637a9a4ae9d0d57580408c3299f5d5c0f # v1.3.1
         with:
           on-unreachable: fail
 
