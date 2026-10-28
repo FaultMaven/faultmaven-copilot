@@ -1,7 +1,7 @@
 {
   "$comment": "The FaultMaven API contract this client is written against. Moving `ref` is how this repository ADOPTS a contract change: the backend publishes by merging, and nothing reaches this client until this file says so. See docs/reference/api/openapi.json in the API repo, and its docs/development/api-contract-changes.md for the process.",
   "repository": "FaultMaven/faultmaven",
-  "ref": "9c353588dc3eef120875dee02178dcdfb198ce90",
-  "contractVersion": "14.1.0",
-  "adopted": "2026-10-12"
+  "ref": "64df254679b104e17c8cfe78cf37d3b136c0369d",
+  "contractVersion": "14.8.0",
+  "adopted": "2026-10-28"
 }

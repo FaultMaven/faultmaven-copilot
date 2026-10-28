@@ -1492,10 +1492,19 @@ export interface paths {
         post?: never;
         /**
          * Delete Case
-         * @description Permanently delete a case and all associated data.
+         * @description Permanently delete a case and all associated data, or fail and keep it.
          *
-         *     This endpoint provides hard delete functionality. Once deleted,
-         *     the case and all associated data are permanently removed.
+         *     Every store that holds the case's data is cleared before the case itself:
+         *     its evidence search index, its uploaded files, its PII redaction
+         *     registry, the sessions pointing at it, its team shares and its runbook
+         *     conversion jobs and drafts (a published runbook is kept). An audit record
+         *     names who deleted it and what was cleared.
+         *
+         *     If any store cannot be cleared, the request answers 500
+         *     `DELETE_CASE_ERROR` and the case stays, so the delete can be retried. A
+         *     failed delete can leave a case that reads normally while some of its
+         *     files and its evidence search are already gone, until a retry completes
+         *     the delete.
          *
          *     The operation is idempotent - subsequent requests will return
          *     204 No Content even if the case has already been deleted, and so does a
@@ -1972,6 +1981,10 @@ export interface paths {
          *       a title (pre-LLM length gate, or LLM + fallback both fail).
          *       Clients SHOULD keep the existing title unchanged and may retry
          *       later.
+         *     - 503: the check that keeps sensitive data out of titles could not run
+         *       (a server-side dependency is unavailable), so no title was written.
+         *       The detail is generic. Clients SHOULD keep the existing title and may
+         *       retry later.
          */
         post: operations["generate_case_title_api_v1_cases__case_id__title_post"];
         delete?: never;
@@ -2340,6 +2353,11 @@ export interface paths {
          *     api/exception_handlers.py for canonical translation to 403 / 404 / 409 /
          *     422 respectively. The route no longer catches ValueError; see
          *     docs/architecture/specifications/exception-contract.md.
+         *
+         *     The published title is redacted before anything is written (#1981). If that
+         *     check cannot run (the sanitizer or its pseudonym key is unavailable) the
+         *     request answers **503**, a retryable server-side condition, with a generic
+         *     detail, and the draft stays a draft.
          */
         post: operations["verify_draft_api_v1_knowledge_conversions__conversion_id__drafts__draft_id__verify_post"];
         delete?: never;
@@ -2360,6 +2378,11 @@ export interface paths {
         /**
          * Convert Document
          * @description Upload a document and convert it to one or more runbook drafts.
+         *
+         *     A draft's title is redacted before the draft is stored (#1981). If that
+         *     check cannot run (the sanitizer or its pseudonym key is unavailable) the
+         *     request answers **503**, a retryable server-side condition, with a generic
+         *     detail, and nothing is saved.
          */
         post: operations["convert_document_api_v1_knowledge_convert_post"];
         delete?: never;
@@ -2409,6 +2432,12 @@ export interface paths {
          *
          *     Returns:
          *         Upload job information
+         *
+         *     The title is redacted with the deployment's sanitizer before anything is
+         *     written (#1981): it is shown to every reader of the tier and never
+         *     reversed. If that check cannot run (the sanitizer or its pseudonym key is
+         *     unavailable) the upload answers **503**, a retryable server-side
+         *     condition, with a generic detail, and nothing is saved.
          */
         post: operations["upload_document_api_v1_knowledge_documents_post"];
         delete?: never;
@@ -2597,6 +2626,17 @@ export interface paths {
          *     document; global-scope editing is platform-corpus authoring (operator
          *     only, per the global-tier policy). A refusal over a document the caller
          *     cannot even see answers 404 rather than 403 (#867).
+         *
+         *     A new ``title`` is redacted with the deployment's sanitizer. If that check
+         *     cannot run the update answers **503**, a retryable server-side condition,
+         *     with a generic detail, and nothing is saved (#1981).
+         *
+         *     New ``content`` is stored as sent, line endings normalised, and never
+         *     rewritten. Content holding a credential (a private key, a credential URL, a
+         *     provider token, an AWS key, a JWT, a bearer or basic credential) or a
+         *     destructive command is refused with **422**, naming each one's line and
+         *     type but not its text, and nothing is saved (#2012). A placeholder such as
+         *     ``<password>`` or ``${DB_PASS}`` is not refused.
          */
         put: operations["update_document_api_v1_knowledge_documents__document_id__put"];
         post?: never;
@@ -2608,6 +2648,11 @@ export interface paths {
          *     document; global-scope deletion is platform-corpus authoring (operator
          *     only, per the global-tier policy). A refusal over a document the caller
          *     cannot even see answers 404 rather than 403 (#867).
+         *
+         *     A 204 means the document has no retrievable chunk left (#1966). When its
+         *     search-index entries cannot be removed the answer is 503: the delete did
+         *     not complete, the document is still in the knowledge base, and retrying
+         *     the request once the knowledge base is available finishes it.
          *
          *     Args:
          *         document_id: Document identifier
@@ -2723,6 +2768,11 @@ export interface paths {
         /**
          * Create Runbook Manually
          * @description Create a runbook manually from template fields. Returns a draft for review.
+         *
+         *     The title is redacted before the draft, its id and its text are made
+         *     (#1981). If that check cannot run (the sanitizer or its pseudonym key is
+         *     unavailable) the request answers **503**, a retryable server-side condition,
+         *     with a generic detail, and nothing is saved.
          */
         post: operations["create_runbook_manually_api_v1_knowledge_runbooks_create_post"];
         delete?: never;
@@ -2753,8 +2803,22 @@ export interface paths {
          *     ``ValidationException``, which the global handler answers as 422.
          *
          *     Global-scope files (the platform corpus) are minted into drafts only for a
-         *     platform operator (#770). Non-global (personal/team) discovery is
-         *     unaffected.
+         *     platform operator (#770). Non-global discovery is unaffected.
+         *
+         *     A file under ``personal_<id>/`` or ``user_<id>/`` is imported as a personal
+         *     draft. A file under ``team_<id>/`` is imported as a **personal** draft too
+         *     (#1986): the scan runs only where there are no teams, so no team exists to
+         *     share it with, and a team-scope runbook with no team would be visible to
+         *     its owner alone. The response's ``notes`` list names each such file
+         *     ("team_x/foo.md imported as personal: ..."); ``errors`` names the files
+         *     that were not imported.
+         *
+         *     Each draft's title is redacted before its row is written (#1981). If that
+         *     check cannot run (the sanitizer or its pseudonym key is unavailable) the
+         *     scan answers **503**, a retryable server-side condition, with a generic
+         *     detail. It can do so MID-WALK: the files imported before the failing one
+         *     stay imported (each is its own draft), and a second scan skips them and
+         *     imports the rest.
          */
         post: operations["scan_for_runbooks_api_v1_knowledge_scan_post"];
         delete?: never;
@@ -2843,6 +2907,17 @@ export interface paths {
          *     every request: an operator who switches the chat provider changes which
          *     per-provider ceiling applies, so a client re-reads them per session rather
          *     than caching them for the life of an install.
+         *
+         *     ``features.multiTenant`` is ``operator_authoring_refused()``, the KB write
+         *     policy's own predicate, derived from ``requested_tenant_provider()``: true
+         *     under ``TENANT_PROVIDER=multi``, exactly when the policy refuses the
+         *     platform operator's arm (``ensure_global_authoring_allowed`` on a global
+         *     document, ``ensure_document_write_allowed`` on someone else's team or
+         *     personal document), so a client can mirror the policy rather than offer a
+         *     control the server answers 403 (#1489). ``deploymentMode`` is
+         *     ``DEPLOYMENT_MODE`` (``settings.is_cloud``), which answers a different
+         *     question: a cloud deployment can run the single-tenant provider. Resolved
+         *     per request, like the turn limits.
          *
          *     Returns:
          *         Backend capabilities including deployment mode, dashboard URL, and feature flags
@@ -3007,9 +3082,10 @@ export interface paths {
          *     resolution below.
          *
          *     **Session Timeout:**
-         *     - Sessions automatically expire after `timeout_minutes` of inactivity
-         *     - Default timeout: 180 minutes (3 hours)
-         *     - Min timeout: 60 minutes, Max timeout: 480 minutes
+         *     - A session expires `SESSION_TIMEOUT_MINUTES` (default 30) after its last
+         *       write: creation, resumption, a heartbeat or an update re-arms it
+         *     - The response's `timeout_minutes` is that setting and `expires_at` the
+         *       instant this write lapses; the request's `timeout_minutes` is ignored
          *     - Expired sessions cannot be resumed and return 404/410 errors
          *
          *     **Frontend Crash Recovery:**
@@ -3965,13 +4041,9 @@ export interface components {
             session_type: string | null;
             /**
              * Timeout Minutes
-             * @description Session timeout in minutes. Min: 60 (1 hour), Max: 480 (8 hours), Default: 180 (3 hours)
-             * @default 180
-             * @example 180
-             * @example 240
-             * @example 360
+             * @description Ignored. Every session lapses SESSION_TIMEOUT_MINUTES after its last write (the server's setting); the response's timeout_minutes and expires_at report it.
              */
-            timeout_minutes: number | null;
+            timeout_minutes?: number | null;
         };
         /**
          * AuthSessionStatus
@@ -4153,6 +4225,11 @@ export interface components {
              * @description The org/team management console; same signal as teamSharing.
              */
             managementConsole: boolean;
+            /**
+             * Multitenant
+             * @description True when this backend runs the multi-tenant provider (TENANT_PROVIDER=multi). Derived from the same setting the KB write policy reads; a client gates operator-only KB writes on it, and treats an absent field as true.
+             */
+            multiTenant: boolean;
             /** Sso */
             sso: boolean;
             /**
@@ -4818,7 +4895,7 @@ export interface components {
              * @description Per-disposition eligibility. ‼ The two keys answer for DIFFERENT audiences: ``closed`` gates a user CONTROL, ``resolved`` gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution handshake. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
              *     - ``ready`` — case content supports this disposition with no follow-up. On the CLOSED side: render the control. On the RESOLVED side: the agent proposes the handshake; render nothing.
              *     - ``needs_info`` — content is partial; the user must supply more (root cause / solution / confirmation the problem is gone). Resolve side only, and no control either way — the agent asks in conversation.
-             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE. It is set exactly when the case confirms a resolution (a qualifying causal-absence row and a symptom-absence row at or after the fix), which is exactly when every close pivots back to a resolve proposal — so a Close control there could only ever produce 'shall I mark this resolved?'. The honest rendering is no status control at all: the case has one terminal destination and the agent is already offering it.
+             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE: the agent is offering the resolution, and Close and Resolve are not offered together. It is set when the case confirms a resolution (a qualifying causal-absence row and a symptom-absence row at or after the fix) and either the user has not declined that resolution, when every close pivots back to a resolve proposal, or the declined resolution is being offered again at the user's request. The honest rendering is no status control at all. Once the user declines the resolution, a Close closes the case and ``closed`` reads ``ready``, except while that resolution is offered again at the user's request (a Close sent then cancels the offer and closes). This holds until the state the decline was given against changes: a new confirmation that the fix held, a new solution, or the cause established differently.
              *     - ``not_eligible`` — not available; render nothing.
              *
              *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
@@ -4899,7 +4976,7 @@ export interface components {
              * @description Per-disposition eligibility. ‼ The two keys answer for DIFFERENT audiences: ``closed`` gates a user CONTROL, ``resolved`` gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution handshake. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
              *     - ``ready`` — case content supports this disposition with no follow-up. On the CLOSED side: render the control. On the RESOLVED side: the agent proposes the handshake; render nothing.
              *     - ``needs_info`` — content is partial; the user must supply more (root cause / solution / confirmation the problem is gone). Resolve side only, and no control either way — the agent asks in conversation.
-             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE. It is set exactly when the case confirms a resolution (a qualifying causal-absence row and a symptom-absence row at or after the fix), which is exactly when every close pivots back to a resolve proposal — so a Close control there could only ever produce 'shall I mark this resolved?'. The honest rendering is no status control at all: the case has one terminal destination and the agent is already offering it.
+             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE: the agent is offering the resolution, and Close and Resolve are not offered together. It is set when the case confirms a resolution (a qualifying causal-absence row and a symptom-absence row at or after the fix) and either the user has not declined that resolution, when every close pivots back to a resolve proposal, or the declined resolution is being offered again at the user's request. The honest rendering is no status control at all. Once the user declines the resolution, a Close closes the case and ``closed`` reads ``ready``, except while that resolution is offered again at the user's request (a Close sent then cancels the offer and closes). This holds until the state the decline was given against changes: a new confirmation that the fix held, a new solution, or the cause established differently.
              *     - ``not_eligible`` — not available; render nothing.
              *
              *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
@@ -4992,7 +5069,7 @@ export interface components {
              * @description Per-disposition eligibility. ‼ The two keys answer for DIFFERENT audiences: ``closed`` gates a user CONTROL, ``resolved`` gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution handshake. Shape: ``{'resolved': str, 'closed': str}`` where each value is one of:
              *     - ``ready`` — case content supports this disposition with no follow-up. On the CLOSED side: render the control. On the RESOLVED side: the agent proposes the handshake; render nothing.
              *     - ``needs_info`` — content is partial; the user must supply more (root cause / solution / confirmation the problem is gone). Resolve side only, and no control either way — the agent asks in conversation.
-             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE. It is set exactly when the case confirms a resolution (a qualifying causal-absence row and a symptom-absence row at or after the fix), which is exactly when every close pivots back to a resolve proposal — so a Close control there could only ever produce 'shall I mark this resolved?'. The honest rendering is no status control at all: the case has one terminal destination and the agent is already offering it.
+             *     - ``suggests_alternative`` — Close side only, and it means DO NOT RENDER CLOSE: the agent is offering the resolution, and Close and Resolve are not offered together. It is set when the case confirms a resolution (a qualifying causal-absence row and a symptom-absence row at or after the fix) and either the user has not declined that resolution, when every close pivots back to a resolve proposal, or the declined resolution is being offered again at the user's request. The honest rendering is no status control at all. Once the user declines the resolution, a Close closes the case and ``closed`` reads ``ready``, except while that resolution is offered again at the user's request (a Close sent then cancels the offer and closes). This holds until the state the decline was given against changes: a new confirmation that the fix held, a new solution, or the cause established differently.
              *     - ``not_eligible`` — not available; render nothing.
              *
              *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
@@ -5076,6 +5153,43 @@ export interface components {
              * @description Updated title
              */
             title?: string | null;
+        };
+        /**
+         * DatabaseTimeoutsStatus
+         * @description The bounds in force on a database that stops answering (#2280).
+         *
+         *     Read from what the running process built — the database engine and the
+         *     token-revocation store — not from settings. Each value is in seconds;
+         *     ``null`` means no bound is set: the setting is ``0``, or the bound does not
+         *     apply to this deployment (the four PostgreSQL bounds on a SQLite engine,
+         *     the revocation read on the Redis store).
+         */
+        DatabaseTimeoutsStatus: {
+            /**
+             * Client Connection Check Interval Seconds
+             * @description DATABASE_CLIENT_CONNECTION_CHECK_INTERVAL_SECONDS: the server's client_connection_check_interval, set per transaction (opt-in).
+             */
+            client_connection_check_interval_seconds: number | null;
+            /**
+             * Command Timeout Seconds
+             * @description DATABASE_COMMAND_TIMEOUT_SECONDS: how long one PostgreSQL command may take before the client aborts its connection.
+             */
+            command_timeout_seconds: number | null;
+            /**
+             * Connect Timeout Seconds
+             * @description DATABASE_CONNECT_TIMEOUT_SECONDS: how long a new PostgreSQL connection may take to open.
+             */
+            connect_timeout_seconds: number | null;
+            /**
+             * Revocation Read Timeout Seconds
+             * @description REVOCATION_READ_TIMEOUT_SECONDS: the deadline on the database token-revocation read every authenticated request makes; past it the request fails closed with 503 REVOCATION_STATE_UNKNOWN.
+             */
+            revocation_read_timeout_seconds: number | null;
+            /**
+             * Statement Timeout Seconds
+             * @description The server's statement_timeout, set per transaction: the command timeout less DATABASE_STATEMENT_TIMEOUT_MARGIN_SECONDS, so a slow server cancels its own statement before the client gives up.
+             */
+            statement_timeout_seconds: number | null;
         };
         /**
          * DerivedEvidenceSummary
@@ -5192,6 +5306,8 @@ export interface components {
              * @description 'local' or 'oauth'
              */
             auth_mode: string;
+            /** @description The bounds in force on a database that stops answering: the PostgreSQL command, connect and statement timeouts the engine was built with, and the deadline on the token-revocation read. */
+            database_timeouts: components["schemas"]["DatabaseTimeoutsStatus"];
             /**
              * Db Backend
              * @description 'sqlite' or 'postgresql' — the dialect of the database engine the running process built; 'not initialized' before it has built one
@@ -5228,6 +5344,11 @@ export interface components {
              * @description 'redis' or 'fakeredis (inmemory)' — the Redis client the session store actually uses, not the configured one; 'not initialized' before the composition root has set it
              */
             session_storage: string;
+            /**
+             * Session Ttl Seconds
+             * @description The TTL the session store the process built sets on every session write: SESSION_TIMEOUT_MINUTES in seconds, read from the store rather than from settings. A session lapses this long after its last write (creation, resumption, a heartbeat, an update). Null before the composition root has built the store.
+             */
+            session_ttl_seconds: number | null;
             /**
              * Timestamp
              * Format: date-time
@@ -5994,7 +6115,7 @@ export interface components {
             redis_operation_time_ms: number;
             /**
              * Storage Errors
-             * @description Any storage-related errors encountered
+             * @description One entry per failure, as a fixed code and the exception's class name (`CODE: ExceptionClass`, e.g. `MESSAGE_PARSE_FAILED: ValueError`). Codes: `STORAGE_READ_FAILED` (the page could not be read or loaded: a storage error, or a stored row that could not be loaded), `MESSAGE_PARSE_FAILED` (a loaded message could not be converted to the response format). The exception's text is in the server log.
              */
             storage_errors?: string[];
         };
@@ -9691,9 +9812,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["ReportGenerationRequest"];
             };
         };
         responses: {
@@ -9907,6 +10026,17 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Unavailable; nothing of the turn committed, and a retry after `Retry-After` seconds is safe. Told apart by `x-error-code`: `DATABASE_UNAVAILABLE` (the database did not answer while the turn was being prepared); `TENANT_TURN_CAP_UNAVAILABLE` (the usage allowance could not be checked); `LLM_OVER_CAPACITY`, `LLM_PROVIDER_UNAVAILABLE` and `LLM_INVALID_RESPONSE` (the AI provider could not answer usably); `REVOCATION_STATE_UNKNOWN` (the authentication every route requires could not read the token revocation store). */
+            503: {
+                headers: {
+                    /** @description Seconds; sent with every 503 this route answers. */
+                    "Retry-After"?: number;
+                    /** @description Which dependency was unavailable. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Timeout; nothing of the turn committed. Told apart by `x-error-code`: `REQUEST_TIMEOUT` (the turn used its whole ceiling, `limits.turnCeilingSeconds` on `GET /api/v1/meta/capabilities`, on this input; the same input is likely to exhaust it again, so a client retries at most once, and no `Retry-After` is sent); `LLM_TIMEOUT` (the AI provider timed out: transient, retry after `Retry-After` seconds). */
             504: {
@@ -11170,13 +11300,13 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation error (invalid timeout_minutes) */
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

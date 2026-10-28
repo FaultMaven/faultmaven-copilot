@@ -23,6 +23,8 @@
  * | INVESTIGATING + too thin (SUGGEST_CLOSE)  | not_eligible          | ready                 | Closed only              |
  * | INVESTIGATING + partial (NEEDS_INFO)      | needs_info            | ready                 | Closed only              |
  * | INVESTIGATING + resolution-grade          | ready                 | suggests_alternative  | (none)                   |
+ * | ... a resolve decline stands (14.8.0)     | ready                 | ready                 | Closed only              |
+ * | ... decline stands, proposal pending      | ready                 | suggests_alternative  | (none)                   |
  * | Terminal (RESOLVED / CLOSED)              | not_eligible          | not_eligible          | (none)                   |
  *
  * Plus the legacy fallback path (no ``disposition_eligibility`` on the
@@ -126,12 +128,12 @@ describe('getCaseActionOptions', () => {
     });
 
     it('resolution-grade case (resolved:ready, closed:suggests_alternative) shows NOTHING', () => {
-      // The empty menu is correct, not a gap. ``suggests_alternative`` is set
-      // exactly when a qualifying causal-absence row is on the case — which is
-      // exactly when INV-37 pivots every close back to a resolve proposal. So
-      // a Close control here could only ever produce "shall I mark this
-      // resolved?", and Resolve is not a control at all. The case has one
-      // terminal destination and the agent is already offering it in chat.
+      // The empty menu is correct, not a gap. On a resolvable case
+      // ``suggests_alternative`` is set while no resolve decline stands — when
+      // INV-37 pivots every close back to a resolve proposal, so a Close
+      // control could only ever produce "shall I mark this resolved?" — and
+      // while a resolve proposal is pending (as when the user asks for it).
+      // Resolve is not a control at all; the agent is offering it in chat.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: {
@@ -143,16 +145,12 @@ describe('getCaseActionOptions', () => {
       expect(opts).toEqual([]);
     });
 
-    it('resolved:ready never renders a control (hypothetical pair — see note)', () => {
-      // ‼ The backend cannot emit this combination today:
-      // ``assess_closure_readiness`` returns SUGGEST_RESOLVE iff
-      // ``_has_causal_absence``, which is the same predicate that makes
-      // resolution READY — so ``closed: 'ready'`` and ``resolved: 'ready'``
-      // are mutually exclusive. Kept as a DEFENSIVE pin, labelled as such,
-      // because it is the one shape where an implementation that iterates the
-      // eligibility map instead of the allowlist would leak Resolve back in.
-      // An earlier version of this test dropped the caveat and read as live
-      // coverage of a reachable state.
+    it('resolution READY with a resolve decline standing (resolved:ready, closed:ready) shows Close only', () => {
+      // The decline state, which core emits since contract 14.8.0 (fm#2360):
+      // the user declined the resolution, so ``closed`` reads ``ready`` and
+      // Close closes the case with ``resolution_declined``. It is also the one
+      // shape where an implementation that iterates the eligibility map
+      // instead of the allowlist would leak Resolve back in.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: { resolved: 'ready', closed: 'ready' },
