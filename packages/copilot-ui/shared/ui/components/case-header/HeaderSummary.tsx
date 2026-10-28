@@ -50,17 +50,21 @@ export interface CaseActionOption {
  *   - ``needs_info``  → clicking would dead-end on a readiness prompt;
  *                       the agent surfaces what's missing through the
  *                       conversation flow instead.
- *   - ``suggests_alternative`` → DO NOT RENDER. It is set exactly when a
- *                       qualifying causal-absence row is on the case,
- *                       which is exactly when the engine pivots every
- *                       close back to a resolve proposal — so a Close
- *                       control here could only ever produce "shall I
- *                       mark this resolved?". There is no alternative
+ *   - ``suggests_alternative`` → DO NOT RENDER. On a resolvable case it
+ *                       is set while no resolve decline stands — the
+ *                       engine then pivots every close back to a
+ *                       resolve proposal, so a Close control could only
+ *                       ever produce "shall I mark this resolved?" —
+ *                       and while a resolve proposal is pending (as
+ *                       when the user asks for it). While a decline
+ *                       otherwise stands, ``closed`` reads ``ready`` and
+ *                       Close closes the case with ``resolution_declined``
+ *                       (contract 14.8.0). There is no alternative
  *                       control to render instead: resolve is not one.
  *   - ``not_eligible`` → no path to success.
  *
- * ‼ The menu CAN be empty, and on a resolution-grade case it is meant to be:
- * the case has one terminal destination and the agent is already offering it
+ * ‼ The menu CAN be empty, and on a resolution-grade case with no decline
+ * standing it is meant to be: the agent is already offering the resolution
  * through the confirm/decline pair. An earlier version of this block promised
  * the dropdown is "never empty"; that promise is what a degraded-API fallback
  * was for, not a property of the normal path.
@@ -114,12 +118,14 @@ export function getCaseActionOptions(
   const elig = caseData.disposition_eligibility;
   if (elig) {
     // ‼ `ready` ONLY. `suggests_alternative` means DO NOT RENDER, not "warn
-    // and offer anyway": it is set exactly when a qualifying causal-absence
-    // row is on the case, which is exactly when every close pivots back to a
-    // resolve proposal. A Close control there could only ever produce "shall I
-    // mark this resolved?". On such a case there is NO status control, which
-    // is the honest rendering: one terminal destination, and the agent is
-    // already offering it in chat through the confirm/decline pair.
+    // and offer anyway". On a resolvable case it is set while no resolve
+    // decline stands, when every close pivots back to a resolve proposal (a
+    // Close control could only ever produce "shall I mark this resolved?"),
+    // and while a resolve proposal is pending (as when the user asks for it).
+    // There is then NO status control, which is the honest rendering: the
+    // agent is already offering the resolution in chat. While a decline
+    // otherwise stands, `closed` reads `ready` and Close closes the case with
+    // `resolution_declined`.
     return selectable
       .filter((s) => elig[s as keyof typeof elig] === 'ready')
       .map((s) => ({ state: s, eligibility: 'ready' as const }));
@@ -243,7 +249,8 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   // mainline sequence now: a turn that records the fix flips eligibility to
   // {resolved: ready, closed: suggests_alternative}, the option list becomes
   // empty, and the control is replaced by a static pill — on exactly the turn
-  // a user is most likely to have the menu open.
+  // a user is most likely to have the menu open. Its return is mainline too
+  // since contract 14.8.0: declining the resolution flips `closed` to `ready`.
   useEffect(() => {
     if (!canChangeStatus) setDropdownOpen(false);
   }, [canChangeStatus]);

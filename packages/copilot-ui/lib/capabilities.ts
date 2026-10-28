@@ -174,6 +174,8 @@ export class CapabilitiesManager {
             caseHistory: false,
             sso: false,
             managementConsole: false,
+            // Built without an answer from the core, so true, as contract 14.7.0 requires.
+            multiTenant: true,
           },
           limits: {
             maxFileBytes: 10485760,

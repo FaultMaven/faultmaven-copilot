@@ -82,13 +82,18 @@ export interface UserCase {
 //     proceeding, so the dropdown hides this verdict to keep the
 //     menu honest (no dead-end clicks).
 //   - ``suggests_alternative``: DO NOT RENDER. Fires only on the
-//     close side, for resolution-grade cases: ``Close`` would
-//     terminate as RESOLVED instead, discarding the close intent.
+//     close side. On a resolvable case it holds while no resolve
+//     decline stands (every ``Close`` pivots back to a resolve
+//     proposal) and while a resolve proposal is pending (as when the
+//     user asks for it). While a decline otherwise stands, ``closed``
+//     reads ``ready`` and Close closes the case with
+//     ``resolution_declined`` (contract 14.8.0); on a non-resolvable
+//     case ``closed`` reads ``ready`` whatever was declined.
 //     This used to say the dropdown "hides this verdict and the user
 //     sees the *resolved* option directly" — there is no resolved
 //     option to see. RESOLVED is not user-selectable; the agent
-//     offers it through the confirm/decline pair in chat. So the
-//     honest rendering on such a case is NO status control at all.
+//     offers it through the confirm/decline pair in chat. So while
+//     this verdict holds, the honest rendering is NO status control.
 //   - ``not_eligible``: action is not available — menu item hidden.
 //
 // Net dropdown rule: of the actions ``ALLOWED_ACTIONS`` permits from

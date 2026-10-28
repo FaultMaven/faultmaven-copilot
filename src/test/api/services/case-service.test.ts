@@ -936,6 +936,7 @@ describe('Case Service', () => {
         'inquiry_only',
         'mitigation_sufficient',
         'other',
+        'resolution_declined',
         'solution_deferred',
       ]);
     });
@@ -980,6 +981,15 @@ describe('Case Service', () => {
     it('resolves null and undefined rather than throwing', () => {
       expect(caseService.closureDisplayFor(null)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
       expect(caseService.closureDisplayFor(undefined)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+    });
+
+    it('labels resolution_declined (contract 14.8.0) as a confirmed fix, not Other', () => {
+      // Before 14.8.0 was adopted this reason fell back to `other`, and the
+      // header read "Closed - Other" on a case whose fix was confirmed.
+      const info = caseService.closureDisplayFor('resolution_declined');
+      expect(info).not.toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+      expect(info.label).toBe('Fix confirmed');
+      expect(info.shortLabel).toBe('Fix Confirmed');
     });
 
     it('returns the real entry for every known reason', () => {

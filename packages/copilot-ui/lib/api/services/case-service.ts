@@ -152,6 +152,11 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
     shortLabel: 'False Alarm',
     description: 'The evidence showed the reported problem was not present; there was nothing to fix.',
   },
+  resolution_declined: {
+    label: 'Fix confirmed',
+    shortLabel: 'Fix Confirmed',
+    description: 'The fix was confirmed to work; the case was closed rather than marked resolved.',
+  },
   // Defensive fallback used when closure_reason is null/unrecognized.
   other: {
     label: 'Other',

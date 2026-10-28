@@ -40,6 +40,8 @@ export const capabilities = {
         caseHistory: true,
         sso: false,
         managementConsole: false,
+        // A single-tenant self-hosted server.
+        multiTenant: false,
     },
     limits: {
         maxFileBytes: 10485760,

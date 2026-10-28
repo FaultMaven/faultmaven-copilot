@@ -51,6 +51,8 @@ describe('CapabilitiesManager', () => {
 
     const caps = await mgr.fetch('https://api.example');
     expect(caps.deploymentMode).toBe('self-hosted'); // fabricated default
+    // Contract 14.7.0: a fallback built without an answer from the core is multi-tenant.
+    expect(caps.features.multiTenant).toBe(true);
   });
 
   it('serves cached capabilities when the fetch fails', async () => {
