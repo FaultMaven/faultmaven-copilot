@@ -878,33 +878,17 @@ describe('Case Service', () => {
     });
   });
 
-  describe('CLOSURE_DISPLAY_INFO', () => {
-    // The real keys must mirror backend VALID_CLOSURE_REASONS
-    // (faultmaven/modules/case/domain/models/lifecycle.py) exactly, plus the
-    // defensive 'other' fallback. This is the single source of truth for closure-reason
-    // display; ResolutionActionsCard and HeaderSummary source their labels here.
-    //
-    // WHAT THIS DOES AND DOES NOT CATCH. The expected list is a literal in this
-    // file, so it pins the map against a deliberate edit — dropping or renaming
-    // a key here fails. It CANNOT detect backend drift: a reason added on the
-    // backend leaves this suite green, because nothing shared crosses the
-    // repo boundary. `closure_reason` is typed as a bare `string` in
-    // packages/copilot-ui/lib/api/types/index.ts, and the OpenAPI pipeline is not a dependable
-    // gate, so there is no artifact to assert against. The real protection is
-    // the `other` fallback every consumer now applies, which degrades an
-    // unknown reason to a readable row instead of dropping it.
-    // Same shape as the CLOSURE_DISPLAY_INFO pin below, for the same reason
-    // and with the same limits. ALLOWED_ACTIONS and CASE_ACTION_MESSAGES were
-    // BOTH invisible to this suite — mutation-proven: reverting
-    // `investigating: ['closed']` to `['resolved','closed']`, or re-adding the
-    // deleted `investigating_to_resolved` key, left all 1053 tests green. The
-    // table only asserted its INQUIRY row.
+  describe('ALLOWED_ACTIONS and CASE_ACTION_MESSAGES', () => {
+    // Both tables are pinned by literals here. They were BOTH invisible to this
+    // suite — mutation-proven: reverting `investigating: ['closed']` to
+    // `['resolved','closed']`, or re-adding the deleted `investigating_to_resolved`
+    // key, left all 1053 tests green. The table only asserted its INQUIRY row.
     //
     // It matters more than it used to: `getCaseActionOptions` now derives the
     // rendered menu from ALLOWED_ACTIONS via `getValidActions`, so this table
     // is no longer an unread mirror of the menu — it IS the menu's allowlist.
-    // Like the closure map, this cannot detect backend drift; it pins the
-    // client's own answer against a deliberate edit.
+    // A literal cannot detect backend drift; it pins the client's own answer
+    // against a deliberate edit.
     it('pins every user-selectable action, not just the INQUIRY row', () => {
       expect(caseService.ALLOWED_ACTIONS).toEqual({
         inquiry: ['closed'],
@@ -926,21 +910,14 @@ describe('Case Service', () => {
         expected,
       );
     });
+  });
 
-    it('pins the map to the backend reasons plus the defensive fallback', () => {
-      expect(Object.keys(caseService.CLOSURE_DISPLAY_INFO).sort()).toEqual([
-        'closed_false_alarm',
-        'closed_insufficient_evidence',
-        'closed_rca_infeasible',
-        'closed_restatement_held',
-        'inquiry_only',
-        'mitigation_sufficient',
-        'other',
-        'resolution_declined',
-        'solution_deferred',
-      ]);
-    });
-
+  describe('CLOSURE_DISPLAY_INFO', () => {
+    // The real keys are the contract's `ClosureReason` values, plus the
+    // defensive 'other' fallback. The table's annotation in case-service.ts
+    // enforces that under `pnpm compile`, so this suite keeps no second copy of
+    // the vocabulary. This is the single source of truth for closure-reason
+    // display; ResolutionActionsCard and HeaderSummary source their labels here.
     it('provides both a full label and a compact shortLabel for every entry', () => {
       for (const info of Object.values(caseService.CLOSURE_DISPLAY_INFO)) {
         expect(info.label.length).toBeGreaterThan(0);
@@ -972,8 +949,8 @@ describe('Case Service', () => {
       // the backend vocabulary, so the map must not know it — but the closure
       // row is the user's only signal when the summary was skipped.
       expect(
-        caseService.CLOSURE_DISPLAY_INFO['closed_after_investigation'],
-      ).toBeUndefined();
+        Object.hasOwn(caseService.CLOSURE_DISPLAY_INFO, 'closed_after_investigation'),
+      ).toBe(false);
       expect(caseService.closureDisplayFor('closed_after_investigation').shortLabel)
         .toBe(caseService.CLOSURE_DISPLAY_INFO.other.shortLabel);
     });
@@ -981,6 +958,12 @@ describe('Case Service', () => {
     it('resolves null and undefined rather than throwing', () => {
       expect(caseService.closureDisplayFor(null)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
       expect(caseService.closureDisplayFor(undefined)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+    });
+
+    it('resolves a prototype key to the fallback, not to a function', () => {
+      // An inherited key is not a label: `constructor` used to index through to
+      // Object, whose `shortLabel` is undefined.
+      expect(caseService.closureDisplayFor('constructor')).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
     });
 
     it('labels resolution_declined (contract 14.8.0) as a confirmed fix, not Other', () => {
@@ -993,10 +976,8 @@ describe('Case Service', () => {
     });
 
     it('returns the real entry for every known reason', () => {
-      for (const key of Object.keys(caseService.CLOSURE_DISPLAY_INFO)) {
-        expect(caseService.closureDisplayFor(key)).toBe(
-          caseService.CLOSURE_DISPLAY_INFO[key],
-        );
+      for (const [key, info] of Object.entries(caseService.CLOSURE_DISPLAY_INFO)) {
+        expect(caseService.closureDisplayFor(key)).toBe(info);
       }
     });
 
