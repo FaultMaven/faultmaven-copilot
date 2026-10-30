@@ -396,7 +396,8 @@ when the user asks for it). While a decline otherwise stands, `closed` reads
 status banner, not navigation: "Case Resolved" with root cause and stats, or
 "Case Closed" with the `shortLabel` from `CLOSURE_DISPLAY_INFO` (keyed on the
 contract's `ClosureReason`, so a reason with no label fails `tsc`, plus an
-`other` fallback every consumer uses for a reason newer than the pin).
+`other` fallback every consumer uses for a reason this build does not know:
+one newer than the pin, or a retired one still stored on an old case).
 **No Dashboard link**: closure and resolution summaries are rendered inline in
 the chat reply at generation time, so a card linking to the Dashboard's Report
 tab for a summary already visible above is noise. Runbooks are user-requested

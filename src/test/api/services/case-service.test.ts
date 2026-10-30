@@ -878,18 +878,11 @@ describe('Case Service', () => {
     });
   });
 
-  describe('CLOSURE_DISPLAY_INFO', () => {
-    // The real keys are the contract's `ClosureReason` values, plus the
-    // defensive 'other' fallback; the table's type enforces that, so this suite
-    // keeps no second copy of the vocabulary. This is the single source of truth
-    // for closure-reason display; ResolutionActionsCard and HeaderSummary source
-    // their labels here.
-    //
-    // ALLOWED_ACTIONS and CASE_ACTION_MESSAGES are pinned by literals below.
-    // They were BOTH invisible to this suite — mutation-proven: reverting
-    // `investigating: ['closed']` to `['resolved','closed']`, or re-adding the
-    // deleted `investigating_to_resolved` key, left all 1053 tests green. The
-    // table only asserted its INQUIRY row.
+  describe('ALLOWED_ACTIONS and CASE_ACTION_MESSAGES', () => {
+    // Both tables are pinned by literals here. They were BOTH invisible to this
+    // suite — mutation-proven: reverting `investigating: ['closed']` to
+    // `['resolved','closed']`, or re-adding the deleted `investigating_to_resolved`
+    // key, left all 1053 tests green. The table only asserted its INQUIRY row.
     //
     // It matters more than it used to: `getCaseActionOptions` now derives the
     // rendered menu from ALLOWED_ACTIONS via `getValidActions`, so this table
@@ -917,18 +910,14 @@ describe('Case Service', () => {
         expected,
       );
     });
+  });
 
-    it('is keyed on the contract ClosureReason, so a reason with no label does not compile', () => {
-      // A type-level pin: `pnpm compile` (tsc --noEmit over src/) checks this
-      // file. If the table type loosened back to Record<string, …>, the
-      // directive would go unused and the typecheck would fail instead.
-      const { solution_deferred: omitted, ...missingOne } = caseService.CLOSURE_DISPLAY_INFO;
-      // @ts-expect-error -- `solution_deferred` is a ClosureReason with no entry
-      const incomplete: caseService.ClosureDisplayTable = missingOne;
-      expect(omitted).toBeDefined();
-      expect(Object.hasOwn(incomplete, 'solution_deferred')).toBe(false);
-    });
-
+  describe('CLOSURE_DISPLAY_INFO', () => {
+    // The real keys are the contract's `ClosureReason` values, plus the
+    // defensive 'other' fallback. The table's annotation in case-service.ts
+    // enforces that under `pnpm compile`, so this suite keeps no second copy of
+    // the vocabulary. This is the single source of truth for closure-reason
+    // display; ResolutionActionsCard and HeaderSummary source their labels here.
     it('provides both a full label and a compact shortLabel for every entry', () => {
       for (const info of Object.values(caseService.CLOSURE_DISPLAY_INFO)) {
         expect(info.label.length).toBeGreaterThan(0);

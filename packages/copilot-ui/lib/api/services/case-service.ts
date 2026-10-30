@@ -110,9 +110,10 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * publishes with no entry here, or an entry for a reason it does not publish,
  * fails `tsc`. `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already
- * prefixed with "Closed". The 'other' fallback is a defensive default for cases
- * where closure_reason is null/unrecognized (used by HeaderSummary and
- * ResolutionActionsCard; CaseDetails suppresses the closure row in that case).
+ * prefixed with "Closed". The 'other' fallback is a defensive default: every
+ * consumer renders it for an unrecognized reason, and HeaderSummary also for a
+ * null or empty one, where CaseDetails and ResolutionActionsCard show no
+ * closure label.
  */
 export type ClosureDisplay = { label: string; shortLabel: string; description: string };
 export type ClosureDisplayTable = Record<ClosureReason | 'other', ClosureDisplay>;
