@@ -1,6 +1,6 @@
 import { getApiTransport } from '../transport';
 import type { components, operations } from "../../../types/api.generated";
-import { Message, UserCase, UserCaseState } from "../../../types/case";
+import { ClosureReason, Message, UserCase, UserCaseState } from "../../../types/case";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { turnTimingFor } from "../../utils/keyed-turn-retry";
@@ -106,16 +106,18 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * display across the extension (CLOSED status pill, CaseDetails closure row, and
  * the ResolutionActionsCard compact banner via `shortLabel`).
  *
- * The real keys mirror VALID_CLOSURE_REASONS in
- * faultmaven/modules/case/domain/models/lifecycle.py exactly; the key-set pin
- * in src/test/api/services/case-service.test.ts lists them, so this comment
- * does not. `label` is the full
+ * Keyed on the contract's `ClosureReason` enum, so a reason the pinned contract
+ * publishes with no entry here, or an entry for a reason it does not publish,
+ * fails `tsc`. `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already
  * prefixed with "Closed". The 'other' fallback is a defensive default for cases
  * where closure_reason is null/unrecognized (used by HeaderSummary and
  * ResolutionActionsCard; CaseDetails suppresses the closure row in that case).
  */
-export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: string; description: string }> = {
+export type ClosureDisplay = { label: string; shortLabel: string; description: string };
+export type ClosureDisplayTable = Record<ClosureReason | 'other', ClosureDisplay>;
+
+export const CLOSURE_DISPLAY_INFO: ClosureDisplayTable = {
   inquiry_only: {
     label: 'Inquiry Only',
     shortLabel: 'Inquiry Only',
@@ -176,11 +178,15 @@ export const CLOSURE_DISPLAY_INFO: Record<string, { label: string; shortLabel: s
  * signal of why the case closed.
  *
  * An unknown reason is not hypothetical: a case can still carry a value retired
- * from the backend vocabulary, and the backend can add a reason before this
- * extension ships.
+ * from the backend vocabulary, and the backend can add a reason newer than this
+ * client's contract pin. Only an own key resolves, so a prototype key such as
+ * `constructor` falls back too rather than resolving to a function.
  */
-export function closureDisplayFor(reason: string | null | undefined) {
-  return (reason && CLOSURE_DISPLAY_INFO[reason]) || CLOSURE_DISPLAY_INFO.other;
+export function closureDisplayFor(reason: string | null | undefined): ClosureDisplay {
+  // Not `Object.hasOwn`: the Dashboard compiles this package under lib ES2020.
+  return reason != null && Object.prototype.hasOwnProperty.call(CLOSURE_DISPLAY_INFO, reason)
+    ? CLOSURE_DISPLAY_INFO[reason as keyof ClosureDisplayTable]
+    : CLOSURE_DISPLAY_INFO.other;
 }
 
 /**

@@ -2649,10 +2649,13 @@ export interface paths {
          *     only, per the global-tier policy). A refusal over a document the caller
          *     cannot even see answers 404 rather than 403 (#867).
          *
-         *     A 204 means the document has no retrievable chunk left (#1966). When its
-         *     search-index entries cannot be removed the answer is 503: the delete did
-         *     not complete, the document is still in the knowledge base, and retrying
-         *     the request once the knowledge base is available finishes it.
+         *     A 204 means no chunk of the document is retrievable through a knowledge
+         *     base search, investigation retrieval or runbook dedup (#1966, #2397):
+         *     every one of them serves a chunk only while its document is published,
+         *     and the delete has committed. Its search-index entries are removed
+         *     afterwards, best effort; any left behind are never served. An excerpt
+         *     already in a case's conversation context
+         *     stays there until that case next searches the knowledge base.
          *
          *     Args:
          *         document_id: Document identifier
@@ -3806,8 +3809,7 @@ export interface components {
             case_id: string;
             /** Closed At */
             closed_at: string | null;
-            /** Closure Reason */
-            closure_reason: string | null;
+            closure_reason: components["schemas"]["ClosureReason"] | null;
             /**
              * Created At
              * Format: date-time
@@ -4472,8 +4474,7 @@ export interface components {
             case_id: string;
             /** Closed At */
             closed_at: string | null;
-            /** Closure Reason */
-            closure_reason: string | null;
+            closure_reason: components["schemas"]["ClosureReason"] | null;
             /**
              * Created At
              * Format: date-time
@@ -4546,7 +4547,7 @@ export interface components {
              * Valid Next States
              * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
-            valid_next_states?: string[];
+            valid_next_states?: components["schemas"]["SelectableNextState"][];
         };
         /**
          * CaseDriverCandidate
@@ -4802,8 +4803,7 @@ export interface components {
             case_id: string;
             /** Closed At */
             closed_at: string | null;
-            /** Closure Reason */
-            closure_reason: string | null;
+            closure_reason: components["schemas"]["ClosureReason"] | null;
             /**
              * Created At
              * Format: date-time
@@ -4864,7 +4864,7 @@ export interface components {
              * Valid Next States
              * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
-            valid_next_states?: string[];
+            valid_next_states?: components["schemas"]["SelectableNextState"][];
         };
         /**
          * CaseUIResponse_Inquiry
@@ -4935,7 +4935,7 @@ export interface components {
              * Valid Next States
              * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
-            valid_next_states?: string[];
+            valid_next_states?: components["schemas"]["SelectableNextState"][];
         };
         /**
          * CaseUIResponse_Investigating
@@ -5036,7 +5036,7 @@ export interface components {
              * Valid Next States
              * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
-            valid_next_states?: string[];
+            valid_next_states?: components["schemas"]["SelectableNextState"][];
             /** @description Agent's current understanding of the problem */
             working_conclusion?: components["schemas"]["WorkingConclusionSummary"] | null;
         };
@@ -5132,7 +5132,7 @@ export interface components {
              * Valid Next States
              * @description Case actions the USER may select from the status menu — selectability, not legality. Only CLOSED is ever listed, because closing is the one decision that needs no precondition. The two legal edges that never appear here are earned from case content and offered by the agent through a confirmation handshake: INQUIRY → INVESTIGATING by a confirmed problem statement (Gate 1), and INVESTIGATING → RESOLVED by a confirmed root-cause elimination. Requesting either is refused.
              */
-            valid_next_states?: string[];
+            valid_next_states?: components["schemas"]["SelectableNextState"][];
             /** @description How solution effectiveness was verified */
             verification_status: components["schemas"]["SolutionVerificationData"];
         };
@@ -5154,6 +5154,12 @@ export interface components {
              */
             title?: string | null;
         };
+        /**
+         * ClosureReason
+         * @description Why a CLOSED case ended: the most specific reason that holds when it is closed. Null for any case that is not CLOSED.
+         * @enum {string}
+         */
+        ClosureReason: "inquiry_only" | "closed_false_alarm" | "resolution_declined" | "solution_deferred" | "closed_rca_infeasible" | "mitigation_sufficient" | "closed_restatement_held" | "closed_insufficient_evidence";
         /**
          * DatabaseTimeoutsStatus
          * @description The bounds in force on a database that stops answering (#2280).
@@ -6861,6 +6867,11 @@ export interface components {
              */
             tags?: string | null;
         };
+        /**
+         * SelectableNextState
+         * @enum {string}
+         */
+        SelectableNextState: "closed";
         /**
          * SessionResponse
          * @description Response payload for auth session operations - API spec compliance.

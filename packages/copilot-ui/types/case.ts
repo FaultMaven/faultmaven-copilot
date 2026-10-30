@@ -18,6 +18,9 @@ import { components } from './api.generated';
 // Case lifecycle status: Phases (active) + Dispositions (terminal)
 export type CaseState = 'inquiry' | 'investigating' | 'resolved' | 'closed';
 export type CaseDetail = components['schemas']['CaseDetail'];
+// Why a CLOSED case ended. Keys the closure-label table, so a reason the pinned
+// contract adds with no label fails `tsc`.
+export type ClosureReason = components['schemas']['ClosureReason'];
 
 // Conversation message row from GET /cases/{id}/messages. Deriving from the
 // generated contract keeps the closed role vocabulary a regen-checked fact
