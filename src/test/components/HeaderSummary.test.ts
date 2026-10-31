@@ -3,29 +3,19 @@
  * drives the case-action dropdown render in HeaderSummary.
  *
  * Design rule the tests pin: the dropdown surfaces *only* ``ready``
- * disposition verdicts. ``needs_info``, ``suggests_alternative``, and
- * ``not_eligible`` are all hidden — the engine's action-time path
- * (both dropdown and natural language) either asks for missing info
- * or pivots to the other disposition, so a clickable menu entry for
- * those verdicts would be a dead-end. See HeaderSummary JSDoc and
- * the docstring on ``DispositionEligibility`` in packages/copilot-ui/types/case.ts.
- *
- * Matrix coverage (backend emits per derive_disposition_eligibility):
+ * disposition verdicts. What each verdict means is its enum's
+ * ``x-enum-descriptions`` in the pinned contract (``CloseEligibility``,
+ * ``ResolveEligibility``); these tests do not restate it.
  *
  * ``resolved`` NEVER renders a control. It is earned by a confirmed root-cause
  * elimination and the agent proposes it through the confirm/decline pair; the
  * backend refuses a request for it. The key is still published — it is
  * FaultMaven's own readiness verdict — it is simply not a button.
  *
- * | Case state                                | resolved              | closed                | Dropdown shows           |
- * |-------------------------------------------|-----------------------|-----------------------|--------------------------|
- * | INQUIRY                                   | not_eligible          | ready                 | Closed only              |
- * | INVESTIGATING + too thin (SUGGEST_CLOSE)  | not_eligible          | ready                 | Closed only              |
- * | INVESTIGATING + partial (NEEDS_INFO)      | needs_info            | ready                 | Closed only              |
- * | INVESTIGATING + resolution-grade          | ready                 | suggests_alternative  | (none)                   |
- * | ... a resolve decline stands (14.8.0)     | ready                 | ready                 | Closed only              |
- * | ... decline stands, proposal pending      | ready                 | suggests_alternative  | (none)                   |
- * | Terminal (RESOLVED / CLOSED)              | not_eligible          | not_eligible          | (none)                   |
+ * The verdict matrix is keyed on the published enums (``RESOLVE_VERDICTS``,
+ * ``CLOSE_RENDERS`` below), so it runs every combination the contract allows,
+ * and a value a later pin adds or drops fails ``pnpm compile`` until the
+ * matrix says how it renders.
  *
  * Plus the legacy fallback path (no ``disposition_eligibility`` on the
  * response) which must remain non-breaking for older cases.
@@ -33,7 +23,11 @@
 
 import { describe, it, expect } from 'vitest';
 import { getCaseActionOptions } from '@faultmaven/copilot-ui/shared/ui/components/case-header/HeaderSummary';
-import type { CaseUIResponse } from '@faultmaven/copilot-ui/types/case';
+import type {
+  CaseUIResponse,
+  CloseEligibility,
+  ResolveEligibility,
+} from '@faultmaven/copilot-ui/types/case';
 
 // Small helpers to build minimal CaseUIResponse stubs. Only the fields
 // getCaseActionOptions reads are populated; everything else is irrelevant
@@ -52,7 +46,45 @@ function closed(extras: Partial<CaseUIResponse> = {}): CaseUIResponse {
   return { state: 'closed', ...extras } as CaseUIResponse;
 }
 
+// The verdict matrix, keyed on the published enums. Each `Record` must name
+// every value of its enum and no other, so a pin that changes either enum fails
+// `pnpm compile` here. The boolean is the client's rule, not a meaning: Close
+// renders on `closed === 'ready'` and on nothing else.
+const RESOLVE_VERDICTS: Record<ResolveEligibility, true> = {
+  ready: true,
+  needs_info: true,
+  not_eligible: true,
+};
+const CLOSE_RENDERS: Record<CloseEligibility, boolean> = {
+  ready: true,
+  suggests_alternative: false,
+  not_eligible: false,
+};
+const VERDICT_MATRIX = (Object.keys(RESOLVE_VERDICTS) as ResolveEligibility[]).flatMap(
+  (resolved) =>
+    (Object.keys(CLOSE_RENDERS) as CloseEligibility[]).map((closed) => ({
+      resolved,
+      closed,
+      renders: CLOSE_RENDERS[closed],
+    })),
+);
+
 describe('getCaseActionOptions', () => {
+  describe('every verdict combination the published enums allow', () => {
+    it.each(VERDICT_MATRIX)(
+      'resolved:$resolved, closed:$closed → Close shown: $renders',
+      ({ resolved: r, closed: c, renders }) => {
+        const disposition_eligibility = { resolved: r, closed: c };
+        const active = renders ? [{ state: 'closed', eligibility: 'ready' }] : [];
+        expect(getCaseActionOptions(inquiry({ disposition_eligibility }))).toEqual(active);
+        expect(getCaseActionOptions(investigating({ disposition_eligibility }))).toEqual(active);
+        // Terminal states offer nothing, whatever the verdicts say.
+        expect(getCaseActionOptions(resolved({ disposition_eligibility }))).toEqual([]);
+        expect(getCaseActionOptions(closed({ disposition_eligibility }))).toEqual([]);
+      },
+    );
+  });
+
   describe('INQUIRY', () => {
     it('never offers investigating — it is earned, not picked', () => {
       const opts = getCaseActionOptions(
@@ -159,10 +191,9 @@ describe('getCaseActionOptions', () => {
       expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
     });
 
-    it('hides both when each side is non-ready (hypothetical — degenerate state)', () => {
-      // Pin the rule explicitly: only ``ready`` items render. If the backend
-      // ever produced this combination, the dropdown would be empty rather
-      // than offer dead-end clicks.
+    it('hides both when each side is non-ready (resolved:needs_info, closed:suggests_alternative)', () => {
+      // Pin the rule explicitly: only ``ready`` items render, so the dropdown
+      // is empty rather than offering dead-end clicks.
       const opts = getCaseActionOptions(
         investigating({
           disposition_eligibility: {

@@ -9,7 +9,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type {
   CaseUIResponse,
-  DispositionEligibility,
+  CloseEligibility,
   UserCase,
 } from '../../../../types/case';
 import type { UserCaseState } from '../../../../lib/api';
@@ -23,10 +23,9 @@ const log = createLogger('HeaderSummary');
  * One entry in the case-action dropdown.
  *
  * ``status`` is the action to take when the user clicks. ``eligibility``
- * is the per-disposition readiness verdict from backend PR #373,
+ * is the ``closed`` verdict from ``disposition_eligibility``,
  * retained for analytics / future use even though the dropdown
- * currently surfaces only ``ready`` items (everything else is hidden
- * so the menu shows just what the engine will actually let through).
+ * currently surfaces only ``ready`` items.
  * It is null on the legacy fallback path only — a case served without
  * ``disposition_eligibility``. Phase-change transitions used to be the
  * other source; there are none in this menu now (``inquiry →
@@ -35,7 +34,7 @@ const log = createLogger('HeaderSummary');
  */
 export interface CaseActionOption {
   state: UserCaseState;
-  eligibility: DispositionEligibility | null;
+  eligibility: CloseEligibility | null;
 }
 
 /**
@@ -47,27 +46,13 @@ export interface CaseActionOption {
  * (``ready``). Both conditions, every path — the first is an allowlist
  * intersection rather than a list of exclusions.
  *
- *   - ``needs_info``  → clicking would dead-end on a readiness prompt;
- *                       the agent surfaces what's missing through the
- *                       conversation flow instead.
- *   - ``suggests_alternative`` → DO NOT RENDER. On a resolvable case it
- *                       is set while no resolve decline stands — the
- *                       engine then pivots every close back to a
- *                       resolve proposal, so a Close control could only
- *                       ever produce "shall I mark this resolved?" —
- *                       and while a resolve proposal is pending (as
- *                       when the user asks for it). While a decline
- *                       otherwise stands, ``closed`` reads ``ready`` and
- *                       Close closes the case with ``resolution_declined``
- *                       (contract 14.8.0). There is no alternative
- *                       control to render instead: resolve is not one.
- *   - ``not_eligible`` → no path to success.
+ * What each verdict means is its enum's ``x-enum-descriptions`` in the pinned
+ * contract (``CloseEligibility``, ``ResolveEligibility``); it is not restated here.
  *
- * ‼ The menu CAN be empty, and on a resolution-grade case with no decline
- * standing it is meant to be: the agent is already offering the resolution
- * through the confirm/decline pair. An earlier version of this block promised
- * the dropdown is "never empty"; that promise is what a degraded-API fallback
- * was for, not a property of the normal path.
+ * ‼ The menu CAN be empty, and whenever ``closed`` is not ``ready`` it is meant
+ * to be. An earlier version of this block promised the dropdown is "never
+ * empty"; that promise is what a degraded-API fallback was for, not a property
+ * of the normal path.
  *
  * Preference order:
  *   1. ``case.disposition_eligibility`` (post PR #373) — of the actions
@@ -92,8 +77,7 @@ export interface CaseActionOption {
  * convention — the server listed it in ``valid_next_states`` for every
  * investigating case, and the fallback below offered it ungated.
  *
- * Terminal states (``resolved`` / ``closed``) return ``[]`` —
- * disposition_eligibility on these is all ``not_eligible`` anyway.
+ * Terminal states (``resolved`` / ``closed``) return ``[]``.
  *
  * Exported for unit testing.
  */
@@ -117,15 +101,8 @@ export function getCaseActionOptions(
 
   const elig = caseData.disposition_eligibility;
   if (elig) {
-    // ‼ `ready` ONLY. `suggests_alternative` means DO NOT RENDER, not "warn
-    // and offer anyway". On a resolvable case it is set while no resolve
-    // decline stands, when every close pivots back to a resolve proposal (a
-    // Close control could only ever produce "shall I mark this resolved?"),
-    // and while a resolve proposal is pending (as when the user asks for it).
-    // There is then NO status control, which is the honest rendering: the
-    // agent is already offering the resolution in chat. While a decline
-    // otherwise stands, `closed` reads `ready` and Close closes the case with
-    // `resolution_declined`.
+    // ‼ `ready` ONLY. Every other verdict renders no control, not "warn and
+    // offer anyway".
     return selectable
       .filter((s) => elig[s as keyof typeof elig] === 'ready')
       .map((s) => ({ state: s, eligibility: 'ready' as const }));
@@ -246,11 +223,10 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
   // OPEN if the control returns.
   //
   // This was survivable while a non-empty option list was the norm. It is a
-  // mainline sequence now: a turn that records the fix flips eligibility to
-  // {resolved: ready, closed: suggests_alternative}, the option list becomes
-  // empty, and the control is replaced by a static pill — on exactly the turn
-  // a user is most likely to have the menu open. Its return is mainline too
-  // since contract 14.8.0: declining the resolution flips `closed` to `ready`.
+  // mainline sequence now: a single turn can move `closed` off `ready`, the
+  // option list becomes empty, and the control is replaced by a static pill —
+  // on exactly the turn a user is most likely to have the menu open. A later
+  // turn can move it back, and the control returns.
   useEffect(() => {
     if (!canChangeStatus) setDropdownOpen(false);
   }, [canChangeStatus]);
