@@ -46,8 +46,11 @@ export interface CaseActionOption {
  * (``ready``). Both conditions, every path — the first is an allowlist
  * intersection rather than a list of exclusions.
  *
- * What each verdict means is its enum's ``x-enum-descriptions`` in the pinned
- * contract (``CloseEligibility``, ``ResolveEligibility``); it is not restated here.
+ * What each verdict means is the ``x-enum-descriptions`` of ``CloseEligibility``
+ * and ``ResolveEligibility`` in ``docs/reference/api/openapi.json`` of
+ * ``FaultMaven/faultmaven`` at the ``ref`` pinned in ``api-contract.pin.json``
+ * (openapi-typescript drops them from ``api.generated.ts``); it is not
+ * restated here.
  *
  * ‼ The menu CAN be empty, and whenever ``closed`` is not ``ready`` it is meant
  * to be. An earlier version of this block promised the dropdown is "never
@@ -55,7 +58,8 @@ export interface CaseActionOption {
  * of the normal path.
  *
  * Preference order:
- *   1. ``case.disposition_eligibility`` (post PR #373) — of the actions
+ *   1. ``case.disposition_eligibility`` (the contract's
+ *      ``DispositionEligibility``) — of the actions
  *      ``ALLOWED_ACTIONS`` permits, keep those whose verdict is ``ready``.
  *   2. ``case.valid_next_states`` — structural fallback for older cases,
  *      INTERSECTED with ``ALLOWED_ACTIONS`` rather than filtered by a
@@ -203,10 +207,10 @@ export const HeaderSummary: React.FC<HeaderSummaryProps> = ({
     return { stageLabel, completed, total: MILESTONE_KEYS.length };
   };
 
-  // Get available case actions. Prefers ``disposition_eligibility``
-  // (PR #373) for content-gated dropdown rendering; falls back to the
-  // structural ``valid_next_states`` for cases that haven't been
-  // backfilled yet. See ``getCaseActionOptions`` JSDoc.
+  // Get available case actions. Prefers ``disposition_eligibility`` (the
+  // contract's ``DispositionEligibility``) for content-gated dropdown
+  // rendering; falls back to the structural ``valid_next_states`` for cases
+  // that haven't been backfilled yet. See ``getCaseActionOptions`` JSDoc.
   const statusOptions = getCaseActionOptions(caseData);
   const canChangeStatus = statusOptions.length > 0 && onStatusChangeRequest;
   const investigatingContext = getInvestigatingContext();

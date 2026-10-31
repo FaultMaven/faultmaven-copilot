@@ -379,8 +379,10 @@ States: `inquiry`, `investigating`, `resolved` (terminal), `closed` (terminal).
 `resolved` since contract 9.0.0. The client still gates the
 Close control on `disposition_eligibility.closed === 'ready'` and on nothing
 else; any other verdict leaves the menu **empty**. What each verdict means is
-its enum's `x-enum-descriptions` in the pinned contract (`CloseEligibility`,
-`ResolveEligibility`); it is not restated here.
+the `x-enum-descriptions` of `CloseEligibility` and `ResolveEligibility` in
+`docs/reference/api/openapi.json` of `FaultMaven/faultmaven` at the `ref`
+pinned in `api-contract.pin.json` (openapi-typescript drops them from
+`types/api.generated.ts`); it is not restated here.
 
 - `inquiry → investigating` is earned by a confirmed problem statement (Gate 1).
 - `investigating → resolved` is earned by a confirmed root-cause elimination;

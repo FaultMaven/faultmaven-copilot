@@ -3,14 +3,15 @@
  * drives the case-action dropdown render in HeaderSummary.
  *
  * Design rule the tests pin: the dropdown surfaces *only* ``ready``
- * disposition verdicts. What each verdict means is its enum's
- * ``x-enum-descriptions`` in the pinned contract (``CloseEligibility``,
- * ``ResolveEligibility``); these tests do not restate it.
+ * disposition verdicts. What each verdict means is the ``x-enum-descriptions``
+ * of ``CloseEligibility`` and ``ResolveEligibility`` in
+ * ``docs/reference/api/openapi.json`` of ``FaultMaven/faultmaven`` at the
+ * ``ref`` pinned in ``api-contract.pin.json`` (openapi-typescript drops them
+ * from ``api.generated.ts``); these tests do not restate it.
  *
- * ``resolved`` NEVER renders a control. It is earned by a confirmed root-cause
- * elimination and the agent proposes it through the confirm/decline pair; the
- * backend refuses a request for it. The key is still published — it is
- * FaultMaven's own readiness verdict — it is simply not a button.
+ * ``resolved`` NEVER renders a control: RESOLVED is not user-selectable (the
+ * backend refuses a request for it since contract 9.0.0), so only the
+ * ``closed`` verdict can show one.
  *
  * The verdict matrix is keyed on the published enums (``RESOLVE_VERDICTS``,
  * ``CLOSE_RENDERS`` below), so it runs every combination the contract allows,
@@ -100,32 +101,6 @@ describe('getCaseActionOptions', () => {
       expect(opts.some((o) => o.state === 'investigating')).toBe(false);
     });
 
-    it('offers closed:ready in the default INQUIRY shape', () => {
-      const opts = getCaseActionOptions(
-        inquiry({
-          disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
-        }),
-      );
-      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
-      // resolved is not_eligible from INQUIRY (structurally invalid) — drop it.
-      expect(opts.some((o) => o.state === 'resolved')).toBe(false);
-    });
-
-    it('drops closed when not_eligible, leaving no actions', () => {
-      const opts = getCaseActionOptions(
-        inquiry({
-          disposition_eligibility: {
-            resolved: 'not_eligible',
-            closed: 'not_eligible',
-          },
-        }),
-      );
-      // Empty is the honest answer: an INQUIRY case whose close is not ready
-      // has no user action available. It previously showed Investigating,
-      // which the engine would have refused.
-      expect(opts).toEqual([]);
-    });
-
     it('filters investigating out of valid_next_states from an older backend', () => {
       const opts = getCaseActionOptions(
         inquiry({
@@ -133,104 +108,6 @@ describe('getCaseActionOptions', () => {
         } as Partial<CaseUIResponse>),
       );
       expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
-    });
-  });
-
-  describe('INVESTIGATING — every verdict combination', () => {
-    it('thin case (resolved:not_eligible, closed:ready) shows Close only', () => {
-      const opts = getCaseActionOptions(
-        investigating({
-          disposition_eligibility: { resolved: 'not_eligible', closed: 'ready' },
-        }),
-      );
-      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
-    });
-
-    it('partial case (resolved:needs_info, closed:ready) hides Resolve — only Close shows', () => {
-      // ``needs_info`` is hidden: clicking Resolve here would dead-end on a
-      // readiness prompt asking for missing info. The agent surfaces what's
-      // missing through the conversation; the dropdown shouldn't offer a
-      // dead-end click.
-      const opts = getCaseActionOptions(
-        investigating({
-          disposition_eligibility: { resolved: 'needs_info', closed: 'ready' },
-        }),
-      );
-      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
-    });
-
-    it('resolution-grade case (resolved:ready, closed:suggests_alternative) shows NOTHING', () => {
-      // The empty menu is correct, not a gap. On a resolvable case
-      // ``suggests_alternative`` is set while no resolve decline stands — when
-      // INV-37 pivots every close back to a resolve proposal, so a Close
-      // control could only ever produce "shall I mark this resolved?" — and
-      // while a resolve proposal is pending (as when the user asks for it).
-      // Resolve is not a control at all; the agent is offering it in chat.
-      const opts = getCaseActionOptions(
-        investigating({
-          disposition_eligibility: {
-            resolved: 'ready',
-            closed: 'suggests_alternative',
-          },
-        }),
-      );
-      expect(opts).toEqual([]);
-    });
-
-    it('resolution READY with a resolve decline standing (resolved:ready, closed:ready) shows Close only', () => {
-      // The decline state, which core emits since contract 14.8.0 (fm#2360):
-      // the user declined the resolution, so ``closed`` reads ``ready`` and
-      // Close closes the case with ``resolution_declined``. It is also the one
-      // shape where an implementation that iterates the eligibility map
-      // instead of the allowlist would leak Resolve back in.
-      const opts = getCaseActionOptions(
-        investigating({
-          disposition_eligibility: { resolved: 'ready', closed: 'ready' },
-        }),
-      );
-      expect(opts).toEqual([{ state: 'closed', eligibility: 'ready' }]);
-    });
-
-    it('hides both when each side is non-ready (resolved:needs_info, closed:suggests_alternative)', () => {
-      // Pin the rule explicitly: only ``ready`` items render, so the dropdown
-      // is empty rather than offering dead-end clicks.
-      const opts = getCaseActionOptions(
-        investigating({
-          disposition_eligibility: {
-            resolved: 'needs_info',
-            closed: 'suggests_alternative',
-          },
-        }),
-      );
-      expect(opts).toEqual([]);
-    });
-  });
-
-  describe('Terminal states', () => {
-    it('returns no actions for RESOLVED regardless of eligibility map', () => {
-      expect(
-        getCaseActionOptions(
-          resolved({
-            disposition_eligibility: {
-              resolved: 'not_eligible',
-              closed: 'not_eligible',
-            },
-          }),
-        ),
-      ).toEqual([]);
-    });
-
-    it('returns no actions for CLOSED regardless of eligibility map', () => {
-      expect(
-        getCaseActionOptions(
-          closed({
-            disposition_eligibility: {
-              resolved: 'not_eligible',
-              closed: 'not_eligible',
-            },
-          }),
-        ),
-      ).toEqual([]);
     });
   });
 
@@ -276,12 +153,12 @@ describe('getCaseActionOptions', () => {
       // what the action table permits.
       //
       // ‼ NOT an invariant that the menu is non-empty — the JSDoc on
-      // `getCaseActionOptions` revokes that promise explicitly, and on a
-      // resolution-grade case an empty menu is the intended rendering. This
-      // comment used to assert the opposite, which made the KNOWN ASYMMETRY
-      // upstream (a `suggests_alternative` case still rendering Close through
-      // the unverdicted fallback) look like a regression to anyone tightening
-      // it: the fix would fail a test whose comment called the gap the rule.
+      // `getCaseActionOptions` revokes that promise explicitly: whenever
+      // `closed` is not `ready` the menu is empty. This comment used to assert
+      // the opposite, which made the KNOWN ASYMMETRY upstream (a case served
+      // without verdicts still renders Close where a verdict could have hidden
+      // it) look like a regression to anyone tightening it: the fix would fail
+      // a test whose comment called the gap the rule.
       expect(opts).toEqual([{ state: 'closed', eligibility: null }]);
     });
 

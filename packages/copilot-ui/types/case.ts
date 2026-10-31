@@ -21,8 +21,10 @@ export type CaseDetail = components['schemas']['CaseDetail'];
 // Why a CLOSED case ended. Keys the closure-label table, so a reason the pinned
 // contract adds with no label fails `tsc`.
 export type ClosureReason = components['schemas']['ClosureReason'];
-// The two keys of `disposition_eligibility`. What each value means is its
-// enum's `x-enum-descriptions` in the pinned contract; it is not restated here.
+// The two keys of `disposition_eligibility`. What each value means is the
+// enum's `x-enum-descriptions` in `docs/reference/api/openapi.json` of
+// `FaultMaven/faultmaven` at the `ref` pinned in `api-contract.pin.json`
+// (openapi-typescript drops them from `api.generated.ts`); it is not restated here.
 export type CloseEligibility = components['schemas']['CloseEligibility'];
 export type ResolveEligibility = components['schemas']['ResolveEligibility'];
 
