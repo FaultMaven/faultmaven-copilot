@@ -2383,6 +2383,14 @@ export interface paths {
          *     check cannot run (the sanitizer or its pseudonym key is unavailable) the
          *     request answers **503**, a retryable server-side condition, with a generic
          *     detail, and nothing is saved.
+         *
+         *     **Retries (`Idempotency-Key`).** A keyed conversion commits a receipt with
+         *     its job, in the same transaction. A request with a key this caller already
+         *     used for a conversion: the same file and fields, once the job committed →
+         *     **201** with that job's body and `X-Idempotency-Replayed: true`, and no new
+         *     job or drafts; a different file or fields → **409** `IDEMPOTENCY_KEY_REUSE`;
+         *     the first still running → **409** `KB_REQUEST_IN_PROGRESS` with
+         *     `Retry-After`. Without a key, every request converts again.
          */
         post: operations["convert_document_api_v1_knowledge_convert_post"];
         delete?: never;
@@ -2438,6 +2446,22 @@ export interface paths {
          *     reversed. If that check cannot run (the sanitizer or its pseudonym key is
          *     unavailable) the upload answers **503**, a retryable server-side
          *     condition, with a generic detail, and nothing is saved.
+         *
+         *     **Retries (`Idempotency-Key`).** A keyed upload commits a receipt with the
+         *     runbook, in the same transaction. A request with a key this caller already
+         *     used for an upload:
+         *
+         *     - for the same upload (same file content, same fields), once it published
+         *       → **201** with that upload's body and `Location`, and
+         *       `X-Idempotency-Replayed: true`. Nothing is published again.
+         *     - for a different upload → **409** `x-error-code: IDEMPOTENCY_KEY_REUSE`.
+         *     - while the first is still running → **409** `x-error-code:
+         *       KB_REQUEST_IN_PROGRESS` with `Retry-After`; retry with the same key.
+         *
+         *     A lost response, or this route's **500** `KB_INGEST_OUTCOME_UNKNOWN`
+         *     (whose detail says to retry with the same key), is recovered by retrying
+         *     with the same key: it replays if the first published, and runs if it did
+         *     not. Without a key, every request publishes a new runbook.
          */
         post: operations["upload_document_api_v1_knowledge_documents_post"];
         delete?: never;
@@ -10468,7 +10492,10 @@ export interface operations {
     convert_document_api_v1_knowledge_convert_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional. Identifies this submission across retries: a retry under the same key, with the same file and fields, returns the published result instead of publishing again. One key per submission; a new submission, or any change to its file or fields, takes a new key. */
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -10478,14 +10505,27 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The conversion job and its drafts. A retry under the same `Idempotency-Key` is answered with the same body, and carries `X-Idempotency-Replayed: true`. */
             201: {
                 headers: {
+                    /** @description `true` when this response replays a request that already published under this `Idempotency-Key`; absent otherwise. */
+                    "X-Idempotency-Replayed"?: "true";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Conflict. Told apart by `x-error-code`: `KB_REQUEST_IN_PROGRESS` (a request with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds; it may still be running then); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different file or different fields). `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the conversion committed, and its stored response no longer validates: reload your conversions). Without `x-error-code`, `conflict_reason: duplicate_runbook_id`: a live draft already holds a runbook id this conversion minted. */
+            409: {
+                headers: {
+                    /** @description Seconds, on `KB_REQUEST_IN_PROGRESS` only: when the running request's claim lapses unless it is renewed. */
+                    "Retry-After"?: number;
+                    /** @description Which conflict. */
+                    "x-error-code"?: "KB_REQUEST_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE" | "IDEMPOTENCY_REPLAY_UNAVAILABLE";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10538,7 +10578,10 @@ export interface operations {
     upload_document_api_v1_knowledge_documents_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional. Identifies this submission across retries: a retry under the same key, with the same file and fields, returns the published result instead of publishing again. One key per submission; a new submission, or any change to its file or fields, takes a new key. */
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -10548,9 +10591,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description The runbook, published. A retry under the same `Idempotency-Key` is answered with the same body, and carries `X-Idempotency-Replayed: true`. */
             201: {
                 headers: {
+                    /** @description The published runbook, on the first answer and its replay. */
+                    Location?: string;
+                    /** @description `true` when this response replays a request that already published under this `Idempotency-Key`; absent otherwise. */
+                    "X-Idempotency-Replayed"?: "true";
                     [name: string]: unknown;
                 };
                 content: {
@@ -10558,6 +10605,17 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Conflict. Told apart by `x-error-code`: `KB_REQUEST_IN_PROGRESS` (a request with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds; it may still be running then); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different file or different fields). */
+            409: {
+                headers: {
+                    /** @description Seconds, on `KB_REQUEST_IN_PROGRESS` only: when the running request's claim lapses unless it is renewed. */
+                    "Retry-After"?: number;
+                    /** @description Which conflict. */
+                    "x-error-code"?: "KB_REQUEST_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
