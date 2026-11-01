@@ -21,6 +21,12 @@ export type CaseDetail = components['schemas']['CaseDetail'];
 // Why a CLOSED case ended. Keys the closure-label table, so a reason the pinned
 // contract adds with no label fails `tsc`.
 export type ClosureReason = components['schemas']['ClosureReason'];
+// The two keys of `disposition_eligibility`. What each value means is the
+// enum's `x-enum-descriptions` in `docs/reference/api/openapi.json` of
+// `FaultMaven/faultmaven` at the `ref` pinned in `api-contract.pin.json`
+// (openapi-typescript drops them from `api.generated.ts`); it is not restated here.
+export type CloseEligibility = components['schemas']['CloseEligibility'];
+export type ResolveEligibility = components['schemas']['ResolveEligibility'];
 
 // Conversation message row from GET /cases/{id}/messages. Deriving from the
 // generated contract keeps the closed role vocabulary a regen-checked fact
@@ -70,59 +76,8 @@ export interface UserCase {
 }
 
 
-// Disposition eligibility — content-readiness verdicts for the
-// terminal actions (resolve/close), added ahead of OpenAPI regen by
-// backend PR #373.
-//
-// Per-verdict semantics:
-//   - ``ready``: action is appropriate; case content supports it.
-//     This is the *only* verdict the case-action dropdown currently
-//     renders as a clickable option — see HeaderSummary's
-//     ``getCaseActionOptions``.
-//   - ``needs_info``: action is allowed in principle but case is
-//     partial. The engine's action-time path (both dropdown and
-//     natural-language) asks the user for what's missing rather than
-//     proceeding, so the dropdown hides this verdict to keep the
-//     menu honest (no dead-end clicks).
-//   - ``suggests_alternative``: DO NOT RENDER. Fires only on the
-//     close side. On a resolvable case it holds while no resolve
-//     decline stands (every ``Close`` pivots back to a resolve
-//     proposal) and while a resolve proposal is pending (as when the
-//     user asks for it). While a decline otherwise stands, ``closed``
-//     reads ``ready`` and Close closes the case with
-//     ``resolution_declined`` (contract 14.8.0); on a non-resolvable
-//     case ``closed`` reads ``ready`` whatever was declined.
-//     This used to say the dropdown "hides this verdict and the user
-//     sees the *resolved* option directly" — there is no resolved
-//     option to see. RESOLVED is not user-selectable; the agent
-//     offers it through the confirm/decline pair in chat. So while
-//     this verdict holds, the honest rendering is NO status control.
-//   - ``not_eligible``: action is not available — menu item hidden.
-//
-// Net dropdown rule: of the actions ``ALLOWED_ACTIONS`` permits from
-// this state, render those whose verdict is ``ready``. ``resolved``
-// is never among them, so ``resolved: 'ready'`` renders nothing — it
-// is the engine's own readiness reading, and what it decides is
-// whether the AGENT opens the resolution handshake.
-//
-// Backend reference: ``derive_disposition_eligibility`` in
-// faultmaven/core/investigation/terminal_transitions.py.
-export type DispositionEligibility =
-  | 'ready'
-  | 'needs_info'
-  | 'suggests_alternative'
-  | 'not_eligible';
-
-export interface DispositionEligibilityMap {
-  resolved: DispositionEligibility;
-  closed: DispositionEligibility;
-}
-
 // Inquiry Phase Types
-export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'] & {
-  /** Drives menu gating. See the note on the INVESTIGATING variant. */
-  disposition_eligibility?: DispositionEligibilityMap | null;
-};
+export type CaseUIResponse_Inquiry = components['schemas']['CaseUIResponse_Inquiry'];
 // `InquiryData` alias removed — same reason the `InvestigationStrategy` alias
 // below went: no production consumer anywhere in src/, packages/, e2e/ or
 // playground/. It was also the only place in this client that witnessed
@@ -140,16 +95,10 @@ export type ProgressTransparencyInfo =
   components['schemas']['ProgressTransparencyInfo'];
 
 // Investigating Phase Types
-// ‼ Only the `disposition_eligibility` narrowing survives. The contract
-// publishes it as `{ [key: string]: string }` with no enum, so the four-literal
-// union is the one member still doing work. `progress_transparency` and
-// `problem_statement` re-declared generated members byte-identically — which
-// is worse than redundant: an intersection turns a future contract TIGHTENING
-// into a no-op instead of a compile error, so making `problem_statement`
-// required upstream would re-widen here and the drift gate would stay green.
-export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'] & {
-  disposition_eligibility?: DispositionEligibilityMap | null;
-};
+// ‼ Plain aliases, no intersections: an intersection turns a future contract
+// TIGHTENING into a no-op instead of a compile error, so the drift gate would
+// stay green while this client re-widened what the contract narrowed.
+export type CaseUIResponse_Investigating = components['schemas']['CaseUIResponse_Investigating'];
 export type InvestigationProgress = components['schemas']['InvestigationProgressSummary'];
 export type ProblemVerification = components['schemas']['ProblemVerificationData'];
 export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'];
@@ -160,10 +109,7 @@ export type WorkingConclusion = components['schemas']['WorkingConclusionSummary'
 // production consumer.
 
 // Resolved Disposition Types
-export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'] & {
-  /** All ``not_eligible`` on terminal cases. See the note above. */
-  disposition_eligibility?: DispositionEligibilityMap | null;
-};
+export type CaseUIResponse_Resolved = components['schemas']['CaseUIResponse_Resolved'];
 export type RootCause = components['schemas']['RootCauseSummary'];
 export type Solution = components['schemas']['SolutionSummary'];
 

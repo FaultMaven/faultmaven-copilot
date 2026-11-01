@@ -377,13 +377,12 @@ States: `inquiry`, `investigating`, `resolved` (terminal), `closed` (terminal).
 **Only `closed` is ever selectable** (`inquiry` → `closed`, `investigating` →
 `closed`); `investigating` is refused by every backend since fm#1608 and
 `resolved` since contract 9.0.0. The client still gates the
-Close control on `disposition_eligibility.closed === 'ready'`, so `needs_info`,
-`suggests_alternative` and `not_eligible` all suppress it. `suggests_alternative`
-on the `closed` side means *do not render*. On a resolvable case it holds while
-no resolve decline stands (every close would pivot back to a resolve proposal,
-so the menu is correctly **empty**) and while a resolve proposal is pending (as
-when the user asks for it). While a decline otherwise stands, `closed` reads
-`ready` and Close closes the case with `resolution_declined` (contract 14.8.0).
+Close control on `disposition_eligibility.closed === 'ready'` and on nothing
+else; any other verdict leaves the menu **empty**. What each verdict means is
+the `x-enum-descriptions` of `CloseEligibility` and `ResolveEligibility` in
+`docs/reference/api/openapi.json` of `FaultMaven/faultmaven` at the `ref`
+pinned in `api-contract.pin.json` (openapi-typescript drops them from
+`types/api.generated.ts`); it is not restated here.
 
 - `inquiry → investigating` is earned by a confirmed problem statement (Gate 1).
 - `investigating → resolved` is earned by a confirmed root-cause elimination;
