@@ -7,7 +7,7 @@
 import React, { useRef } from 'react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { createLogger } from '../../../../lib/utils/logger';
-import { normalizeState } from '../../../../lib/api/services/case-service';
+import { getCaseActionMessage, normalizeState } from '../../../../lib/api/services/case-service';
 
 interface StatusChangeRequestModalProps {
   isOpen: boolean;
@@ -17,30 +17,21 @@ interface StatusChangeRequestModalProps {
   onCancel: () => void;
 }
 
-// Agent messages for each case action.
-//
 const log = createLogger('StatusChangeRequestModal');
 
+// User-friendly titles for each case action. The quoted preview is not kept
+// here: it is `getCaseActionMessage`, the text `ChatWindow` actually sends.
+//
 // Only `closed` is reachable from the menu, from either phase. `investigating`
 // is earned by a confirmed problem statement and `resolved` by a confirmed
 // root-cause elimination, so neither is something a user picks and neither
 // needs copy here. (``investigating`` is refused by every backend since #1608; ``resolved`` is refused since contract 9.0.0.)
-const CASE_ACTION_MESSAGES: Record<string, Record<string, string>> = {
-  inquiry: {
-    closed: "Close this case. I don't need further investigation."
-  },
-  investigating: {
-    closed: "Close this case as unresolved. Summarize what we found so far."
-  }
-};
-
-// User-friendly titles for each case action
 const ACTION_TITLES: Record<string, Record<string, string>> = {
   inquiry: {
     closed: "Close case without investigating?"
   },
   investigating: {
-    closed: "Close case as unresolved?"
+    closed: "Close this case?"
   }
 };
 
@@ -57,12 +48,12 @@ export const StatusChangeRequestModal: React.FC<StatusChangeRequestModalProps> =
   // through `getValidActions` → `normalizeState`, which maps the legacy
   // `consulting` / `unresolved` / `closed_resolved` / `closed_unresolved`
   // values — but `EnhancedCaseHeader` passes the RAW `caseData.state` here,
-  // and the tables below are keyed only by normalized names. On a case still
+  // and the copy tables are keyed only by normalized names. On a case still
   // carrying a legacy string the menu correctly offers Close and this lookup
   // then misses, so the layer that refuses is the one that refuses invisibly.
   const fromState = normalizeState(currentStatus);
   const toState = normalizeState(newStatus);
-  const message = CASE_ACTION_MESSAGES[fromState]?.[toState];
+  const message = getCaseActionMessage(fromState, toState);
 
   // ‼ `isActive` must match what RENDERS, not merely what is requested.
   // `useFocusTrap` sets `document.body.style.overflow = 'hidden'`, and its
