@@ -222,7 +222,7 @@ export function getEvidenceTypeInfo(type: string): { label: string; shortLabel: 
  */
 export const CASE_ACTION_MESSAGES: Record<string, string> = {
   'inquiry_to_closed': "Close this case. I don't need further investigation.",
-  'investigating_to_closed': 'Close this case as unresolved. Summarize what we found so far.'
+  'investigating_to_closed': 'Close this case. Summarize what we found so far.'
 };
 /** @deprecated Use CASE_ACTION_MESSAGES */
 export const STATUS_CHANGE_MESSAGES = CASE_ACTION_MESSAGES;

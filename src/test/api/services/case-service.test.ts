@@ -876,6 +876,15 @@ describe('Case Service', () => {
       const msg = caseService.getStatusChangeMessage('inquiry', 'closed');
       expect(msg).toBe("Close this case. I don't need further investigation.");
     });
+
+    it('sends investigating Close copy that says nothing about how the case closes', () => {
+      // #2441: on a declined resolution the server closes this case as
+      // `resolution_declined`, so "as unresolved" contradicted the stored reason.
+      // The closure label, not this request, says how the case closed.
+      expect(caseService.getCaseActionMessage('investigating', 'closed')).toBe(
+        'Close this case. Summarize what we found so far.',
+      );
+    });
   });
 
   describe('ALLOWED_ACTIONS and CASE_ACTION_MESSAGES', () => {
