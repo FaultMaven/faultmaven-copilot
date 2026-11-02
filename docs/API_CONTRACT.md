@@ -42,14 +42,31 @@ Prefer `--spec`.
 Generating against whatever build happens to be running is how this repository
 and the Dashboard ended up with different names for the same schema (fm#880).
 
+### The contract notes
+
+The API also publishes `docs/reference/api/contract-notes.json`: its changelog
+entries (version, level, title, body) and the meaning of each value of its
+published vocabularies. The generator reads it **beside the spec** (the pinned
+ref's, or the sibling of a `--spec` / `FM_OPENAPI_SPEC` path; a spec with none
+beside it fails the run) and writes it twice:
+
+- `packages/copilot-ui/types/contract-notes.json`, verbatim. It is dev-only:
+  `scripts/report-contract-hop.mjs` reads it to list what a pin bump crossed.
+- `packages/copilot-ui/types/contract-vocabularies.json`, its `vocabularies`.
+  It is the only one runtime code imports, so no changelog text reaches the
+  bundle. The CaseDetails Closure row renders each `ClosureReason` meaning from
+  it verbatim; the labels stay client copy.
+
 ## What turns `api-types-drift` red
 
 A spec change in the API repository does **not**: the job regenerates from the
-pinned commit, so merging there reaches nothing here. The job goes red when the
-generated file stops matching the contract this repository pins — `ref` moved
-without a regeneration, or the generated file was edited by hand. Adopt a new
-contract in a PR of its own, pin and regenerated types together, rather than
-folding it into unrelated work.
+pinned commit, so merging there reaches nothing here. The job goes red when a
+generated file (`api.generated.ts` or either notes file) stops matching the
+contract this repository pins — `ref` moved without a regeneration, or a
+generated file was edited by hand. Once they match, it prints every changelog
+entry the pin move crossed into the job summary, from the vendored notes. Adopt
+a new contract in a PR of its own, pin and regenerated types together, rather
+than folding it into unrelated work.
 
 ## Paired PRs: preparing before the spec reaches `main`
 

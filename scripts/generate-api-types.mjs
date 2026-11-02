@@ -16,6 +16,14 @@
  *   pnpm generate:api-types --spec ../faultmaven/docs/reference/api/openapi.json
  *   FM_OPENAPI_SPEC=... pnpm generate:api-types      # POSIX shells, and CI
  *
+ * The API publishes `contract-notes.json` beside the spec: its changelog and the
+ * meaning of each published enum value. It is read beside whichever spec is
+ * used (a spec with none beside it fails, rather than mixing two contracts) and
+ * vendored twice in packages/copilot-ui/types/: `contract-notes.json` verbatim,
+ * dev-only, for scripts/report-contract-hop.mjs; and `contract-vocabularies.json`,
+ * its `vocabularies`, the only one runtime code imports, so no changelog text
+ * is bundled.
+ *
  * The generator is invoked as `node <cli.js> …` rather than through a shell.
  * Spawning the `.cmd` shim with `shell: true` on Windows joins the arguments
  * into a command line without quoting, so a spec path containing a space —
@@ -24,7 +32,7 @@
  * argv array with no shell avoids the quoting question entirely.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,7 +112,31 @@ const spec =
 // compile the package from source, so this is the one copy either of them sees;
 // a path left pointing at the old location would write a stray file nothing
 // imports and leave the real one stale.
-const out = path.join(repoRoot, "packages", "copilot-ui", "types", "api.generated.ts");
+const typesDir = path.join(repoRoot, "packages", "copilot-ui", "types");
+const out = path.join(typesDir, "api.generated.ts");
+
+// The notes sit beside the spec: a URL resolves against the spec's URL (the
+// pinned ref's included), a path against the spec's directory.
+const isUrl = /^https?:\/\//i.test(spec);
+const notesSource = isUrl
+  ? new URL("contract-notes.json", spec).href
+  : path.join(path.dirname(path.resolve(spec)), "contract-notes.json");
+let notesText;
+let vocabularies;
+try {
+  if (isUrl) {
+    const response = await fetch(notesSource, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    notesText = await response.text();
+  } else {
+    notesText = readFileSync(notesSource, "utf8");
+  }
+  ({ vocabularies } = JSON.parse(notesText));
+  if (typeof vocabularies !== "object" || !vocabularies) throw new Error("no `vocabularies` object");
+} catch (error) {
+  console.error(`Could not read the contract notes beside the spec, ${notesSource}: ${error.message}`);
+  process.exit(1);
+}
 
 // Resolve the generator's own declared entrypoint. `openapi-typescript/bin/cli.js`
 // is not resolvable directly — the package's `exports` map does not expose it —
@@ -133,4 +165,10 @@ if (result.error) {
   console.error(`Failed to run openapi-typescript: ${result.error.message}`);
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+const notesOut = path.join(typesDir, "contract-notes.json");
+const vocabulariesOut = path.join(typesDir, "contract-vocabularies.json");
+writeFileSync(notesOut, notesText);
+writeFileSync(vocabulariesOut, `${JSON.stringify(vocabularies, null, 2)}\n`);
+console.log(`Wrote ${path.relative(repoRoot, notesOut)} and ${path.relative(repoRoot, vocabulariesOut)} from ${notesSource}`);

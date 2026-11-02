@@ -29,6 +29,7 @@ import type {
   CloseEligibility,
   ResolveEligibility,
 } from '@faultmaven/copilot-ui/types/case';
+import vocabularies from '@faultmaven/copilot-ui/types/contract-vocabularies.json';
 
 // Small helpers to build minimal CaseUIResponse stubs. Only the fields
 // getCaseActionOptions reads are populated; everything else is irrelevant
@@ -71,6 +72,15 @@ const VERDICT_MATRIX = (Object.keys(RESOLVE_VERDICTS) as ResolveEligibility[]).f
 );
 
 describe('getCaseActionOptions', () => {
+  it('handles every verdict the vendored contract publishes, and no other', () => {
+    // Coverage only (ruling of 2026-11-02 on fm#2411): the meanings are not
+    // displayed, but the matrix must name each published value.
+    const published = (name: 'CloseEligibility' | 'ResolveEligibility') =>
+      vocabularies[name].map(({ value }) => value).sort();
+    expect(Object.keys(CLOSE_RENDERS).sort()).toEqual(published('CloseEligibility'));
+    expect(Object.keys(RESOLVE_VERDICTS).sort()).toEqual(published('ResolveEligibility'));
+  });
+
   describe('every verdict combination the published enums allow', () => {
     it.each(VERDICT_MATRIX)(
       'resolved:$resolved, closed:$closed → Close shown: $renders',

@@ -1,6 +1,7 @@
 import { getApiTransport } from '../transport';
 import type { components, operations } from "../../../types/api.generated";
 import { ClosureReason, Message, UserCase, UserCaseState } from "../../../types/case";
+import contractVocabularies from "../../../types/contract-vocabularies.json";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
 import { turnTimingFor } from "../../utils/keyed-turn-retry";
@@ -110,66 +111,42 @@ export const STAGE_DISPLAY_INFO: Record<string, { label: string; pillClass: stri
  * publishes with no entry here, or an entry for a reason it does not publish,
  * fails `tsc`. `label` is the full
  * descriptive form; `shortLabel` is the compact form for contexts already
- * prefixed with "Closed". The 'other' fallback is a defensive default: every
- * consumer renders it for an unrecognized reason, and HeaderSummary also for a
- * null or empty one, where CaseDetails and ResolutionActionsCard show no
- * closure label.
+ * prefixed with "Closed". The labels are client copy; what each reason MEANS is
+ * not, and is not restated here (see `closureDisplayFor`). The 'other' fallback
+ * is a defensive default: every consumer renders it for an unrecognized reason,
+ * and HeaderSummary also for a null or empty one, where CaseDetails and
+ * ResolutionActionsCard show no closure label.
  */
 export type ClosureDisplay = { label: string; shortLabel: string; description: string };
-export type ClosureDisplayTable = Record<ClosureReason | 'other', ClosureDisplay>;
+export type ClosureLabels = Omit<ClosureDisplay, 'description'>;
 
-export const CLOSURE_DISPLAY_INFO: ClosureDisplayTable = {
-  inquiry_only: {
-    label: 'Inquiry Only',
-    shortLabel: 'Inquiry Only',
-    description: 'Q&A session completed, no investigation needed.',
-  },
-  solution_deferred: {
-    label: 'Fix deferred',
-    shortLabel: 'Fix Deferred',
-    description: 'Cause identified and a fix documented; implementation happens out-of-band.',
-  },
-  closed_rca_infeasible: {
-    label: 'Root cause unreachable',
-    shortLabel: 'Cause Unreachable',
-    description: 'The cause cannot be reached for this problem; the mitigation is the accepted strategy.',
-  },
-  mitigation_sufficient: {
-    label: 'Stabilized by mitigation',
-    shortLabel: 'Stabilized',
-    description: 'A verified mitigation relieved the symptom; root-cause analysis was deferred.',
-  },
-  closed_restatement_held: {
-    label: 'Cause not stated distinctly',
-    shortLabel: 'Not Distinct',
-    description:
-      'The evidence supported a cause, but it was never stated distinctly from the problem — what was missing was a mechanism, not more data.',
-  },
-  closed_insufficient_evidence: {
-    label: 'Insufficient evidence',
-    shortLabel: 'Insufficient Evidence',
-    description: 'Closed without establishing the problem or its cause; the honest partial is preserved.',
-  },
-  closed_false_alarm: {
-    label: 'False alarm',
-    shortLabel: 'False Alarm',
-    description: 'The evidence showed the reported problem was not present; there was nothing to fix.',
-  },
-  resolution_declined: {
-    label: 'Fix confirmed',
-    shortLabel: 'Fix Confirmed',
-    description: 'The fix was confirmed to work; the case was closed rather than marked resolved.',
-  },
+export const CLOSURE_DISPLAY_INFO: Record<ClosureReason | 'other', ClosureLabels> = {
+  inquiry_only: { label: 'Inquiry Only', shortLabel: 'Inquiry Only' },
+  solution_deferred: { label: 'Fix deferred', shortLabel: 'Fix Deferred' },
+  closed_rca_infeasible: { label: 'Root cause unreachable', shortLabel: 'Cause Unreachable' },
+  mitigation_sufficient: { label: 'Stabilized by mitigation', shortLabel: 'Stabilized' },
+  closed_restatement_held: { label: 'Cause not stated distinctly', shortLabel: 'Not Distinct' },
+  closed_insufficient_evidence: { label: 'Insufficient evidence', shortLabel: 'Insufficient Evidence' },
+  closed_false_alarm: { label: 'False alarm', shortLabel: 'False Alarm' },
+  resolution_declined: { label: 'Fix confirmed', shortLabel: 'Fix Confirmed' },
   // Defensive fallback used when closure_reason is null/unrecognized.
-  other: {
-    label: 'Other',
-    shortLabel: 'Closed',
-    description: 'Case closed.',
-  },
+  other: { label: 'Other', shortLabel: 'Closed' },
 };
 
+// Each reason's meaning as the pinned contract publishes it, rendered verbatim:
+// `types/contract-vocabularies.json`, vendored by `pnpm generate:api-types`.
+// A Map, so a prototype key such as `constructor` has no meaning.
+const CLOSURE_MEANINGS = new Map<string, string>(
+  contractVocabularies.ClosureReason.map(({ value, meaning }) => [value, meaning]),
+);
+
+// No published meaning covers a reason this build does not know, so the
+// fallback's description is client copy.
+const UNKNOWN_CLOSURE: ClosureDisplay = { ...CLOSURE_DISPLAY_INFO.other, description: 'Case closed.' };
+
 /**
- * Resolve a closure reason to something renderable — never undefined.
+ * Resolve a closure reason to something renderable — never undefined: the
+ * client's labels and the contract's published meaning.
  *
  * Every consumer needs the same degrade-to-`other` behaviour, and hand-rolling
  * it three times is what let one of them drift: CaseDetails required a map hit
@@ -180,14 +157,13 @@ export const CLOSURE_DISPLAY_INFO: ClosureDisplayTable = {
  *
  * An unknown reason is not hypothetical: a case can still carry a value retired
  * from the backend vocabulary, and the backend can add a reason newer than this
- * client's contract pin. Only an own key resolves, so a prototype key such as
- * `constructor` falls back too rather than resolving to a function.
+ * client's contract pin.
  */
 export function closureDisplayFor(reason: string | null | undefined): ClosureDisplay {
-  // Not `Object.hasOwn`: the Dashboard compiles this package under lib ES2020.
-  return reason != null && Object.prototype.hasOwnProperty.call(CLOSURE_DISPLAY_INFO, reason)
-    ? CLOSURE_DISPLAY_INFO[reason as keyof ClosureDisplayTable]
-    : CLOSURE_DISPLAY_INFO.other;
+  const meaning = reason == null ? undefined : CLOSURE_MEANINGS.get(reason);
+  // Indexed only for a published reason, so never through to `Object`.
+  const labels = meaning === undefined ? undefined : CLOSURE_DISPLAY_INFO[reason as ClosureReason];
+  return labels && meaning !== undefined ? { ...labels, description: meaning } : UNKNOWN_CLOSURE;
 }
 
 /**
