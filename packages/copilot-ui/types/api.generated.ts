@@ -2358,6 +2358,11 @@ export interface paths {
          *     check cannot run (the sanitizer or its pseudonym key is unavailable) the
          *     request answers **503**, a retryable server-side condition, with a generic
          *     detail, and the draft stays a draft.
+         *
+         *     With ``INDEX_REQUEST_WINDOW_SECONDS`` set, a draft whose indexing would not
+         *     fit the window is refused before anything is written, and stays a draft:
+         *     **413** ``KNOWLEDGE_DOCUMENT_TOO_LARGE`` or **503**
+         *     ``KNOWLEDGE_INDEXING_BUSY`` + ``Retry-After`` (#2055).
          */
         post: operations["verify_draft_api_v1_knowledge_conversions__conversion_id__drafts__draft_id__verify_post"];
         delete?: never;
@@ -2462,6 +2467,13 @@ export interface paths {
          *     (whose detail says to retry with the same key), is recovered by retrying
          *     with the same key: it replays if the first published, and runs if it did
          *     not. Without a key, every request publishes a new runbook.
+         *
+         *     **Indexing window** (`INDEX_REQUEST_WINDOW_SECONDS`, #2055). The runbook is
+         *     indexed inside this request. With a window set, one that indexing would not
+         *     fit is refused before anything is saved: **413** `x-error-code:
+         *     KNOWLEDGE_DOCUMENT_TOO_LARGE` when the document alone cannot fit (split
+         *     it), **503** `x-error-code: KNOWLEDGE_INDEXING_BUSY` with `Retry-After`
+         *     when the indexing queued on this server leaves no room for it.
          */
         post: operations["upload_document_api_v1_knowledge_documents_post"];
         delete?: never;
@@ -2507,7 +2519,9 @@ export interface paths {
         put?: never;
         /**
          * Bulk Update Documents
-         * @description Bulk update document metadata.
+         * @description Bulk update document metadata. ``updates`` naming ``content`` is
+         *     refused with **422** and nothing is updated (#2055): content re-indexes,
+         *     so it changes one document at a time, through ``PUT``.
          *
          *     Ownership-aware per target (#866): this surface is a loop over
          *     ``PUT /documents/{id}``, so it carries the same gate — any authenticated
@@ -2661,6 +2675,13 @@ export interface paths {
          *     destructive command is refused with **422**, naming each one's line and
          *     type but not its text, and nothing is saved (#2012). A placeholder such as
          *     ``<password>`` or ``${DB_PASS}`` is not refused.
+         *
+         *     New ``content`` longer than a draft may be (100,000 characters) is refused
+         *     with **422**. With ``INDEX_REQUEST_WINDOW_SECONDS`` set, content whose
+         *     re-indexing would not fit the window is refused with **413**
+         *     ``KNOWLEDGE_DOCUMENT_TOO_LARGE`` or **503** ``KNOWLEDGE_INDEXING_BUSY`` +
+         *     ``Retry-After``, as on upload. Either way nothing is saved, and search
+         *     serves what it served before (#2055).
          */
         put: operations["update_document_api_v1_knowledge_documents__document_id__put"];
         post?: never;
@@ -2775,6 +2796,12 @@ export interface paths {
         /**
          * Verify Batch
          * @description Activate multiple drafts sequentially (verify + ingest into KB).
+         *
+         *     With ``INDEX_REQUEST_WINDOW_SECONDS`` set, the drafts share the request's
+         *     window (#2055): a draft the window has no room left for is ``deferred``
+         *     (unverified; verify it again), as is every draft after it, and the envelope
+         *     counts them in ``deferred``. A draft too large for any window is
+         *     ``failed``.
          */
         post: operations["verify_batch_api_v1_knowledge_drafts_verify_batch_post"];
         delete?: never;
@@ -5349,6 +5376,8 @@ export interface components {
             features?: {
                 [key: string]: components["schemas"]["FeatureStatus"];
             };
+            /** @description The KB indexing request window, and this process's indexing slot: how many encodes it holds and how long the running one has run. */
+            knowledge_indexing: components["schemas"]["KnowledgeIndexingStatus"];
             /**
              * Llm Provider
              * @description Primary LLM provider name
@@ -5747,6 +5776,42 @@ export interface components {
              * @default experimental
              */
             verification_status: ("verified" | "community" | "experimental") | null;
+        };
+        /**
+         * KnowledgeIndexingStatus
+         * @description The KB indexing window and this process's indexing slot (#2055).
+         *
+         *     Numbers, so not a ``features`` entry. An encode that never returns holds
+         *     the slot until the process restarts. Once it is past its time bound, and
+         *     with a window set, every later KB write is refused 503 meanwhile:
+         *     ``encoding_for_seconds`` far past any document's estimate is that state.
+         */
+        KnowledgeIndexingStatus: {
+            /**
+             * Encoding For Seconds
+             * @description How long this process's running KB indexing encode has run; null when none runs.
+             */
+            encoding_for_seconds: number | null;
+            /**
+             * Host Lock Available
+             * @description False while this process's latest attempt to open or lock the host lock file failed: its KB encodes then run without serialising against the other worker processes of the container.
+             */
+            host_lock_available: boolean;
+            /**
+             * Queued
+             * @description KB indexing encodes held in this process: the running one and the ones waiting their turn.
+             */
+            queued: number;
+            /**
+             * Waiting For Host Lock
+             * @description True while this process's indexing slot is blocked on the host lock, behind another worker process's encode.
+             */
+            waiting_for_host_lock: boolean;
+            /**
+             * Window Seconds
+             * @description INDEX_REQUEST_WINDOW_SECONDS: the seconds a KB upload, update or verify may spend indexing its document. A document that would not fit is refused before anything is written (413 alone, 503 behind other indexing); 0 refuses nothing up front.
+             */
+            window_seconds: number;
         };
         /**
          * KnowledgeScope
@@ -10478,6 +10543,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Too large; nothing was saved. `x-error-code: KNOWLEDGE_DOCUMENT_TOO_LARGE`: indexing the document alone would not fit this deployment's request window, however long the client waits; split it into smaller documents. Without that code, the request exceeds MAX_UPLOAD_SIZE_MB. */
+            413: {
+                headers: {
+                    /** @description KNOWLEDGE_DOCUMENT_TOO_LARGE, when sent. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10486,6 +10560,17 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Unavailable; nothing was saved. `x-error-code: KNOWLEDGE_INDEXING_BUSY`: within the request window there is no room for this document because other indexing is queued on this server, the indexing model is loading, or an encode is stuck past its time bound; retry after `Retry-After` seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds, with KNOWLEDGE_INDEXING_BUSY. */
+                    "Retry-After"?: number;
+                    /** @description KNOWLEDGE_INDEXING_BUSY, when sent. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10617,6 +10702,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Too large; nothing was saved. `x-error-code: KNOWLEDGE_DOCUMENT_TOO_LARGE`: indexing the document alone would not fit this deployment's request window, however long the client waits; split it into smaller documents. Without that code, the request exceeds MAX_UPLOAD_SIZE_MB. */
+            413: {
+                headers: {
+                    /** @description KNOWLEDGE_DOCUMENT_TOO_LARGE, when sent. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10625,6 +10719,17 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Unavailable; nothing was saved. `x-error-code: KNOWLEDGE_INDEXING_BUSY`: within the request window there is no room for this document because other indexing is queued on this server, the indexing model is loading, or an encode is stuck past its time bound; retry after `Retry-After` seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds, with KNOWLEDGE_INDEXING_BUSY. */
+                    "Retry-After"?: number;
+                    /** @description KNOWLEDGE_INDEXING_BUSY, when sent. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10691,14 +10796,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
+            /** @description Refused; nothing was updated. `updates` names `content`: bulk update changes metadata only, so change a document's content with `PUT /knowledge/documents/{document_id}`. Or the body did not bind. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };
@@ -10796,14 +10899,32 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
+            /** @description Too large; nothing was saved. `x-error-code: KNOWLEDGE_DOCUMENT_TOO_LARGE`: indexing the document alone would not fit this deployment's request window, however long the client waits; split it into smaller documents. Without that code, the request exceeds MAX_UPLOAD_SIZE_MB. */
+            413: {
+                headers: {
+                    /** @description KNOWLEDGE_DOCUMENT_TOO_LARGE, when sent. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused; nothing was saved. The new `content` holds a credential or a destructive command, or is longer than a draft may be (100,000 characters). Or the body did not bind. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description Unavailable; nothing was saved. `x-error-code: KNOWLEDGE_INDEXING_BUSY`: within the request window there is no room for this document because other indexing is queued on this server, the indexing model is loading, or an encode is stuck past its time bound; retry after `Retry-After` seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds, with KNOWLEDGE_INDEXING_BUSY. */
+                    "Retry-After"?: number;
+                    /** @description KNOWLEDGE_INDEXING_BUSY, when sent. */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
                 };
+                content?: never;
             };
         };
     };
