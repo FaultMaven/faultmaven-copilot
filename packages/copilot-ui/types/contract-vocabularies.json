@@ -1,0 +1,70 @@
+{
+  "CloseEligibility": [
+    {
+      "meaning": "Show Close. Closing ends the case without a resolution.",
+      "value": "ready"
+    },
+    {
+      "meaning": "Do not show Close. A resolve proposal is pending, or the case is resolvable and its resolution has not been declined, so a close would become a resolve proposal.",
+      "value": "suggests_alternative"
+    },
+    {
+      "meaning": "Do not show Close: the case is already resolved or closed.",
+      "value": "not_eligible"
+    }
+  ],
+  "ClosureReason": [
+    {
+      "meaning": "Closed during inquiry, before any investigation started.",
+      "value": "inquiry_only"
+    },
+    {
+      "meaning": "The evidence showed the reported problem was not present where and when it was reported, so there was nothing to fix.",
+      "value": "closed_false_alarm"
+    },
+    {
+      "meaning": "The fix was confirmed to work, and the user chose not to mark the case resolved.",
+      "value": "resolution_declined"
+    },
+    {
+      "meaning": "The cause was identified and a fix documented, and the case was closed without being resolved.",
+      "value": "solution_deferred"
+    },
+    {
+      "meaning": "The root cause was declared structurally unreachable, with a rationale (for example an uncontrollable external dependency or an end-of-life system).",
+      "value": "closed_rca_infeasible"
+    },
+    {
+      "meaning": "A verified mitigation relieved the symptom, and root-cause analysis was not pursued further.",
+      "value": "mitigation_sufficient"
+    },
+    {
+      "meaning": "The evidence supported a cause, but its statement never said more than the problem itself, so no root cause was established.",
+      "value": "closed_restatement_held"
+    },
+    {
+      "meaning": "No more specific reason held: the problem could not be verified, no cause could be grounded in the evidence, or a cause was identified with no fix or verified mitigation on record.",
+      "value": "closed_insufficient_evidence"
+    }
+  ],
+  "ResolveEligibility": [
+    {
+      "meaning": "The case has earned resolution. It is not a control: the engine offers the resolve confirmation itself, except while the user's decline of it stands.",
+      "value": "ready"
+    },
+    {
+      "meaning": "The case may resolve once what is missing is recorded. A request asks for it, with no confirmation chips.",
+      "value": "needs_info"
+    },
+    {
+      "meaning": "Resolution is not available: the case is not investigating, or its evidence points to closing.",
+      "value": "not_eligible"
+    }
+  ],
+  "SelectableNextState": [
+    {
+      "meaning": "Close the case: the one case action that needs no precondition.",
+      "value": "closed"
+    }
+  ]
+}

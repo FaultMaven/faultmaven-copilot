@@ -379,10 +379,10 @@ States: `inquiry`, `investigating`, `resolved` (terminal), `closed` (terminal).
 `resolved` since contract 9.0.0. The client still gates the
 Close control on `disposition_eligibility.closed === 'ready'` and on nothing
 else; any other verdict leaves the menu **empty**. What each verdict means is
-the `x-enum-descriptions` of `CloseEligibility` and `ResolveEligibility` in
-`docs/reference/api/openapi.json` of `FaultMaven/faultmaven` at the `ref`
-pinned in `api-contract.pin.json` (openapi-typescript drops them from
-`types/api.generated.ts`); it is not restated here.
+published by the API and vendored, at the pinned `ref`, in
+`types/contract-vocabularies.json` (`CloseEligibility`, `ResolveEligibility`,
+`SelectableNextState`); it is not restated here. Tests hold the client's
+verdict handling to the published values.
 
 - `inquiry → investigating` is earned by a confirmed problem statement (Gate 1).
 - `investigating → resolved` is earned by a confirmed root-cause elimination;
@@ -396,7 +396,11 @@ status banner, not navigation: "Case Resolved" with root cause and stats, or
 "Case Closed" with the `shortLabel` from `CLOSURE_DISPLAY_INFO` (keyed on the
 contract's `ClosureReason`, so a reason with no label fails `tsc`, plus an
 `other` fallback every consumer uses for a reason this build does not know:
-one newer than the pin, or a retired one still stored on an old case).
+one newer than the pin, or a retired one still stored on an old case). The
+labels are client copy; the meaning is not. `closureDisplayFor` pairs them with
+each reason's published meaning from `types/contract-vocabularies.json`, which
+the CaseDetails Closure row renders verbatim; only the fallback's "Case
+closed." is ours.
 **No Dashboard link**: closure and resolution summaries are rendered inline in
 the chat reply at generation time, so a card linking to the Dashboard's Report
 tab for a summary already visible above is noise. Runbooks are user-requested

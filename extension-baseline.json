@@ -27,7 +27,7 @@
   },
   "package": {
     "fileCount": 125,
-    "sha256": "f659ee210da0602cf1639dd07ad36f3b6f236361579de553e245297c094d6f65"
+    "sha256": "3622e3fcb6cf86cbdfe33d63d496b70f0d4f09982b418aca6dd575335c220969"
   },
   "iconSources": {
     "fileCount": 8,
@@ -120,7 +120,7 @@
     "assets/jetbrains-mono-vietnamese-500-normal-DNRqzVM1.woff": "6b14186bc983291a126aa8d6d9c3044415c968262279eecbb9bb194f1daf7800",
     "assets/jetbrains-mono-vietnamese-600-normal-OWROknRo.woff": "1e3421e0f17174374ea4b6103d2f0118cf914c36004ca10cd4b092b8390ee6ed",
     "assets/sidepanel_manual-DY09GgKC.css": "a2289e0121955cab64788c75782a59832df2c2f58e5d33143a1777e657477b03",
-    "background.js": "d912990c3930a1528f3e5aeaef9309899cb4355af842a3334d738825962ea472",
+    "background.js": "1a5794f8ab3969452b9e099d50239d62f4ecdcbbc4311b23c84938387d5ecb10",
     "chunks/abnfDiagram-WEYOIA3C-BOmZLJ8z.js": "7f8d6c560cac099b6b43bc26c6013d2e891447fe31049c1fac6ef3c5b667e0bf",
     "chunks/arc-CcyzXUqi.js": "7dcb676e0dc2f7850ce301071299609a235b21d8d0115322e9584f28f4c35205",
     "chunks/architectureDiagram-ZHVYKT53-DejOyCEI.js": "aa9265e7eac22083dd8b8498b21ebc5319c76c22a1cda5cdaae09279711ebdbb",
@@ -175,7 +175,7 @@
     "chunks/requirementDiagram-EQYSW5RA-BwyyaQcR.js": "2eae41480796cbf86c812021ad41e80d7ba2b59b81d19d1c26a456869aa1fe7d",
     "chunks/sankeyDiagram-SY24JHO5-Du8cN5cR.js": "e35da1740797a7534e6444c533ac33c92a0972090b49121975bda0b7c7008351",
     "chunks/sequenceDiagram-BLEHNHQU-CM2AG_Il.js": "76b8c9898d9c38c0ce72a1aea3d7895c6f0c78699787d9dfca05d12ddb6163a5",
-    "chunks/sidepanel_manual-cLNxZt8x.js": "75d9ad8b3a5a71709bc0f2c97ff265ba97bb053a5aa698278e5937c73e8ba889",
+    "chunks/sidepanel_manual-C4qClrii.js": "6c0a19c649a7bd9b35ac3544822404420dc6663ca6bc2f51e53c570d10fd25db",
     "chunks/sizeCapture-INFHLROL-BPoo-pkj.js": "6569fa59b13be842651909acba79c9487c471dcd966d432cd5353ea6a0af39d1",
     "chunks/stateDiagram-v2-A6IESKWZ-U13FLz4L.js": "fa020f7ebb578c431583db1fa451a8b0112706f7c8cab55db08435ac13e90a18",
     "chunks/swimlanes-B3ENRKFQ-DshcCmi9.js": "e25aa1301bf0dc6069504f2d7b1453a7fb846473a75266dcf3e969a9f0efa8b4",
@@ -198,6 +198,6 @@
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "87fc053028a569815b4cb5703c4ef0c5937983df816b860549556f256132214c",
     "options.html": "512effef177608607e72f534433933f8995bad13a3166d1e1e9c6e2ccac8e611",
-    "sidepanel_manual.html": "d7ec2e0d43d18c61e1fca576e771ad27f99a42ac4e96b63eb6dd376734be2fbf"
+    "sidepanel_manual.html": "b84361f15ec1714a40a3a2d19a52103d78b3395a10dc1aeced541963c05b0599"
   }
 }

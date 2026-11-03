@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as caseService from '@faultmaven/copilot-ui/lib/api/services/case-service';
+import vocabularies from '@faultmaven/copilot-ui/types/contract-vocabularies.json';
 import * as client from '@faultmaven/copilot-ui/lib/api/client';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 
@@ -907,6 +908,15 @@ describe('Case Service', () => {
       });
     });
 
+    it('offers every SelectableNextState the vendored contract publishes', () => {
+      // Coverage only (ruling of 2026-11-02 on fm#2411): the meanings are not
+      // displayed, but a selectable state the menu cannot offer is a gap.
+      const offered = new Set<string>(Object.values(caseService.ALLOWED_ACTIONS).flat());
+      for (const { value } of vocabularies.SelectableNextState) {
+        expect(offered.has(value), value).toBe(true);
+      }
+    });
+
     it('has agent copy for exactly the selectable actions, and no others', () => {
       // A key with no action renders nothing; an action with no key reaches
       // `StatusChangeRequestModal`, which now refuses to render rather than
@@ -923,15 +933,20 @@ describe('Case Service', () => {
 
   describe('CLOSURE_DISPLAY_INFO', () => {
     // The real keys are the contract's `ClosureReason` values, plus the
-    // defensive 'other' fallback. The table's annotation in case-service.ts
-    // enforces that under `pnpm compile`, so this suite keeps no second copy of
-    // the vocabulary. This is the single source of truth for closure-reason
-    // display; ResolutionActionsCard and HeaderSummary source their labels here.
+    // defensive 'other' fallback. This is the single source of truth for
+    // closure-reason labels; ResolutionActionsCard and HeaderSummary source
+    // their labels here.
     it('provides both a full label and a compact shortLabel for every entry', () => {
       for (const info of Object.values(caseService.CLOSURE_DISPLAY_INFO)) {
         expect(info.label.length).toBeGreaterThan(0);
         expect(info.shortLabel.length).toBeGreaterThan(0);
       }
+    });
+
+    it('labels exactly the ClosureReason values the vendored contract publishes', () => {
+      const labelled = Object.keys(caseService.CLOSURE_DISPLAY_INFO).filter((k) => k !== 'other');
+      const published = vocabularies.ClosureReason.map(({ value }) => value);
+      expect(labelled.sort()).toEqual(published.sort());
     });
   });
 
@@ -947,10 +962,12 @@ describe('Case Service', () => {
   // an earlier version of these tests passed while CaseDetails still required a
   // map hit and dropped its Closure row for unknown reasons.
   describe('closureDisplayFor', () => {
+    // No published meaning covers an unknown reason, so its description is
+    // client copy.
+    const FALLBACK = { label: 'Other', shortLabel: 'Closed', description: 'Case closed.' };
+
     it('resolves an unknown reason to the defensive `other` entry', () => {
-      const info = caseService.closureDisplayFor('a_reason_this_build_never_heard_of');
-      expect(info).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
-      expect(info.label.length).toBeGreaterThan(0);
+      expect(caseService.closureDisplayFor('a_reason_this_build_never_heard_of')).toEqual(FALLBACK);
     });
 
     it('resolves a retired backend reason to something renderable', () => {
@@ -960,33 +977,34 @@ describe('Case Service', () => {
       expect(
         Object.hasOwn(caseService.CLOSURE_DISPLAY_INFO, 'closed_after_investigation'),
       ).toBe(false);
-      expect(caseService.closureDisplayFor('closed_after_investigation').shortLabel)
-        .toBe(caseService.CLOSURE_DISPLAY_INFO.other.shortLabel);
+      expect(caseService.closureDisplayFor('closed_after_investigation')).toEqual(FALLBACK);
     });
 
     it('resolves null and undefined rather than throwing', () => {
-      expect(caseService.closureDisplayFor(null)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
-      expect(caseService.closureDisplayFor(undefined)).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+      expect(caseService.closureDisplayFor(null)).toEqual(FALLBACK);
+      expect(caseService.closureDisplayFor(undefined)).toEqual(FALLBACK);
     });
 
     it('resolves a prototype key to the fallback, not to a function', () => {
       // An inherited key is not a label: `constructor` used to index through to
       // Object, whose `shortLabel` is undefined.
-      expect(caseService.closureDisplayFor('constructor')).toBe(caseService.CLOSURE_DISPLAY_INFO.other);
+      expect(caseService.closureDisplayFor('constructor')).toEqual(FALLBACK);
     });
 
     it('labels resolution_declined (contract 14.8.0) as a confirmed fix, not Other', () => {
       // Before 14.8.0 was adopted this reason fell back to `other`, and the
       // header read "Closed - Other" on a case whose fix was confirmed.
       const info = caseService.closureDisplayFor('resolution_declined');
-      expect(info).not.toBe(caseService.CLOSURE_DISPLAY_INFO.other);
       expect(info.label).toBe('Fix confirmed');
       expect(info.shortLabel).toBe('Fix Confirmed');
     });
 
-    it('returns the real entry for every known reason', () => {
-      for (const [key, info] of Object.entries(caseService.CLOSURE_DISPLAY_INFO)) {
-        expect(caseService.closureDisplayFor(key)).toBe(info);
+    it('pairs every published reason with its labels and its published meaning, verbatim', () => {
+      for (const { value, meaning } of vocabularies.ClosureReason) {
+        expect(caseService.closureDisplayFor(value)).toEqual({
+          ...caseService.CLOSURE_DISPLAY_INFO[value as keyof typeof caseService.CLOSURE_DISPLAY_INFO],
+          description: meaning,
+        });
       }
     });
 

@@ -71,9 +71,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Checks out this repository. The pinned contract is fetched over
-    # unauthenticated raw.githubusercontent.com; the hop report below does
-    # send GITHUB_TOKEN, for the rate limit only — `contents: read` on this
-    # repository is all it ever grants, and the files it reads are public.
+    # unauthenticated raw.githubusercontent.com, and the hop report reads only
+    # the working tree.
     permissions:
       contents: read
 
@@ -101,49 +100,72 @@ jobs:
           REPO=$(node -p "require('./api-contract.pin.json').repository")
           REF=$(node -p "require('./api-contract.pin.json').ref")
           echo "Contract: ${REPO}@${REF}"
-          curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
-            "https://raw.githubusercontent.com/${REPO}/${REF}/docs/reference/api/openapi.json" \
-            -o /tmp/openapi.json
+          # The notes go beside the spec: the generator reads them there.
+          for FILE in openapi.json contract-notes.json; do
+            curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+              "https://raw.githubusercontent.com/${REPO}/${REF}/docs/reference/api/${FILE}" \
+              -o "/tmp/${FILE}"
+          done
           # A truncated or error-page download would regenerate an empty client
           # and the diff below would "pass" by matching nothing.
           python3 -c "import json,sys; d=json.load(open('/tmp/openapi.json')); sys.exit(0 if d.get('paths') else 1)"
+          python3 -c "import json,sys; d=json.load(open('/tmp/contract-notes.json')); sys.exit(0 if d.get('entries') else 1)"
           # The pin names a contract version as well as a ref. If they
           # disagree the ref is not the commit whoever wrote this file meant,
           # and the client would be generated from a contract nobody reviewed.
           PINNED_VERSION=$(node -p "require('./api-contract.pin.json').contractVersion")
           FETCHED_VERSION=$(node -p "require('/tmp/openapi.json').info.version")
-          if [ "${PINNED_VERSION}" != "${FETCHED_VERSION}" ]; then
-            echo "::error::api-contract.pin.json says contractVersion ${PINNED_VERSION}, but the pinned ref serves ${FETCHED_VERSION}."
+          NOTES_VERSION=$(node -p "require('/tmp/contract-notes.json').contractVersion")
+          if [ "${PINNED_VERSION}" != "${FETCHED_VERSION}" ] || [ "${PINNED_VERSION}" != "${NOTES_VERSION}" ]; then
+            echo "::error::api-contract.pin.json says contractVersion ${PINNED_VERSION}, but the pinned ref serves ${FETCHED_VERSION} (contract-notes.json: ${NOTES_VERSION})."
             exit 1
           fi
 
-      # ADVISORY, and the gap it closes is real: the check above is satisfied by
-      # a hop of ANY size, because it only asserts the pinned contractVersion
-      # equals the version the pinned ref serves. A 3.5.0 -> 3.7.0 bump passes
-      # exactly as 3.5.0 -> 3.6.0 does, so a pull request described as adopting
-      # one contract can carry several — and one of those carried an
-      # authorization change that no gate and no description mentioned (#267).
+      - name: Regenerate and compare
+        env:
+          FM_OPENAPI_SPEC: /tmp/openapi.json
+        run: |
+          pnpm run generate:api-types
+          # `git status --porcelain`, not `git diff --exit-code`: the latter
+          # reports nothing for an UNTRACKED path, so a pull request that
+          # deleted a generated file would regenerate it here and pass
+          # having compared the contract against nothing.
+          GENERATED="packages/copilot-ui/types/api.generated.ts packages/copilot-ui/types/contract-notes.json packages/copilot-ui/types/contract-vocabularies.json"
+          if [ -n "$(git status --porcelain ${GENERATED})" ]; then
+            echo "::error::The generated API files no longer match the pinned API contract:"
+            git status --porcelain ${GENERATED}
+            echo ""
+            echo "Regenerate and commit them:"
+            echo "    pnpm generate:api-types"
+            echo "    git add ${GENERATED}"
+            echo ""
+            echo "If you are adopting a new contract, move \`ref\` in"
+            echo "api-contract.pin.json in the same pull request — that is the"
+            echo "commit where this client accepts the change."
+            git --no-pager diff --stat ${GENERATED}
+            exit 1
+          fi
+
+      # ADVISORY, and the gap it closes is real: the fetch step's check is
+      # satisfied by a hop of ANY size, because it only asserts the pinned
+      # contractVersion equals the version the pinned ref serves. A 3.5.0 ->
+      # 3.7.0 bump passes exactly as 3.5.0 -> 3.6.0 does, so a pull request
+      # described as adopting one contract can carry several — and one of
+      # those carried an authorization change that no gate and no description
+      # mentioned (#267).
       #
       # This prints every contract entry the bump crossed into the job summary.
       # It never fails: how many contracts a bump may cross is a judgement, and
       # a script answering it would make the agreement on the reviewer's behalf
       # — the same reason the API's own breaking-change differ is advisory.
-      # `success()`, NOT `always()`: the step above exits 1 when the pin's
-      # contractVersion disagrees with what its ref serves — the pin is
-      # known-wrong — and reporting anyway hands a reviewer a confident
-      # disclosure derived from a pin CI had just refused.
+      # It reads the vendored notes, so it runs AFTER the step above has
+      # proved them equal to the pinned ref's. `success()`, NOT `always()`: a
+      # failed step above means the pin or the vendored files are known-wrong,
+      # and reporting anyway hands a reviewer a confident disclosure derived
+      # from files CI had just refused.
       - name: Report what the pin bump crossed
         if: success()
         continue-on-error: true
-        # Raises the raw.githubusercontent rate limit off the shared runner IP,
-        # the same reason and the same token the pin-check job uses. A valid
-        # workflow token reads another PUBLIC repository's raw files fine —
-        # verified from the dashboard's own copilot-ui-pin job, which reads
-        # both FaultMaven/faultmaven-copilot and FaultMaven/faultmaven this
-        # way. Without it the disclosure degrades to "unlisted" on precisely
-        # the large hops that need it.
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -155,30 +177,7 @@ jobs:
           else
             BASE="HEAD^"
           fi
-          node scripts/report-contract-hop.mjs "${BASE}" | tee -a "$GITHUB_STEP_SUMMARY"
-
-      - name: Regenerate and compare
-        env:
-          FM_OPENAPI_SPEC: /tmp/openapi.json
-        run: |
-          pnpm run generate:api-types
-          # `git status --porcelain`, not `git diff --exit-code`: the latter
-          # reports nothing for an UNTRACKED path, so a pull request that
-          # deleted the generated client would regenerate it here and pass
-          # having compared the contract against nothing.
-          if [ -n "$(git status --porcelain packages/copilot-ui/types/api.generated.ts)" ]; then
-            echo "::error::packages/copilot-ui/types/api.generated.ts no longer matches the pinned API contract."
-            echo ""
-            echo "Regenerate and commit it:"
-            echo "    pnpm generate:api-types"
-            echo "    git add packages/copilot-ui/types/api.generated.ts"
-            echo ""
-            echo "If you are adopting a new contract, move \`ref\` in"
-            echo "api-contract.pin.json in the same pull request — that is the"
-            echo "commit where this client accepts the change."
-            git --no-pager diff --stat packages/copilot-ui/types/api.generated.ts
-            exit 1
-          fi
+          node scripts/report-contract-hop.mjs "${BASE}" packages/copilot-ui/types/contract-notes.json | tee -a "$GITHUB_STEP_SUMMARY"
 
   # ============================================================================
   # Stage 2: Run Tests

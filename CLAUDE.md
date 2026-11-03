@@ -47,7 +47,8 @@ packages/copilot-ui/      @faultmaven/copilot-ui — the panel and everything it
   shared/ui/              CopilotPanel.tsx, components/, hooks/, layouts/
   lib/                    api/ (client, services, session-core), state/ (Zustand store + slices),
                           errors/, optimistic/, session/, utils/ (logger, memory-manager, …)
-  types/                  case.ts + api.generated.ts (GENERATED — never hand-edit)
+  types/                  case.ts + api.generated.ts, contract-notes.json, contract-vocabularies.json
+                          (GENERATED — never hand-edit)
   config.ts               build-time VITE_* constants (input limits, session timeout)
 src/                      the extension host and nothing else
   entrypoints/            background.ts (service worker), auth-bridge.content.ts,
@@ -143,7 +144,8 @@ error bodies, rate-limit recovery, case status actions, optimistic ids) are in
 `packages/copilot-ui/CLAUDE.md`, which loads when you touch the package.
 
 **API types.** `packages/copilot-ui/types/api.generated.ts` is generated from the
-core commit pinned in `api-contract.pin.json`; never edit it by hand and never
+core commit pinned in `api-contract.pin.json`, with the contract's changelog and
+value meanings vendored beside it; never edit them by hand and never
 generate from a live server. Adopting a contract = moving `ref` +
 `contractVersion` and regenerating, in one PR. Preparing against an unmerged
 core PR uses `--spec`. Details: [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
