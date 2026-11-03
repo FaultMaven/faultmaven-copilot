@@ -118,8 +118,19 @@ const out = path.join(typesDir, "api.generated.ts");
 // The notes sit beside the spec: a URL resolves against the spec's URL (the
 // pinned ref's included), a path against the spec's directory.
 const isUrl = /^https?:\/\//i.test(spec);
-const notesSource = isUrl
-  ? new URL("contract-notes.json", spec).href
+// A query or fragment would be dropped from the sibling (which could then serve
+// another ref's notes), and copying it across is no safer: a signed query
+// belongs to one object.
+const specUrl = isUrl ? new URL(spec) : null;
+if (specUrl && (specUrl.search || specUrl.hash)) {
+  console.error(
+    `Cannot locate the contract notes beside a URL with a query or fragment: ${spec}\n` +
+      "Pass a path-addressed URL (e.g. https://raw.githubusercontent.com/<repo>/<ref>/docs/reference/api/openapi.json) or a local path.",
+  );
+  process.exit(1);
+}
+const notesSource = specUrl
+  ? new URL("contract-notes.json", specUrl).href
   : path.join(path.dirname(path.resolve(spec)), "contract-notes.json");
 let notesText;
 let vocabularies;
