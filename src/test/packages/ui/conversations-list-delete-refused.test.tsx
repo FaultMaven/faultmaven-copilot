@@ -139,7 +139,8 @@ describe('ConversationsList — a delete the gate refused', () => {
     { probe: 'a list stored meanwhile (one handed off, one new), then a 429', meanwhile: [MINE, NEW],
       reload: Object.assign(new Error('Too many requests'), { status: 429 }), end: [TITLE, NEW.title] },
     { probe: 'another case gone meanwhile, then a failed reload', meanwhile: [MINE], reload: new TypeError('Load failed'), end: [TITLE] },
-  ])('$probe: only the refused row is re-inserted', async ({ meanwhile, reload, end }) => {
+    { probe: 'the case itself gone meanwhile, then a failed reload', meanwhile: [OTHER], reload: new TypeError('Load failed'), end: [OTHER.title] },
+  ])('$probe: only the refused row is re-inserted, never over a newer list', async ({ meanwhile, reload, end }) => {
     let answer: (v?: unknown) => void = () => {};
     routeDelete(409, 'CASE_WORK_IN_PROGRESS', false, new Promise((resolve) => { answer = resolve; }));
     const view = await deleteMine();
@@ -149,6 +150,21 @@ describe('ConversationsList — a delete the gate refused', () => {
     answer();
     await advance(0);
     expect(listedTitles()).toEqual(end);
+  });
+
+  it.each([
+    { failure: 'rejects offline', answer: () => Promise.reject(new TypeError('Failed to fetch')), shown: 'Failed to delete case: Failed to fetch' },
+    { failure: 'answers 500', answer: () => Promise.resolve(wire(500, { detail: 'eraser failed' })), shown: 'Failed to delete case: eraser failed' },
+  ])('a delete that $failure, with a failed reload, keeps its row and says both', async ({ answer, shown }) => {
+    fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
+      (init.method === 'DELETE' ? answer() : Promise.reject(new Error(`unrouted ${url}`))));
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await deleteMine();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+    expect(screen.getByText(`${shown} ${REFRESH_FAILED}`)).toBeInTheDocument();
+    await advance(5000);
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
   });
 
   it('a DUPLICATE_REQUEST 409 after a refresh keeps today’s duplicate branch: hidden, then re-read', async () => {
@@ -173,4 +189,15 @@ describe('ConversationsList — a refresh that fails (#386)', () => {
       expect(listedTitles()).toEqual([TITLE, OTHER.title]);
       expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
     });
+
+  it.each([
+    { first: 'fails', answer: () => getUserCases.mockRejectedValueOnce(new TypeError('Failed to fetch')), empty: false },
+    { first: 'stores an empty list', answer: () => getUserCases.mockResolvedValueOnce([]), empty: true },
+  ])('when the first load $first, "No cases yet" shows only for a stored empty list', async ({ answer, empty }) => {
+    answer();
+    render(list({}));
+    await advance(0);
+    expect(screen.queryByText('No cases yet') !== null).toBe(empty);
+    expect(screen.queryByText(REFRESH_FAILED) !== null).toBe(!empty);
+  });
 });

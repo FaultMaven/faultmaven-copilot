@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UserCase, getUserCases, SIDEBAR_CASE_LIST_QUERY, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
@@ -19,8 +19,6 @@ import { isCreatedBy } from '../../../lib/cases/driver';
 const log = createLogger('ConversationsList');
 
 const COLLAPSED_GROUPS_STORAGE_KEY = 'fm-copilot:collapsedCaseGroups';
-/** The list does not show a network failure's error. */
-const isHiddenListError = (text?: string | null) => !!text?.includes('Failed to fetch');
 
 const CASE_GROUP_KEYS = ['pinned', 'active', 'completed'] as const;
 type CaseGroupKey = typeof CASE_GROUP_KEYS[number];
@@ -93,6 +91,11 @@ export function ConversationsList({
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Until the server's list is stored once, an empty list is not "no cases".
+  const [hasLoaded, setHasLoaded] = useState(false);
+  // How many server lists were stored: a failed delete's row goes back only
+  // over its own optimistic removal, never over a list stored since.
+  const listsStored = useRef(0);
   const [titleGenStatus, setTitleGenStatus] = useState<{ message: string; type: 'success' | 'info' | 'error' | '' }>({ message: "", type: "" });
 
   // Track recently deleted cases to prevent them from reappearing due to backend issues
@@ -156,6 +159,8 @@ export function ConversationsList({
       }
 
       setCases(filteredCases); // Store only real cases in state
+      listsStored.current += 1;
+      setHasLoaded(true);
 
       log.debug('Backend cases stored in state', { count: filteredCases.length });
 
@@ -257,12 +262,27 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    // The row removed optimistically, and its place: a refused delete re-inserts
-    // it (only it, never duplicated).
+    // The row removed optimistically, and its place. A failed or refused delete
+    // re-inserts it (only it, never twice) unless a server list stored since
+    // has already said whether it is listed.
     const at = cases.findIndex(c => c.case_id === caseId);
     const removed = at >= 0 ? cases[at] : undefined;
-    const reinsert = () => removed && setCases(prev =>
+    const storedBefore = listsStored.current;
+    const reinsert = () => removed && listsStored.current === storedBefore && setCases(prev =>
       (prev.some(c => c.case_id === caseId) ? prev : [...prev.slice(0, at), removed, ...prev.slice(at)]));
+    // Reloads, then shows `message`. A reload that did not store the list keeps
+    // its own error after the message; after 5 s only the message goes.
+    const reloadAndSay = async (message: string): Promise<boolean> => {
+      let listed = false;
+      try {
+        listed = await loadCases();
+      } catch (err) {
+        log.warn('Failed to refresh cases after a failed delete', { error: err });
+      }
+      setError(current => (!listed && current ? `${message} ${current}` : message));
+      setTimeout(() => setError(current => (current?.startsWith(message) ? current.slice(message.length + 1) || null : current)), 5000);
+      return listed;
+    };
     try {
       // Optimistically remove from UI immediately for better UX
       setCases(prev => prev.filter(c => c.case_id !== caseId));
@@ -326,26 +346,14 @@ export function ConversationsList({
       }
     } catch (e: unknown) {
       // The delete's own refusals (contract 14.14.0) cleared nothing, so the
-      // case still exists: re-insert its row and say why. Classified, because
-      // either error shape `deleteCase` throws carries the code. The row goes
-      // back before the reload, and again after one that did not store the
-      // server's list (a failed or rate-limited reload keeps the state).
+      // case still exists: re-insert its row before the reload, so it shows
+      // meanwhile, and say why. Classified, because either error shape
+      // `deleteCase` throws carries the code.
       const refusal = ErrorClassifier.classify(e);
       if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
         log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
         reinsert();
-        let listed = false;
-        try {
-          listed = await loadCases();
-        } catch (err) {
-          log.warn('Failed to refresh cases after a refused delete', { error: err });
-        }
-        if (!listed) reinsert();
-        // A reload that did not store the list keeps its error (unless the list
-        // hides it) after this message. After 5 s only this message goes.
-        const message = `${refusal.userMessage} ${refusal.userAction}`;
-        setError(current => (!listed && current && !isHiddenListError(current) ? `${message} ${current}` : message));
-        setTimeout(() => setError(current => (current?.startsWith(message) ? current.slice(message.length + 1) || null : current)), 5000);
+        await reloadAndSay(`${refusal.userMessage} ${refusal.userAction}`);
         return;
       }
 
@@ -380,20 +388,11 @@ export function ConversationsList({
         return; // Don't restore UI or show error
       }
 
-      // For other errors, restore the case to the UI and show error
+      // Any other failure: the reload says whether the case is still there,
+      // and one that did not store the list puts the row back.
       const errorMessage = extractErrorMessage(e);
       log.error('Case deletion failed', { caseId, error: errorMessage });
-
-      // Re-fetch to ensure UI reflects actual backend state
-      try {
-        await loadCases();
-        setError(`Failed to delete case: ${errorMessage}`);
-        setTimeout(() => setError(null), 5000);
-      } catch (err) {
-        log.warn('Failed to refresh cases after error', { error: err });
-        setError(`Failed to delete case: ${errorMessage}`);
-        setTimeout(() => setError(null), 5000);
-      }
+      if (!(await reloadAndSay(`Failed to delete case: ${errorMessage}`))) reinsert();
     }
   };
 
@@ -515,7 +514,7 @@ export function ConversationsList({
 
   return (
     <div className={`flex flex-col min-h-0 ${className}`}>
-      {error && !isHiddenListError(error) && (
+      {error && (
         <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
           <p className="text-xs text-fm-critical">{error}</p>
           <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
@@ -556,7 +555,7 @@ export function ConversationsList({
           );
         })()}
 
-        {mergedCases.length === 0 && !isHiddenListError(error) ? (
+        {mergedCases.length === 0 && hasLoaded ? (
           <div className="text-center py-8 px-4">
             <p className="text-sm text-fm-text-tertiary mb-3">No cases yet</p>
             <p className="text-xs text-fm-text-secondary">{`Click "New Case" to start your first case`}</p>
