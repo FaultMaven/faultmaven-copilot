@@ -1,10 +1,8 @@
 /**
- * A delete refused by the delete gate (contract 14.14.0, faultmaven#2096)
- * cleared nothing, so the case stays listed under the refusal's own message.
- * Drives the real `deleteCase` to the wire, so both error shapes are real:
- * `authenticatedFetch`'s enriched `Error`, and the `HttpError` built after a
- * credential refresh (401, then the refusal), which the duplicate branch used
- * to read as "already deleted" and hide.
+ * A delete refused by the delete gate (contract 14.14.0, faultmaven#2096) cleared
+ * nothing, so the case stays listed under the refusal's own message. Drives the
+ * real `deleteCase`, so both error shapes are real: the enriched `Error`, and the
+ * `HttpError` after a credential refresh, which the duplicate branch used to hide.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -29,6 +27,8 @@ const BASE = 'http://localhost:8090';
 const TITLE = 'My disk pressure';
 const MINE = { case_id: 'c-mine', title: TITLE, state: 'investigating', owner_id: 'u1', driver_id: 'u1', enterprise_id: 'e1',
   created_at: '2026-10-09T09:00:00Z', updated_at: '2026-10-09T09:00:00Z' };
+const OTHER = { ...MINE, case_id: 'c-other', title: 'Other pool exhaustion' };
+const listedTitles = () => [TITLE, OTHER.title].filter((t) => screen.queryByText(t));
 const BUSY = "This case can't be deleted while FaultMaven is still working on it. Try again in a moment.";
 const UNAVAILABLE = "This case couldn't be deleted just now. Try again in a moment.";
 
@@ -37,10 +37,7 @@ const wire = (status: number, body: unknown, headers: Record<string, string> = {
 
 /** The DELETE answers `code` as the API does; after a refresh, a 401 comes first. */
 function routeDelete(status: number, code: string, afterRefresh: boolean) {
-  const refusal = wire(status, { detail: { error: { code, message: 'Nothing was deleted; try again.' } } }, {
-    'x-error-code': code,
-    'Retry-After': '5',
-  });
+  const refusal = wire(status, { detail: { error: { code, message: 'Nothing was deleted.' } } }, { 'x-error-code': code, 'Retry-After': '5' });
   const answers = afterRefresh ? [wire(401, { detail: 'token expired' }), refusal] : [refusal];
   fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
     url === `${BASE}/api/v1/cases/c-mine` && init.method === 'DELETE'
@@ -50,18 +47,22 @@ function routeDelete(status: number, code: string, afterRefresh: boolean) {
 
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
+const list = (props: Partial<React.ComponentProps<typeof ConversationsList>>) =>
+  <ConversationsList onCaseSelect={() => {}} onNewSession={() => {}} currentUserId="u1" {...props} />;
+
 async function deleteMine(onCasesLoaded?: () => void) {
-  render(<ConversationsList onCaseSelect={() => {}} onNewSession={() => {}} currentUserId="u1" onCasesLoaded={onCasesLoaded} />);
+  const view = render(list({ onCasesLoaded }));
   await advance(0);
   fireEvent.click(screen.getByRole('button', { name: `Menu for ${TITLE}` }));
   fireEvent.click(screen.getByText('Delete'));
   await advance(0);
+  return view;
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
-  getUserCases.mockResolvedValue([MINE]);
+  getUserCases.mockResolvedValue([MINE, OTHER]);
   setApiTransport({ baseUrl: async () => BASE, accessToken: async () => 'test-token', sessionId: async () => null,
     clearSession: async () => undefined, onUnauthorized: async () => 'refreshed' as const });
 });
@@ -71,10 +72,8 @@ afterEach(() => vi.useRealTimers());
 const REFUSALS = [
   { status: 409, code: 'CASE_WORK_IN_PROGRESS', message: BUSY },
   { status: 503, code: 'CASE_DELETE_UNAVAILABLE', message: UNAVAILABLE },
-].flatMap((r) => [
-  { ...r, shape: 'the common path', afterRefresh: false },
-  { ...r, shape: 'after a credential refresh (HttpError)', afterRefresh: true },
-]);
+].flatMap((r) => [false, true].map((afterRefresh) =>
+  ({ ...r, afterRefresh, shape: afterRefresh ? 'after a credential refresh (HttpError)' : 'the common path' })));
 
 describe('ConversationsList — a delete the gate refused', () => {
   it.each(REFUSALS)('$status $code, $shape: keeps the case listed and says why', async ({ status, code, message, afterRefresh }) => {
@@ -94,9 +93,7 @@ describe('ConversationsList — a delete the gate refused', () => {
 
   // The mount's load passes; the refusal's reload gets `answer`.
   const reloadGets = (answer: Error | object[]) => () => {
-    const mount = getUserCases.mockResolvedValueOnce([MINE]);
-    if (Array.isArray(answer)) mount.mockResolvedValueOnce(answer);
-    else mount.mockRejectedValueOnce(answer);
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockImplementationOnce(async () => { if (answer instanceof Error) throw answer; return answer; });
     return undefined;
   };
   it.each([
@@ -106,23 +103,32 @@ describe('ConversationsList — a delete the gate refused', () => {
       arrange: reloadGets(Object.assign(new Error('Too many requests'), { status: 429 })) },
     { reload: 'fails (the list is emptied)', listError: 'Failed to list chats: boom', arrange: reloadGets(new Error('boom')) },
     { reload: 'fails offline (an error the list hides)', listError: null, arrange: reloadGets(new Error('Failed to fetch')) },
-    { reload: 'stores a server list without the case', listError: null, arrange: reloadGets([]), gone: true },
-  ])('when the reload $reload: the row stays unless the server list omits it, beside the list error', async ({ arrange, listError, gone }) => {
+    { reload: 'stores a server list without the case', listError: null, arrange: reloadGets([OTHER]), gone: true },
+  ])('when the reload $reload: the list is as before unless the server list omits the case', async ({ arrange, listError, gone }) => {
     routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
     await deleteMine(arrange());
-    expect(screen.queryByText(TITLE) === null).toBe(Boolean(gone));
+    expect(listedTitles()).toEqual(gone ? [OTHER.title] : [TITLE, OTHER.title]);
     expect(screen.getByText(listError ? `${BUSY} ${listError}` : BUSY)).toBeInTheDocument();
-
     // Past the refusal's 5 s: its message goes, and the list's own error stays.
     await advance(5000);
     expect(screen.queryByText(BUSY, { exact: false })).toBeNull();
     if (listError) expect(screen.getByText(listError)).toBeInTheDocument();
+    expect(listedTitles()).toEqual(gone ? [OTHER.title] : [TITLE, OTHER.title]);
+  });
+
+  it('a later list error inside the refusal’s 5 s outlives its timer', async () => {
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    const view = await deleteMine();
+    await advance(2000);
+    getUserCases.mockRejectedValueOnce(new Error('later'));
+    view.rerender(list({ refreshTrigger: 1 }));
+    await advance(3000);
+    expect(screen.getByText('Failed to list chats: later')).toBeInTheDocument();
   });
 
   it('a DUPLICATE_REQUEST 409 after a refresh keeps today’s duplicate branch: hidden, then re-read', async () => {
     routeDelete(409, 'DUPLICATE_REQUEST', true);
     await deleteMine();
-
     expect(screen.queryByText(TITLE)).toBeNull();
     expect(screen.getByText('This case was recently deleted or is already being processed. Refreshing...')).toBeInTheDocument();
     const listReads = getUserCases.mock.calls.length;

@@ -145,10 +145,10 @@ and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
-puts the removed row back in its place (again after the reload, unless that
-stored the server's list) and shows the class's message, followed by the list's
-own error when the reload did not store the list; after 5 s only the message
-goes. It reads another 409 as
+reloads the list and shows the class's message. When that reload did not store
+the server's list (it failed or was rate-limited), the list goes back as it was before the delete,
+and the list's own error follows the message; after 5 s only the message goes.
+It reads another 409 as
 a duplicate delete only when it arrives as an `HttpError` (after a credential
 refresh); on the common path any other 409 takes the generic failure branch.
 This client never calls

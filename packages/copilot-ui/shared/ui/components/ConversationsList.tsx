@@ -260,13 +260,8 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    // The row removed optimistically, and its place: a refused delete puts it back.
-    const at = cases.findIndex(c => c.case_id === caseId);
-    const removed = at >= 0 ? cases[at] : undefined;
-    const restoreRow = () => {
-      if (!removed) return;
-      setCases(prev => (prev.some(c => c.case_id === caseId) ? prev : [...prev.slice(0, at), removed, ...prev.slice(at)]));
-    };
+    // The list before the optimistic removal: a refused delete may put it back.
+    const before = cases;
     try {
       // Optimistically remove from UI immediately for better UX
       setCases(prev => prev.filter(c => c.case_id !== caseId));
@@ -330,21 +325,20 @@ export function ConversationsList({
       }
     } catch (e: unknown) {
       // The delete's own refusals (contract 14.14.0) cleared nothing, so the
-      // case still exists: put its row back and say why. Classified, because
-      // either error shape `deleteCase` throws carries the code. The row goes
-      // back now, and again unless the reload stores the server's list: a
-      // rate-limited reload keeps the state, and a failed one empties it.
+      // case still exists: say why. Classified, because either error shape
+      // `deleteCase` throws carries the code. Unless the reload stores the
+      // server's list, the list goes back as it was before the delete (a
+      // rate-limited reload keeps the state, and a failed one empties it).
       const refusal = ErrorClassifier.classify(e);
       if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
         log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
-        restoreRow();
         let listed = false;
         try {
           listed = await loadCases();
         } catch (err) {
           log.warn('Failed to refresh cases after a refused delete', { error: err });
         }
-        if (!listed) restoreRow();
+        if (!listed) setCases(before);
         // A reload that did not store the list keeps its error (unless the list
         // hides it) after this message. After 5 s only this message goes.
         const message = `${refusal.userMessage} ${refusal.userAction}`;
