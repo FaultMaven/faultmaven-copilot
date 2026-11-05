@@ -99,10 +99,12 @@ export class ErrorClassifier {
    */
   private static classifyHttpError(status: number, error: Error, context?: ErrorContext): UserFacingError {
     // Billing / quota exhaustion. Backend signals it with 402 Payment Required
-    // and an x-error-code: QUOTA_EXHAUSTED header. Check both: the error code is
-    // the authoritative signal when headers survive (direct HttpError path),
-    // while 402 covers the enriched-Error path from the API client wrapper,
-    // which drops headers but preserves status.
+    // and an x-error-code: QUOTA_EXHAUSTED header. Check both: the code is the
+    // authoritative signal, and 402 still classifies a response without it.
+    // Both error shapes carry the code: `createHttpErrorFromResponse` snapshots
+    // the signal headers onto an HttpError, and `authenticatedFetch` copies
+    // x-error-code and the version headers onto its enriched Error's `headers`
+    // (and Retry-After onto `retryAfter`).
     const errorCode = (error as HttpError).headers?.['x-error-code'];
     if (status === 402 || errorCode === 'QUOTA_EXHAUSTED') {
       return new QuotaExhaustedError(error.message, error, context);

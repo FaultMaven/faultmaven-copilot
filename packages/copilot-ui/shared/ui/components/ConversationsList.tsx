@@ -323,7 +323,11 @@ export function ConversationsList({
       const refusal = ErrorClassifier.classify(e);
       if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
         log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
-        await loadCases();
+        try {
+          await loadCases();
+        } catch (err) {
+          log.warn('Failed to refresh cases after a refused delete', { error: err });
+        }
         setError(`${refusal.userMessage} ${refusal.userAction}`);
         setTimeout(() => setError(null), 5000);
         return;
