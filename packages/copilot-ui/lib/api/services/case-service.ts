@@ -615,9 +615,19 @@ export async function createCase(
 /**
  * Delete a case by ID.
  *
+ * Three refusals clear nothing (classify with `ErrorClassifier`):
+ * - 409 `x-error-code: CASE_WORK_IN_PROGRESS` + `Retry-After` (contract
+ *   14.14.0): work on the case is still running; the case stays
+ *   (`CaseWorkInProgressError`).
+ * - 503 `CASE_DELETE_UNAVAILABLE` + `Retry-After` (14.14.0): whether work is
+ *   running could not be read; the case stays (`CaseDeleteUnavailableError`).
+ * - Any other 409 (`DUPLICATE_REQUEST`, the dedup middleware's): the case list
+ *   reads it as a duplicate delete only as an `HttpError` (after a credential
+ *   refresh); on the common path it shows as a failed delete.
+ *
  * @param caseId - The ID of the case to delete
- * @throws {HttpError} With status 409 if duplicate delete request
- * @throws {HttpError} For other HTTP errors
+ * @throws The API client's enriched `Error` (`.status`, `.headers`,
+ *   `.retryAfter`), or, after a credential refresh, an {HttpError}
  */
 export async function deleteCase(caseId: string): Promise<void> {
   const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {

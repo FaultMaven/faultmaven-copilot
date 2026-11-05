@@ -14,6 +14,7 @@ import {
   CreateCaseRequest
 } from '../../../lib/api';
 import {
+  CaseDeleteInProgressError,
   CaseTerminalError,
   CaseVersionConflictError,
   IdempotencyKeyReuseError,
@@ -48,6 +49,7 @@ import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
+import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notSentError } from '../../../lib/state/unsent-attachments';
 import type { QuerySubmitResult } from '../components/UnifiedInputBar';
@@ -235,12 +237,19 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             showError(classified);
             return;
           }
-          if (classified instanceof CaseTerminalError) {
-            // The case is resolved or closed: a status change or a file
-            // reclassification is refused, and resending it can only meet the
-            // same 409. No failed op (so no Retry in the banner); the bubble says
-            // why, and the case row is read back so the panel shows it closed.
-            log.warn('Turn refused: the case is terminal', { caseId });
+          if (classified instanceof CaseTerminalError || classified instanceof CaseDeleteInProgressError) {
+            // The case is resolved or closed (a status change or a file
+            // reclassification), or a delete of it is running: resending can
+            // only meet the same 409. No failed op (so no Retry in the banner);
+            // the bubble says why, and the case row is read back (a closed case
+            // then shows closed). A refusal that lands after a session change
+            // writes nothing, as the success path (#132).
+            if (epoch !== getEpoch()) {
+              log.info('Session changed during turn submission — discarding the refusal', { caseId });
+              return;
+            }
+            const why = classified instanceof CaseTerminalError ? 'the case is terminal' : 'the case is being deleted';
+            log.warn(`Turn refused: ${why}`, { caseId });
             pendingOpsManager.remove(aiMessageId);
             setConversations(prev => ({
               ...prev,
@@ -251,6 +260,14 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
               )
             }));
             void useAppStore.getState().refreshActiveCase(caseId);
+            if (classified instanceof CaseDeleteInProgressError) {
+              // The sidebar re-reads past its cache, and the host re-reads the
+              // case. Either read can land before the delete commits, and
+              // nothing re-reads later: the next turn on a case already gone
+              // meets #384.
+              void reloadDrivenCaseList(epoch);
+              notifyCaseChanged(onCaseChanged, caseId);
+            }
             showError(classified);
             return;
           }

@@ -1513,6 +1513,14 @@ export interface paths {
          *     Only the case's CREATOR may delete it: delete is governance (ADR-020 D2).
          *     Any other reader — the driver included — is refused with 403.
          *
+         *     While a turn on the case, or work one started (its upload links, evidence
+         *     indexing, a runbook draft), is still running, on any server, the delete
+         *     answers 409 `CASE_WORK_IN_PROGRESS` with `Retry-After` and clears nothing.
+         *     A turn sent while the delete runs is refused with 409
+         *     `CASE_DELETE_IN_PROGRESS`. If whether work is in flight cannot be read,
+         *     the delete answers 503 `CASE_DELETE_UNAVAILABLE` with `Retry-After` and
+         *     clears nothing (#2096).
+         *
          *     Returns 204 No Content on success.
          */
         delete: operations["delete_case_api_v1_cases__case_id__delete"];
@@ -2040,6 +2048,12 @@ export interface paths {
          *     A response lost after the commit (a disconnect, a timeout on the client's
          *     side) is recovered by retrying with the same key. Without a key, every
          *     request runs as a new turn.
+         *
+         *     **A case being deleted.** A turn holds the case's in-flight lease from
+         *     here to its end, so a delete of the case refuses while it runs; one that
+         *     starts while a delete runs → **409** `x-error-code:
+         *     CASE_DELETE_IN_PROGRESS`, with no `Retry-After`: nothing ran, reload the
+         *     case (#2096).
          *
          *     **Timing.** `limits.turnResponseBoundSeconds` on
          *     `GET /api/v1/meta/capabilities` is the NOMINAL bound on this route's answer
@@ -4942,7 +4956,7 @@ export interface components {
              */
             current_turn: number;
             /**
-             * @description Per-disposition eligibility, ``{resolved, closed}``, both keys always present. ‼ The two keys answer for DIFFERENT audiences: ``closed`` (``CloseEligibility``) gates a user CONTROL — render Close only on ``ready``; ``resolved`` (``ResolveEligibility``) gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution. Each value's meaning is its enum's ``x-enum-descriptions``. ``closed`` reads ``suggests_alternative`` while a resolve proposal is pending, and on a resolvable case whose resolution the user has not declined (a close would become a resolve proposal). A decline stands until a new solution or a new confirmation that the fix held is recorded; nothing else lapses it. A request for what a resolution still needs is not a proposal: it carries no confirmation chips, and Close stays.
+             * @description Per-disposition eligibility, ``{resolved, closed}``, both keys always present. ‼ The two keys answer for DIFFERENT audiences: ``closed`` (``CloseEligibility``) gates a user CONTROL — render Close only on ``ready``; ``resolved`` (``ResolveEligibility``) gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution. Each value's meaning is its enum's ``x-enum-descriptions``. ``closed`` reads ``suggests_alternative`` while a resolve proposal is pending, and on a resolvable case whose resolution the user has not declined (a close would become a resolve proposal). A decline stands until a new solution or a new confirmation that the fix held is recorded; nothing else lapses it. A request for what a resolution still needs is not a proposal: it carries no confirmation chips, and Close stays. The exception is a resolvable case on which a check the agent asked for after the fix is unanswered: ``resolved`` reads ``needs_info`` there, and ``closed`` follows the resolvable case's rule above: ``suggests_alternative`` (a close would become a resolve proposal), or ``ready`` while the user's decline of the resolution stands.
              *
              *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
              */
@@ -5016,7 +5030,7 @@ export interface components {
              */
             current_turn: number;
             /**
-             * @description Per-disposition eligibility, ``{resolved, closed}``, both keys always present. ‼ The two keys answer for DIFFERENT audiences: ``closed`` (``CloseEligibility``) gates a user CONTROL — render Close only on ``ready``; ``resolved`` (``ResolveEligibility``) gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution. Each value's meaning is its enum's ``x-enum-descriptions``. ``closed`` reads ``suggests_alternative`` while a resolve proposal is pending, and on a resolvable case whose resolution the user has not declined (a close would become a resolve proposal). A decline stands until a new solution or a new confirmation that the fix held is recorded; nothing else lapses it. A request for what a resolution still needs is not a proposal: it carries no confirmation chips, and Close stays.
+             * @description Per-disposition eligibility, ``{resolved, closed}``, both keys always present. ‼ The two keys answer for DIFFERENT audiences: ``closed`` (``CloseEligibility``) gates a user CONTROL — render Close only on ``ready``; ``resolved`` (``ResolveEligibility``) gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution. Each value's meaning is its enum's ``x-enum-descriptions``. ``closed`` reads ``suggests_alternative`` while a resolve proposal is pending, and on a resolvable case whose resolution the user has not declined (a close would become a resolve proposal). A decline stands until a new solution or a new confirmation that the fix held is recorded; nothing else lapses it. A request for what a resolution still needs is not a proposal: it carries no confirmation chips, and Close stays. The exception is a resolvable case on which a check the agent asked for after the fix is unanswered: ``resolved`` reads ``needs_info`` there, and ``closed`` follows the resolvable case's rule above: ``suggests_alternative`` (a close would become a resolve proposal), or ``ready`` while the user's decline of the resolution stands.
              *
              *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
              */
@@ -5102,7 +5116,7 @@ export interface components {
              */
             current_turn: number;
             /**
-             * @description Per-disposition eligibility, ``{resolved, closed}``, both keys always present. ‼ The two keys answer for DIFFERENT audiences: ``closed`` (``CloseEligibility``) gates a user CONTROL — render Close only on ``ready``; ``resolved`` (``ResolveEligibility``) gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution. Each value's meaning is its enum's ``x-enum-descriptions``. ``closed`` reads ``suggests_alternative`` while a resolve proposal is pending, and on a resolvable case whose resolution the user has not declined (a close would become a resolve proposal). A decline stands until a new solution or a new confirmation that the fix held is recorded; nothing else lapses it. A request for what a resolution still needs is not a proposal: it carries no confirmation chips, and Close stays.
+             * @description Per-disposition eligibility, ``{resolved, closed}``, both keys always present. ‼ The two keys answer for DIFFERENT audiences: ``closed`` (``CloseEligibility``) gates a user CONTROL — render Close only on ``ready``; ``resolved`` (``ResolveEligibility``) gates nothing in the UI — it is the engine's own readiness verdict, and what it decides is whether the agent OFFERS the resolution. Each value's meaning is its enum's ``x-enum-descriptions``. ``closed`` reads ``suggests_alternative`` while a resolve proposal is pending, and on a resolvable case whose resolution the user has not declined (a close would become a resolve proposal). A decline stands until a new solution or a new confirmation that the fix held is recorded; nothing else lapses it. A request for what a resolution still needs is not a proposal: it carries no confirmation chips, and Close stays. The exception is a resolvable case on which a check the agent asked for after the fix is unanswered: ``resolved`` reads ``needs_info`` there, and ``closed`` follows the resolvable case's rule above: ``suggests_alternative`` (a close would become a resolve proposal), or ``ready`` while the user's decline of the resolution stands.
              *
              *     Different from ``valid_next_states`` — that field is which actions the user may SELECT, this field is what the case CONTENT supports. The two no longer overlap on the resolve side: ``resolved`` here is the engine's own readiness verdict, which decides whether the agent offers the resolution handshake, not whether a control is rendered.
              */
@@ -9341,6 +9355,16 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description `CASE_WORK_IN_PROGRESS`: a turn on the case, or work one started, is still running, or another delete of it is. Nothing was cleared; retry after `Retry-After` seconds. */
+            409: {
+                headers: {
+                    /** @description Seconds until the work's current lease lapses unless renewed: the work may run longer, and a retry may be refused again. */
+                    "Retry-After"?: number;
+                    "x-error-code"?: "CASE_WORK_IN_PROGRESS";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9349,6 +9373,15 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description `CASE_DELETE_UNAVAILABLE`: whether work on the case is in flight could not be read. Nothing was cleared; retry after `Retry-After` seconds. */
+            503: {
+                headers: {
+                    "Retry-After"?: number;
+                    "x-error-code"?: "CASE_DELETE_UNAVAILABLE";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10109,13 +10142,13 @@ export interface operations {
                     "application/json": components["schemas"]["TurnResponse"];
                 };
             };
-            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds, the longest the running turn can still hold its claim — an upper bound, not when it finishes; it may finish sooner); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered). */
+            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds, the longest the running turn can still hold its claim — an upper bound, not when it finishes; it may finish sooner); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered); `CASE_DELETE_IN_PROGRESS` (a delete of the case is running; nothing of the turn ran: reload the case, which is gone once the delete succeeds). */
             409: {
                 headers: {
                     /** @description Seconds, on `TURN_IN_PROGRESS` only: the longest the running turn can still hold its claim (an upper bound, not when it finishes). */
                     "Retry-After"?: number;
                     /** @description Which conflict. */
-                    "x-error-code"?: "TURN_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE" | "IDEMPOTENCY_REPLAY_UNAVAILABLE" | "CASE_VERSION_CONFLICT" | "CASE_TERMINAL";
+                    "x-error-code"?: "TURN_IN_PROGRESS" | "IDEMPOTENCY_KEY_REUSE" | "IDEMPOTENCY_REPLAY_UNAVAILABLE" | "CASE_VERSION_CONFLICT" | "CASE_TERMINAL" | "CASE_DELETE_IN_PROGRESS";
                     [name: string]: unknown;
                 };
                 content?: never;

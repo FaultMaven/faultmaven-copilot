@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UserCase, getUserCases, SIDEBAR_CASE_LIST_QUERY, deleteCase as deleteCaseApi, generateCaseTitle } from '../../../lib/api';
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
-import { describeWait } from '../../../lib/errors/types';
+import { describeWait, CaseWorkInProgressError, CaseDeleteUnavailableError } from '../../../lib/errors/types';
+import { ErrorClassifier } from '../../../lib/errors/classifier';
 import {
   sanitizeBackendCases,
   validateStateIntegrity,
@@ -90,6 +91,11 @@ export function ConversationsList({
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Until the server's list is stored once, an empty list is not "no cases".
+  const [hasLoaded, setHasLoaded] = useState(false);
+  // How many server lists were stored: a failed delete's row goes back only
+  // over its own optimistic removal, never over a list stored since.
+  const listsStored = useRef(0);
   const [titleGenStatus, setTitleGenStatus] = useState<{ message: string; type: 'success' | 'info' | 'error' | '' }>({ message: "", type: "" });
 
   // Track recently deleted cases to prevent them from reappearing due to backend issues
@@ -123,7 +129,8 @@ export function ConversationsList({
     }
   }, [titleGenStatus.message]);
 
-  const loadCases = async () => {
+  /** True when the server's list was stored; false when the load failed or was rate-limited. */
+  const loadCases = async (): Promise<boolean> => {
     try {
       setLoading(true);
       setError(null);
@@ -152,13 +159,15 @@ export function ConversationsList({
       }
 
       setCases(filteredCases); // Store only real cases in state
+      listsStored.current += 1;
+      setHasLoaded(true);
 
       log.debug('Backend cases stored in state', { count: filteredCases.length });
 
       // ARCHITECTURAL FIX: Notify parent with ONLY real backend cases (no optimistic contamination)
       onCasesLoaded?.(sanitizedRealCases);
+      return true;
     } catch (err: any) {
-      const full = err instanceof Error ? err.message : String(err);
       log.error('Failed to load cases', err);
 
       // Special handling for rate limit errors - don't spam retries
@@ -172,12 +181,11 @@ export function ConversationsList({
         // Don't clear cases on rate limit - keep showing existing data
         // onCasesLoaded?.([]) - DON'T notify parent, keep existing state
       } else {
-        setError(`Failed to list chats: ${full}`);
-        setCases([]);
-
-        // Still notify parent even on error (with empty array)
-        onCasesLoaded?.([]);
+        // Any other failure keeps the list too, whatever the browser's text
+        // (#386): the cases are still there, only this refresh failed.
+        setError("Couldn't refresh the list.");
       }
+      return false;
     } finally {
       setLoading(false);
     }
@@ -254,6 +262,27 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
+    // The row removed optimistically, and its place. A failed or refused delete
+    // re-inserts it (only it, never twice) unless a server list stored since
+    // has already said whether it is listed.
+    const at = cases.findIndex(c => c.case_id === caseId);
+    const removed = at >= 0 ? cases[at] : undefined;
+    const storedBefore = listsStored.current;
+    const reinsert = () => removed && listsStored.current === storedBefore && setCases(prev =>
+      (prev.some(c => c.case_id === caseId) ? prev : [...prev.slice(0, at), removed, ...prev.slice(at)]));
+    // Reloads, then shows `message`. A reload that did not store the list keeps
+    // its own error after the message; after 5 s only the message goes.
+    const reloadAndSay = async (message: string): Promise<boolean> => {
+      let listed = false;
+      try {
+        listed = await loadCases();
+      } catch (err) {
+        log.warn('Failed to refresh cases after a failed delete', { error: err });
+      }
+      setError(current => (!listed && current ? `${message} ${current}` : message));
+      setTimeout(() => setError(current => (current?.startsWith(message) ? current.slice(message.length + 1) || null : current)), 5000);
+      return listed;
+    };
     try {
       // Optimistically remove from UI immediately for better UX
       setCases(prev => prev.filter(c => c.case_id !== caseId));
@@ -316,7 +345,22 @@ export function ConversationsList({
         log.warn('Failed to refresh cases after delete', { error: err });
       }
     } catch (e: unknown) {
-      // Check if this is a 409 Conflict (duplicate request) using structured error
+      // The delete's own refusals (contract 14.14.0) cleared nothing, so the
+      // case still exists: re-insert its row before the reload, so it shows
+      // meanwhile, and say why. Classified, because either error shape
+      // `deleteCase` throws carries the code.
+      const refusal = ErrorClassifier.classify(e);
+      if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
+        log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
+        reinsert();
+        await reloadAndSay(`${refusal.userMessage} ${refusal.userAction}`);
+        return;
+      }
+
+      // A 409 that arrives as an HttpError (the shape after a credential
+      // refresh) is read as a duplicate delete request (the dedup
+      // middleware's). On the common path, any other 409 takes the generic
+      // branch below.
       if (e instanceof HttpError && e.is(409)) {
         log.warn('Delete request was a duplicate, case may already be deleted', { caseId });
 
@@ -344,20 +388,11 @@ export function ConversationsList({
         return; // Don't restore UI or show error
       }
 
-      // For other errors, restore the case to the UI and show error
+      // Any other failure: the reload says whether the case is still there,
+      // and one that did not store the list puts the row back.
       const errorMessage = extractErrorMessage(e);
       log.error('Case deletion failed', { caseId, error: errorMessage });
-
-      // Re-fetch to ensure UI reflects actual backend state
-      try {
-        await loadCases();
-        setError(`Failed to delete case: ${errorMessage}`);
-        setTimeout(() => setError(null), 5000);
-      } catch (err) {
-        log.warn('Failed to refresh cases after error', { error: err });
-        setError(`Failed to delete case: ${errorMessage}`);
-        setTimeout(() => setError(null), 5000);
-      }
+      if (!(await reloadAndSay(`Failed to delete case: ${errorMessage}`))) reinsert();
     }
   };
 
@@ -479,7 +514,7 @@ export function ConversationsList({
 
   return (
     <div className={`flex flex-col min-h-0 ${className}`}>
-      {error && !error.includes('Failed to fetch') && (
+      {error && (
         <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
           <p className="text-xs text-fm-critical">{error}</p>
           <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
@@ -520,7 +555,7 @@ export function ConversationsList({
           );
         })()}
 
-        {mergedCases.length === 0 && !error?.includes('Failed to fetch') ? (
+        {mergedCases.length === 0 && hasLoaded ? (
           <div className="text-center py-8 px-4">
             <p className="text-sm text-fm-text-tertiary mb-3">No cases yet</p>
             <p className="text-xs text-fm-text-secondary">{`Click "New Case" to start your first case`}</p>

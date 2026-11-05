@@ -700,6 +700,66 @@ export class CaseTerminalError extends UserFacingError {
 }
 
 /**
+ * 409 `x-error-code: CASE_WORK_IN_PROGRESS` on `DELETE /cases/{id}` (contract
+ * 14.14.0): work on the case is still running, so the delete cleared nothing.
+ * A delete after `Retry-After` (carried in ms) may be refused again, so the
+ * copy quotes no wait. Never auto-retried.
+ */
+export class CaseWorkInProgressError extends UserFacingError {
+  readonly userTitle = 'Case Not Deleted';
+  readonly userMessage = "This case can't be deleted while FaultMaven is still working on it.";
+  readonly userAction = 'Try again in a moment.';
+  readonly category: ErrorCategory = 'validation';
+  readonly recovery: RecoveryStrategy = 'manual_retry';
+  readonly retryAfterMs?: number;
+
+  constructor(message: string, retryAfterMs?: number, originalError?: Error, context?: ErrorContext) {
+    super(message, originalError, context);
+    if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs)) this.retryAfterMs = retryAfterMs;
+  }
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return { displayType: 'toast', duration: 8000, dismissible: true, icon: 'warning' };
+  }
+}
+
+/**
+ * 503 `x-error-code: CASE_DELETE_UNAVAILABLE` on `DELETE /cases/{id}` (contract
+ * 14.14.0): whether work on the case is running could not be read, so the
+ * delete cleared nothing. Never auto-retried.
+ */
+export class CaseDeleteUnavailableError extends UserFacingError {
+  readonly userTitle = 'Case Not Deleted';
+  readonly userMessage = "This case couldn't be deleted just now.";
+  readonly userAction = 'Try again in a moment.';
+  readonly category: ErrorCategory = 'server';
+  readonly recovery: RecoveryStrategy = 'manual_retry';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return { displayType: 'toast', duration: 8000, dismissible: true, icon: 'warning' };
+  }
+}
+
+/**
+ * 409 `x-error-code: CASE_DELETE_IN_PROGRESS` on the turn route (contract
+ * 14.14.0): a delete of the case is running and nothing of the turn ran. As
+ * `CaseTerminalError`, no retry and no Retry; the caller reads the case back.
+ */
+export class CaseDeleteInProgressError extends UserFacingError {
+  readonly userTitle = 'Case Is Being Deleted';
+  readonly userMessage = "This case is being deleted, so your message wasn't added.";
+  readonly userAction = 'The case is being reloaded.';
+  /** What a refused turn's bubble says. */
+  readonly bubbleText = "This case is being deleted, so your message wasn't added.";
+  readonly category: ErrorCategory = 'validation';
+  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return { displayType: 'toast', duration: 10000, dismissible: true, icon: 'info' };
+  }
+}
+
+/**
  * Quota / credits exhausted (HTTP 402, x-error-code: QUOTA_EXHAUSTED).
  *
  * The FaultMaven AI provider account is out of quota or credits — a permanent,

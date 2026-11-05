@@ -1,0 +1,203 @@
+/**
+ * A delete refused by the delete gate (contract 14.14.0, faultmaven#2096) cleared
+ * nothing, so the case stays listed under the refusal's own message. Drives the
+ * real `deleteCase`, so both error shapes are real: the enriched `Error`, and the
+ * `HttpError` after a credential refresh, which the duplicate branch used to hide.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import React from 'react';
+import ConversationsList from '@faultmaven/copilot-ui/shared/ui/components/ConversationsList';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+
+const { getUserCases } = vi.hoisted(() => ({ getUserCases: vi.fn() }));
+vi.mock('@faultmaven/copilot-ui/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@faultmaven/copilot-ui/lib/api')>()),
+  getUserCases,
+}));
+vi.mock('@faultmaven/copilot-ui/lib/utils/logger', () => ({
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}));
+const fetchWithTimeout = vi.fn();
+vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
+  fetchWithTimeout: (...args: unknown[]) => fetchWithTimeout(...args),
+}));
+
+const BASE = 'http://localhost:8090';
+const TITLE = 'My disk pressure';
+const MINE = { case_id: 'c-mine', title: TITLE, state: 'investigating', owner_id: 'u1', driver_id: 'u1', enterprise_id: 'e1',
+  created_at: '2026-10-09T09:00:00Z', updated_at: '2026-10-09T09:00:00Z' };
+const OTHER = { ...MINE, case_id: 'c-other', title: 'Other pool exhaustion' };
+const NEW = { ...MINE, case_id: 'c-new', title: 'New cert expiry' };
+const listedTitles = () => [TITLE, OTHER.title, NEW.title].filter((t) => screen.queryByText(t));
+const REFRESH_FAILED = "Couldn't refresh the list.";
+const BUSY = "This case can't be deleted while FaultMaven is still working on it. Try again in a moment.";
+const UNAVAILABLE = "This case couldn't be deleted just now. Try again in a moment.";
+
+const wire = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+  ({ ok: status < 300, status, statusText: '', headers: new Headers(headers), json: async () => body });
+
+/** The DELETE answers `code` as the API does, once `gate` settles; after a refresh, a 401 comes first. */
+function routeDelete(status: number, code: string, afterRefresh: boolean, gate: Promise<unknown> = Promise.resolve()) {
+  const refusal = wire(status, { detail: { error: { code, message: 'Nothing was deleted.' } } }, { 'x-error-code': code, 'Retry-After': '5' });
+  const answers = afterRefresh ? [wire(401, { detail: 'token expired' }), refusal] : [refusal];
+  fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
+    url === `${BASE}/api/v1/cases/c-mine` && init.method === 'DELETE'
+      ? gate.then(() => answers.shift())
+      : Promise.reject(new Error(`unrouted ${url}`)));
+}
+
+const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+const list = (props: Partial<React.ComponentProps<typeof ConversationsList>>) =>
+  <ConversationsList onCaseSelect={() => {}} onNewSession={() => {}} currentUserId="u1" {...props} />;
+
+async function deleteMine(onCasesLoaded?: () => void) {
+  const view = render(list({ onCasesLoaded }));
+  await advance(0);
+  fireEvent.click(screen.getByRole('button', { name: `Menu for ${TITLE}` }));
+  fireEvent.click(screen.getByText('Delete'));
+  await advance(0);
+  return view;
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.clearAllMocks();
+  getUserCases.mockResolvedValue([MINE, OTHER]);
+  setApiTransport({ baseUrl: async () => BASE, accessToken: async () => 'test-token', sessionId: async () => null,
+    clearSession: async () => undefined, onUnauthorized: async () => 'refreshed' as const });
+});
+
+afterEach(() => vi.useRealTimers());
+
+const REFUSALS = [
+  { status: 409, code: 'CASE_WORK_IN_PROGRESS', message: BUSY },
+  { status: 503, code: 'CASE_DELETE_UNAVAILABLE', message: UNAVAILABLE },
+].flatMap((r) => [false, true].map((afterRefresh) =>
+  ({ ...r, afterRefresh, shape: afterRefresh ? 'after a credential refresh (HttpError)' : 'the common path' })));
+
+describe('ConversationsList — a delete the gate refused', () => {
+  it.each(REFUSALS)('$status $code, $shape: keeps the case listed and says why', async ({ status, code, message, afterRefresh }) => {
+    routeDelete(status, code, afterRefresh);
+    await deleteMine();
+
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(afterRefresh ? 2 : 1);
+    expect(screen.getByText(TITLE)).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByText(/recently deleted|Failed to delete case/)).toBeNull();
+
+    // Past the duplicate branch's 3 s and the message's 5 s: never hidden.
+    await advance(5000);
+    expect(screen.getByText(TITLE)).toBeInTheDocument();
+    expect(screen.queryByText(message)).toBeNull();
+  });
+
+  // The mount's load passes; the refusal's reload gets `answer`.
+  const reloadGets = (answer: Error | object[]) => () => {
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockImplementationOnce(async () => { if (answer instanceof Error) throw answer; return answer; });
+    return undefined;
+  };
+  it.each([
+    { reload: 'meets a host callback that throws', listError: REFRESH_FAILED,
+      arrange: () => vi.fn().mockReturnValueOnce(undefined).mockImplementation(() => { throw new Error('host'); }) },
+    { reload: 'is rate-limited', listError: 'Rate limit reached. Please wait a minute before refreshing.',
+      arrange: reloadGets(Object.assign(new Error('Too many requests'), { status: 429 })) },
+    { reload: 'fails offline', listError: REFRESH_FAILED, arrange: reloadGets(new TypeError('Failed to fetch')) },
+    { reload: 'stores a server list without the case', listError: null, arrange: reloadGets([OTHER]), gone: true },
+  ])('when the reload $reload: the list is kept unless the server list omits the case', async ({ arrange, listError, gone }) => {
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    await deleteMine(arrange());
+    expect(listedTitles()).toEqual(gone ? [OTHER.title] : [TITLE, OTHER.title]);
+    expect(screen.getByText(listError ? `${BUSY} ${listError}` : BUSY)).toBeInTheDocument();
+    // Past the refusal's 5 s: its message goes, and the list's own error stays.
+    await advance(5000);
+    expect(screen.queryByText(BUSY, { exact: false })).toBeNull();
+    if (listError) expect(screen.getByText(listError)).toBeInTheDocument();
+    expect(listedTitles()).toEqual(gone ? [OTHER.title] : [TITLE, OTHER.title]);
+  });
+
+  it('a later list error inside the refusal’s 5 s outlives its timer', async () => {
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    const view = await deleteMine();
+    await advance(2000);
+    getUserCases.mockRejectedValueOnce(new Error('later'));
+    view.rerender(list({ refreshTrigger: 1 }));
+    await advance(3000);
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+  });
+
+  it('the refused row is listed while the refusal’s reload is pending', async () => {
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockReturnValueOnce(new Promise(() => {}));
+    await deleteMine();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+  });
+
+  // While the DELETE is out, a refresh stores `meanwhile`; then the refusal's reload meets `reload`.
+  it.each([
+    { probe: 'a list stored meanwhile (one handed off, one new), then a 429', meanwhile: [MINE, NEW],
+      reload: Object.assign(new Error('Too many requests'), { status: 429 }), end: [TITLE, NEW.title] },
+    { probe: 'another case gone meanwhile, then a failed reload', meanwhile: [MINE], reload: new TypeError('Load failed'), end: [TITLE] },
+    { probe: 'the case itself gone meanwhile, then a failed reload', meanwhile: [OTHER], reload: new TypeError('Load failed'), end: [OTHER.title] },
+  ])('$probe: only the refused row is re-inserted, never over a newer list', async ({ meanwhile, reload, end }) => {
+    let answer: (v?: unknown) => void = () => {};
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false, new Promise((resolve) => { answer = resolve; }));
+    const view = await deleteMine();
+    getUserCases.mockResolvedValueOnce(meanwhile).mockRejectedValueOnce(reload);
+    view.rerender(list({ refreshTrigger: 1 }));
+    await advance(0);
+    answer();
+    await advance(0);
+    expect(listedTitles()).toEqual(end);
+  });
+
+  it.each([
+    { failure: 'rejects offline', answer: () => Promise.reject(new TypeError('Failed to fetch')), shown: 'Failed to delete case: Failed to fetch' },
+    { failure: 'answers 500', answer: () => Promise.resolve(wire(500, { detail: 'eraser failed' })), shown: 'Failed to delete case: eraser failed' },
+  ])('a delete that $failure, with a failed reload, keeps its row and says both', async ({ answer, shown }) => {
+    fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
+      (init.method === 'DELETE' ? answer() : Promise.reject(new Error(`unrouted ${url}`))));
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await deleteMine();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+    expect(screen.getByText(`${shown} ${REFRESH_FAILED}`)).toBeInTheDocument();
+    await advance(5000);
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+  });
+
+  it('a DUPLICATE_REQUEST 409 after a refresh keeps today’s duplicate branch: hidden, then re-read', async () => {
+    routeDelete(409, 'DUPLICATE_REQUEST', true);
+    await deleteMine();
+    expect(screen.queryByText(TITLE)).toBeNull();
+    expect(screen.getByText('This case was recently deleted or is already being processed. Refreshing...')).toBeInTheDocument();
+    const listReads = getUserCases.mock.calls.length;
+    await advance(3000);
+    expect(getUserCases).toHaveBeenCalledTimes(listReads + 1);
+  });
+});
+
+describe('ConversationsList — a refresh that fails (#386)', () => {
+  it.each(['Failed to fetch', 'NetworkError when attempting to fetch resource.', 'Load failed'])(
+    '"%s" keeps the list and says it could not refresh', async (text) => {
+      const view = render(list({}));
+      await advance(0);
+      getUserCases.mockRejectedValueOnce(new TypeError(text));
+      view.rerender(list({ refreshTrigger: 1 }));
+      await advance(0);
+      expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+      expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    });
+
+  it.each([
+    { first: 'fails', answer: () => getUserCases.mockRejectedValueOnce(new TypeError('Failed to fetch')), empty: false },
+    { first: 'stores an empty list', answer: () => getUserCases.mockResolvedValueOnce([]), empty: true },
+  ])('when the first load $first, "No cases yet" shows only for a stored empty list', async ({ answer, empty }) => {
+    answer();
+    render(list({}));
+    await advance(0);
+    expect(screen.queryByText('No cases yet') !== null).toBe(empty);
+    expect(screen.queryByText(REFRESH_FAILED) !== null).toBe(!empty);
+  });
+});

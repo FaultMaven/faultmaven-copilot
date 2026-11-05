@@ -16,6 +16,9 @@ import {
   IdempotencyKeyReuseError,
   TurnReplayUnavailableError,
   CaseTerminalError,
+  CaseWorkInProgressError,
+  CaseDeleteUnavailableError,
+  CaseDeleteInProgressError,
   QuotaExhaustedError,
   OptimisticUpdateError,
   UnknownError,
@@ -96,10 +99,12 @@ export class ErrorClassifier {
    */
   private static classifyHttpError(status: number, error: Error, context?: ErrorContext): UserFacingError {
     // Billing / quota exhaustion. Backend signals it with 402 Payment Required
-    // and an x-error-code: QUOTA_EXHAUSTED header. Check both: the error code is
-    // the authoritative signal when headers survive (direct HttpError path),
-    // while 402 covers the enriched-Error path from the API client wrapper,
-    // which drops headers but preserves status.
+    // and an x-error-code: QUOTA_EXHAUSTED header. Check both: the code is the
+    // authoritative signal, and 402 still classifies a response without it.
+    // Both error shapes carry the code: `createHttpErrorFromResponse` snapshots
+    // the signal headers onto an HttpError, and `authenticatedFetch` copies
+    // x-error-code and the version headers onto its enriched Error's `headers`
+    // (and Retry-After onto `retryAfter`).
     const errorCode = (error as HttpError).headers?.['x-error-code'];
     if (status === 402 || errorCode === 'QUOTA_EXHAUSTED') {
       return new QuotaExhaustedError(error.message, error, context);
@@ -142,6 +147,20 @@ export class ErrorClassifier {
         // conflict a retry or a reload can clear.
         if (errorCode === 'CASE_TERMINAL') {
           return new CaseTerminalError(error.message, error, context);
+        }
+        // Contract 14.14.0: a case delete refused while work on the case runs,
+        // and a turn refused while a delete of its case runs. Neither ran.
+        if (errorCode === 'CASE_WORK_IN_PROGRESS') {
+          const seconds = this.retryAfterSeconds(error);
+          return new CaseWorkInProgressError(
+            error.message,
+            seconds === undefined ? undefined : seconds * 1000,
+            error,
+            context
+          );
+        }
+        if (errorCode === 'CASE_DELETE_IN_PROGRESS') {
+          return new CaseDeleteInProgressError(error.message, error, context);
         }
 
         // Case version conflict (`CASE_VERSION_CONFLICT`, and an unlabelled
@@ -194,9 +213,16 @@ export class ErrorClassifier {
       case 408: // Request Timeout
         return new TimeoutError(error.message, 30000, error, context);
 
+      case 503:
+        // Contract 14.14.0: a case delete that could not read whether work on
+        // the case is running, so it cleared nothing.
+        if (errorCode === 'CASE_DELETE_UNAVAILABLE') {
+          return new CaseDeleteUnavailableError(error.message, error, context);
+        }
+        return new ServerError(error.message, status, error, context);
+
       case 500:
       case 502:
-      case 503:
         return new ServerError(error.message, status, error, context);
 
       case 404:

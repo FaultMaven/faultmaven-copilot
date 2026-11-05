@@ -107,8 +107,10 @@ throwing it for a kept session with no credential now: nothing sent, one host
 read per attempt, which renews once in the Dashboard and runs a 3-POST refresh
 ladder in the extension, so 3 or 9 per action) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
+`CaseWorkInProgressError`, `CaseDeleteUnavailableError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
-`QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·
+`QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError`,
+`CaseDeleteInProgressError` graceful_degradation ·
 `IdempotencyKeyReuseError` manual_retry (under a fresh key) ·
 `SessionSwitchedError` none (category `notice`; the host's stored session is
 another user's, so the request was not sent and nothing ends; never
@@ -132,8 +134,24 @@ call `refreshActiveCase` so the panel shows the case closed; the title rename
 (`titleChangeDeps`, `lib/state/case-title-deps.ts`) rolls back, shows it, reads
 the case back and refetches the list. Only `CaseTerminalError` is passed through
 there: every other rename failure keeps its old toast. A text-only question on a
-closed case is still answered, so it never meets this); `CASE_VERSION_CONFLICT`
-and an unlabelled 409 → `CaseVersionConflictError`. This client never calls
+closed case is still answered, so it never meets this); `CASE_DELETE_IN_PROGRESS`,
+the turn route's → `CaseDeleteInProgressError` (contract 14.14.0: a delete of the
+case is running and nothing ran; both turn hooks handle it as `CaseTerminalError`,
+and also re-read the sidebar through `reloadDrivenCaseList` and tell the host
+through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either read can land
+before the delete commits, and nothing re-reads later. For either code, both hooks
+write nothing once the session has changed, as the success path); `CASE_VERSION_CONFLICT`
+and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
+refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
+`CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
+`CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
+re-inserts only the refused row, in its place, before the reload, and shows the
+class's message. The list's own error follows the message when the reload did
+not store the list; after 5 s only the message goes.
+It reads another 409 as
+a duplicate delete only when it arrives as an `HttpError` (after a credential
+refresh); on the common path any other 409 takes the generic failure branch.
+This client never calls
 `POST /cases/{id}/close`: closing is a `status_transition` turn.
 `authenticatedFetch` carries `retryAfter` (seconds) on every non-OK, and
 `resilientOperation` waits out any error implementing `ServerDirectedWait`
@@ -443,14 +461,23 @@ close, reports); delete is the creator's.
 - **Rows**: every row came from `access=write` (or its slot), so the user
   drives it: no "Shared" mark, rename and title generation always offered;
   delete only where `isCreatedBy(row, viewer)`.
+- **A failed refresh keeps the list** (#386): `loadCases` never empties it. A
+  429 says when to refresh again; any other failure says "Couldn't refresh the
+  list.", whatever the browser's network text. Every list error is shown (no
+  text is hidden), and "No cases yet" waits until a list has been stored once.
+- **A failed or refused delete keeps its row**: the row comes back in its place
+  (a refusal before its reload; any other failure after a reload that did not
+  store the list), but never over a server list stored since the delete began.
+  The failure's message shows, followed by the list's error when the reload
+  failed; after 5 s the message goes and the list's error, if any, stays.
 - **Read-only open case** (`lib/cases/driver.ts`): the extension host's
   `useActiveCaseDrivenByOther` (`src/extension/useActiveCaseDriver.ts`)
   passes `readOnly={isDrivenByOther(activeCase, currentUser.id)}`; unknown (a
   placeholder, a locally minted case) is writable.
 - **A case the user stops driving leaves the sidebar** through one sequence,
   `reloadDrivenCaseList` (`lib/state/case-list-reload.ts`): drop the slot,
-  THEN reload the list, epoch-guarded. Two callers:
-  - the extension host, when the open case turns driven-by-other for a case
+  THEN reload the list, epoch-guarded. Its callers:
+  - the extension host (`src/extension/useActiveCaseDriver.ts`), when the open case turns driven-by-other for a case
     id — this covers a case reassigned while not open (clicked from its cached
     row) and one reassigned during a turn (the 409 refresh). Fires once per
     flip; the reload changes neither the open case nor its driver;
@@ -458,7 +485,13 @@ close, reports); delete is the creator's.
     case back and, if another account drives it, marks it denied — needed
     when the user opened another case before the read landed. A fresh row
     naming the viewer as driver retires the denial (handed back), under both
-    the optimistic and the real id.
+    the optimistic and the real id;
+  - a committed turn the transition effect does not already re-read the list
+    for, and a turn that committed without a reply (`lib/state/turn-case-state.ts`);
+  - a lazy case-create's completion (`lib/state/lazy-case.ts`), so the new case
+    is listed even when the user opened another meanwhile;
+  - both turn hooks, on a turn refused while a delete of its case runs
+    (`CASE_DELETE_IN_PROGRESS`).
   Never from `refreshActiveCase`, which also runs in the Dashboard. The
   Dashboard host passes its own `initialCase.readOnly` and never mounts the
   sidebar.
