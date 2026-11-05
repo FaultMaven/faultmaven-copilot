@@ -28,20 +28,22 @@ const TITLE = 'My disk pressure';
 const MINE = { case_id: 'c-mine', title: TITLE, state: 'investigating', owner_id: 'u1', driver_id: 'u1', enterprise_id: 'e1',
   created_at: '2026-10-09T09:00:00Z', updated_at: '2026-10-09T09:00:00Z' };
 const OTHER = { ...MINE, case_id: 'c-other', title: 'Other pool exhaustion' };
-const listedTitles = () => [TITLE, OTHER.title].filter((t) => screen.queryByText(t));
+const NEW = { ...MINE, case_id: 'c-new', title: 'New cert expiry' };
+const listedTitles = () => [TITLE, OTHER.title, NEW.title].filter((t) => screen.queryByText(t));
+const REFRESH_FAILED = "Couldn't refresh the list.";
 const BUSY = "This case can't be deleted while FaultMaven is still working on it. Try again in a moment.";
 const UNAVAILABLE = "This case couldn't be deleted just now. Try again in a moment.";
 
 const wire = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   ({ ok: status < 300, status, statusText: '', headers: new Headers(headers), json: async () => body });
 
-/** The DELETE answers `code` as the API does; after a refresh, a 401 comes first. */
-function routeDelete(status: number, code: string, afterRefresh: boolean) {
+/** The DELETE answers `code` as the API does, once `gate` settles; after a refresh, a 401 comes first. */
+function routeDelete(status: number, code: string, afterRefresh: boolean, gate: Promise<unknown> = Promise.resolve()) {
   const refusal = wire(status, { detail: { error: { code, message: 'Nothing was deleted.' } } }, { 'x-error-code': code, 'Retry-After': '5' });
   const answers = afterRefresh ? [wire(401, { detail: 'token expired' }), refusal] : [refusal];
   fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
     url === `${BASE}/api/v1/cases/c-mine` && init.method === 'DELETE'
-      ? Promise.resolve(answers.shift())
+      ? gate.then(() => answers.shift())
       : Promise.reject(new Error(`unrouted ${url}`)));
 }
 
@@ -97,14 +99,13 @@ describe('ConversationsList — a delete the gate refused', () => {
     return undefined;
   };
   it.each([
-    { reload: 'rejects (a host callback throws)', listError: 'Failed to list chats: host',
+    { reload: 'meets a host callback that throws', listError: REFRESH_FAILED,
       arrange: () => vi.fn().mockReturnValueOnce(undefined).mockImplementation(() => { throw new Error('host'); }) },
-    { reload: 'is rate-limited (the state is kept)', listError: 'Rate limit reached. Please wait a minute before refreshing.',
+    { reload: 'is rate-limited', listError: 'Rate limit reached. Please wait a minute before refreshing.',
       arrange: reloadGets(Object.assign(new Error('Too many requests'), { status: 429 })) },
-    { reload: 'fails (the list is emptied)', listError: 'Failed to list chats: boom', arrange: reloadGets(new Error('boom')) },
-    { reload: 'fails offline (an error the list hides)', listError: null, arrange: reloadGets(new Error('Failed to fetch')) },
+    { reload: 'fails offline', listError: REFRESH_FAILED, arrange: reloadGets(new TypeError('Failed to fetch')) },
     { reload: 'stores a server list without the case', listError: null, arrange: reloadGets([OTHER]), gone: true },
-  ])('when the reload $reload: the list is as before unless the server list omits the case', async ({ arrange, listError, gone }) => {
+  ])('when the reload $reload: the list is kept unless the server list omits the case', async ({ arrange, listError, gone }) => {
     routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
     await deleteMine(arrange());
     expect(listedTitles()).toEqual(gone ? [OTHER.title] : [TITLE, OTHER.title]);
@@ -123,7 +124,31 @@ describe('ConversationsList — a delete the gate refused', () => {
     getUserCases.mockRejectedValueOnce(new Error('later'));
     view.rerender(list({ refreshTrigger: 1 }));
     await advance(3000);
-    expect(screen.getByText('Failed to list chats: later')).toBeInTheDocument();
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+  });
+
+  it('the refused row is listed while the refusal’s reload is pending', async () => {
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockReturnValueOnce(new Promise(() => {}));
+    await deleteMine();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+  });
+
+  // While the DELETE is out, a refresh stores `meanwhile`; then the refusal's reload meets `reload`.
+  it.each([
+    { probe: 'a list stored meanwhile (one handed off, one new), then a 429', meanwhile: [MINE, NEW],
+      reload: Object.assign(new Error('Too many requests'), { status: 429 }), end: [TITLE, NEW.title] },
+    { probe: 'another case gone meanwhile, then a failed reload', meanwhile: [MINE], reload: new TypeError('Load failed'), end: [TITLE] },
+  ])('$probe: only the refused row is re-inserted', async ({ meanwhile, reload, end }) => {
+    let answer: (v?: unknown) => void = () => {};
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false, new Promise((resolve) => { answer = resolve; }));
+    const view = await deleteMine();
+    getUserCases.mockResolvedValueOnce(meanwhile).mockRejectedValueOnce(reload);
+    view.rerender(list({ refreshTrigger: 1 }));
+    await advance(0);
+    answer();
+    await advance(0);
+    expect(listedTitles()).toEqual(end);
   });
 
   it('a DUPLICATE_REQUEST 409 after a refresh keeps today’s duplicate branch: hidden, then re-read', async () => {
@@ -135,4 +160,17 @@ describe('ConversationsList — a delete the gate refused', () => {
     await advance(3000);
     expect(getUserCases).toHaveBeenCalledTimes(listReads + 1);
   });
+});
+
+describe('ConversationsList — a refresh that fails (#386)', () => {
+  it.each(['Failed to fetch', 'NetworkError when attempting to fetch resource.', 'Load failed'])(
+    '"%s" keeps the list and says it could not refresh', async (text) => {
+      const view = render(list({}));
+      await advance(0);
+      getUserCases.mockRejectedValueOnce(new TypeError(text));
+      view.rerender(list({ refreshTrigger: 1 }));
+      await advance(0);
+      expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+      expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    });
 });

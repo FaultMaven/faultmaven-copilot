@@ -163,7 +163,6 @@ export function ConversationsList({
       onCasesLoaded?.(sanitizedRealCases);
       return true;
     } catch (err: any) {
-      const full = err instanceof Error ? err.message : String(err);
       log.error('Failed to load cases', err);
 
       // Special handling for rate limit errors - don't spam retries
@@ -177,11 +176,9 @@ export function ConversationsList({
         // Don't clear cases on rate limit - keep showing existing data
         // onCasesLoaded?.([]) - DON'T notify parent, keep existing state
       } else {
-        setError(`Failed to list chats: ${full}`);
-        setCases([]);
-
-        // Still notify parent even on error (with empty array)
-        onCasesLoaded?.([]);
+        // Any other failure keeps the list too, whatever the browser's text
+        // (#386): the cases are still there, only this refresh failed.
+        setError("Couldn't refresh the list.");
       }
       return false;
     } finally {
@@ -260,8 +257,12 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    // The list before the optimistic removal: a refused delete may put it back.
-    const before = cases;
+    // The row removed optimistically, and its place: a refused delete re-inserts
+    // it (only it, never duplicated).
+    const at = cases.findIndex(c => c.case_id === caseId);
+    const removed = at >= 0 ? cases[at] : undefined;
+    const reinsert = () => removed && setCases(prev =>
+      (prev.some(c => c.case_id === caseId) ? prev : [...prev.slice(0, at), removed, ...prev.slice(at)]));
     try {
       // Optimistically remove from UI immediately for better UX
       setCases(prev => prev.filter(c => c.case_id !== caseId));
@@ -325,20 +326,21 @@ export function ConversationsList({
       }
     } catch (e: unknown) {
       // The delete's own refusals (contract 14.14.0) cleared nothing, so the
-      // case still exists: say why. Classified, because either error shape
-      // `deleteCase` throws carries the code. Unless the reload stores the
-      // server's list, the list goes back as it was before the delete (a
-      // rate-limited reload keeps the state, and a failed one empties it).
+      // case still exists: re-insert its row and say why. Classified, because
+      // either error shape `deleteCase` throws carries the code. The row goes
+      // back before the reload, and again after one that did not store the
+      // server's list (a failed or rate-limited reload keeps the state).
       const refusal = ErrorClassifier.classify(e);
       if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
         log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
+        reinsert();
         let listed = false;
         try {
           listed = await loadCases();
         } catch (err) {
           log.warn('Failed to refresh cases after a refused delete', { error: err });
         }
-        if (!listed) setCases(before);
+        if (!listed) reinsert();
         // A reload that did not store the list keeps its error (unless the list
         // hides it) after this message. After 5 s only this message goes.
         const message = `${refusal.userMessage} ${refusal.userAction}`;

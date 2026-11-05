@@ -145,9 +145,10 @@ and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
-reloads the list and shows the class's message. When that reload did not store
-the server's list (it failed or was rate-limited), the list goes back as it was before the delete,
-and the list's own error follows the message; after 5 s only the message goes.
+re-inserts only the refused row, in its place (before the reload, and again after
+one that did not store the server's list), and shows the class's message. The
+list's own error follows the message when the reload did not store the list;
+after 5 s only the message goes.
 It reads another 409 as
 a duplicate delete only when it arrives as an `HttpError` (after a credential
 refresh); on the common path any other 409 takes the generic failure branch.
@@ -461,6 +462,9 @@ close, reports); delete is the creator's.
 - **Rows**: every row came from `access=write` (or its slot), so the user
   drives it: no "Shared" mark, rename and title generation always offered;
   delete only where `isCreatedBy(row, viewer)`.
+- **A failed refresh keeps the list** (#386): `loadCases` never empties it. A
+  429 says when to refresh again; any other failure says "Couldn't refresh the
+  list.", whatever the browser's network text.
 - **Read-only open case** (`lib/cases/driver.ts`): the extension host's
   `useActiveCaseDrivenByOther` (`src/extension/useActiveCaseDriver.ts`)
   passes `readOnly={isDrivenByOther(activeCase, currentUser.id)}`; unknown (a
