@@ -51,6 +51,7 @@ import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-ite
 import { useError } from '../../../lib/errors';
 import { applyWriteRefused } from '../../../lib/state/write-refused';
 import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
+import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
 import { notifyCaseChanged } from './case-changed';
 
@@ -188,12 +189,17 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         return { success: true, message: '', sent: true };
       }
       if (classified instanceof CaseTerminalError || classified instanceof CaseDeleteInProgressError) {
-        // The case is resolved or closed, or being deleted: it takes no new
-        // data, and resending the same files can only meet the same 409. No
-        // failed op (so no Retry in the banner); the bubble says why and names
-        // what was not added, and the case row is read back so the panel shows
-        // it closed (which also turns the attachment controls off), and for a
-        // delete the list too.
+        // The case is resolved or closed, or a delete of it is running: it
+        // takes no new data, and resending the same files can only meet the
+        // same 409. No failed op (so no Retry in the banner); the bubble says
+        // why and names what was not added, and the case row is read back (a
+        // closed case then shows closed, which also turns the attachment
+        // controls off). A refusal that lands after a session change writes
+        // nothing, as the success path (#132).
+        if (epoch !== getEpoch()) {
+          log.info('Session changed during turn submission — discarding the refusal', { caseId: targetCaseId });
+          return { success: false, message: '', sent: true };
+        }
         const why = classified instanceof CaseTerminalError ? 'the case is terminal' : 'the case is being deleted';
         log.warn(`Turn refused: ${why}`, { caseId: targetCaseId });
         // A received refusal: nothing was added, definitely.
@@ -209,7 +215,11 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           )
         }));
         void useAppStore.getState().refreshActiveCase(targetCaseId);
-        if (classified instanceof CaseDeleteInProgressError && epoch === getEpoch()) {
+        if (classified instanceof CaseDeleteInProgressError) {
+          // The sidebar re-reads past its cache, and the host re-reads the
+          // case. Either read can land before the delete commits, and nothing
+          // re-reads later: the next turn on a case already gone meets #384.
+          void reloadDrivenCaseList(epoch);
           notifyCaseChanged(onCaseChanged, targetCaseId);
         }
         showError(classified);

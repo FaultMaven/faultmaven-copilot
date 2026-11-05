@@ -137,13 +137,19 @@ there: every other rename failure keeps its old toast. A text-only question on a
 closed case is still answered, so it never meets this); `CASE_DELETE_IN_PROGRESS`,
 the turn route's → `CaseDeleteInProgressError` (contract 14.14.0: a delete of the
 case is running and nothing ran; both turn hooks handle it as `CaseTerminalError`,
-and also re-read the list through `notifyCaseChanged`); `CASE_VERSION_CONFLICT`
+and also re-read the sidebar through `reloadDrivenCaseList` and tell the host
+through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either read can land
+before the delete commits, and nothing re-reads later. For either code, both hooks
+write nothing once the session has changed, as the success path); `CASE_VERSION_CONFLICT`
 and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
-puts the case back and shows the class's message, and reads only another 409
-as a duplicate delete. This client never calls
+puts the removed row back in its place (again after the reload, unless that
+stored the server's list) and shows the class's message. It reads another 409 as
+a duplicate delete only when it arrives as an `HttpError` (after a credential
+refresh); on the common path any other 409 takes the generic failure branch.
+This client never calls
 `POST /cases/{id}/close`: closing is a `status_transition` turn.
 `authenticatedFetch` carries `retryAfter` (seconds) on every non-OK, and
 `resilientOperation` waits out any error implementing `ServerDirectedWait`

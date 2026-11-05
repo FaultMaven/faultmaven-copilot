@@ -19,7 +19,9 @@
  * not already re-read the list for (`turn-case-state.ts`, #321, #333): a bare
  * reload is served the cached page, which predates what the turn changed; and
  * a lazy case-create's completion, so the new case is listed even when the user
- * opened another one meanwhile (#334). It is
+ * opened another one meanwhile (#334); and a turn refused because a delete of
+ * its case is running (`CASE_DELETE_IN_PROGRESS`, both turn hooks), whose
+ * re-read can land before the delete commits. It is
  * NOT called from `refreshActiveCase`, which also runs in the Dashboard, a host
  * with no sidebar.
  */

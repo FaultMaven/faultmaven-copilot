@@ -124,7 +124,8 @@ export function ConversationsList({
     }
   }, [titleGenStatus.message]);
 
-  const loadCases = async () => {
+  /** True when the server's list was stored; false when the load failed or was rate-limited. */
+  const loadCases = async (): Promise<boolean> => {
     try {
       setLoading(true);
       setError(null);
@@ -158,6 +159,7 @@ export function ConversationsList({
 
       // ARCHITECTURAL FIX: Notify parent with ONLY real backend cases (no optimistic contamination)
       onCasesLoaded?.(sanitizedRealCases);
+      return true;
     } catch (err: any) {
       const full = err instanceof Error ? err.message : String(err);
       log.error('Failed to load cases', err);
@@ -179,6 +181,7 @@ export function ConversationsList({
         // Still notify parent even on error (with empty array)
         onCasesLoaded?.([]);
       }
+      return false;
     } finally {
       setLoading(false);
     }
@@ -255,6 +258,14 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
+    // The row removed optimistically, and where it was: a refused delete puts
+    // it back there, unless a reload already listed it.
+    const at = cases.findIndex(c => c.case_id === caseId);
+    const removed = at >= 0 ? cases[at] : undefined;
+    const restoreRow = () => {
+      if (!removed) return;
+      setCases(prev => (prev.some(c => c.case_id === caseId) ? prev : [...prev.slice(0, at), removed, ...prev.slice(at)]));
+    };
     try {
       // Optimistically remove from UI immediately for better UX
       setCases(prev => prev.filter(c => c.case_id !== caseId));
@@ -318,22 +329,32 @@ export function ConversationsList({
       }
     } catch (e: unknown) {
       // The delete's own refusals (contract 14.14.0) cleared nothing, so the
-      // case still exists: put it back and say why. Classified, because either
-      // error shape `deleteCase` throws carries the code.
+      // case still exists: put its row back and say why. Classified, because
+      // either error shape `deleteCase` throws carries the code. The row goes
+      // back now, and again unless the reload stores the server's list: a
+      // rate-limited reload keeps the state, and a failed one empties it.
       const refusal = ErrorClassifier.classify(e);
       if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
         log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
+        restoreRow();
+        let listed = false;
         try {
-          await loadCases();
+          listed = await loadCases();
         } catch (err) {
           log.warn('Failed to refresh cases after a refused delete', { error: err });
         }
-        setError(`${refusal.userMessage} ${refusal.userAction}`);
-        setTimeout(() => setError(null), 5000);
+        if (!listed) restoreRow();
+        const message = `${refusal.userMessage} ${refusal.userAction}`;
+        setError(message);
+        // Clears only its own message: a later error keeps its full time.
+        setTimeout(() => setError(current => (current === message ? null : current)), 5000);
         return;
       }
 
-      // Any other 409 is read as a duplicate delete request (the dedup middleware's).
+      // A 409 that arrives as an HttpError (the shape after a credential
+      // refresh) is read as a duplicate delete request (the dedup
+      // middleware's). On the common path, any other 409 takes the generic
+      // branch below.
       if (e instanceof HttpError && e.is(409)) {
         log.warn('Delete request was a duplicate, case may already be deleted', { caseId });
 

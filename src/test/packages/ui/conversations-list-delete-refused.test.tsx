@@ -92,10 +92,19 @@ describe('ConversationsList — a delete the gate refused', () => {
     expect(screen.queryByText(message)).toBeNull();
   });
 
-  it('still says why when the reload itself rejects', async () => {
+  // The mount's load passes; the refusal's reload does not store the server's list.
+  const failReload = (error: Error) => () => {
+    getUserCases.mockResolvedValueOnce([MINE]).mockRejectedValueOnce(error);
+    return undefined;
+  };
+  it.each([
+    ['rejects (a host callback throws)', () => vi.fn().mockReturnValueOnce(undefined).mockImplementation(() => { throw new Error('host'); })],
+    ['is rate-limited (the state is kept)', failReload(Object.assign(new Error('Too many requests'), { status: 429 }))],
+    ['fails (the list is emptied)', failReload(new Error('boom'))],
+  ] as const)('keeps the row and says why when the reload %s', async (_label, arrange) => {
     routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
-    // The mount's load passes; the refusal's reload rejects (a throwing host callback).
-    await deleteMine(vi.fn().mockReturnValueOnce(undefined).mockImplementation(() => { throw new Error('host failed'); }));
+    await deleteMine(arrange());
+    expect(screen.getByText(TITLE)).toBeInTheDocument();
     expect(screen.getByText(BUSY)).toBeInTheDocument();
   });
 

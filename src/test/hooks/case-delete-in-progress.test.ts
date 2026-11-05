@@ -2,7 +2,8 @@
  * A turn refused because a delete of its case is running (409
  * `x-error-code: CASE_DELETE_IN_PROGRESS`, contract 14.14.0, faultmaven#2096):
  * nothing of the turn ran, so neither turn path offers a Retry. The bubble says
- * why, and the case and the list are read back. Drives the real chain down to
+ * why, the case is read back, and the sidebar re-reads past its cache. A refusal
+ * landing after a session change writes nothing. Drives the real chain down to
  * `authenticatedFetch` and stubs only the wire.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -14,6 +15,8 @@ import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
 import { CaseDeleteInProgressError } from '@faultmaven/copilot-ui/lib/errors/types';
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
+import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
+import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { createStubHost, hostWrapper } from '../support/host';
 
 const mockShowError = vi.fn();
@@ -42,6 +45,7 @@ const sent = (method: string, url: string) =>
   (fetchWithTimeout.mock.calls as [string, RequestInit][]).filter(([u, init]) => u === url && (init.method ?? 'GET') === method);
 
 let stub: ReturnType<typeof createStubHost>;
+let signOutMidTurn = false;
 const wrapper = () => ({ wrapper: hostWrapper(stub.host) });
 
 /** Each path renders its hook, then returns the submit to run inside `act`. */
@@ -71,6 +75,7 @@ describe('409 CASE_DELETE_IN_PROGRESS on a turn (contract 14.14.0)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    signOutMidTurn = false;
     pendingOpsManager.clear();
     stub = createStubHost();
     setHostStore(stub.store);
@@ -79,6 +84,7 @@ describe('409 CASE_DELETE_IN_PROGRESS on a turn (contract 14.14.0)', () => {
     fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) => {
       const method = init.method ?? 'GET';
       if (url === `${CASE_URL}/turns` && method === 'POST') {
+        if (signOutMidTurn) bumpEpoch();
         return Promise.resolve(wire(409, { detail: 'This case is being deleted.' }, { 'x-error-code': 'CASE_DELETE_IN_PROGRESS' }));
       }
       if (url === CASE_URL && method === 'GET') return Promise.resolve(wire(200, ROW));
@@ -89,26 +95,53 @@ describe('409 CASE_DELETE_IN_PROGRESS on a turn (contract 14.14.0)', () => {
       activeCase: { ...ROW, closure_reason: null, closed_at: null, message_count: 2 } });
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Submits on the path, long past the keyed-turn deadline (nothing re-sends it). */
+  async function refuse(render: (typeof PATHS)[number]['render'], onCaseChanged = vi.fn()) {
+    const invalidate = vi.spyOn(caseCacheManager, 'invalidateCache');
+    const reloads = useAppStore.getState().refreshSessions;
+    const submit = render(onCaseChanged);
+    let result: unknown;
+    await act(async () => { result = await submit(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(700_000); });
+    return { result, invalidate, reloads: () => useAppStore.getState().refreshSessions - reloads };
+  }
+  const assistant = () => (useAppStore.getState().conversations[CASE] ?? []).find((r) => !r.question);
 
   it.each(PATHS)('$path path: sent once, no failed op and no Retry, the bubble says why, case and list read back',
     async ({ render, bubble, outcome }) => {
       const onCaseChanged = vi.fn();
-      const submit = render(onCaseChanged);
-      let result: unknown;
-      await act(async () => { result = await submit(); });
-      // Long past the keyed-turn deadline: nothing re-sends it.
-      await act(async () => { await vi.advanceTimersByTimeAsync(700_000); });
+      const { result, invalidate, reloads } = await refuse(render, onCaseChanged);
 
       if (outcome) expect(result).toMatchObject(outcome);
       expect(sent('POST', `${CASE_URL}/turns`)).toHaveLength(1);
       // The failed-operation banner is the only Retry a turn has.
       expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
       expect(sent('GET', CASE_URL)).toHaveLength(1);
+      // The sidebar's re-read (`reloadDrivenCaseList`): the slot dropped, the list reloaded.
+      expect(invalidate).toHaveBeenCalledTimes(1);
+      expect(reloads()).toBe(1);
       expect(onCaseChanged).toHaveBeenCalledWith(CASE);
       expect(mockShowError).toHaveBeenCalledTimes(1);
       expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(CaseDeleteInProgressError);
-      const assistant = (useAppStore.getState().conversations[CASE] ?? []).find((r) => !r.question);
-      expect(assistant).toMatchObject({ response: bubble, error: true, failed: false, loading: false, optimistic: false });
+      expect(assistant()).toMatchObject({ response: bubble, error: true, failed: false, loading: false, optimistic: false });
     });
+
+  it.each(PATHS)('$path path: a refusal landing after a session change writes nothing (#132)', async ({ render }) => {
+    signOutMidTurn = true;
+    const { invalidate, reloads } = await refuse(render);
+
+    expect(sent('POST', `${CASE_URL}/turns`)).toHaveLength(1);
+    expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
+    expect(pendingOpsManager.getByStatus('pending')).toHaveLength(1);
+    expect(assistant()).toMatchObject({ loading: true });
+    expect(sent('GET', CASE_URL)).toHaveLength(0);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(reloads()).toBe(0);
+    expect(mockShowError).not.toHaveBeenCalled();
+  });
 });
