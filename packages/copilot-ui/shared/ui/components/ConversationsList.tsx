@@ -19,6 +19,8 @@ import { isCreatedBy } from '../../../lib/cases/driver';
 const log = createLogger('ConversationsList');
 
 const COLLAPSED_GROUPS_STORAGE_KEY = 'fm-copilot:collapsedCaseGroups';
+/** The list does not show a network failure's error. */
+const isHiddenListError = (text?: string | null) => !!text?.includes('Failed to fetch');
 
 const CASE_GROUP_KEYS = ['pinned', 'active', 'completed'] as const;
 type CaseGroupKey = typeof CASE_GROUP_KEYS[number];
@@ -258,8 +260,7 @@ export function ConversationsList({
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    // The row removed optimistically, and where it was: a refused delete puts
-    // it back there, unless a reload already listed it.
+    // The row removed optimistically, and its place: a refused delete puts it back.
     const at = cases.findIndex(c => c.case_id === caseId);
     const removed = at >= 0 ? cases[at] : undefined;
     const restoreRow = () => {
@@ -344,10 +345,11 @@ export function ConversationsList({
           log.warn('Failed to refresh cases after a refused delete', { error: err });
         }
         if (!listed) restoreRow();
+        // A reload that did not store the list keeps its error (unless the list
+        // hides it) after this message. After 5 s only this message goes.
         const message = `${refusal.userMessage} ${refusal.userAction}`;
-        setError(message);
-        // Clears only its own message: a later error keeps its full time.
-        setTimeout(() => setError(current => (current === message ? null : current)), 5000);
+        setError(current => (!listed && current && !isHiddenListError(current) ? `${message} ${current}` : message));
+        setTimeout(() => setError(current => (current?.startsWith(message) ? current.slice(message.length + 1) || null : current)), 5000);
         return;
       }
 
@@ -517,7 +519,7 @@ export function ConversationsList({
 
   return (
     <div className={`flex flex-col min-h-0 ${className}`}>
-      {error && !error.includes('Failed to fetch') && (
+      {error && !isHiddenListError(error) && (
         <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
           <p className="text-xs text-fm-critical">{error}</p>
           <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
@@ -558,7 +560,7 @@ export function ConversationsList({
           );
         })()}
 
-        {mergedCases.length === 0 && !error?.includes('Failed to fetch') ? (
+        {mergedCases.length === 0 && !isHiddenListError(error) ? (
           <div className="text-center py-8 px-4">
             <p className="text-sm text-fm-text-tertiary mb-3">No cases yet</p>
             <p className="text-xs text-fm-text-secondary">{`Click "New Case" to start your first case`}</p>

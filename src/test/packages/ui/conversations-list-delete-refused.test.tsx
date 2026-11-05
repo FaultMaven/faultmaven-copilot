@@ -92,20 +92,31 @@ describe('ConversationsList — a delete the gate refused', () => {
     expect(screen.queryByText(message)).toBeNull();
   });
 
-  // The mount's load passes; the refusal's reload does not store the server's list.
-  const failReload = (error: Error) => () => {
-    getUserCases.mockResolvedValueOnce([MINE]).mockRejectedValueOnce(error);
+  // The mount's load passes; the refusal's reload gets `answer`.
+  const reloadGets = (answer: Error | object[]) => () => {
+    const mount = getUserCases.mockResolvedValueOnce([MINE]);
+    if (Array.isArray(answer)) mount.mockResolvedValueOnce(answer);
+    else mount.mockRejectedValueOnce(answer);
     return undefined;
   };
   it.each([
-    ['rejects (a host callback throws)', () => vi.fn().mockReturnValueOnce(undefined).mockImplementation(() => { throw new Error('host'); })],
-    ['is rate-limited (the state is kept)', failReload(Object.assign(new Error('Too many requests'), { status: 429 }))],
-    ['fails (the list is emptied)', failReload(new Error('boom'))],
-  ] as const)('keeps the row and says why when the reload %s', async (_label, arrange) => {
+    { reload: 'rejects (a host callback throws)', listError: 'Failed to list chats: host',
+      arrange: () => vi.fn().mockReturnValueOnce(undefined).mockImplementation(() => { throw new Error('host'); }) },
+    { reload: 'is rate-limited (the state is kept)', listError: 'Rate limit reached. Please wait a minute before refreshing.',
+      arrange: reloadGets(Object.assign(new Error('Too many requests'), { status: 429 })) },
+    { reload: 'fails (the list is emptied)', listError: 'Failed to list chats: boom', arrange: reloadGets(new Error('boom')) },
+    { reload: 'fails offline (an error the list hides)', listError: null, arrange: reloadGets(new Error('Failed to fetch')) },
+    { reload: 'stores a server list without the case', listError: null, arrange: reloadGets([]), gone: true },
+  ])('when the reload $reload: the row stays unless the server list omits it, beside the list error', async ({ arrange, listError, gone }) => {
     routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
     await deleteMine(arrange());
-    expect(screen.getByText(TITLE)).toBeInTheDocument();
-    expect(screen.getByText(BUSY)).toBeInTheDocument();
+    expect(screen.queryByText(TITLE) === null).toBe(Boolean(gone));
+    expect(screen.getByText(listError ? `${BUSY} ${listError}` : BUSY)).toBeInTheDocument();
+
+    // Past the refusal's 5 s: its message goes, and the list's own error stays.
+    await advance(5000);
+    expect(screen.queryByText(BUSY, { exact: false })).toBeNull();
+    if (listError) expect(screen.getByText(listError)).toBeInTheDocument();
   });
 
   it('a DUPLICATE_REQUEST 409 after a refresh keeps today’s duplicate branch: hidden, then re-read', async () => {
