@@ -14,6 +14,7 @@ import {
   CreateCaseRequest
 } from '../../../lib/api';
 import {
+  CaseDeleteInProgressError,
   CaseTerminalError,
   CaseVersionConflictError,
   IdempotencyKeyReuseError,
@@ -251,6 +252,25 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
               )
             }));
             void useAppStore.getState().refreshActiveCase(caseId);
+            showError(classified);
+            return;
+          }
+          if (classified instanceof CaseDeleteInProgressError) {
+            // A delete of the case is running and nothing of the turn ran: as a
+            // terminal case, no failed op and no Retry. The case and the list
+            // are read back; neither has it once the delete succeeds.
+            log.warn('Turn refused: the case is being deleted', { caseId });
+            pendingOpsManager.remove(aiMessageId);
+            setConversations(prev => ({
+              ...prev,
+              [caseId]: (prev[caseId] || []).map(item =>
+                item.id === aiMessageId
+                  ? { ...item, response: classified.bubbleText, optimistic: false, loading: false, error: true, failed: false }
+                  : item
+              )
+            }));
+            void useAppStore.getState().refreshActiveCase(caseId);
+            if (epoch === getEpoch()) notifyCaseChanged(onCaseChanged, caseId);
             showError(classified);
             return;
           }

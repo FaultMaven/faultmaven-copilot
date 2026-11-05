@@ -16,6 +16,9 @@ import {
   IdempotencyKeyReuseError,
   TurnReplayUnavailableError,
   CaseTerminalError,
+  CaseWorkInProgressError,
+  CaseDeleteUnavailableError,
+  CaseDeleteInProgressError,
   QuotaExhaustedError,
   OptimisticUpdateError,
   UnknownError,
@@ -143,6 +146,20 @@ export class ErrorClassifier {
         if (errorCode === 'CASE_TERMINAL') {
           return new CaseTerminalError(error.message, error, context);
         }
+        // Contract 14.14.0: a case delete refused while work on the case runs,
+        // and a turn refused while a delete of its case runs. Neither ran.
+        if (errorCode === 'CASE_WORK_IN_PROGRESS') {
+          const seconds = this.retryAfterSeconds(error);
+          return new CaseWorkInProgressError(
+            error.message,
+            seconds === undefined ? undefined : seconds * 1000,
+            error,
+            context
+          );
+        }
+        if (errorCode === 'CASE_DELETE_IN_PROGRESS') {
+          return new CaseDeleteInProgressError(error.message, error, context);
+        }
 
         // Case version conflict (`CASE_VERSION_CONFLICT`, and an unlabelled
         // 409 such as the close route's `concurrent_update`) — backend OCC
@@ -194,9 +211,16 @@ export class ErrorClassifier {
       case 408: // Request Timeout
         return new TimeoutError(error.message, 30000, error, context);
 
+      case 503:
+        // Contract 14.14.0: a case delete that could not read whether work on
+        // the case is running, so it cleared nothing.
+        if (errorCode === 'CASE_DELETE_UNAVAILABLE') {
+          return new CaseDeleteUnavailableError(error.message, error, context);
+        }
+        return new ServerError(error.message, status, error, context);
+
       case 500:
       case 502:
-      case 503:
         return new ServerError(error.message, status, error, context);
 
       case 404:

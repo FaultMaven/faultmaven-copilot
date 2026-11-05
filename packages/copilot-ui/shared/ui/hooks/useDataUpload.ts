@@ -40,6 +40,7 @@ import {
   IdempotencyKeyReuseError,
   TurnReplayUnavailableError,
   CaseTerminalError,
+  CaseDeleteInProgressError,
   PermissionError,
 } from '../../../lib/errors/types';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
@@ -186,13 +187,15 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         showError(classified);
         return { success: true, message: '', sent: true };
       }
-      if (classified instanceof CaseTerminalError) {
-        // The case is resolved or closed: it takes no new data, and resending
-        // the same files can only meet the same 409. No failed op (so no Retry
-        // in the banner); the bubble says why and names what was not added, and
-        // the case row is read back so the panel shows it closed (which also
-        // turns the attachment controls off).
-        log.warn('Turn refused: the case is terminal', { caseId: targetCaseId });
+      if (classified instanceof CaseTerminalError || classified instanceof CaseDeleteInProgressError) {
+        // The case is resolved or closed, or being deleted: it takes no new
+        // data, and resending the same files can only meet the same 409. No
+        // failed op (so no Retry in the banner); the bubble says why and names
+        // what was not added, and the case row is read back so the panel shows
+        // it closed (which also turns the attachment controls off), and for a
+        // delete the list too.
+        const why = classified instanceof CaseTerminalError ? 'the case is terminal' : 'the case is being deleted';
+        log.warn(`Turn refused: ${why}`, { caseId: targetCaseId });
         // A received refusal: nothing was added, definitely.
         const notAdded = unsentAttachmentsNotice({ ...unsent, ambiguous: false }, { noRetry: true });
         const chatError = notAdded ? `${classified.bubbleText}\n\n${notAdded}` : classified.bubbleText;
@@ -206,6 +209,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           )
         }));
         void useAppStore.getState().refreshActiveCase(targetCaseId);
+        if (classified instanceof CaseDeleteInProgressError && epoch === getEpoch()) {
+          notifyCaseChanged(onCaseChanged, targetCaseId);
+        }
         showError(classified);
         return { success: false, message: classified.userMessage, sent: true, refused: true };
       }

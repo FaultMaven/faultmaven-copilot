@@ -107,8 +107,10 @@ throwing it for a kept session with no credential now: nothing sent, one host
 read per attempt, which renews once in the Dashboard and runs a 3-POST refresh
 ladder in the extension, so 3 or 9 per action) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
+`CaseWorkInProgressError`, `CaseDeleteUnavailableError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
-`QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError` graceful_degradation ·
+`QuotaExhaustedError`, `TurnReplayUnavailableError`, `CaseTerminalError`,
+`CaseDeleteInProgressError` graceful_degradation ·
 `IdempotencyKeyReuseError` manual_retry (under a fresh key) ·
 `SessionSwitchedError` none (category `notice`; the host's stored session is
 another user's, so the request was not sent and nothing ends; never
@@ -132,8 +134,16 @@ call `refreshActiveCase` so the panel shows the case closed; the title rename
 (`titleChangeDeps`, `lib/state/case-title-deps.ts`) rolls back, shows it, reads
 the case back and refetches the list. Only `CaseTerminalError` is passed through
 there: every other rename failure keeps its old toast. A text-only question on a
-closed case is still answered, so it never meets this); `CASE_VERSION_CONFLICT`
-and an unlabelled 409 → `CaseVersionConflictError`. This client never calls
+closed case is still answered, so it never meets this); `CASE_DELETE_IN_PROGRESS`,
+the turn route's → `CaseDeleteInProgressError` (contract 14.14.0: a delete of the
+case is running and nothing ran; both turn hooks handle it as `CaseTerminalError`,
+and also re-read the list through `notifyCaseChanged`); `CASE_VERSION_CONFLICT`
+and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
+refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
+`CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
+`CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
+puts the case back and shows the class's message, and reads only another 409
+as a duplicate delete. This client never calls
 `POST /cases/{id}/close`: closing is a `status_transition` turn.
 `authenticatedFetch` carries `retryAfter` (seconds) on every non-OK, and
 `resilientOperation` waits out any error implementing `ServerDirectedWait`

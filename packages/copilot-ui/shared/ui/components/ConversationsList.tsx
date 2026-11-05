@@ -3,7 +3,8 @@ import { UserCase, getUserCases, SIDEBAR_CASE_LIST_QUERY, deleteCase as deleteCa
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
-import { describeWait } from '../../../lib/errors/types';
+import { describeWait, CaseWorkInProgressError, CaseDeleteUnavailableError } from '../../../lib/errors/types';
+import { ErrorClassifier } from '../../../lib/errors/classifier';
 import {
   sanitizeBackendCases,
   validateStateIntegrity,
@@ -316,7 +317,19 @@ export function ConversationsList({
         log.warn('Failed to refresh cases after delete', { error: err });
       }
     } catch (e: unknown) {
-      // Check if this is a 409 Conflict (duplicate request) using structured error
+      // The delete's own refusals (contract 14.14.0) cleared nothing, so the
+      // case still exists: put it back and say why. Classified, because either
+      // error shape `deleteCase` throws carries the code.
+      const refusal = ErrorClassifier.classify(e);
+      if (refusal instanceof CaseWorkInProgressError || refusal instanceof CaseDeleteUnavailableError) {
+        log.warn('Case deletion refused; the case is kept', { caseId, refusal: refusal.name });
+        await loadCases();
+        setError(`${refusal.userMessage} ${refusal.userAction}`);
+        setTimeout(() => setError(null), 5000);
+        return;
+      }
+
+      // Any other 409 is read as a duplicate delete request (the dedup middleware's).
       if (e instanceof HttpError && e.is(409)) {
         log.warn('Delete request was a duplicate, case may already be deleted', { caseId });
 
