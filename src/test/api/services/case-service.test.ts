@@ -999,6 +999,16 @@ describe('Case Service', () => {
       expect(info.shortLabel).toBe('Fix Confirmed');
     });
 
+    it('labels mitigation_sufficient "Mitigation applied" / "Mitigated"', () => {
+      // FaultMaven/faultmaven#2100, owner ruling 2026-11-07: the reason covers
+      // a mitigation observed relieving the symptom as well as one the user
+      // declared stable, and only the declaration says "stabilized". The
+      // labels read "Stabilized by mitigation" / "Stabilized".
+      const info = caseService.closureDisplayFor('mitigation_sufficient');
+      expect(info.label).toBe('Mitigation applied');
+      expect(info.shortLabel).toBe('Mitigated');
+    });
+
     it('pairs every published reason with its labels and its published meaning, verbatim', () => {
       for (const { value, meaning } of vocabularies.ClosureReason) {
         expect(caseService.closureDisplayFor(value)).toEqual({
