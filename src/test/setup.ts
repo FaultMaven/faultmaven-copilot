@@ -42,21 +42,23 @@ global.fetch = vi.fn();
 // Mock chrome API (for backward compatibility)
 (global as any).chrome = (global as any).browser;
 
-// Mock window.location
-Object.defineProperty(window, 'location', {
-  value: {
-    href: 'https://example.com',
-  },
-  writable: true,
-});
+// Mock window.location and navigator. Not under `// @vitest-environment node`,
+// which has no window (playground-bind.test.ts starts a real Vite server).
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'location', {
+    value: {
+      href: 'https://example.com',
+    },
+    writable: true,
+  });
 
-// Mock navigator
-Object.defineProperty(window, 'navigator', {
-  value: {
-    userAgent: 'Mozilla/5.0 (Test Browser)',
-  },
-  writable: true,
-});
+  Object.defineProperty(window, 'navigator', {
+    value: {
+      userAgent: 'Mozilla/5.0 (Test Browser)',
+    },
+    writable: true,
+  });
+}
 
 // A host always installs a transport before the shared UI issues a request, so
 // the suite reflects that rather than every test file re-stating it. Backed by

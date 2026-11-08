@@ -70,6 +70,8 @@ export default defineConfig({
   // package ships those files, so a host serves the package's directory. This
   // is the whole of what the Dashboard has to do about assets.
   publicDir: path.join(repoRoot, 'packages/copilot-ui/public'),
-  server: { port: 5174, host: true },
+  // Loopback only: `fs.allow` is the repo root, so the network would reach
+  // `.env` past `fs.deny` alone (fm#2425). `pnpm playground --host` opts in.
+  server: { port: 5174, host: '127.0.0.1' },
   build: { outDir: path.join(here, 'dist'), emptyOutDir: true },
 });
