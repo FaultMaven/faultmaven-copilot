@@ -21,7 +21,7 @@ pnpm test:e2e                 # playwright e2e/ (needs `pnpm build` first)
 pnpm generate:api-types       # regenerate the API client from the pinned contract
 pnpm extension:digest         # compare the built Chrome artifact to extension-baseline.json
 pnpm playground               # the shared UI against a stub web host, 127.0.0.1:5174
-pnpm playground --host        # the same, but exposes the workspace to the LAN
+pnpm playground --host        # reachable on the LAN by IP address (http://<ip>:5174), exposing the workspace
 ```
 
 Pre-commit (husky) runs `node scripts/brand-lint.mjs && npm run compile && npm run test`.

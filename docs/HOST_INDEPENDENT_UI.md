@@ -163,7 +163,7 @@ cannot pass by reaching into files a real consumer could not.
 
 ```bash
 pnpm playground          # http://127.0.0.1:5174, loopback only
-pnpm playground --host   # also on the LAN: exposes the workspace to it
+pnpm playground --host   # reachable on the LAN by IP address (http://<ip>:5174), exposing the workspace
 pnpm playground:build
 ```
 
