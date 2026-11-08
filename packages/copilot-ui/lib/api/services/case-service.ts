@@ -124,7 +124,7 @@ export const CLOSURE_DISPLAY_INFO: Record<ClosureReason | 'other', ClosureLabels
   inquiry_only: { label: 'Inquiry Only', shortLabel: 'Inquiry Only' },
   solution_deferred: { label: 'Fix deferred', shortLabel: 'Fix Deferred' },
   closed_rca_infeasible: { label: 'Root cause unreachable', shortLabel: 'Cause Unreachable' },
-  mitigation_sufficient: { label: 'Stabilized by mitigation', shortLabel: 'Stabilized' },
+  mitigation_sufficient: { label: 'Mitigation applied', shortLabel: 'Mitigated' },
   closed_restatement_held: { label: 'Cause not stated distinctly', shortLabel: 'Not Distinct' },
   closed_insufficient_evidence: { label: 'Insufficient evidence', shortLabel: 'Insufficient Evidence' },
   closed_false_alarm: { label: 'False alarm', shortLabel: 'False Alarm' },
