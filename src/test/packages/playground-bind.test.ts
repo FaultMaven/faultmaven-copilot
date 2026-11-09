@@ -78,6 +78,7 @@ describe('pnpm playground', () => {
 
   it('serves the playground, the package, its dependencies and the public icons', () =>
     withPlayground(async (_, origin) => {
+      const missing: string[] = [];
       for (const [url, sentinel] of [
         ['/index.html', '<div id="root">'],
         ['/main.tsx', 'webHostAdapter'],
@@ -86,15 +87,17 @@ describe('pnpm playground', () => {
         ['/icon/square-transparent.svg', '<svg'],
       ]) {
         const res = await get(origin + url);
-        expect(res.status, url).toBe(200);
         // The SPA fallback answers 200 for any path, so the body is the check.
-        expect(res.body, url).toContain(sentinel);
+        if (res.status !== 200 || !res.body.includes(sentinel)) missing.push(`${res.status} ${url}`);
       }
+      expect(missing).toEqual([]);
     }));
 
   it('refuses every other file in the checkout (fm#2630)', () =>
     withPlayground(async (_, origin) => {
       // The root is playground/, so only /@fs/ reaches the rest of the checkout.
+      const status: Record<string, number> = {};
+      const leaked: string[] = [];
       for (const [file, sentinel] of [
         ['.claude/rules/credential-chain.md', 'src/extension/auth'],
         ['package.json', '"scripts"'],
@@ -102,9 +105,11 @@ describe('pnpm playground', () => {
       ]) {
         for (const url of [`/@fs${repoRoot}/${file}`, `/@fs${repoRoot}/${file}?raw`]) {
           const res = await get(origin + url);
-          expect(res.status, url).toBe(403);
-          expect(res.body, url).not.toContain(sentinel);
+          status[url] = res.status;
+          if (res.body.includes(sentinel)) leaked.push(url);
         }
       }
+      expect(status).toEqual(Object.fromEntries(Object.keys(status).map((url) => [url, 403])));
+      expect(leaked).toEqual([]);
     }));
 });
