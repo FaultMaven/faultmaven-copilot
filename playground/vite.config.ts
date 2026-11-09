@@ -70,8 +70,21 @@ export default defineConfig({
   // package ships those files, so a host serves the package's directory. This
   // is the whole of what the Dashboard has to do about assets.
   publicDir: path.join(repoRoot, 'packages/copilot-ui/public'),
-  // Loopback only: `fs.allow` is the repo root, so the network would reach
-  // `.env` past `fs.deny` alone (fm#2425). `pnpm playground --host` opts in.
-  server: { port: 5174, host: '127.0.0.1' },
+  // Loopback only (fm#2425); `pnpm playground --host` opts in to the LAN.
+  // `fs.allow` is what the playground serves, so the opt-in exposes the app and
+  // not the checkout (fm#2630): it replaces Vite's default, the repo root, and
+  // every other file answers 403. Absolute, since relative entries resolve
+  // against `root`. `node_modules` also covers the dependency cache (`.vite`).
+  server: {
+    port: 5174,
+    host: '127.0.0.1',
+    fs: {
+      allow: [here, path.join(repoRoot, 'packages/copilot-ui'), path.join(repoRoot, 'node_modules')],
+      // Vite's default list, which an explicit `deny` replaces, plus the tool
+      // caches under node_modules (jiti's transpiled local configs). `.vite/deps`
+      // stays served.
+      deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/node_modules/.cache/**'],
+    },
+  },
   build: { outDir: path.join(here, 'dist'), emptyOutDir: true },
 });
