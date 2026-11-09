@@ -21,7 +21,8 @@ pnpm test:e2e                 # playwright e2e/ (needs `pnpm build` first)
 pnpm generate:api-types       # regenerate the API client from the pinned contract
 pnpm extension:digest         # compare the built Chrome artifact to extension-baseline.json
 pnpm playground               # the shared UI against a stub web host, 127.0.0.1:5174
-pnpm playground --host        # reachable on the LAN by IP address (http://<ip>:5174), exposing the workspace
+pnpm playground --host        # reachable on the LAN by IP address (http://<ip>:5174); serves only playground/,
+                              #   packages/copilot-ui and node_modules, and refuses the rest of the checkout (fm#2630)
 ```
 
 Pre-commit (husky) runs `node scripts/brand-lint.mjs && npm run compile && npm run test`.

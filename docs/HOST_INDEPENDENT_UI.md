@@ -163,9 +163,13 @@ cannot pass by reaching into files a real consumer could not.
 
 ```bash
 pnpm playground          # http://127.0.0.1:5174, loopback only
-pnpm playground --host   # reachable on the LAN by IP address (http://<ip>:5174), exposing the workspace
+pnpm playground --host   # reachable on the LAN by IP address (http://<ip>:5174)
 pnpm playground:build
 ```
+
+`--host` exposes the playground, not the checkout: `server.fs.allow` is
+`playground/`, `packages/copilot-ui` and `node_modules`, and the dev server
+refuses every other file with a 403 (fm#2630).
 
 ## Theme
 
