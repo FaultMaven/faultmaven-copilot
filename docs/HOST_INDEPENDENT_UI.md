@@ -169,7 +169,8 @@ pnpm playground:build
 
 `--host` exposes the playground, not the checkout: `server.fs.allow` is
 `playground/`, `packages/copilot-ui` and `node_modules`, and the dev server
-refuses every other file with a 403 (fm#2630).
+refuses every other file with a 403, the tool caches in `node_modules/.cache`
+included (`server.fs.deny`, fm#2630).
 
 ## Theme
 

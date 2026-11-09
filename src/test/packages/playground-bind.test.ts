@@ -13,7 +13,7 @@ import { get as httpGet } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer, isFileLoadingAllowed, type ViteDevServer } from 'vite';
+import { createServer, isFileLoadingAllowed, resolveConfig, type ViteDevServer } from 'vite';
 
 /** An OS-assigned free port, picked as playwright.config.ts picks one. */
 function freePort(): Promise<number> {
@@ -124,5 +124,9 @@ describe('pnpm playground', () => {
       const modules = join(repoRoot, 'node_modules');
       expect(isFileLoadingAllowed(server.config, `${modules}/.cache/jiti/probe.mjs`)).toBe(false);
       expect(isFileLoadingAllowed(server.config, `${modules}/.vite/deps/probe.js`)).toBe(true);
+      // An explicit deny replaces Vite's default, so a default a later Vite adds must be copied in.
+      const viteDefault = (await resolveConfig({ configFile: false, root: repoRoot, logLevel: 'silent' }, 'serve'))
+        .server.fs.deny;
+      expect(server.config.server.fs.deny).toEqual(expect.arrayContaining(viteDefault));
     }));
 });
