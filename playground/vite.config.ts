@@ -78,7 +78,13 @@ export default defineConfig({
   server: {
     port: 5174,
     host: '127.0.0.1',
-    fs: { allow: [here, path.join(repoRoot, 'packages/copilot-ui'), path.join(repoRoot, 'node_modules')] },
+    fs: {
+      allow: [here, path.join(repoRoot, 'packages/copilot-ui'), path.join(repoRoot, 'node_modules')],
+      // Vite's default list, which an explicit `deny` replaces, plus the tool
+      // caches under node_modules (jiti's transpiled local configs). `.vite/deps`
+      // stays served.
+      deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/node_modules/.cache/**'],
+    },
   },
   build: { outDir: path.join(here, 'dist'), emptyOutDir: true },
 });
