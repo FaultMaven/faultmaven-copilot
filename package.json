@@ -104,7 +104,7 @@
     "overrides": {
       "vite": "^6.4.5",
       "rollup": "^4.59.0",
-      "node-forge": "^1.4.1",
+      "node-forge": "^1.4.3",
       "tmp": "^0.2.6",
       "fast-uri@3": "^3.1.9",
       "defu": "^6.1.5",
