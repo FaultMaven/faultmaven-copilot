@@ -201,3 +201,71 @@ describe('ConversationsList — a refresh that fails (#386)', () => {
     expect(screen.queryByText(REFRESH_FAILED) !== null).toBe(!empty);
   });
 });
+
+describe('ConversationsList — a failed load offers Retry (#388)', () => {
+  const retry = () => screen.queryByRole('button', { name: 'Retry' });
+  const dismiss = () => screen.queryByRole('button', { name: 'Dismiss' });
+
+  it('a failed first load offers Retry and no Dismiss; Retry loads the list', async () => {
+    getUserCases.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    render(list({}));
+    await advance(0);
+    expect(listedTitles()).toEqual([]);
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    expect(dismiss()).toBeNull();
+
+    fireEvent.click(retry()!);
+    await advance(0);
+
+    expect(getUserCases).toHaveBeenCalledTimes(2);
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+    expect(screen.queryByText(REFRESH_FAILED)).toBeNull();
+  });
+
+  it('a Retry that fails again keeps the error and its Retry', async () => {
+    getUserCases.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockRejectedValueOnce(new TypeError('Load failed'));
+    render(list({}));
+    await advance(0);
+    fireEvent.click(retry()!);
+    await advance(0);
+    expect(getUserCases).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    expect(retry()).not.toBeNull();
+    expect(dismiss()).toBeNull();
+  });
+
+  it('a rate-limited first load offers neither: the message says to wait', async () => {
+    getUserCases.mockRejectedValueOnce(Object.assign(new Error('Too many requests'), { status: 429 }));
+    render(list({}));
+    await advance(0);
+    expect(screen.getByText('Rate limit reached. Please wait a minute before refreshing.')).toBeInTheDocument();
+    expect(retry()).toBeNull();
+    expect(dismiss()).toBeNull();
+  });
+
+  it('once a list is stored, a failed refresh offers both, and Dismiss keeps the list', async () => {
+    const view = render(list({}));
+    await advance(0);
+    getUserCases.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    view.rerender(list({ refreshTrigger: 1 }));
+    await advance(0);
+    expect(retry()).not.toBeNull();
+    fireEvent.click(dismiss()!);
+    expect(screen.queryByText(REFRESH_FAILED)).toBeNull();
+    expect(listedTitles()).toEqual([TITLE, OTHER.title]);
+  });
+
+  it('a delete’s message beside a failed reload keeps Retry, and its timer leaves the list error alone', async () => {
+    fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
+      (init.method === 'DELETE' ? Promise.resolve(wire(500, { detail: 'eraser failed' })) : Promise.reject(new Error(`unrouted ${url}`))));
+    getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await deleteMine();
+    expect(screen.getByText(`Failed to delete case: eraser failed ${REFRESH_FAILED}`)).toBeInTheDocument();
+    expect(retry()).not.toBeNull();
+    await advance(5000);
+    expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
+    fireEvent.click(retry()!);
+    await advance(0);
+    expect(screen.queryByText(REFRESH_FAILED)).toBeNull();
+  });
+});

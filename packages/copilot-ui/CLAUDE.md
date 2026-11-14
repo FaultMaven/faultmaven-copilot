@@ -465,6 +465,10 @@ close, reports); delete is the creator's.
   429 says when to refresh again; any other failure says "Couldn't refresh the
   list.", whatever the browser's network text. Every list error is shown (no
   text is hidden), and "No cases yet" waits until a list has been stored once.
+  Beside "Couldn't refresh the list." a **Retry** loads the list again (#388);
+  **Dismiss** shows only once a list has been stored, since before that the
+  error is all the sidebar holds. The list's error and an action's message (a
+  failed delete) are separate state, shown together, message first.
 - **A failed or refused delete keeps its row**: the row comes back in its place
   (a refusal before its reload; any other failure after a reload that did not
   store the list), but never over a server list stored since the delete began.
