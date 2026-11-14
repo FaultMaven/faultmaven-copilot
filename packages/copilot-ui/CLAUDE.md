@@ -145,10 +145,10 @@ and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
-re-inserts only the refused row, in its place, before the reload, and shows the
-class's message. The list's own error follows the message when the reload did
-not store the list; after 5 s only the message goes.
-It reads another 409 as
+re-inserts only the refused row, in its place, before the reload (unless a list
+was stored since the delete began), and shows the class's message. The list's
+own error follows the message when the reload did not store the list; after
+5 s only the message goes. It reads another 409 as
 a duplicate delete only when it arrives as an `HttpError` (after a credential
 refresh); on the common path any other 409 takes the generic failure branch.
 This client never calls
@@ -468,6 +468,8 @@ close, reports); delete is the creator's.
 - **A failed or refused delete keeps its row**: the row comes back in its place
   (a refusal before its reload; any other failure after a reload that did not
   store the list), but never over a server list stored since the delete began.
+  `deleteCase` drops the cached list page whatever its answer, so that reload
+  reads the server: a delete whose answer was lost may have committed.
   The failure's message shows, followed by the list's error when the reload
   failed; after 5 s the message goes and the list's error, if any, stays.
 - **Read-only open case** (`lib/cases/driver.ts`): the extension host's
@@ -477,10 +479,11 @@ close, reports); delete is the creator's.
 - **A case the user stops driving leaves the sidebar** through one sequence,
   `reloadDrivenCaseList` (`lib/state/case-list-reload.ts`): drop the slot,
   THEN reload the list, epoch-guarded. Its callers:
-  - the extension host (`src/extension/useActiveCaseDriver.ts`), when the open case turns driven-by-other for a case
-    id — this covers a case reassigned while not open (clicked from its cached
-    row) and one reassigned during a turn (the 409 refresh). Fires once per
-    flip; the reload changes neither the open case nor its driver;
+  - the extension host (`src/extension/useActiveCaseDriver.ts`), when the
+    open case turns driven-by-other for a case id — this covers a case
+    reassigned while not open (clicked from its cached row) and one reassigned
+    during a turn (the 409 refresh). Fires once per flip; the reload changes
+    neither the open case nor its driver;
   - the 403 backstop (`lib/state/write-refused.ts`), which reads the refused
     case back and, if another account drives it, marks it denied — needed
     when the user opened another case before the read landed. A fresh row

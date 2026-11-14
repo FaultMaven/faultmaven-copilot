@@ -630,18 +630,23 @@ export async function createCase(
  *   `.retryAfter`), or, after a credential refresh, an {HttpError}
  */
 export async function deleteCase(caseId: string): Promise<void> {
-  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
-    method: 'DELETE',
-    credentials: 'include'
-  });
+  try {
+    const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
 
-  if (!response.ok && response.status !== 204) {
-    // Throw structured HttpError with status code
-    throw await createHttpErrorFromResponse(response);
+    if (!response.ok && response.status !== 204) {
+      // Throw structured HttpError with status code
+      throw await createHttpErrorFromResponse(response);
+    }
+  } finally {
+    // Whatever the answer, the cached list page no longer says whether the
+    // case is listed: a delete whose answer was lost may have committed. The
+    // case list reloads after a failed delete to learn that, and a reload the
+    // slot served would only repeat the page from before the delete (#387).
+    await caseCacheManager.invalidateCache();
   }
-
-  // Invalidate cache after successful delete
-  await caseCacheManager.invalidateCache();
 }
 
 export async function updateCaseTitle(caseId: string, title: string): Promise<void> {
