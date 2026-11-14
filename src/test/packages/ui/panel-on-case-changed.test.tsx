@@ -109,6 +109,29 @@ describe('CopilotPanel onCaseChanged', () => {
     expect(cb).toHaveBeenCalledWith('case-a');
   });
 
+  // #384: the read-back found the open case gone and the store closed it.
+  it('a case found gone: the panel shows the ruled notice and tells the host, once', async () => {
+    // The toast reads the reduced-motion preference; the test DOM has no matchMedia.
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }));
+    const cb = vi.fn();
+    mount(cb);
+    await screen.findByRole('form', { name: 'Message Input' });
+    act(() => useAppStore.setState({
+      activeCaseId: null, activeCase: null, hasUnsavedNewChat: false, goneCaseNotice: { caseId: 'case-a' },
+    } as never));
+
+    expect(await screen.findByText('Case Not Found')).toBeInTheDocument();
+    expect(screen.getByText('This case no longer exists.')).toBeInTheDocument();
+    expect(screen.getByText('It may have been deleted in another window or on another device.')).toBeInTheDocument();
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith('case-a');
+    expect(useAppStore.getState().goneCaseNotice).toBeNull();
+    // Closed: the no-case screen, not a composer for the gone case.
+    expect(screen.getByText('Start a new case')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Message Input' })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
   it('mounts without the prop', async () => {
     mount();
     act(() => useAppStore.setState({ activeCase: row('case-a', 'closed') } as never));

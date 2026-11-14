@@ -760,6 +760,34 @@ export class CaseDeleteInProgressError extends UserFacingError {
 }
 
 /**
+ * 404 from a route that names the case: `GET /cases/{id}` and the turn route
+ * look the case up first and answer "Case not found or access denied" when it
+ * is gone (deleted in another window, on another device, or by an operator) or
+ * this account can no longer read it. The status alone does not say WHAT was
+ * not found, so the case service throws this class for those two routes, where
+ * the request says it (`case-service.ts`, #384). Any other 404 is classified by
+ * status, as before.
+ *
+ * Nothing about the request can change it: never retried, no Retry. A turn's
+ * bubble says its message was not added (`bubbleText`); the read-back
+ * (`refreshActiveCase`) closes the case, drops its row from the list, and the
+ * panel shows this class's toast.
+ */
+export class CaseNotFoundError extends UserFacingError {
+  readonly userTitle = 'Case Not Found';
+  readonly userMessage = 'This case no longer exists.';
+  readonly userAction = 'It may have been deleted in another window or on another device.';
+  /** What a refused turn's bubble says. */
+  readonly bubbleText = "This case no longer exists, so your message wasn't added.";
+  readonly category: ErrorCategory = 'validation';
+  readonly recovery: RecoveryStrategy = 'graceful_degradation';
+
+  getDisplayOptions(): ErrorDisplayOptions {
+    return { displayType: 'toast', duration: 10000, dismissible: true, icon: 'info' };
+  }
+}
+
+/**
  * Quota / credits exhausted (HTTP 402, x-error-code: QUOTA_EXHAUSTED).
  *
  * The FaultMaven AI provider account is out of quota or credits — a permanent,

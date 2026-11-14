@@ -138,10 +138,28 @@ closed case is still answered, so it never meets this); `CASE_DELETE_IN_PROGRESS
 the turn route's → `CaseDeleteInProgressError` (contract 14.14.0: a delete of the
 case is running and nothing ran; both turn hooks handle it as `CaseTerminalError`,
 and also re-read the sidebar through `reloadDrivenCaseList` and tell the host
-through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either read can land
-before the delete commits, and nothing re-reads later. For either code, both hooks
-write nothing once the session has changed, as the success path); `CASE_VERSION_CONFLICT`
-and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
+through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either
+read can land before the delete commits; one after it meets the 404 below and
+closes the case. For either code, both hooks write nothing once the session has
+changed, as the success path); `CASE_VERSION_CONFLICT` and an unlabelled 409 →
+`CaseVersionConflictError`.
+
+**A 404 on a route that names the case is `CaseNotFoundError`** (#384). `GET
+/cases/{id}` and the turn route look the case up first and answer "Case not
+found or access denied" once it is deleted (another window, another device, an
+operator) or no longer readable. The classifier sees only a status, so the case
+service reads it for those two routes (`asCaseRouteError` in `getCase` and
+`submitTurn`'s POST, not the async job's poll); any other 404 is still
+`ValidationError`. Both turn hooks handle it as `CaseTerminalError` (no failed op,
+no Retry; bubble "This case no longer exists, so your message wasn't added.")
+and read the case back. `refreshActiveCase` on a 404 closes the case if it is
+still the open one (no case open, `hasUnsavedNewChat` false, the persisted
+pointer removed) and raises `goneCaseNotice`, and reloads the sidebar through
+`reloadDrivenCaseList` whichever case is open. `CopilotPanel` turns the notice
+into the toast ("Case Not Found" / "This case no longer exists." / "It may have
+been deleted in another window or on another device.") and tells the host
+through `onCaseChanged`; the Dashboard's re-read meets the same 404 and shows
+its not-found view. Copy ruled by the owner on 2026-11-05. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
@@ -501,10 +519,12 @@ close, reports); delete is the creator's.
   - a lazy case-create's completion (`lib/state/lazy-case.ts`), so the new case
     is listed even when the user opened another meanwhile;
   - both turn hooks, on a turn refused while a delete of its case runs
-    (`CASE_DELETE_IN_PROGRESS`).
-  Never from `refreshActiveCase`, which also runs in the Dashboard. The
-  Dashboard host passes its own `initialCase.readOnly` and never mounts the
-  sidebar.
+    (`CASE_DELETE_IN_PROGRESS`);
+  - `refreshActiveCase`, when the case answers 404 (#384): gone needs no host
+    to judge it.
+  Whether the user still drives a case is never judged in `refreshActiveCase`,
+  which also runs in the Dashboard. The Dashboard host passes its own
+  `initialCase.readOnly` and never mounts the sidebar.
 - **Redacted sources** (contract 13.1.0): a `knowledge_base` source with
   `metadata.access === 'restricted'` (`isRestrictedSource`,
   `lib/state/turn-sources.ts`) is a runbook this viewer may not open; it renders

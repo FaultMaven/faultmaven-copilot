@@ -9,7 +9,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
-import { CredentialUnavailableError } from "../../errors/types";
+import { CaseNotFoundError, CredentialUnavailableError } from "../../errors/types";
 import {
   APIError,
   CaseUpdateRequest,
@@ -340,20 +340,37 @@ function toUserCase(row: unknown): UserCase {
 }
 
 /**
+ * A failure of a request on a route that names the case, read for that route:
+ * a 404 there is the case lookup coming back empty, which the API answers
+ * "Case not found or access denied" (the case was deleted, or this account can
+ * no longer read it), so it becomes `CaseNotFoundError` (#384). Anything else is
+ * returned as it was. Both error shapes carry the status: the client's enriched
+ * `Error` (`status`) and an `HttpError` (its `status` alias).
+ */
+function asCaseRouteError(error: unknown): unknown {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (error instanceof Error && status === 404) return new CaseNotFoundError(error.message, error);
+  return error;
+}
+
+/**
  * Fetch one case by id (GET /api/v1/cases/{case_id}).
  *
  * Unlike the paginated list, this cannot miss a case ranked beyond the first
  * page and is always a fresh read. It deliberately does not read or write the
  * case-list cache — it refreshes one case, not the sidebar's list slice.
+ *
+ * @throws {CaseNotFoundError} on a 404: the case is gone, or no longer readable.
  */
 export async function getCase(caseId: string): Promise<UserCase> {
   const response = await authenticatedFetchWithRetry(
     `${await getApiTransport().baseUrl()}/api/v1/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET', credentials: 'include' }
-  );
+  ).catch((error: unknown) => { throw asCaseRouteError(error); });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({} as any));
-    throw new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`);
+    const error = Object.assign(new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`), { status: response.status });
+    throw asCaseRouteError(error);
   }
   const caseData = await response.json();
   if (!caseData || !caseData.case_id) {
@@ -822,6 +839,8 @@ export async function submitTurn(
     form.append('files', file);
   }
 
+  // A 404 here is the route's case lookup (the async job's poll below is
+  // another resource, and its 404 is not read this way).
   const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}/turns`, {
     method: 'POST',
     body: form,
@@ -833,7 +852,7 @@ export async function submitTurn(
     // turn. Callers derive the key from the turn's stable optimistic message id
     // so auto- AND manual-retries of the same turn share one key.
     ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {})
-  }, (await turnTimingFor(request)).requestTimeoutMs);
+  }, (await turnTimingFor(request)).requestTimeoutMs).catch((error: unknown) => { throw asCaseRouteError(error); });
 
   if (response.status === 422) {
     let detail: any = 'Validation failed (422)';
@@ -935,7 +954,7 @@ export async function submitTurn(
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
     if (response.status === 404) {
-      throw new Error('Case not found: Please refresh and try again');
+      throw new CaseNotFoundError(errorBodyText(errorData) || 'Case not found');
     }
     throw new Error(errorBodyText(errorData) || `Failed to submit turn: ${response.status}`);
   }

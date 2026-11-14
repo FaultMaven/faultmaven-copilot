@@ -5,6 +5,7 @@ import * as caseService from '@faultmaven/copilot-ui/lib/api/services/case-servi
 import vocabularies from '@faultmaven/copilot-ui/types/contract-vocabularies.json';
 import * as client from '@faultmaven/copilot-ui/lib/api/client';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
+import { CaseNotFoundError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 // Mock client
 vi.mock('@faultmaven/copilot-ui/lib/api/client', () => ({
@@ -731,9 +732,9 @@ describe('Case Service', () => {
       ).rejects.toThrow('422 Unprocessable Entity');
     });
 
-    it('should throw error on 404 case not found', async () => {
+    it('a 404 answered as a Response (no client enrichment) is CaseNotFoundError (#384)', async () => {
       const errorResponse = mockResponse(
-        { detail: 'Case not found' },
+        { detail: 'Case not found or access denied' },
         false,
         404
       );
@@ -741,7 +742,7 @@ describe('Case Service', () => {
 
       await expect(
         caseService.submitTurn('case-123', { query: 'test' })
-      ).rejects.toThrow('Case not found: Please refresh and try again');
+      ).rejects.toBeInstanceOf(CaseNotFoundError);
     });
 
     it('rejects immediately with AbortError if the signal is already aborted', async () => {

@@ -21,6 +21,8 @@ import { reconcileOptimisticIds } from '../reconcile-message-ids';
 import { sourcesToShow } from '../turn-sources';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
+import { CaseNotFoundError } from '../../errors/types';
+import { reloadDrivenCaseList } from '../case-list-reload';
 
 const log = createLogger('CasesSlice');
 
@@ -42,8 +44,15 @@ export interface CasesSlice {
    * until a fresh row names the viewer as its driver again (handed back).
    */
   writeDeniedCaseIds: Record<string, true>;
+  /**
+   * The open case was found gone — its read-back met a 404 (#384) — and has
+   * been closed. The panel says so and tells its host, then clears this.
+   * `caseId` is the case's real id.
+   */
+  goneCaseNotice: { caseId: string } | null;
 
   // Actions
+  clearGoneCaseNotice: () => void;
   markWriteDenied: (caseId: string) => void;
   setActiveCaseId: (caseId: string | null | undefined) => Promise<void>;
   setActiveCase: (caseObj: UserCase | null | ((prev: UserCase | null) => UserCase | null)) => void;
@@ -77,7 +86,13 @@ export interface CasesSlice {
    * case row.
    */
   reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => Promise<boolean>;
-  /** Resolves the row it read (for the case asked about, whichever is open now), or null. */
+  /**
+   * Resolves the row it read (for the case asked about, whichever is open now),
+   * or null. A 404 (`CaseNotFoundError`: the case was deleted elsewhere, or
+   * this account can no longer read it) also closes the case when it is the
+   * open one, raising `goneCaseNotice`, and reloads the sidebar past its
+   * cache, whichever case is open (#384).
+   */
   refreshActiveCase: (caseId: string) => Promise<UserCase | null>;
   reconcileActiveCaseState: () => Promise<void>;
 }
@@ -96,6 +111,9 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     titleSources: {},
     pinnedCases: new Set(),
     writeDeniedCaseIds: {},
+    goneCaseNotice: null,
+
+    clearGoneCaseNotice: () => set({ goneCaseNotice: null }),
 
     markWriteDenied: (caseId) =>
       set((state) =>
@@ -494,6 +512,27 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         });
         return row;
       } catch (error) {
+        if (error instanceof CaseNotFoundError) {
+          // The case is gone: deleted in another window, on another device or
+          // by an operator, or no longer readable by this account (#384). Every
+          // later write to it can only meet the same 404, so it is not left
+          // open with a live composer. Closed only when it is still the open
+          // case (the user may have moved on); either way its row leaves the
+          // sidebar, past the cached page that still lists it.
+          if (epoch !== getEpoch()) return null;
+          const ids = new Set([caseId, resolvedCaseId]);
+          const state = get();
+          const open =
+            (state.activeCaseId !== null && ids.has(state.activeCaseId)) ||
+            (state.activeCase !== null && ids.has(state.activeCase.case_id));
+          log.warn('Case no longer exists', { caseId: resolvedCaseId, open });
+          if (open) {
+            set({ activeCase: null, hasUnsavedNewChat: false, goneCaseNotice: { caseId: resolvedCaseId } });
+            void get().setActiveCaseId(null);
+          }
+          void reloadDrivenCaseList(epoch);
+          return null;
+        }
         // warn, not debug: this is the only recovery on the post-409 path and
         // the only source of closure metadata on case select, and debug logs
         // are dropped in production builds.
