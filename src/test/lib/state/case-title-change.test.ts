@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyCaseTitleChange, type CaseTitleChangeDeps } from '@faultmaven/copilot-ui/lib/state/case-title-change';
-import { CaseTerminalError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { CaseNotFoundError, CaseTerminalError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 /** The error `authenticatedFetch` throws for a non-OK response, as `updateCaseTitle` lets it through. */
 function http409(code?: string): Error {
@@ -38,6 +38,7 @@ function makeDeps(overrides: Partial<CaseTitleChangeDeps> = {}) {
     persistTitle: vi.fn().mockResolvedValue(undefined),
     onPersistError: vi.fn(),
     refreshCase: vi.fn(),
+    readBackRefusal: vi.fn().mockResolvedValue('unexplained'),
     ...overrides
   };
 
@@ -131,6 +132,47 @@ describe('applyCaseTitleChange', () => {
 
       expect(deps.onPersistError).toHaveBeenCalledWith(raw);
       expect(deps.refreshCase).not.toHaveBeenCalled();
+    });
+  });
+
+  // #384, faultmaven#2806: a 404 or a 403 on the PUT is a case that is gone or
+  // one another account drives; a core before #2806 sends both as an unlabelled
+  // 404, so only the row read back can tell them apart.
+  describe("a refused rename is read back", () => {
+    const failure = (status: number, code?: string) =>
+      Object.assign(new Error('Case not found or access denied'), { status, ...(code ? { headers: { 'x-error-code': code } } : {}) });
+
+    it.each([
+      { refusal: 'an unlabelled 404', error: failure(404) },
+      { refusal: '404 CASE_NOT_FOUND', error: failure(404, 'CASE_NOT_FOUND') },
+      { refusal: '403 CASE_NOT_DRIVER', error: failure(403, 'CASE_NOT_DRIVER') },
+    ])('$refusal: rolled back, read back, and the toast says what the row found', async ({ error }) => {
+      for (const [reading, expected] of [
+        ['gone', (e: unknown) => expect(e).toBeInstanceOf(CaseNotFoundError)],
+        ['driven_by_other', (e: unknown) => expect((e as Error).message).toBe("Only the case's driver can add to it.")],
+        ['unexplained', (e: unknown) => expect(e).toBe(error)],
+      ] as const) {
+        const readBackRefusal = vi.fn().mockResolvedValue(reading);
+        const { deps, store } = makeDeps({ persistTitle: vi.fn().mockRejectedValue(error), readBackRefusal });
+        store.conversationTitles['case-1'] = 'Before';
+
+        await applyCaseTitleChange('case-1', 'After', 'user', deps);
+
+        expect(store.conversationTitles['case-1']).toBe('Before');
+        expect(readBackRefusal).toHaveBeenCalledWith('case-1');
+        expect(deps.onPersistError).toHaveBeenCalledTimes(1);
+        expected((deps.onPersistError as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+        expect(deps.refreshCase).not.toHaveBeenCalled();
+      }
+    });
+
+    it('a 404 for something else (labelled otherwise) and a 500 are not read back', async () => {
+      for (const error of [failure(404, 'DOCUMENT_NOT_FOUND'), failure(500)]) {
+        const { deps } = makeDeps({ persistTitle: vi.fn().mockRejectedValue(error) });
+        await applyCaseTitleChange('case-1', 'After', 'user', deps);
+        expect(deps.readBackRefusal).not.toHaveBeenCalled();
+        expect(deps.onPersistError).toHaveBeenCalledWith(error);
+      }
     });
   });
 });

@@ -129,7 +129,7 @@ describe('ConversationsList — a case reassigned away drops out', () => {
     useAppStore.setState({
       currentUser: { id: 'u1', username: 'me', roles: [] } as never,
       writeDeniedCaseIds: {},
-      refreshActiveCase: vi.fn(async () => ({ ...MINE, driver_id: 'u2' })),
+      readCaseBack: vi.fn(async () => ({ kind: 'row', row: { ...MINE, driver_id: 'u2' } })),
     } as never);
 
     render(<WiredList />);
@@ -159,7 +159,7 @@ describe('ConversationsList — a case reassigned away drops out', () => {
     useAppStore.setState({
       currentUser: { id: 'u1', username: 'me', roles: [] } as never,
       writeDeniedCaseIds: {},
-      refreshActiveCase: vi.fn(async () => MINE),
+      readCaseBack: vi.fn(async () => ({ kind: 'row', row: MINE })),
     } as never);
 
     render(<WiredList />);

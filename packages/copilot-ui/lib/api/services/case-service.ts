@@ -9,7 +9,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
-import { CredentialUnavailableError } from "../../errors/types";
+import { CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound } from "../../errors/types";
 import {
   APIError,
   CaseUpdateRequest,
@@ -340,20 +340,42 @@ function toUserCase(row: unknown): UserCase {
 }
 
 /**
+ * A failure of `GET /cases/{id}`, for a core that does not label its case 404s
+ * (before faultmaven#2806). That route sends no other 404 than the case lookup
+ * coming back empty (the case was deleted, or this account can no longer read
+ * it), so an unlabelled one becomes `CaseNotFoundError` (#384). Only this
+ * route: the turn route also sends an unlabelled 404 for evidence or a file
+ * inside the case, which the case row has to rule on (`readBackRefusedWrite`).
+ * A labelled 404 is the classifier's (`CASE_NOT_FOUND` on any route); anything
+ * else is returned as it was.
+ */
+function asCaseReadError(error: unknown): unknown {
+  if (error instanceof Error && isUnlabelledNotFound(error)) {
+    return new CaseNotFoundError(error.message, error);
+  }
+  return error;
+}
+
+/**
  * Fetch one case by id (GET /api/v1/cases/{case_id}).
  *
  * Unlike the paginated list, this cannot miss a case ranked beyond the first
  * page and is always a fresh read. It deliberately does not read or write the
  * case-list cache — it refreshes one case, not the sidebar's list slice.
+ *
+ * @throws {CaseNotFoundError} on an unlabelled 404 (a core before
+ *   faultmaven#2806); a labelled `CASE_NOT_FOUND` one is the classifier's.
+ *   Either way the case is gone, or no longer readable.
  */
 export async function getCase(caseId: string): Promise<UserCase> {
   const response = await authenticatedFetchWithRetry(
     `${await getApiTransport().baseUrl()}/api/v1/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET', credentials: 'include' }
-  );
+  ).catch((error: unknown) => { throw asCaseReadError(error); });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({} as any));
-    throw new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`);
+    const error = Object.assign(new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`), { status: response.status });
+    throw asCaseReadError(error);
   }
   const caseData = await response.json();
   if (!caseData || !caseData.case_id) {
@@ -822,6 +844,8 @@ export async function submitTurn(
     form.append('files', file);
   }
 
+  // A 404 here is the route's case lookup (the async job's poll below is
+  // another resource, and its 404 is not read this way).
   const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}/turns`, {
     method: 'POST',
     body: form,
@@ -934,10 +958,9 @@ export async function submitTurn(
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
-    if (response.status === 404) {
-      throw new Error('Case not found: Please refresh and try again');
-    }
-    throw new Error(errorBodyText(errorData) || `Failed to submit turn: ${response.status}`);
+    // With its status: an unlabelled 404 here is read back by the turn hooks,
+    // since this route also sends one for something inside the case.
+    throw Object.assign(new Error(errorBodyText(errorData) || `Failed to submit turn: ${response.status}`), { status: response.status });
   }
 
   return response.json();
@@ -996,7 +1019,9 @@ export async function generateCaseTitle(
     }
     if (!answer.ok) {
       const errorData: APIError = await answer.json().catch(() => ({}));
-      throw new Error(errorBodyText(errorData) || `Failed to generate case title: ${answer.status}`);
+      // With its status, as the client's own error carries it: a 404 or a 403
+      // here is read back by the caller (`readBackRefusedWrite`).
+      throw Object.assign(new Error(errorBodyText(errorData) || `Failed to generate case title: ${answer.status}`), { status: answer.status });
     }
     return answer;
   });

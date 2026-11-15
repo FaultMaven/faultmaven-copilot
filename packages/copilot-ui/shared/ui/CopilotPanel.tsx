@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useRef } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
+import { CaseNotFoundError, ErrorHandlerProvider, useErrorHandler, useError } from "../../lib/errors";
 import { ToastContainer } from "./components/Toast";
 import { ErrorModal } from "./components/ErrorModal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -130,7 +130,8 @@ export interface CopilotPanelProps {
   /**
    * Called after the panel commits a turn on a case, or observes a state
    * transition of a case (a turn that resolved or closed it, a refresh that
-   * found it closed elsewhere). The host re-reads the case.
+   * found it closed elsewhere), or finds the open case gone (its read-back
+   * answered 404, and the panel closed it). The host re-reads the case.
    *
    * A notification, not a request: it carries only the case id, expects no
    * answer, and a throw from it is swallowed. It fires with a real case id only
@@ -395,6 +396,17 @@ function CopilotPanelContent({
       if (prev.hydrated && next.id) notifyHostCaseChanged(next.id);
     }
   }, [activeCase?.case_id, activeCase?.state, activeCase?.enterprise_id, reconcileActiveCaseState, notifyHostCaseChanged]);
+
+  // The open case was found gone (#384): the store has closed it and reloaded
+  // the list. Say so, and tell the host, whose own read of the case then meets
+  // the same 404 (the Dashboard swaps its page for its not-found view).
+  const goneCaseNotice = useAppStore((state) => state.goneCaseNotice);
+  useEffect(() => {
+    if (!goneCaseNotice) return;
+    useAppStore.getState().clearGoneCaseNotice();
+    showError(new CaseNotFoundError('Case not found'));
+    notifyHostCaseChanged(goneCaseNotice.caseId);
+  }, [goneCaseNotice, showError, notifyHostCaseChanged]);
 
   const handleLogout = async () => {
     // 0. Fence the session FIRST, synchronously, before any await. handleLogout

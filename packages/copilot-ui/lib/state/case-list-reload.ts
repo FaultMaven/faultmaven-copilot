@@ -21,9 +21,11 @@
  * a lazy case-create's completion, so the new case is listed even when the user
  * opened another one meanwhile (#334); and a turn refused because a delete of
  * its case is running (`CASE_DELETE_IN_PROGRESS`, both turn hooks), whose
- * re-read can land before the delete commits. It is
- * NOT called from `refreshActiveCase`, which also runs in the Dashboard, a host
- * with no sidebar.
+ * re-read can land before the delete commits; and `refreshActiveCase` when the
+ * case is gone (a 404, #384), the one fact about a case that needs no host to
+ * judge it (in the Dashboard, a host with no sidebar, nothing reads the list).
+ * Whether the user still DRIVES a case is the host's question, so
+ * `refreshActiveCase` does not call it for that.
  */
 import { caseCacheManager } from '../cache/case-cache';
 import { getEpoch } from './session-epoch';

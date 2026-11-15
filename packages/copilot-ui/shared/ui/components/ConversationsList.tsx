@@ -3,7 +3,7 @@ import { UserCase, getUserCases, SIDEBAR_CASE_LIST_QUERY, deleteCase as deleteCa
 import { ConversationItem } from './ConversationItem';
 import LoadingSpinner from './LoadingSpinner';
 import { HttpError, extractErrorMessage } from '../../../lib/errors/http-error';
-import { describeWait, CaseWorkInProgressError, CaseDeleteUnavailableError } from '../../../lib/errors/types';
+import { describeWait, CaseNotFoundError, CaseWorkInProgressError, CaseDeleteUnavailableError } from '../../../lib/errors/types';
 import { ErrorClassifier } from '../../../lib/errors/classifier';
 import {
   sanitizeBackendCases,
@@ -14,7 +14,9 @@ import {
 import { idMappingManager } from '../../../lib/optimistic';
 import { selectCaseTitle } from '../../../lib/state/case-title';
 import { createLogger } from '../../../lib/utils/logger';
-import { isCreatedBy } from '../../../lib/cases/driver';
+import { DRIVER_READ_ONLY_NOTICE, isCreatedBy } from '../../../lib/cases/driver';
+import { getEpoch } from '../../../lib/state/session-epoch';
+import { isCaseWriteRefusal, readBackRefusedWrite } from '../../../lib/state/write-refused';
 
 const log = createLogger('ConversationsList');
 
@@ -237,12 +239,11 @@ export function ConversationsList({
   };
 
   const handleGenerateTitle = async (caseId: string) => {
+    const epoch = getEpoch();
+    // Optimistic ids resolve to the real id: the API call and a refusal's
+    // read-back both name the real case.
+    const resolvedCaseId = isOptimisticId(caseId) ? idMappingManager.getRealId(caseId) || caseId : caseId;
     try {
-      // ARCHITECTURAL FIX: Resolve optimistic IDs to real IDs for API calls
-      const resolvedCaseId = isOptimisticId(caseId)
-        ? idMappingManager.getRealId(caseId) || caseId
-        : caseId;
-
       log.info('Generating smart title', {
         caseId: resolvedCaseId,
         isOptimistic: isOptimisticId(caseId)
@@ -277,6 +278,20 @@ export function ConversationsList({
     } catch (e: any) {
       const errorMessage = e?.message || 'Title generation failed';
       log.warn('Smart title generation failed', { error: errorMessage, caseId });
+
+      // A 403 or 404: the case is gone, or another account drives it (#384,
+      // faultmaven#2806). Only its row says which, and acts on it (the case
+      // closes, or leaves the list); the status says what was found.
+      if (isCaseWriteRefusal(e, ErrorClassifier.classify(e))) {
+        const reading = await readBackRefusedWrite(resolvedCaseId, epoch);
+        if (reading === 'gone' || reading === 'driven_by_other') {
+          setTitleGenStatus({
+            message: reading === 'gone' ? CaseNotFoundError.USER_MESSAGE : DRIVER_READ_ONLY_NOTICE,
+            type: 'info',
+          });
+          return;
+        }
+      }
 
       // Display the exact backend error message to user (no interpretation)
       // Backend handles validation and provides user-friendly messages

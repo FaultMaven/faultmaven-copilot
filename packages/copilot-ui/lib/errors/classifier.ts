@@ -19,6 +19,7 @@ import {
   CaseWorkInProgressError,
   CaseDeleteUnavailableError,
   CaseDeleteInProgressError,
+  CaseNotFoundError,
   QuotaExhaustedError,
   OptimisticUpdateError,
   UnknownError,
@@ -26,6 +27,9 @@ import {
 } from './types';
 import { HttpError } from './http-error';
 // import { AuthenticationError as ApiAuthError } from '../api';
+
+/** `x-error-code` of a 404 whose case lookup came back empty (faultmaven#2806). */
+export const CASE_NOT_FOUND = 'CASE_NOT_FOUND';
 
 /**
  * Classifies technical errors into user-facing errors with friendly messages
@@ -116,7 +120,10 @@ export class ErrorClassifier {
 
       // 403 is authorization, not authentication — the user is signed in but
       // lacks permission. Must NOT force a logout / sign-in modal (see
-      // PermissionError). 401 alone drives re-authentication.
+      // PermissionError). 401 alone drives re-authentication. A driver-only
+      // case write by a reader who does not drive the case is labelled
+      // `CASE_NOT_DRIVER` (faultmaven#2806); its callers read the case back to
+      // say so, which also covers a core that does not label it.
       case 403:
         return new PermissionError(error.message, error, context);
 
@@ -226,6 +233,12 @@ export class ErrorClassifier {
         return new ServerError(error.message, status, error, context);
 
       case 404:
+        // The case itself is gone, on any route (faultmaven#2806): deleted, or
+        // no longer readable by this account. A 404 for anything else (a file,
+        // a document) carries no such label.
+        if (errorCode === CASE_NOT_FOUND) {
+          return new CaseNotFoundError(error.message, error, context);
+        }
         return new ValidationError('Resource not found', { resource: 'The requested item was not found' }, error, context);
 
       default:

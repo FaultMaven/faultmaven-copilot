@@ -15,10 +15,12 @@ import {
 } from '../../../lib/api';
 import {
   CaseDeleteInProgressError,
+  CaseNotFoundError,
   CaseTerminalError,
   CaseVersionConflictError,
   IdempotencyKeyReuseError,
   PermissionError,
+  isUnlabelledNotFound,
   TurnInProgressError,
   TurnReplayUnavailableError
 } from '../../../lib/errors/types';
@@ -47,7 +49,7 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
-import { applyWriteRefused } from '../../../lib/state/write-refused';
+import { applyWriteRefused, refusalText } from '../../../lib/state/write-refused';
 import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
 import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
@@ -237,18 +239,26 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             showError(classified);
             return;
           }
-          if (classified instanceof CaseTerminalError || classified instanceof CaseDeleteInProgressError) {
+          if (
+            classified instanceof CaseTerminalError ||
+            classified instanceof CaseDeleteInProgressError ||
+            classified instanceof CaseNotFoundError
+          ) {
             // The case is resolved or closed (a status change or a file
-            // reclassification), or a delete of it is running: resending can
-            // only meet the same 409. No failed op (so no Retry in the banner);
-            // the bubble says why, and the case row is read back (a closed case
-            // then shows closed). A refusal that lands after a session change
-            // writes nothing, as the success path (#132).
+            // reclassification), a delete of it is running, or it is gone (a
+            // 404: deleted elsewhere, #384): resending can only meet the same
+            // answer. No failed op (so no Retry in the banner); the bubble says
+            // why, and the case row is read back (a closed case then shows
+            // closed; a gone one closes and leaves the list). A refusal that
+            // lands after a session change writes nothing, as the success path
+            // (#132).
             if (epoch !== getEpoch()) {
               log.info('Session changed during turn submission — discarding the refusal', { caseId });
               return;
             }
-            const why = classified instanceof CaseTerminalError ? 'the case is terminal' : 'the case is being deleted';
+            const why = classified instanceof CaseTerminalError
+              ? 'the case is terminal'
+              : classified instanceof CaseDeleteInProgressError ? 'the case is being deleted' : 'the case no longer exists';
             log.warn(`Turn refused: ${why}`, { caseId });
             pendingOpsManager.remove(aiMessageId);
             setConversations(prev => ({
@@ -262,24 +272,27 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             void useAppStore.getState().refreshActiveCase(caseId);
             if (classified instanceof CaseDeleteInProgressError) {
               // The sidebar re-reads past its cache, and the host re-reads the
-              // case. Either read can land before the delete commits, and
-              // nothing re-reads later: the next turn on a case already gone
-              // meets #384.
+              // case. Either read can land before the delete commits; a read
+              // after it finds the case gone and closes it, and so does the
+              // next turn's 404 (#384).
               void reloadDrivenCaseList(epoch);
               notifyCaseChanged(onCaseChanged, caseId);
             }
             showError(classified);
             return;
           }
-          if (classified instanceof PermissionError) {
-            // The server refused this viewer's write (403). Resending can only
-            // meet the same refusal: no failed op, no Retry.
-            log.warn('Turn refused: this viewer may not write the case', { caseId });
+          if (classified instanceof PermissionError || isUnlabelledNotFound(error)) {
+            // The server refused this viewer's write (403), or answered a 404
+            // that does not say what was missing: an older core's case 404, or
+            // evidence or a file inside the case (a reclassification of a file
+            // since removed). The case row decides which (#384). Resending can
+            // only meet the same answer: no failed op, no Retry.
+            log.warn('Turn refused; reading the case back', { caseId, status: classified instanceof PermissionError ? 403 : 404 });
             pendingOpsManager.remove(aiMessageId);
             applyWriteRefused({
               caseId,
               aiMessageId,
-              fallbackText: classified.userMessage,
+              fallbackText: refusalText(error, classified),
               epoch,
               setConversations,
             });

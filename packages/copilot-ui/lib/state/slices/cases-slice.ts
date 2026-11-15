@@ -11,6 +11,7 @@ import {
   OptimisticConversationItem
 } from '../../../lib/optimistic';
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
+
 import { caseCacheManager } from '../../../lib/cache/case-cache';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
@@ -21,12 +22,37 @@ import { reconcileOptimisticIds } from '../reconcile-message-ids';
 import { sourcesToShow } from '../turn-sources';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
+import { CaseNotFoundError } from '../../errors/types';
+import { ErrorClassifier } from '../../errors/classifier';
+import { reloadDrivenCaseList } from '../case-list-reload';
+
+/**
+ * Whether an open-case id (the pointer, or the open row's id) names the case
+ * read back. An open id still optimistic names it when the mapping resolves it
+ * there: the turn hooks send under the real id while the pointer may still be
+ * the `opt_case_*` one (#384).
+ */
+function namesCase(openId: string | null | undefined, caseId: string, resolvedCaseId: string): boolean {
+  if (openId == null) return false;
+  if (openId === caseId || openId === resolvedCaseId) return true;
+  if (!isOptimisticId(openId)) return false;
+  const real = idMappingManager.getRealId(openId);
+  return real === caseId || real === resolvedCaseId;
+}
 
 const log = createLogger('CasesSlice');
 
 // Case-level fields (state, closure_reason, closed_at) are deliberately NOT
 // read off `/messages` rows — the backend Message model never carries them.
 // The backend case row is the authoritative source (see refreshActiveCase).
+
+/** What a case read-back found (`readCaseBack`). */
+export type CaseReadBack =
+  | { kind: 'row'; row: UserCase }
+  /** 404: deleted, or no longer readable by this account. Closed if it was open. */
+  | { kind: 'gone' }
+  /** Nothing learnt: the read failed, the session changed, or there is no backend id yet. */
+  | { kind: 'unread' };
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -42,8 +68,15 @@ export interface CasesSlice {
    * until a fresh row names the viewer as its driver again (handed back).
    */
   writeDeniedCaseIds: Record<string, true>;
+  /**
+   * The open case was found gone — its read-back met a 404 (#384) — and has
+   * been closed. The panel says so and tells its host, then clears this.
+   * `caseId` is the case's real id.
+   */
+  goneCaseNotice: { caseId: string } | null;
 
   // Actions
+  clearGoneCaseNotice: () => void;
   markWriteDenied: (caseId: string) => void;
   setActiveCaseId: (caseId: string | null | undefined) => Promise<void>;
   setActiveCase: (caseObj: UserCase | null | ((prev: UserCase | null) => UserCase | null)) => void;
@@ -77,8 +110,21 @@ export interface CasesSlice {
    * case row.
    */
   reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => Promise<boolean>;
-  /** Resolves the row it read (for the case asked about, whichever is open now), or null. */
+  /**
+   * Read the case row back and apply it: `readCaseBack`'s row, or null when
+   * there is none (gone, failed, session changed, no backend id yet).
+   */
   refreshActiveCase: (caseId: string) => Promise<UserCase | null>;
+  /**
+   * Reads the case row (for the case asked about, whichever is open now) and
+   * merges it into the open case. Says what it found: the row, `gone`, or
+   * `unread` (failed, session changed, no backend id yet). `gone` is a 404
+   * (`CaseNotFoundError`: deleted elsewhere, or no longer readable by this
+   * account); it also closes the case when it is the open one, raising
+   * `goneCaseNotice`, and reloads the sidebar past its cache, whichever case
+   * is open (#384).
+   */
+  readCaseBack: (caseId: string) => Promise<CaseReadBack>;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -96,6 +142,9 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     titleSources: {},
     pinnedCases: new Set(),
     writeDeniedCaseIds: {},
+    goneCaseNotice: null,
+
+    clearGoneCaseNotice: () => set({ goneCaseNotice: null }),
 
     markWriteDenied: (caseId) =>
       set((state) =>
@@ -441,11 +490,11 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       return get().fetchConversationDelta(caseId, { replacing: rowIds });
     },
 
-    refreshActiveCase: async (caseId) => {
+    readCaseBack: async (caseId) => {
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
-      if (isOptimisticId(resolvedCaseId)) return null; // no backend row yet
+      if (isOptimisticId(resolvedCaseId)) return { kind: 'unread' }; // no backend row yet
 
       const epoch = getEpoch();
       try {
@@ -453,10 +502,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         // ranked beyond the first list page would never be found there), and
         // no coupling to the sidebar's list cache.
         const row = await getCase(resolvedCaseId);
-        if (!row) return null;
+        if (!row) return { kind: 'unread' };
         if (epoch !== getEpoch()) {
           log.info('Session changed during case refresh — discarding', { caseId });
-          return null;
+          return { kind: 'unread' };
         }
 
         // A denial means "another account drives this case". A fresh row that
@@ -478,7 +527,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // Guard on identity: the user may have switched cases while the
           // fetch was in flight. The optimistic id may have been reconciled
           // to the real id in the meantime, so accept either.
-          if (!current || (current.case_id !== caseId && current.case_id !== resolvedCaseId)) {
+          if (!current || !namesCase(current.case_id, caseId, resolvedCaseId)) {
             return {};
           }
           // Belt-and-braces against out-of-order landings of concurrent
@@ -492,14 +541,41 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // id-mapping manager's job, not a side effect of hydration.
           return { activeCase: { ...current, ...row, case_id: current.case_id } };
         });
-        return row;
+        return { kind: 'row', row };
       } catch (error) {
+        // Through the classifier: a labelled 404 (`CASE_NOT_FOUND`) is read
+        // there, an unlabelled one by `getCase` itself (a core before #2806).
+        if (ErrorClassifier.classify(error) instanceof CaseNotFoundError) {
+          // The case is gone: deleted in another window, on another device or
+          // by an operator, or no longer readable by this account (#384). Every
+          // later write to it can only meet the same 404, so it is not left
+          // open with a live composer. Closed only when it is still the open
+          // case (the user may have moved on); either way its row leaves the
+          // sidebar, past the cached page that still lists it.
+          if (epoch !== getEpoch()) return { kind: 'unread' };
+          const state = get();
+          const open =
+            namesCase(state.activeCaseId, caseId, resolvedCaseId) ||
+            namesCase(state.activeCase?.case_id, caseId, resolvedCaseId);
+          log.warn('Case no longer exists', { caseId: resolvedCaseId, open });
+          if (open) {
+            set({ activeCase: null, hasUnsavedNewChat: false, goneCaseNotice: { caseId: resolvedCaseId } });
+            void get().setActiveCaseId(null);
+          }
+          void reloadDrivenCaseList(epoch);
+          return { kind: 'gone' };
+        }
         // warn, not debug: this is the only recovery on the post-409 path and
         // the only source of closure metadata on case select, and debug logs
         // are dropped in production builds.
         log.warn('Active-case refresh failed', { caseId, error });
-        return null;
+        return { kind: 'unread' };
       }
+    },
+
+    refreshActiveCase: async (caseId) => {
+      const read = await get().readCaseBack(caseId);
+      return read.kind === 'row' ? read.row : null;
     },
 
     reconcileActiveCaseState: async () => {

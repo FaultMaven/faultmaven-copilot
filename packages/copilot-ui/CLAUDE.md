@@ -138,10 +138,43 @@ closed case is still answered, so it never meets this); `CASE_DELETE_IN_PROGRESS
 the turn route's → `CaseDeleteInProgressError` (contract 14.14.0: a delete of the
 case is running and nothing ran; both turn hooks handle it as `CaseTerminalError`,
 and also re-read the sidebar through `reloadDrivenCaseList` and tell the host
-through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either read can land
-before the delete commits, and nothing re-reads later. For either code, both hooks
-write nothing once the session has changed, as the success path); `CASE_VERSION_CONFLICT`
-and an unlabelled 409 → `CaseVersionConflictError`. A case delete's own
+through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either
+read can land before the delete commits; one after it meets the 404 below and
+closes the case. For either code, both hooks write nothing once the session has
+changed, as the success path); `CASE_VERSION_CONFLICT` and an unlabelled 409 →
+`CaseVersionConflictError`.
+
+**A case that is gone is `CaseNotFoundError`** (#384). The API labels the 404
+of a case lookup that came back empty `x-error-code: CASE_NOT_FOUND`, on any
+route, and answers a driver-only write by a reader who does not drive the case
+403 `CASE_NOT_DRIVER` (faultmaven#2806). The classifier maps `CASE_NOT_FOUND`;
+any other 404 is still `ValidationError`, and a 403 is `PermissionError`. An
+unlabelled 404 (`isUnlabelledNotFound`, which reads a classified error through
+the answer it wraps) is the case only where the route sends no other:
+`asCaseReadError` maps it to `CaseNotFoundError` on `getCase` alone (a core
+before #2806 labels nothing). Everywhere else the case row decides: a refused
+turn (both hooks: a 403 or an unlabelled 404, which the turn route also sends
+for evidence or a file inside the case), rename or title generation
+(`isCaseWriteRefusal`: a 403, a `CASE_NOT_FOUND`, or an unlabelled 404, which
+on an older core also means "not the driver") is read back
+(`readBackRefusedWrite`, `lib/state/write-refused.ts`). The row decides:
+`gone` (the case closes, see below), `driven_by_other` (marked denied, out of
+the sidebar, the driver notice), or `unexplained` (the server's own text,
+`refusalText`; the case stays open). Both turn hooks handle a labelled
+`CaseNotFoundError` as `CaseTerminalError` (no failed op, no Retry; bubble
+"This case no longer exists, so your message wasn't added.") and read the
+case back.
+`readCaseBack` (which `refreshActiveCase` wraps) reads errors through the
+classifier; on `CaseNotFoundError` it closes the case if it is still the open
+one (`namesCase`: by id, or an optimistic pointer the mapping resolves to it) (no case open, `hasUnsavedNewChat` false, the persisted pointer removed),
+raises `goneCaseNotice`, and reloads the sidebar through `reloadDrivenCaseList`
+whichever case is open. `CopilotPanel` turns the notice into the toast ("Case
+Not Found" / "This case no longer exists." / "It may have been deleted in another
+window or on another device.") and tells the host through `onCaseChanged`; the
+Dashboard's re-read meets the same 404 and shows its not-found view. Copy ruled
+by the owner on 2026-11-05. Adopting #2806's contract (pin + types) is its own
+PR once it merges; the classifier reads the header, which the generated types
+do not carry, so nothing here waits on it. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`
@@ -501,10 +534,12 @@ close, reports); delete is the creator's.
   - a lazy case-create's completion (`lib/state/lazy-case.ts`), so the new case
     is listed even when the user opened another meanwhile;
   - both turn hooks, on a turn refused while a delete of its case runs
-    (`CASE_DELETE_IN_PROGRESS`).
-  Never from `refreshActiveCase`, which also runs in the Dashboard. The
-  Dashboard host passes its own `initialCase.readOnly` and never mounts the
-  sidebar.
+    (`CASE_DELETE_IN_PROGRESS`);
+  - `refreshActiveCase`, when the case answers 404 (#384): gone needs no host
+    to judge it.
+  Whether the user still drives a case is never judged in `refreshActiveCase`,
+  which also runs in the Dashboard. The Dashboard host passes its own
+  `initialCase.readOnly` and never mounts the sidebar.
 - **Redacted sources** (contract 13.1.0): a `knowledge_base` source with
   `metadata.access === 'restricted'` (`isRestrictedSource`,
   `lib/state/turn-sources.ts`) is a runbook this viewer may not open; it renders
