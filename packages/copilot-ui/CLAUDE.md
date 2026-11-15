@@ -557,6 +557,9 @@ close, reports); delete is the creator's.
 - **Runbooks in context** (`InlineSourcesRenderer`): the card groups a turn's
   `sources` by `metadata.trigger` — `question`, then `kb_qa`, then the
   pre-fetched case context (`symptom` / `root_cause`, and any unknown
-  trigger) — with headings only when more than one group is present. It counts
-  distinct `document_id`s (a runbook gives up to two sections), and renders
-  each excerpt as markdown with headings demoted to bold lines.
+  trigger) — as labelled groups (not headings), labels shown only when more
+  than one group is present. It counts distinct `document_id`s (a runbook
+  gives up to two sections). Each excerpt renders as markdown with headings
+  demoted to bold lines, absolute http(s) links opened in a new tab (a
+  followed link would replace the side panel or the Dashboard page), relative
+  links as text, and no images.

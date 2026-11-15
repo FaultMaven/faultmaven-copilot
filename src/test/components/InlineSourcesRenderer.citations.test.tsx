@@ -150,6 +150,39 @@ describe('InlineSourcesRenderer — a source excerpt', () => {
     expect(screen.getByText(/kubectl get po/)).toBeInTheDocument();
   });
 
+  // The card is in the side panel and the Dashboard page: a followed link must not replace either.
+  it('opens an absolute link in a new tab, and renders a relative one as its text', () => {
+    const { container } = render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[kb(1, { content: 'See [the docs](https://kubernetes.io/docs/x) and [pool](../db/pool.md).' })]}
+      />
+    );
+    const card = container.querySelector('details') as HTMLElement;
+    const links = card.querySelectorAll('a');
+
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute('href', 'https://kubernetes.io/docs/x');
+    expect(links[0]).toHaveAttribute('target', '_blank');
+    expect(links[0]).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(card).toHaveTextContent('and pool.');
+  });
+
+  it('fetches no image from an excerpt', () => {
+    const { container } = render(
+      <InlineSourcesRenderer content="Done." sources={[kb(1, { content: 'Diagram: ![d](https://example.com/a.png)' })]} />
+    );
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('keeps a wide table inside a scroll box', () => {
+    const { container } = render(
+      <InlineSourcesRenderer content="Done." sources={[kb(1, { content: '| cmd | why |\n|---|---|\n| `kubectl top` | usage |' })]} />
+    );
+    const table = (container.querySelector('details') as HTMLElement).querySelector('table') as HTMLElement;
+    expect(table.parentElement).toHaveClass('overflow-x-auto');
+  });
+
   it('renders no script from an excerpt', () => {
     const { container } = render(
       <InlineSourcesRenderer content="Done." sources={[kb(1, { content: 'A <script>alert(1)</script> b' })]} />
@@ -165,8 +198,12 @@ describe('InlineSourcesRenderer — sources grouped by how they reached the prom
   const withTrigger = (n: number, trigger: string): Source =>
     kb(n, { metadata: { document_id: `doc-${n}`, title: `Runbook ${n}`, trigger } });
 
-  const sectionOf = (heading: string): HTMLElement =>
-    screen.getByRole('heading', { name: heading }).closest('section') as HTMLElement;
+  const sectionOf = (label: string): HTMLElement => screen.getByRole('group', { name: label });
+  const groupLabels = (): string[] =>
+    screen
+      .getAllByRole('group')
+      .map((g) => g.getAttribute('aria-label'))
+      .filter((label): label is string => label !== null);
 
   it('separates a question lookup and the assistant\'s search from the standing context', () => {
     render(
@@ -181,8 +218,9 @@ describe('InlineSourcesRenderer — sources grouped by how they reached the prom
       />
     );
 
-    const headings = screen.getAllByRole('heading').map((h) => h.textContent);
-    expect(headings).toEqual([
+    // Labelled groups, not headings: the card adds nothing to the reply's outline.
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(groupLabels()).toEqual([
       'Found for your question',
       "From the assistant's knowledge-base search",
       'Matched to this case',
@@ -197,9 +235,10 @@ describe('InlineSourcesRenderer — sources grouped by how they reached the prom
     expect(within(caseGroup).queryByText('Runbook 3')).toBeNull();
   });
 
-  it('shows no heading when every source came one way', () => {
+  it('shows no group label when every source came one way', () => {
     render(<InlineSourcesRenderer content="Done." sources={[withTrigger(1, 'question'), withTrigger(2, 'question')]} />);
-    expect(screen.queryByRole('heading')).toBeNull();
+    expect(groupLabels()).toEqual([]);
+    expect(screen.queryByText('Found for your question')).toBeNull();
   });
 
   it('files a trigger it does not know, or none, with the case context', () => {
@@ -212,8 +251,19 @@ describe('InlineSourcesRenderer — sources grouped by how they reached the prom
 
     const caseGroup = sectionOf('Matched to this case');
     expect(within(caseGroup).getByText('Runbook 2')).toBeInTheDocument();
-    // The numbered fallback keeps the entry's place in the turn's list.
+    // Numbered down the card as shown: Runbook 1 (question group), Runbook 2, then this.
     expect(within(caseGroup).getByText('Source 3')).toBeInTheDocument();
+  });
+
+  it('numbers untitled entries in display order, with no gap for a redacted one', () => {
+    const untitled = (trigger: string): Source => kb(0, { metadata: { trigger } });
+    const restricted: Source = { type: 'knowledge_base', content: '', confidence: null, metadata: { access: 'restricted' } };
+    // Server order: case, restricted, kb_qa. Display order: kb_qa, case, restricted.
+    render(<InlineSourcesRenderer content="Done." sources={[untitled('symptom'), restricted, untitled('kb_qa')]} />);
+
+    expect(within(sectionOf("From the assistant's knowledge-base search")).getByText('Source 1')).toBeInTheDocument();
+    expect(within(sectionOf('Matched to this case')).getByText('Source 2')).toBeInTheDocument();
+    expect(screen.queryByText('Source 3')).toBeNull();
   });
 
   // The server strips a redacted entry's trigger with the rest of its metadata.
