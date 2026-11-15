@@ -127,6 +127,25 @@ describe('ConversationsList — a delete the gate refused', () => {
     expect(screen.getByText(REFRESH_FAILED)).toBeInTheDocument();
   });
 
+  it('a second refusal with the same text keeps its own 5 s (the first one’s timer does not clear it)', async () => {
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    await deleteMine();
+    expect(screen.getByText(BUSY)).toBeInTheDocument();
+
+    await advance(3000);
+    routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
+    fireEvent.click(screen.getByRole('button', { name: `Menu for ${TITLE}` }));
+    fireEvent.click(screen.getByText('Delete'));
+    await advance(0);
+
+    // Where the first refusal's timer would fire: the second's message stays.
+    await advance(2500);
+    expect(screen.getByText(BUSY)).toBeInTheDocument();
+    // Its own 5 s are up.
+    await advance(2500);
+    expect(screen.queryByText(BUSY)).toBeNull();
+  });
+
   it('the refused row is listed while the refusal’s reload is pending', async () => {
     routeDelete(409, 'CASE_WORK_IN_PROGRESS', false);
     getUserCases.mockResolvedValueOnce([MINE, OTHER]).mockReturnValueOnce(new Promise(() => {}));

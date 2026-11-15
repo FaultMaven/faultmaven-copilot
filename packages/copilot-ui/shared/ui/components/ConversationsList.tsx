@@ -100,6 +100,23 @@ export function ConversationsList({
   // load (#388).
   const [listError, setListError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The one timer of the notice on screen. A new notice replaces it, so an
+  // earlier notice's timer never clears a later one, even with the same text.
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNotice = useCallback((text: string, ms: number) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => {
+      noticeTimer.current = null;
+      setNotice(null);
+    }, ms);
+  }, []);
+  const clearNotice = useCallback(() => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = null;
+    setNotice(null);
+  }, []);
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
   // Until the server's list is stored once, an empty list is not "no cases".
   const [hasLoaded, setHasLoaded] = useState(false);
   // How many server lists were stored: a failed delete's row goes back only
@@ -288,8 +305,7 @@ export function ConversationsList({
       } catch (err) {
         log.warn('Failed to refresh cases after a failed delete', { error: err });
       }
-      setNotice(message);
-      setTimeout(() => setNotice(current => (current === message ? null : current)), 5000);
+      showNotice(message, 5000);
       return listed;
     };
     try {
@@ -392,8 +408,7 @@ export function ConversationsList({
 
         // Show user-friendly message
         const duplicate = 'This case was recently deleted or is already being processed. Refreshing...';
-        setNotice(duplicate);
-        setTimeout(() => setNotice(current => (current === duplicate ? null : current)), 3000);
+        showNotice(duplicate, 3000);
 
         return; // Don't restore UI or show error
       }
@@ -536,7 +551,7 @@ export function ConversationsList({
             )}
             {/* Before a list is stored, dismissing would leave a blank sidebar: the error is all there is. */}
             {hasLoaded && (
-              <button type="button" onClick={() => { setNotice(null); setListError(null); }} className="text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
+              <button type="button" onClick={() => { clearNotice(); setListError(null); }} className="text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
             )}
           </div>
         </div>
