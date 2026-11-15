@@ -72,5 +72,11 @@ describe('Response Handlers', () => {
       expect(result.content).toBe('Custom content');
       expect(result.confidence).toBeUndefined();
     });
+
+    it('shows a score of 0, and none for a null score', () => {
+      expect(formatSource({ type: 'knowledge_base', content: 'x', confidence: 0 }).confidence).toBe('0%');
+      expect(formatSource({ type: 'knowledge_base', content: 'x', confidence: null }).confidence).toBeUndefined();
+      expect(formatSource({ type: 'knowledge_base', content: 'x', confidence: NaN }).confidence).toBeUndefined();
+    });
   });
 });

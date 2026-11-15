@@ -5,12 +5,18 @@ import type { ConversationItem } from '../optimistic';
  * Which `sources` to store on an assistant row.
  *
  * `TurnResponse.sources` (and `Message.sources`, its persisted copy) is the KB
- * context that turn's prompt actually carried: at most five runbooks, standing
- * in every prompt until a pre-fetch replaces it, so it repeats turn to turn
- * (API contract 11.2.0). The server marks the excerpts the previous turn's
- * prompt did not carry `new_this_turn`, so a row keeps the list only where
+ * context that turn's prompt actually carried, as runbook sections (up to two
+ * per runbook). Most of it is the pre-fetched context (`metadata.trigger`
+ * `symptom` / `root_cause`), which stands in every prompt until a pre-fetch
+ * replaces it, so it repeats turn to turn (API contract 11.2.0). A turn can
+ * add what its own searches found: the lookup for a question about the
+ * knowledge base (`question`, 14.24.0) and the sections the assistant's own
+ * search answered from (`kb_qa`). The server marks `new_this_turn` on the
+ * pre-fetched excerpts the previous pre-fetched context did not carry and on
+ * every entry a search found for this turn, so a row keeps the list only where
  * something in it is new: the list shows where the context arrives or changes,
- * not under every answer, and is not persisted once per row.
+ * or where a search answered, not under every answer, and is not persisted
+ * once per row. The card groups the list by channel (`InlineSourcesRenderer`).
  *
  * A self-hosted core older than 11.2.0 sends `sources` with no flag at all.
  * For that server the row keeps the list where it differs from the last list
