@@ -25,6 +25,7 @@ import { ownedStorage } from '../../owned-storage';
 import { CaseNotFoundError } from '../../errors/types';
 import { ErrorClassifier } from '../../errors/classifier';
 import { reloadDrivenCaseList } from '../case-list-reload';
+import { nextDeletingReread } from '../../cases/deleting';
 
 /**
  * Whether an open-case id (the pointer, or the open row's id) names the case
@@ -74,6 +75,12 @@ export interface CasesSlice {
    * `caseId` is the case's real id.
    */
   goneCaseNotice: { caseId: string } | null;
+  /**
+   * Cases whose last single-case read said a delete of them is running
+   * (`deleting: true`, contract 14.15.0, #401), keyed by real id. The open case
+   * renders read-only while it is here; `readCaseBack` is the only writer.
+   */
+  deletingCaseIds: Record<string, true>;
 
   // Actions
   clearGoneCaseNotice: () => void;
@@ -125,6 +132,11 @@ export interface CasesSlice {
    * is open (#384).
    */
   readCaseBack: (caseId: string) => Promise<CaseReadBack>;
+  /**
+   * Stop re-reading cases being deleted (the panel unmounts). Their flags stay
+   * until the next read of the case.
+   */
+  stopDeletingRereads: () => void;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -133,6 +145,64 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
   // rapid A→B→A firing two fetches for the same case with the same offset (which
   // would append the same rows twice and PERSIST the duplicates).
   const inFlightDeltaFetches = new Map<string, Promise<boolean>>();
+
+  // Re-reads of an open case being deleted, by real id: the pending timer, so
+  // one case has one chain however many reads see the flag.
+  const deletingRereads = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Whether the open case (pointer or row) is this one. */
+  const isOpen = (caseId: string, resolvedCaseId: string): boolean => {
+    const state = get();
+    return (
+      namesCase(state.activeCaseId, caseId, resolvedCaseId) ||
+      namesCase(state.activeCase?.case_id, caseId, resolvedCaseId)
+    );
+  };
+
+  /**
+   * Read an open case being deleted again on the contract's backoff (2 s
+   * doubling to 10 s, none starting past 60 s on the wall clock) until it is
+   * gone (`readCaseBack` closes it) or `deleting` clears. Stops when the
+   * session changes, another case is opened, or the panel unmounts; past the
+   * cap the case stays read-only until the next read (opening it again).
+   */
+  const watchDeleting = (resolvedCaseId: string, epoch: number): void => {
+    if (deletingRereads.has(resolvedCaseId)) return;
+    const startedAt = Date.now();
+    const stop = () => {
+      const timer = deletingRereads.get(resolvedCaseId);
+      if (timer !== undefined) clearTimeout(timer);
+      deletingRereads.delete(resolvedCaseId);
+    };
+    const schedule = (previousDelay: number | null) => {
+      const delay = nextDeletingReread(previousDelay, Date.now() - startedAt);
+      if (delay == null) {
+        deletingRereads.delete(resolvedCaseId);
+        log.info('Case still reads as being deleted; re-reads stopped', { caseId: resolvedCaseId });
+        return;
+      }
+      deletingRereads.set(resolvedCaseId, setTimeout(() => void reread(delay), delay));
+    };
+    const reread = async (delay: number) => {
+      if (
+        epoch !== getEpoch() ||
+        !isOpen(resolvedCaseId, resolvedCaseId) ||
+        !get().deletingCaseIds[resolvedCaseId]
+      ) {
+        stop();
+        return;
+      }
+      const read = await get().readCaseBack(resolvedCaseId);
+      // Stopped meanwhile (unmount, or another chain took over): do not revive it.
+      if (!deletingRereads.has(resolvedCaseId)) return;
+      if (epoch !== getEpoch() || read.kind === 'gone' || (read.kind === 'row' && !read.row.deleting)) {
+        stop();
+        return;
+      }
+      schedule(delay); // still deleting, or the read failed: keep to the backoff
+    };
+    schedule(null); // holds the case's slot synchronously: no second chain
+  };
 
   return {
     activeCaseId: null,
@@ -143,6 +213,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
     pinnedCases: new Set(),
     writeDeniedCaseIds: {},
     goneCaseNotice: null,
+    deletingCaseIds: {},
 
     clearGoneCaseNotice: () => set({ goneCaseNotice: null }),
 
@@ -522,6 +593,18 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           return { writeDeniedCaseIds: next };
         });
 
+        // A delete of the case is running, or no longer is. Only this read can
+        // say so (lists carry no flag), so only it writes the flag.
+        const deleting = row.deleting === true;
+        set((state) => {
+          if (deleting === (state.deletingCaseIds[resolvedCaseId] === true)) return {};
+          const next = { ...state.deletingCaseIds };
+          if (deleting) next[resolvedCaseId] = true;
+          else delete next[resolvedCaseId];
+          return { deletingCaseIds: next };
+        });
+        if (deleting && isOpen(caseId, resolvedCaseId)) watchDeleting(resolvedCaseId, epoch);
+
         set((state) => {
           const current = state.activeCase;
           // Guard on identity: the user may have switched cases while the
@@ -553,11 +636,14 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // case (the user may have moved on); either way its row leaves the
           // sidebar, past the cached page that still lists it.
           if (epoch !== getEpoch()) return { kind: 'unread' };
-          const state = get();
-          const open =
-            namesCase(state.activeCaseId, caseId, resolvedCaseId) ||
-            namesCase(state.activeCase?.case_id, caseId, resolvedCaseId);
+          const open = isOpen(caseId, resolvedCaseId);
           log.warn('Case no longer exists', { caseId: resolvedCaseId, open });
+          set((state) => {
+            if (!state.deletingCaseIds[resolvedCaseId]) return {};
+            const next = { ...state.deletingCaseIds };
+            delete next[resolvedCaseId];
+            return { deletingCaseIds: next };
+          });
           if (open) {
             set({ activeCase: null, hasUnsavedNewChat: false, goneCaseNotice: { caseId: resolvedCaseId } });
             void get().setActiveCaseId(null);
@@ -571,6 +657,11 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         log.warn('Active-case refresh failed', { caseId, error });
         return { kind: 'unread' };
       }
+    },
+
+    stopDeletingRereads: () => {
+      for (const timer of deletingRereads.values()) clearTimeout(timer);
+      deletingRereads.clear();
     },
 
     refreshActiveCase: async (caseId) => {

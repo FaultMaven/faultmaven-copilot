@@ -30,9 +30,14 @@ const handleCaseSelect = vi.fn((caseId: string) => {
   } as never);
 });
 
+const stopDeletingRereads = useAppStore.getState().stopDeletingRereads;
+
 beforeEach(() => {
   vi.clearAllMocks();
   useAppStore.setState({
+    deletingCaseIds: {},
+    writeDeniedCaseIds: {},
+    stopDeletingRereads,
     initializingCapabilities: false,
     capabilitiesError: null,
     activeCaseId: null,
@@ -167,5 +172,63 @@ describe('the case list is told the signed-in user', () => {
     await waitFor(() =>
       expect(screen.getByTestId('conversations-list').getAttribute('data-user')).toBe(stub.host.session.user.id),
     );
+  });
+});
+
+// A delete of the open case is running (contract 14.15.0, #401): the case read
+// says `deleting: true`, so nothing more can be added, whoever drives it.
+describe('a case being deleted', () => {
+  const mount = (readOnly = false) => {
+    const stub = createStubHost();
+    return render(
+      <CopilotPanel host={stub.host} initialCase={{ kind: 'existing', caseId: 'case-42' }} readOnly={readOnly} />,
+    );
+  };
+
+  it('renders no composer and says it is being deleted', async () => {
+    mount();
+    expect(await screen.findByRole('form', { name: 'Message Input' })).toBeInTheDocument();
+
+    act(() => useAppStore.setState({ deletingCaseIds: { 'case-42': true } }));
+
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Message Input' })).toBeNull());
+    expect(screen.getByRole('note')).toHaveTextContent('This case is being deleted, so nothing more can be added to it.');
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('says so over the driver notice: the delete is the reason that holds for everyone', async () => {
+    mount(true);
+    act(() => useAppStore.setState({ deletingCaseIds: { 'case-42': true } }));
+
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent(/being deleted/));
+    expect(screen.getByRole('note')).not.toHaveTextContent(/driver/);
+  });
+
+  it('the composer comes back when the flag clears', async () => {
+    useAppStore.setState({ deletingCaseIds: { 'case-42': true } });
+    mount();
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent(/being deleted/));
+
+    act(() => useAppStore.setState({ deletingCaseIds: {} }));
+
+    expect(await screen.findByRole('form', { name: 'Message Input' })).toBeInTheDocument();
+  });
+
+  it('a flag on another case leaves this one writable', async () => {
+    useAppStore.setState({ deletingCaseIds: { 'case-7': true } });
+    mount();
+    expect(await screen.findByRole('form', { name: 'Message Input' })).toBeInTheDocument();
+  });
+
+  it('unmounting stops the re-reads', async () => {
+    const stop = vi.fn();
+    useAppStore.setState({ stopDeletingRereads: stop } as never);
+    const view = mount();
+    await waitFor(() => expect(useAppStore.getState().activeCaseId).toBe('case-42'));
+    expect(stop).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

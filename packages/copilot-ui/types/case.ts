@@ -73,6 +73,11 @@ export interface UserCase {
   closure_reason: string | null; // Required for terminal states (RESOLVED, CLOSED) per commit b434152a
   closed_at: string | null; // Timestamp when case reached terminal state per commit b434152a
   valid_next_states?: string[]; // Server-provided list of allowed case actions (empty for dispositions)
+  /**
+   * A delete of the case is running (contract 14.15.0). Only `GET /cases/{id}`
+   * carries it; a list row has no key. Best-effort: see `lib/cases/deleting.ts`.
+   */
+  deleting?: boolean;
 }
 
 

@@ -38,6 +38,8 @@ interface ChatInterfaceProps {
    * would still be there to press.
    */
   readOnly?: boolean;
+  /** What stands where the composer would be when `readOnly`: why it is read-only. */
+  readOnlyNotice?: string;
   setActiveCase?: (updater: (prev: UserCase | null) => UserCase | null) => void;
 }
 
@@ -58,6 +60,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onNewChat,
   hasUnsavedNewChat,
   readOnly,
+  readOnlyNotice = DRIVER_READ_ONLY_NOTICE,
   setActiveCase
 }) => {
   const currentMessages = activeCaseId ? conversations[activeCaseId] || [] : [];
@@ -168,7 +171,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           role="note"
           className="flex-shrink-0 px-4 py-3 border-t border-fm-border bg-fm-surface text-xs text-fm-text-tertiary"
         >
-          {DRIVER_READ_ONLY_NOTICE}
+          {readOnlyNotice}
         </div>
       )}
       {!readOnly && (
