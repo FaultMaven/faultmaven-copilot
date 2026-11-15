@@ -148,21 +148,25 @@ changed, as the success path); `CASE_VERSION_CONFLICT` and an unlabelled 409 →
 of a case lookup that came back empty `x-error-code: CASE_NOT_FOUND`, on any
 route, and answers a driver-only write by a reader who does not drive the case
 403 `CASE_NOT_DRIVER` (faultmaven#2806). The classifier maps `CASE_NOT_FOUND`;
-any other 404 is still `ValidationError`, and a 403 is `PermissionError`. A core
-before #2806 labels neither, so the client keeps two readings for it:
-`asCaseRouteError` (`getCase`, `submitTurn`'s POST, not the job poll) reads an
-unlabelled 404 there as the case lookup, the only 404 those routes send; and a
-refused rename or title generation (`isCaseWriteRefusal`: a 403, a
-`CASE_NOT_FOUND`, or an unlabelled 404, which there also means "not the
-driver") is read back (`readBackRefusedWrite`, `lib/state/write-refused.ts`),
-which the turn 403 path shares. The row decides: `gone` (the case closes, see
-below), `driven_by_other` (marked denied, out of the sidebar, the driver
-notice), or `unexplained` (the server's text). Both turn hooks handle
-`CaseNotFoundError` as `CaseTerminalError` (no failed op, no Retry; bubble "This
-case no longer exists, so your message wasn't added.") and read the case back.
+any other 404 is still `ValidationError`, and a 403 is `PermissionError`. An
+unlabelled 404 (`isUnlabelledNotFound`, which reads a classified error through
+the answer it wraps) is the case only where the route sends no other:
+`asCaseReadError` maps it to `CaseNotFoundError` on `getCase` alone (a core
+before #2806 labels nothing). Everywhere else the case row decides: a refused
+turn (both hooks: a 403 or an unlabelled 404, which the turn route also sends
+for evidence or a file inside the case), rename or title generation
+(`isCaseWriteRefusal`: a 403, a `CASE_NOT_FOUND`, or an unlabelled 404, which
+on an older core also means "not the driver") is read back
+(`readBackRefusedWrite`, `lib/state/write-refused.ts`). The row decides:
+`gone` (the case closes, see below), `driven_by_other` (marked denied, out of
+the sidebar, the driver notice), or `unexplained` (the server's own text,
+`refusalText`; the case stays open). Both turn hooks handle a labelled
+`CaseNotFoundError` as `CaseTerminalError` (no failed op, no Retry; bubble
+"This case no longer exists, so your message wasn't added.") and read the
+case back.
 `readCaseBack` (which `refreshActiveCase` wraps) reads errors through the
 classifier; on `CaseNotFoundError` it closes the case if it is still the open
-one (no case open, `hasUnsavedNewChat` false, the persisted pointer removed),
+one (`namesCase`: by id, or an optimistic pointer the mapping resolves to it) (no case open, `hasUnsavedNewChat` false, the persisted pointer removed),
 raises `goneCaseNotice`, and reloads the sidebar through `reloadDrivenCaseList`
 whichever case is open. `CopilotPanel` turns the notice into the toast ("Case
 Not Found" / "This case no longer exists." / "It may have been deleted in another

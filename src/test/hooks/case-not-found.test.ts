@@ -5,10 +5,14 @@
  * composer) and a turn read as "Invalid Input" with a Retry that could only
  * meet the same 404.
  *
- * Now a turn's 404 is `CaseNotFoundError`: no failed op and no Retry, the
- * bubble says the case is gone. The read-back's 404 closes the case when it is
- * still the open one, raises `goneCaseNotice` for the panel, and reloads the
- * sidebar past its cache. Drives the real chain down to `fetchWithTimeout`.
+ * Now a turn's 404 has no failed op and no Retry. A labelled one
+ * (`CASE_NOT_FOUND`, faultmaven#2806) is `CaseNotFoundError`; an unlabelled one
+ * (an older core, or the turn route's 404 for evidence or a file inside the
+ * case) is read back, and the row decides: gone, or the server's own text with
+ * the case left open. The read-back's 404 closes the case when it is still the
+ * open one (an optimistic pointer the mapping resolves to it included), raises
+ * `goneCaseNotice` for the panel, and reloads the sidebar past its cache.
+ * Drives the real chain down to `fetchWithTimeout`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -23,6 +27,7 @@ import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { applyCaseTitleChange } from '@faultmaven/copilot-ui/lib/state/case-title-change';
 import { titleChangeDeps } from '@faultmaven/copilot-ui/lib/state/case-title-deps';
+import { idMappingManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import { createStubHost, hostWrapper } from '../support/host';
 
 const mockShowError = vi.fn();
@@ -77,6 +82,8 @@ const PATHS = [
       return () => result.current.handleTurnSubmit({ query: 'read this log', files: [file], inputType: 'file' });
     },
     bubble: `${BUBBLE}\n\nYour message and 1 file (app.log) were not added to the case. They are still in the message box.`,
+    // An unlabelled 404 is read back, as a 403 is: the bubble is the read's.
+    unlabelledBubble: BUBBLE,
     outcome: { success: false, sent: true, refused: true },
   },
 ];
@@ -129,17 +136,33 @@ describe('a turn on a case that answers 404 (#384)', () => {
     return { result, invalidate, reloads: () => useAppStore.getState().refreshSessions - reloads };
   }
 
-  it.each(PATHS)('$path path: sent once, no Retry, the bubble says the case is gone, and the read-back closes it',
-    async ({ render, bubble, outcome }) => {
+  it.each(PATHS.flatMap((p) => [
+    { ...p, label: 'CASE_NOT_FOUND', labelled: true },
+    { ...p, label: 'unlabelled (an older core)', labelled: false },
+  ]))('$path path, $label: sent once, no Retry, the bubble says the case is gone, and the read-back closes it',
+    async ({ render, bubble, unlabelledBubble, outcome, labelled }) => {
+      if (labelled) {
+        turnAnswers = [wire(404, GONE, { 'x-error-code': 'CASE_NOT_FOUND' })];
+        readAnswer = () => wire(404, GONE, { 'x-error-code': 'CASE_NOT_FOUND' });
+      }
       const { result, invalidate, reloads } = await submit(render);
 
       if (outcome) expect(result).toMatchObject(outcome);
       expect(sent('POST', `${CASE_URL}/turns`)).toHaveLength(1);
       // The failed-operation banner is the only Retry a turn has.
       expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
-      expect(assistant()).toMatchObject({ response: bubble, error: true, failed: false, loading: false, optimistic: false });
-      expect(mockShowError).toHaveBeenCalledTimes(1);
-      expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(CaseNotFoundError);
+      expect(assistant()).toMatchObject({
+        response: labelled ? bubble : (unlabelledBubble ?? bubble),
+        error: true, failed: false, loading: false, optimistic: false,
+      });
+      // The labelled refusal is shown at once; the read-back's notice is the
+      // panel's toast (`goneCaseNotice`) either way.
+      if (labelled) {
+        expect(mockShowError).toHaveBeenCalledTimes(1);
+        expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(CaseNotFoundError);
+      } else {
+        expect(mockShowError).not.toHaveBeenCalled();
+      }
 
       // The read-back met the same 404: the case closed and its row leaves the list.
       expect(sent('GET', CASE_URL)).toHaveLength(1);
@@ -162,7 +185,39 @@ describe('a turn on a case that answers 404 (#384)', () => {
     expect(sent('POST', `${CASE_URL}/turns`)).toHaveLength(2);
     expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
     expect(assistant()).toMatchObject({ response: BUBBLE, failed: false });
-    expect(mockShowError.mock.calls[0][0]).toBeInstanceOf(CaseNotFoundError);
+    expect(useAppStore.getState().goneCaseNotice).toEqual({ caseId: CASE });
+  });
+
+  it.each(PATHS)('$path path: an unlabelled 404 for something inside a case that reads back leaves it open, with the server’s text',
+    async ({ render }) => {
+      // A reclassification of a file removed since: the turn route's 404 for
+      // the file, not the case. The case reads back.
+      const missing = { detail: 'UploadedFile not found: file_0001' };
+      turnAnswers = [wire(404, missing)];
+      readAnswer = () => wire(200, ROW);
+      await submit(render);
+
+      expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
+      expect(assistant()).toMatchObject({ response: missing.detail, error: true, failed: false });
+      const state = useAppStore.getState();
+      expect(state.activeCaseId).toBe(CASE);
+      expect(state.goneCaseNotice).toBeNull();
+      expect(mockShowError).not.toHaveBeenCalled();
+    });
+
+  it('a gone case whose open pointer is still its optimistic id closes', async () => {
+    const OPT = 'opt_case_0001';
+    idMappingManager.addMapping(OPT, CASE);
+    try {
+      openCase(OPT);
+      useAppStore.setState({ conversations: { [CASE]: [], [OPT]: [] } });
+      let row: unknown;
+      await act(async () => { row = await useAppStore.getState().refreshActiveCase(CASE); });
+      expect(row).toBeNull();
+      expect(useAppStore.getState()).toMatchObject({ activeCaseId: null, activeCase: null, goneCaseNotice: { caseId: CASE } });
+    } finally {
+      idMappingManager.removeMapping(OPT);
+    }
   });
 
   it('a turn refused while a delete runs, whose read-back finds the delete done, closes the case', async () => {

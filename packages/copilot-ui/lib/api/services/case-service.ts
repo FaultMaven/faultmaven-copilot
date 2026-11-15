@@ -9,7 +9,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
-import { CaseNotFoundError, CredentialUnavailableError } from "../../errors/types";
+import { CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound } from "../../errors/types";
 import {
   APIError,
   CaseUpdateRequest,
@@ -340,18 +340,17 @@ function toUserCase(row: unknown): UserCase {
 }
 
 /**
- * A failure of `GET /cases/{id}` or the turn route, read for that route, for a
- * core that does not label its case 404s (before faultmaven#2806). There a 404
- * is only ever the case lookup coming back empty, "Case not found or access
- * denied" (the case was deleted, or this account can no longer read it), so an
- * unlabelled one becomes `CaseNotFoundError` (#384). A labelled 404 is the
- * classifier's (`CASE_NOT_FOUND` on any route); anything else is returned as
- * it was. Both error shapes carry the status and the code: the client's
- * enriched `Error` and an `HttpError`.
+ * A failure of `GET /cases/{id}`, for a core that does not label its case 404s
+ * (before faultmaven#2806). That route sends no other 404 than the case lookup
+ * coming back empty (the case was deleted, or this account can no longer read
+ * it), so an unlabelled one becomes `CaseNotFoundError` (#384). Only this
+ * route: the turn route also sends an unlabelled 404 for evidence or a file
+ * inside the case, which the case row has to rule on (`readBackRefusedWrite`).
+ * A labelled 404 is the classifier's (`CASE_NOT_FOUND` on any route); anything
+ * else is returned as it was.
  */
-function asCaseRouteError(error: unknown): unknown {
-  const failure = error as { status?: unknown; headers?: Record<string, string> } | null;
-  if (error instanceof Error && failure?.status === 404 && !failure.headers?.['x-error-code']) {
+function asCaseReadError(error: unknown): unknown {
+  if (error instanceof Error && isUnlabelledNotFound(error)) {
     return new CaseNotFoundError(error.message, error);
   }
   return error;
@@ -372,11 +371,11 @@ export async function getCase(caseId: string): Promise<UserCase> {
   const response = await authenticatedFetchWithRetry(
     `${await getApiTransport().baseUrl()}/api/v1/cases/${encodeURIComponent(caseId)}`,
     { method: 'GET', credentials: 'include' }
-  ).catch((error: unknown) => { throw asCaseRouteError(error); });
+  ).catch((error: unknown) => { throw asCaseReadError(error); });
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({} as any));
     const error = Object.assign(new Error(errorBodyText(errorData) || `Failed to get case: ${response.status}`), { status: response.status });
-    throw asCaseRouteError(error);
+    throw asCaseReadError(error);
   }
   const caseData = await response.json();
   if (!caseData || !caseData.case_id) {
@@ -858,7 +857,7 @@ export async function submitTurn(
     // turn. Callers derive the key from the turn's stable optimistic message id
     // so auto- AND manual-retries of the same turn share one key.
     ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {})
-  }, (await turnTimingFor(request)).requestTimeoutMs).catch((error: unknown) => { throw asCaseRouteError(error); });
+  }, (await turnTimingFor(request)).requestTimeoutMs);
 
   if (response.status === 422) {
     let detail: any = 'Validation failed (422)';
@@ -959,10 +958,9 @@ export async function submitTurn(
 
   if (!response.ok) {
     const errorData: APIError = await response.json().catch(() => ({}));
-    if (response.status === 404) {
-      throw new CaseNotFoundError(errorBodyText(errorData) || 'Case not found');
-    }
-    throw new Error(errorBodyText(errorData) || `Failed to submit turn: ${response.status}`);
+    // With its status: an unlabelled 404 here is read back by the turn hooks,
+    // since this route also sends one for something inside the case.
+    throw Object.assign(new Error(errorBodyText(errorData) || `Failed to submit turn: ${response.status}`), { status: response.status });
   }
 
   return response.json();

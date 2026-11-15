@@ -43,6 +43,7 @@ import {
   CaseDeleteInProgressError,
   CaseNotFoundError,
   PermissionError,
+  isUnlabelledNotFound,
 } from '../../../lib/errors/types';
 import type { TurnPayload, TurnSubmitResult } from '../components/UnifiedInputBar';
 import { useAppStore } from '../../../lib/state/store';
@@ -50,7 +51,7 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse, duplicateUploads } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
-import { applyWriteRefused } from '../../../lib/state/write-refused';
+import { applyWriteRefused, refusalText } from '../../../lib/state/write-refused';
 import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
 import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
@@ -234,19 +235,23 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         showError(classified);
         return { success: false, message: classified.userMessage, sent: true, refused: true };
       }
-      if (classified instanceof PermissionError) {
-        // The server refused this viewer's write (403): nothing was added, and
-        // resending can only meet the same refusal. No failed op, no Retry.
-        log.warn('Turn refused: this viewer may not write the case', { caseId: targetCaseId });
+      if (classified instanceof PermissionError || isUnlabelledNotFound(error)) {
+        // The server refused this viewer's write (403), or answered a 404 that
+        // does not say what was missing (an older core's case 404, or evidence
+        // or a file inside the case): the case row decides which (#384).
+        // Nothing was added, and resending can only meet the same answer. No
+        // failed op, no Retry.
+        const said = refusalText(error, classified);
+        log.warn('Turn refused; reading the case back', { caseId: targetCaseId, status: classified instanceof PermissionError ? 403 : 404 });
         pendingOpsManager.remove(aiMessageId);
         applyWriteRefused({
           caseId: targetCaseId,
           aiMessageId,
-          fallbackText: classified.userMessage,
+          fallbackText: said,
           epoch,
           setConversations,
         });
-        return { success: false, message: classified.userMessage, sent: true, refused: true };
+        return { success: false, message: said, sent: true, refused: true };
       }
       if (classified instanceof IdempotencyKeyReuseError) {
         // The same key can only meet the same 409: the banner's Retry is a new

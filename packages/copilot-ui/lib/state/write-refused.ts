@@ -1,6 +1,7 @@
 /**
  * The server refused a write to a case: this viewer may not write it (403), or
- * the case could not be found for this write (404).
+ * a 404 did not say what was missing (an older core's case 404, or the turn
+ * route's 404 for evidence or a file inside the case).
  *
  * The driver the client holds can be stale or not yet known — a placeholder
  * row before hydration, a case reassigned to someone else while it was open
@@ -18,7 +19,12 @@
  */
 import type { OptimisticConversationItem } from '../optimistic';
 import { CHECKING_ACCESS_NOTICE, DRIVER_READ_ONLY_NOTICE, isDrivenByOther } from '../cases/driver';
-import { CaseNotFoundError, PermissionError, type UserFacingError } from '../errors/types';
+import {
+  CaseNotFoundError,
+  isUnlabelledNotFound,
+  PermissionError,
+  UserFacingError,
+} from '../errors/types';
 import { reloadDrivenCaseList } from './case-list-reload';
 import { getEpoch } from './session-epoch';
 import { useAppStore } from './store';
@@ -54,7 +60,7 @@ export function applyWriteRefused(args: {
     // open when the read lands: the user may have moved to another one.
     const reading = await readBackRefusedWrite(caseId, epoch);
     if (epoch !== getEpoch()) return;
-    if (reading === 'gone') setBubble(new CaseNotFoundError('Case not found').bubbleText);
+    if (reading === 'gone') setBubble(CaseNotFoundError.BUBBLE_TEXT);
     else if (reading === 'driven_by_other') setBubble(DRIVER_READ_ONLY_NOTICE);
     else setBubble(fallbackText);
   })();
@@ -69,9 +75,22 @@ export function applyWriteRefused(args: {
  * can tell "gone" from "handed off".
  */
 export function isCaseWriteRefusal(error: unknown, classified: UserFacingError): boolean {
-  if (classified instanceof CaseNotFoundError || classified instanceof PermissionError) return true;
-  const failure = error as { status?: unknown; headers?: Record<string, string> } | null;
-  return failure?.status === 404 && !failure.headers?.['x-error-code'];
+  return (
+    classified instanceof CaseNotFoundError ||
+    classified instanceof PermissionError ||
+    isUnlabelledNotFound(error)
+  );
+}
+
+/**
+ * What a refused turn's bubble says when the case row explains nothing: a 403's
+ * own copy, or, for a 404 that named nothing, the server's text (the classifier
+ * words every 404 alike, "Resource not found").
+ */
+export function refusalText(error: unknown, classified: UserFacingError): string {
+  if (classified instanceof PermissionError) return classified.userMessage;
+  const raw = error instanceof UserFacingError ? error.originalError : error;
+  return raw instanceof Error && raw.message ? raw.message : classified.userMessage;
 }
 
 /** What reading a refused case back said about the refusal. */

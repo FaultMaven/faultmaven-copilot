@@ -774,11 +774,15 @@ export class CaseDeleteInProgressError extends UserFacingError {
  * panel shows this class's toast.
  */
 export class CaseNotFoundError extends UserFacingError {
-  readonly userTitle = 'Case Not Found';
-  readonly userMessage = 'This case no longer exists.';
-  readonly userAction = 'It may have been deleted in another window or on another device.';
+  /** The copy, readable without an instance (ruled by the owner, 2026-11-05). */
+  static readonly USER_MESSAGE = 'This case no longer exists.';
   /** What a refused turn's bubble says. */
-  readonly bubbleText = "This case no longer exists, so your message wasn't added.";
+  static readonly BUBBLE_TEXT = "This case no longer exists, so your message wasn't added.";
+
+  readonly userTitle = 'Case Not Found';
+  readonly userMessage = CaseNotFoundError.USER_MESSAGE;
+  readonly userAction = 'It may have been deleted in another window or on another device.';
+  readonly bubbleText = CaseNotFoundError.BUBBLE_TEXT;
   readonly category: ErrorCategory = 'validation';
   readonly recovery: RecoveryStrategy = 'graceful_degradation';
 
@@ -969,4 +973,21 @@ export class TurnNotSentError extends UserFacingError {
       icon: 'error'
     };
   }
+}
+
+/**
+ * A 404 that does not say what was not found: no `x-error-code`. A core before
+ * faultmaven#2806 sends every case 404 this way; after it, a case's own 404 is
+ * `CASE_NOT_FOUND` and an unlabelled one is something inside the case (a file,
+ * evidence, a report). So an unlabelled 404 is the case only where the route
+ * sends no other (`GET /cases/{id}`); on a write, the case row decides
+ * (`readBackRefusedWrite`). Both error shapes carry the status and headers:
+ * the client's enriched `Error` and an `HttpError`.
+ */
+export function isUnlabelledNotFound(error: unknown): boolean {
+  // A classified error (what `resilientOperation` hands its callbacks) is read
+  // through the answer it wraps.
+  const raw = error instanceof UserFacingError ? error.originalError : error;
+  const failure = raw as { status?: unknown; headers?: Record<string, string> } | null | undefined;
+  return failure?.status === 404 && !failure.headers?.['x-error-code'];
 }

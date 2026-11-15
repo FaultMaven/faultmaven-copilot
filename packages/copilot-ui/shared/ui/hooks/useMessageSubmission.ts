@@ -20,6 +20,7 @@ import {
   CaseVersionConflictError,
   IdempotencyKeyReuseError,
   PermissionError,
+  isUnlabelledNotFound,
   TurnInProgressError,
   TurnReplayUnavailableError
 } from '../../../lib/errors/types';
@@ -48,7 +49,7 @@ import { getEpoch } from '../../../lib/state/session-epoch';
 import { predictedInvestigationTurn } from '../../../lib/state/turn-label';
 import { applyTurnResponse } from '../../../lib/state/turn-items';
 import { useError } from '../../../lib/errors';
-import { applyWriteRefused } from '../../../lib/state/write-refused';
+import { applyWriteRefused, refusalText } from '../../../lib/state/write-refused';
 import { applyTurnCaseState, applyUnrepliedTurn } from '../../../lib/state/turn-case-state';
 import { reloadDrivenCaseList } from '../../../lib/state/case-list-reload';
 import { abandonLazyCase, claimLazyCase, landLazyCase } from '../../../lib/state/lazy-case';
@@ -280,15 +281,18 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             showError(classified);
             return;
           }
-          if (classified instanceof PermissionError) {
-            // The server refused this viewer's write (403). Resending can only
-            // meet the same refusal: no failed op, no Retry.
-            log.warn('Turn refused: this viewer may not write the case', { caseId });
+          if (classified instanceof PermissionError || isUnlabelledNotFound(error)) {
+            // The server refused this viewer's write (403), or answered a 404
+            // that does not say what was missing: an older core's case 404, or
+            // evidence or a file inside the case (a reclassification of a file
+            // since removed). The case row decides which (#384). Resending can
+            // only meet the same answer: no failed op, no Retry.
+            log.warn('Turn refused; reading the case back', { caseId, status: classified instanceof PermissionError ? 403 : 404 });
             pendingOpsManager.remove(aiMessageId);
             applyWriteRefused({
               caseId,
               aiMessageId,
-              fallbackText: classified.userMessage,
+              fallbackText: refusalText(error, classified),
               epoch,
               setConversations,
             });

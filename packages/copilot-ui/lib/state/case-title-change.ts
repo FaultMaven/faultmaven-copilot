@@ -109,7 +109,7 @@ export async function applyCaseTitleChange(
       // Gone, or handed to another driver (#384, faultmaven#2806): the row says
       // which, and the toast says what it found.
       const reading = await deps.readBackRefusal(caseId);
-      if (reading === 'gone') deps.onPersistError(new CaseNotFoundError('Case not found', error instanceof Error ? error : undefined));
+      if (reading === 'gone') deps.onPersistError(new CaseNotFoundError(CaseNotFoundError.USER_MESSAGE, error instanceof Error ? error : undefined));
       else if (reading === 'driven_by_other') deps.onPersistError(new Error(DRIVER_READ_ONLY_NOTICE));
       else deps.onPersistError(error);
     } else {

@@ -240,13 +240,10 @@ export function ConversationsList({
 
   const handleGenerateTitle = async (caseId: string) => {
     const epoch = getEpoch();
-    const resolvedId = isOptimisticId(caseId) ? idMappingManager.getRealId(caseId) || caseId : caseId;
+    // Optimistic ids resolve to the real id: the API call and a refusal's
+    // read-back both name the real case.
+    const resolvedCaseId = isOptimisticId(caseId) ? idMappingManager.getRealId(caseId) || caseId : caseId;
     try {
-      // ARCHITECTURAL FIX: Resolve optimistic IDs to real IDs for API calls
-      const resolvedCaseId = isOptimisticId(caseId)
-        ? idMappingManager.getRealId(caseId) || caseId
-        : caseId;
-
       log.info('Generating smart title', {
         caseId: resolvedCaseId,
         isOptimistic: isOptimisticId(caseId)
@@ -286,10 +283,10 @@ export function ConversationsList({
       // faultmaven#2806). Only its row says which, and acts on it (the case
       // closes, or leaves the list); the status says what was found.
       if (isCaseWriteRefusal(e, ErrorClassifier.classify(e))) {
-        const reading = await readBackRefusedWrite(resolvedId, epoch);
+        const reading = await readBackRefusedWrite(resolvedCaseId, epoch);
         if (reading === 'gone' || reading === 'driven_by_other') {
           setTitleGenStatus({
-            message: reading === 'gone' ? new CaseNotFoundError('Case not found').userMessage : DRIVER_READ_ONLY_NOTICE,
+            message: reading === 'gone' ? CaseNotFoundError.USER_MESSAGE : DRIVER_READ_ONLY_NOTICE,
             type: 'info',
           });
           return;

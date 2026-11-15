@@ -11,6 +11,7 @@ import {
   OptimisticConversationItem
 } from '../../../lib/optimistic';
 import { isOptimisticId } from '../../../lib/utils/data-integrity';
+
 import { caseCacheManager } from '../../../lib/cache/case-cache';
 import { getEpoch } from '../session-epoch';
 import { createLogger } from '../../../lib/utils/logger';
@@ -24,6 +25,20 @@ import { ownedStorage } from '../../owned-storage';
 import { CaseNotFoundError } from '../../errors/types';
 import { ErrorClassifier } from '../../errors/classifier';
 import { reloadDrivenCaseList } from '../case-list-reload';
+
+/**
+ * Whether an open-case id (the pointer, or the open row's id) names the case
+ * read back. An open id still optimistic names it when the mapping resolves it
+ * there: the turn hooks send under the real id while the pointer may still be
+ * the `opt_case_*` one (#384).
+ */
+function namesCase(openId: string | null | undefined, caseId: string, resolvedCaseId: string): boolean {
+  if (openId == null) return false;
+  if (openId === caseId || openId === resolvedCaseId) return true;
+  if (!isOptimisticId(openId)) return false;
+  const real = idMappingManager.getRealId(openId);
+  return real === caseId || real === resolvedCaseId;
+}
 
 const log = createLogger('CasesSlice');
 
@@ -512,7 +527,7 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // Guard on identity: the user may have switched cases while the
           // fetch was in flight. The optimistic id may have been reconciled
           // to the real id in the meantime, so accept either.
-          if (!current || (current.case_id !== caseId && current.case_id !== resolvedCaseId)) {
+          if (!current || !namesCase(current.case_id, caseId, resolvedCaseId)) {
             return {};
           }
           // Belt-and-braces against out-of-order landings of concurrent
@@ -538,11 +553,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // case (the user may have moved on); either way its row leaves the
           // sidebar, past the cached page that still lists it.
           if (epoch !== getEpoch()) return { kind: 'unread' };
-          const ids = new Set([caseId, resolvedCaseId]);
           const state = get();
           const open =
-            (state.activeCaseId !== null && ids.has(state.activeCaseId)) ||
-            (state.activeCase !== null && ids.has(state.activeCase.case_id));
+            namesCase(state.activeCaseId, caseId, resolvedCaseId) ||
+            namesCase(state.activeCase?.case_id, caseId, resolvedCaseId);
           log.warn('Case no longer exists', { caseId: resolvedCaseId, open });
           if (open) {
             set({ activeCase: null, hasUnsavedNewChat: false, goneCaseNotice: { caseId: resolvedCaseId } });

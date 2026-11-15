@@ -732,17 +732,20 @@ describe('Case Service', () => {
       ).rejects.toThrow('422 Unprocessable Entity');
     });
 
-    it('a 404 answered as a Response (no client enrichment) is CaseNotFoundError (#384)', async () => {
+    it('a 404 answered as a Response keeps its status, for the hooks to read back (#384)', async () => {
+      // The turn route also answers 404 for evidence or a file inside the
+      // case, so its unlabelled 404 is not taken for the case: the case row
+      // decides (`readBackRefusedWrite`).
       const errorResponse = mockResponse(
-        { detail: 'Case not found or access denied' },
+        { detail: 'UploadedFile not found: file_0001' },
         false,
         404
       );
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(errorResponse);
 
-      await expect(
-        caseService.submitTurn('case-123', { query: 'test' })
-      ).rejects.toBeInstanceOf(CaseNotFoundError);
+      const failure = await caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
+      expect(failure).not.toBeInstanceOf(CaseNotFoundError);
+      expect(failure).toMatchObject({ status: 404, message: 'UploadedFile not found: file_0001' });
     });
 
     it('rejects immediately with AbortError if the signal is already aborted', async () => {
