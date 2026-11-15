@@ -469,7 +469,10 @@ close, reports); delete is the creator's.
   (a refusal before its reload; any other failure after a reload that did not
   store the list), but never over a server list stored since the delete began.
   `deleteCase` drops the cached list page whatever its answer, so that reload
-  reads the server: a delete whose answer was lost may have committed.
+  reads the server: a delete whose answer was lost may have committed. Every
+  case write does on failure (`caseWrite`: delete, rename, title generation),
+  through `discard`, which does not wait on storage, so a storage call that
+  never settles cannot hold the failure back.
   The failure's message shows, followed by the list's error when the reload
   failed; after 5 s the message goes and the list's error, if any, stays.
 - **Read-only open case** (`lib/cases/driver.ts`): the extension host's

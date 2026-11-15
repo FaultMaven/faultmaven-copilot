@@ -613,6 +613,29 @@ export async function createCase(
 }
 
 /**
+ * Run a write to one case, and drop the cached sidebar page if it fails.
+ *
+ * A failed write may still have committed: its answer was lost, or a 5xx came
+ * after the commit. The page in the slot then no longer says what the server
+ * holds (whether the case is listed, under which title), and a reload it
+ * served would repeat the page from before the write for up to 5 minutes. So
+ * every failure drops the slot and the next list read goes to the server
+ * (#387). A refusal that changed nothing costs one server read; that is
+ * never wrong, where telling refusals from lost answers here would be.
+ * `discard`, not `invalidateCache`: the failure reaches the caller even if a
+ * storage call never settles. What a SUCCESS does to the slot is the
+ * caller's (a delete drops it, a rename edits its row).
+ */
+async function caseWrite<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    caseCacheManager.discard();
+    throw error;
+  }
+}
+
+/**
  * Delete a case by ID.
  *
  * Three refusals clear nothing (classify with `ErrorClassifier`):
@@ -630,7 +653,9 @@ export async function createCase(
  *   `.retryAfter`), or, after a credential refresh, an {HttpError}
  */
 export async function deleteCase(caseId: string): Promise<void> {
-  try {
+  // A failed delete drops the cached page too (`caseWrite`): the case list
+  // reloads after it to learn whether the case is still listed (#387).
+  await caseWrite(async () => {
     const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
       method: 'DELETE',
       credentials: 'include'
@@ -640,30 +665,27 @@ export async function deleteCase(caseId: string): Promise<void> {
       // Throw structured HttpError with status code
       throw await createHttpErrorFromResponse(response);
     }
-  } finally {
-    // Whatever the answer, the cached list page no longer says whether the
-    // case is listed: a delete whose answer was lost may have committed. The
-    // case list reloads after a failed delete to learn that, and a reload the
-    // slot served would only repeat the page from before the delete (#387).
-    await caseCacheManager.invalidateCache();
-  }
+  });
+  await caseCacheManager.invalidateCache();
 }
 
 export async function updateCaseTitle(caseId: string, title: string): Promise<void> {
-  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
-    method: 'PUT',
-    body: prepareBody({ title } as CaseUpdateRequest),
-    credentials: 'include'
-  });
+  // A failed rename may have committed: `caseWrite` drops the cached page, so
+  // the list is not served the old title for 5 minutes (#387).
+  await caseWrite(async () => {
+    const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}`, {
+      method: 'PUT',
+      body: prepareBody({ title } as CaseUpdateRequest),
+      credentials: 'include'
+    });
 
-  if (!response.ok) {
-    // Invalidate cache on failure to ensure consistency.
-    await caseCacheManager.invalidateCache();
-    // Typed, with its signal headers: a response that arrives here (the retry
-    // after a host token refresh) keeps its `x-error-code`, so a 409
-    // CASE_TERMINAL is still classified as one.
-    throw await createHttpErrorFromResponse(response);
-  }
+    if (!response.ok) {
+      // Typed, with its signal headers: a response that arrives here (the retry
+      // after a host token refresh) keeps its `x-error-code`, so a 409
+      // CASE_TERMINAL is still classified as one.
+      throw await createHttpErrorFromResponse(response);
+    }
+  });
 
   // Optimistically update cache on success
   await caseCacheManager.updateOptimisticCase(caseId, { title });
@@ -960,19 +982,24 @@ export async function generateCaseTitle(
   const body: Record<string, any> = {};
   if (options?.max_words) body.max_words = options.max_words;
   if (options?.hint) body.hint = options.hint;
-  const response = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}/title`, {
-    method: 'POST',
-    body: Object.keys(body).length ? prepareBody(body) : undefined,
-    credentials: 'include'
-  });
+  // Generating writes the title: a failure whose answer was lost may have
+  // committed one, so `caseWrite` drops the cached page (#387).
+  const response = await caseWrite(async () => {
+    const answer = await authenticatedFetchWithRetry(`${await getApiTransport().baseUrl()}/api/v1/cases/${caseId}/title`, {
+      method: 'POST',
+      body: Object.keys(body).length ? prepareBody(body) : undefined,
+      credentials: 'include'
+    });
 
-  if (response.status === 422) {
-    throw new Error('Insufficient context to generate title');
-  }
-  if (!response.ok) {
-    const errorData: APIError = await response.json().catch(() => ({}));
-    throw new Error(errorBodyText(errorData) || `Failed to generate case title: ${response.status}`);
-  }
+    if (answer.status === 422) {
+      throw new Error('Insufficient context to generate title');
+    }
+    if (!answer.ok) {
+      const errorData: APIError = await answer.json().catch(() => ({}));
+      throw new Error(errorBodyText(errorData) || `Failed to generate case title: ${answer.status}`);
+    }
+    return answer;
+  });
   const result: TitleResponse = await response.json();
   const t = (result?.title || '').trim();
   const source = response.headers.get('x-title-source') || undefined;
