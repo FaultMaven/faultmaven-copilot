@@ -384,6 +384,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/llm/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Llm Usage
+         * @description The bound enterprise's LLM usage, read from the usage ledger.
+         *
+         *     Costs are estimated at call time from the price table, never billed.
+         *     Coverage starts when the ledger was deployed; there is no backfill.
+         */
+        get: operations["get_llm_usage_api_v1_admin_llm_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -1085,7 +1108,10 @@ export interface paths {
          *     The short-lived access token cannot be extended (it is a stateless JWT),
          *     so an active client must mint a new one before expiry rather than being
          *     forced to re-login. Refresh tokens rotate: the presented token is revoked
-         *     and a fresh one is returned alongside the new access token.
+         *     and a fresh one is returned alongside the new access token. A token is
+         *     redeemed at most once while its revocation entry stands: of concurrent
+         *     refreshes of one token, at most one succeeds and the others get 401
+         *     `invalid_refresh_token`.
          *
          *     Mode-aware (ADR-015 D6): local mode validates and mints with the HS256
          *     generator; oauth/cloud mode uses the RS256 generator that issued the
@@ -1096,7 +1122,7 @@ export interface paths {
          *     1. Validate the refresh token (signature, expiry, type, revocation)
          *     2. Load the current user (rejects deactivated/deleted accounts)
          *     3. Mint a new access + refresh token pair
-         *     4. Revoke the old refresh token (rotation)
+         *     4. Claim the old refresh token: revoke it only if no other refresh has
          */
         post: operations["refresh_tokens_api_v1_auth_refresh_post"];
         delete?: never;
@@ -1478,6 +1504,10 @@ export interface paths {
          *
          *     Returns full case details with milestone progress, investigation stage,
          *     and completion percentage.
+         *
+         *     While a delete of the case runs, `deleting` is true: show the case
+         *     read-only and read it again until it is gone (404) or `deleting` clears
+         *     (#2510).
          */
         get: operations["get_case_api_v1_cases__case_id__get"];
         /**
@@ -1485,8 +1515,9 @@ export interface paths {
          * @description Update case details
          *
          *     Updates case metadata such as title, description, state, priority, and tags.
-         *     Only the case's DRIVER may update it (ADR-020 D2); any other reader gets
-         *     the answer an absent case gets.
+         *     Only the case's DRIVER may update it (ADR-020 D2): a reader who does not
+         *     drive it gets 403 ``CASE_NOT_DRIVER``, a caller who cannot read it 404
+         *     ``CASE_NOT_FOUND`` (#2806).
          */
         put: operations["update_case_api_v1_cases__case_id__put"];
         post?: never;
@@ -1495,16 +1526,20 @@ export interface paths {
          * @description Permanently delete a case and all associated data, or fail and keep it.
          *
          *     Every store that holds the case's data is cleared before the case itself:
-         *     its evidence search index, its uploaded files, its PII redaction
-         *     registry, the sessions pointing at it, its team shares and its runbook
-         *     conversion jobs and drafts (a published runbook is kept). An audit record
-         *     names who deleted it and what was cleared.
+         *     its LLM traces, its evidence search index, its uploaded files, its PII
+         *     redaction registry, the sessions pointing at it, the answers cached for
+         *     replay of keyed requests (`Idempotency-Key`) that acted on it, its team
+         *     shares and its runbook conversion jobs and drafts (a published runbook is
+         *     kept).
+         *     An audit record names who deleted it and what was cleared.
          *
          *     If any store cannot be cleared, the request answers 500
          *     `DELETE_CASE_ERROR` and the case stays, so the delete can be retried. A
          *     failed delete can leave a case that reads normally while some of its
          *     files and its evidence search are already gone, until a retry completes
-         *     the delete.
+         *     the delete. The case's LLM traces clear first, where a trace backend is
+         *     configured: when that backend is unreachable the request answers this 500
+         *     and the rest of the case is untouched.
          *
          *     The operation is idempotent - subsequent requests will return
          *     204 No Content even if the case has already been deleted, and so does a
@@ -1517,9 +1552,11 @@ export interface paths {
          *     indexing, a runbook draft), is still running, on any server, the delete
          *     answers 409 `CASE_WORK_IN_PROGRESS` with `Retry-After` and clears nothing.
          *     A turn sent while the delete runs is refused with 409
-         *     `CASE_DELETE_IN_PROGRESS`. If whether work is in flight cannot be read,
-         *     the delete answers 503 `CASE_DELETE_UNAVAILABLE` with `Retry-After` and
-         *     clears nothing (#2096).
+         *     `CASE_DELETE_IN_PROGRESS`, and `GET /cases/{case_id}` reads
+         *     `deleting: true` while the delete's tombstone stands: until it is removed
+         *     or lapses, or the case is gone (404) (#2510).
+         *     If whether work is in flight cannot be read, the delete answers 503
+         *     `CASE_DELETE_UNAVAILABLE` with `Retry-After` and clears nothing (#2096).
          *
          *     Returns 204 No Content on success.
          */
@@ -1573,9 +1610,10 @@ export interface paths {
          *     validator rejects, and then called a service method that didn't exist).
          *
          *     Then marks all latest reports as linked to the closure. Close-first
-         *     ordering: a refused close (404 unknown/not-owner, 409 already
+         *     ordering: a refused close (404 unreadable, 403 not the driver, 409 already
          *     terminal — mapped by the global exception handlers) must never mark
-         *     reports as closure-linked.
+         *     reports as closure-linked. The 404 carries ``CASE_NOT_FOUND`` and the
+         *     403 ``CASE_NOT_DRIVER`` (#2806).
          *
          *     Returns:
          *         CaseClosureResponse with list of archived reports
@@ -1632,7 +1670,9 @@ export interface paths {
          * Delete Case Data
          * @description Remove data file from a case. Returns 204 No Content on success.
          *
-         *     Only the case's DRIVER may call it (ADR-020 D2); anyone else gets 404.
+         *     Only the case's DRIVER may call it (ADR-020 D2): another reader gets 403
+         *     ``CASE_NOT_DRIVER``, a caller who cannot read the case 404
+         *     ``CASE_NOT_FOUND`` (#2806).
          */
         delete: operations["delete_case_data_api_v1_cases__case_id__data__data_id__delete"];
         options?: never;
@@ -1747,12 +1787,14 @@ export interface paths {
          *
          *     Error responses (dispatched by ``api/exception_handlers.py``):
          *
-         *     - ``404`` — feature disabled, case not found, or evidence not in case
-         *       (``NotFoundError``).
+         *     - ``404`` — feature disabled, case not found or not readable by the
+         *       caller, or evidence not in case (``NotFoundError``). Only the case's
+         *       own carries ``CASE_NOT_FOUND`` (#2806).
          *     - ``409`` — evidence has no backing file (``ConflictError`` with
          *       ``conflict_reason="no_backing_file"``).
-         *     - ``403`` — caller does not drive the case, or drives it but can no
-         *       longer read it (``AuthorizationError``, ADR-020 D2).
+         *     - ``403`` ``CASE_NOT_DRIVER`` — the caller reads the case but does not
+         *       drive it (``CaseNotDriverError``, ADR-020 D2). A driver who can no
+         *       longer read it gets the case's 404.
          *     - ``422`` — invalid or missing ``data_type``, OR the case is terminal
          *       (both ``ValidationException``). A closed or resolved investigation
          *       accepts questions, not mutation; the terminal refusal is raised after
@@ -1980,9 +2022,11 @@ export interface paths {
          *
          *     **Returns:**
          *     - 200: TitleResponse with X-Correlation-ID header
-         *     - 404: the case does not exist or the caller does not drive it. Naming a
-         *       case writes it, an investigation write that is the driver's (ADR-020
-         *       D2), so any other reader is refused here before any title is generated.
+         *     - 403 ``CASE_NOT_DRIVER``: the caller reads the case but does not drive
+         *       it. Naming a case writes it, an investigation write that is the
+         *       driver's (ADR-020 D2), so any other reader is refused here before any
+         *       title is generated (#2806).
+         *     - 404 ``CASE_NOT_FOUND``: the caller cannot read the case.
          *     - 422: ValidationException body — see ``api/exception_handlers.py``
          *       and ``docs/architecture/specifications/exception-contract.md``.
          *       Raised when there is insufficient meaningful context to generate
@@ -2053,7 +2097,9 @@ export interface paths {
          *     here to its end, so a delete of the case refuses while it runs; one that
          *     starts while a delete runs → **409** `x-error-code:
          *     CASE_DELETE_IN_PROGRESS`, with no `Retry-After`: nothing ran, reload the
-         *     case (#2096).
+         *     case (#2096). While `GET /cases/{case_id}` reads `deleting: true`, show
+         *     the case read-only and read it again until it is gone (404) or `deleting`
+         *     clears (#2510).
          *
          *     **Timing.** `limits.turnResponseBoundSeconds` on
          *     `GET /api/v1/meta/capabilities` is the NOMINAL bound on this route's answer
@@ -2337,6 +2383,13 @@ export interface paths {
          *     Deleting a global-scope draft is platform-corpus authoring — the service
          *     applies the global-authoring gate once the job's scope is loaded, same as
          *     edit (#785) and verify.
+         *
+         *     Before the draft changes, the model-call traces of its conversion are
+         *     deleted (#2575). Every draft of a conversion was generated from the whole
+         *     document, so the traces of its other drafts go too. When they cannot be
+         *     deleted (the trace backend is unreachable, or did not initialize) the
+         *     request answers **500** "Failed to delete draft" and the draft is
+         *     untouched, so a retry can finish it.
          */
         delete: operations["delete_draft_api_v1_knowledge_conversions__conversion_id__drafts__draft_id__delete"];
         options?: never;
@@ -2513,7 +2566,12 @@ export interface paths {
          *     ``DELETE /documents/{id}``, applied to each target before anything reaches
          *     the service. Refused targets are reported in ``errors`` and never counted
          *     as deleted; ``total_requested`` is the de-duplicated batch size (see
-         *     ``_normalize_bulk_document_ids``), so the counts reconcile.
+         *     ``_normalize_bulk_document_ids``), so the counts reconcile. Each
+         *     conversion's model-call traces are deleted once for the batch (#2575).
+         *     When they cannot be, that document is reported in ``errors`` and left as it
+         *     was; after that, a document whose traces are not yet deleted is reported
+         *     the same way without another call to the trace backend, and one with none
+         *     left to delete is deleted.
          */
         post: operations["bulk_delete_documents_api_v1_knowledge_documents_bulk_delete_post"];
         delete?: never;
@@ -2715,6 +2773,12 @@ export interface paths {
          *     afterwards, best effort; any left behind are never served. An excerpt
          *     already in a case's conversation context
          *     stays there until that case next searches the knowledge base.
+         *
+         *     Before the document changes, the model-call traces of the conversions its
+         *     drafts came from are deleted (#2575). When they cannot be deleted (the
+         *     trace backend is unreachable, or did not initialize) the request answers
+         *     500 "Failed to delete document" and the document is untouched, so a retry
+         *     can finish it.
          *
          *     Args:
          *         document_id: Document identifier
@@ -3251,7 +3315,8 @@ export interface paths {
          *         404: Session not found
          *         403: User not authorized to update this session
          *         400: Any field other than `metadata`, or a `metadata` that is not a
-         *             JSON object. Nothing is updated.
+         *             JSON object, nests deeper than 32 levels or holds a value that is
+         *             not JSON. Nothing is updated.
          */
         put: operations["update_session_api_v1_sessions__session_id__put"];
         post?: never;
@@ -4117,7 +4182,7 @@ export interface components {
          * @description Defines the status of authentication sessions.
          * @enum {string}
          */
-        AuthSessionStatus: "active" | "expired" | "terminated";
+        AuthSessionStatus: "active" | "expired" | "terminated" | "archived";
         /**
          * AuthTokenResponse
          * @description Authentication token response
@@ -4553,6 +4618,12 @@ export interface components {
              * @description The MESSAGE clock: every persisted exchange advances it, asides included. It is what `Message.turn_number`, evidence `uploaded_at_turn` and the conversation anchors are keyed on, so keep using it to ADDRESS a turn — and prefer `investigation_turn` to DISPLAY one.
              */
             current_turn: number;
+            /**
+             * Deleting
+             * @description True while a delete of this case runs (#2510). Show the case read-only and read it again, backing off from 2 s to at most every 10 s for at most 60 s, until it is gone (404) or this clears; then keep it read-only until the next user action reads it again. Best-effort both ways: it reports the delete's tombstone, which a delete writes before it checks for in-flight work and which lapses 30 s after its last renewal unless removed, so true can stand for up to 30 s with no delete running, and false means no delete is known to run. A turn can still meet 409 `CASE_DELETE_IN_PROGRESS` or 404. Set on `GET /cases/{case_id}`; false on every other surface that embeds `CaseDetail`.
+             * @default false
+             */
+            deleting: boolean;
             /** Description */
             description: string;
             /** Driver Display Name */
@@ -4849,13 +4920,12 @@ export interface components {
          *     Case Actions (phase transitions and dispositions):
          *       INQUIRY → INVESTIGATING  (phase transition)
          *       INQUIRY → CLOSED         (disposition)
-         *       INVESTIGATING → RESOLVED (disposition; includes the KB-resolution milestone-collapse variant)
+         *       INVESTIGATING → RESOLVED (disposition)
          *       INVESTIGATING → CLOSED   (disposition)
          *
-         *     v3: INQUIRY → RESOLVED edge removed. KB-driven cases collapse INVESTIGATING
-         *     to one or two turns via per-runbook Cause attribution rather than skipping
-         *     the phase. See docs/architecture/investigation-engine/investigation-lifecycle-logic.md
-         *     §1.2 INVESTIGATING → RESOLVED → KB-Resolution Path.
+         *     v3: INQUIRY → RESOLVED edge removed. KB-driven cases follow the standard
+         *     INVESTIGATING path rather than skipping the phase. See
+         *     docs/architecture/investigation-engine/investigation-lifecycle-logic.md §1.2.
          * @enum {string}
          */
         CaseState: "inquiry" | "investigating" | "resolved" | "closed";
@@ -5421,6 +5491,8 @@ export interface components {
              * Format: date-time
              */
             timestamp: string;
+            /** @description The LLM trace SDK's process policy (crash reporting, content capture, project, ping interval) and the serving worker's trace client: whether its last send reached the backend, and how many traces it holds unsent. */
+            trace_backend: components["schemas"]["TraceBackendStatus"];
             /** @description The resolved turn ceiling and response bound for the chat provider in force, as clients read them on GET /api/v1/meta/capabilities. */
             turn_timing: components["schemas"]["TurnTimingStatus"];
             /**
@@ -5973,6 +6045,37 @@ export interface components {
             timestamp: string;
         };
         /**
+         * LLMHeavyTurn
+         * @description One of the heaviest turns. Ids and numbers only: no title, no content.
+         */
+        LLMHeavyTurn: {
+            /** Calls */
+            calls: number;
+            /** Case Id */
+            case_id: string;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number;
+            /**
+             * Investigation Turn
+             * @description The ordinal to display
+             */
+            investigation_turn: number | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Spend Weighted Tokens */
+            spend_weighted_tokens: number;
+            /**
+             * Turn Number
+             * @description The message clock
+             */
+            turn_number: number;
+            /** Unpriced Calls */
+            unpriced_calls: number;
+        };
+        /**
          * LLMProviderDetail
          * @description Individual LLM provider status for dashboard display.
          */
@@ -6085,6 +6188,331 @@ export interface components {
             role: string;
         };
         /**
+         * LLMSpendPercentiles
+         * @description Nearest-rank percentiles of `spend_weighted_tokens`; null with no turns.
+         */
+        LLMSpendPercentiles: {
+            /** Max */
+            max: number | null;
+            /** P50 */
+            p50: number | null;
+            /** P95 */
+            p95: number | null;
+        };
+        /**
+         * LLMTurnBudget
+         * @description The in-effect per-turn settings, read at request time.
+         */
+        LLMTurnBudget: {
+            /**
+             * Ceiling
+             * @description PROMPT_TURN_TOKEN_CEILING
+             */
+            ceiling: number;
+            /**
+             * Soft
+             * @description PROMPT_TURN_TOKEN_BUDGET; null when it is 0 (disabled)
+             */
+            soft: number | null;
+        };
+        /**
+         * LLMTurnHistogramBin
+         * @description Turns with lower <= spend_weighted_tokens < upper.
+         */
+        LLMTurnHistogramBin: {
+            /** Count */
+            count: number;
+            /** Lower */
+            lower: number;
+            /**
+             * Upper
+             * @description null: no upper bound
+             */
+            upper: number | null;
+        };
+        /**
+         * LLMTurnSpendSummary
+         * @description Engine turns from `coverage.turns_since` to the window's last day: the
+         *     window clipped to the turn-retention horizon. Turn rows go with their case,
+         *     so a case deletion shrinks these and not `totals` or `by_day`.
+         */
+        LLMTurnSpendSummary: {
+            budget: components["schemas"]["LLMTurnBudget"];
+            /** Count */
+            count: number;
+            /**
+             * Heaviest
+             * @description The ten heaviest, heaviest first
+             */
+            heaviest: components["schemas"]["LLMHeavyTurn"][];
+            /**
+             * Histogram
+             * @description Edges 0, soft/2, soft, ceiling, then open-ended; the soft edges are dropped when the budget is disabled, and the edges are sorted and de-duplicated
+             */
+            histogram: components["schemas"]["LLMTurnHistogramBin"][];
+            /**
+             * Over Ceiling
+             * @description Turns whose spend exceeded `budget.ceiling`
+             */
+            over_ceiling: number;
+            /**
+             * Over Soft
+             * @description Turns whose spend exceeded `budget.soft`
+             */
+            over_soft: number;
+            spend_weighted_tokens: components["schemas"]["LLMSpendPercentiles"];
+        };
+        /**
+         * LLMUnpricedModel
+         * @description A model the running price table cannot price, with calls in the window.
+         */
+        LLMUnpricedModel: {
+            /**
+             * Calls
+             * @description Its stored `unpriced_calls` in the window
+             */
+            calls: number;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
+        /**
+         * LLMUsageBucket
+         * @description Summed figures over a set of billed calls.
+         */
+        LLMUsageBucket: {
+            /**
+             * Cache Hit Rate
+             * @description cache_read / (input + cache_read); null when that is 0
+             */
+            cache_hit_rate: number | null;
+            calls: components["schemas"]["LLMUsageCalls"];
+            /**
+             * Cost Complete
+             * @description False whenever `unpriced_calls` > 0: the cost is a lower bound
+             */
+            cost_complete: boolean;
+            /**
+             * Estimated Cost Usd
+             * @description Priced calls only, estimated at call time from the price table then in force. Not a bill.
+             */
+            estimated_cost_usd: number;
+            tokens: components["schemas"]["LLMUsageTokens"];
+            /**
+             * Unpriced Calls
+             * @description Calls that had no price entry when made: left out of the cost
+             */
+            unpriced_calls: number;
+        };
+        /** LLMUsageCalls */
+        LLMUsageCalls: {
+            /**
+             * Kept
+             * @description Calls whose answer was returned to the caller
+             */
+            kept: number;
+            /**
+             * Low Confidence
+             * @description Calls billed and then discarded by the fallback chain
+             */
+            low_confidence: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * LLMUsageCoverage
+         * @description How much of the window the ledger can speak for. There is no backfill.
+         */
+        LLMUsageCoverage: {
+            /**
+             * Metering Since
+             * @description The earliest day with recorded spend for this enterprise; null when none is recorded. Not when metering began: days before it have no recorded spend, either before the ledger was deployed, metered with nothing spent, or pruned past LLM_USAGE_DAILY_RETENTION_DAYS.
+             */
+            metering_since: string | null;
+            /**
+             * Turns Fully Covered
+             * @description True when the turn-retention horizon reaches the window's first day
+             */
+            turns_fully_covered: boolean;
+            /**
+             * Turns Since
+             * Format: date
+             * @description The first day `turns` reads: the later of the window's first day and the turn-retention horizon (today minus LLM_USAGE_TURN_RETENTION_DAYS, plus one). Turn rows before it are pruned, or will be, so `turns` never reads them and can cover less of the window than `totals`.
+             */
+            turns_since: string;
+            /**
+             * Window Fully Covered
+             * @description True when `metering_since` is on or before the window's first day
+             */
+            window_fully_covered: boolean;
+        };
+        /** LLMUsageDay */
+        LLMUsageDay: {
+            /**
+             * Cache Hit Rate
+             * @description cache_read / (input + cache_read); null when that is 0
+             */
+            cache_hit_rate: number | null;
+            calls: components["schemas"]["LLMUsageCalls"];
+            /**
+             * Cost Complete
+             * @description False whenever `unpriced_calls` > 0: the cost is a lower bound
+             */
+            cost_complete: boolean;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /**
+             * Estimated Cost Usd
+             * @description Priced calls only, estimated at call time from the price table then in force. Not a bill.
+             */
+            estimated_cost_usd: number;
+            tokens: components["schemas"]["LLMUsageTokens"];
+            /**
+             * Unpriced Calls
+             * @description Calls that had no price entry when made: left out of the cost
+             */
+            unpriced_calls: number;
+        };
+        /**
+         * LLMUsageGroup
+         * @description One row of `groups`, keyed by the request's `group_by`.
+         */
+        LLMUsageGroup: {
+            /**
+             * Cache Hit Rate
+             * @description cache_read / (input + cache_read); null when that is 0
+             */
+            cache_hit_rate: number | null;
+            calls: components["schemas"]["LLMUsageCalls"];
+            /**
+             * Cost Complete
+             * @description False whenever `unpriced_calls` > 0: the cost is a lower bound
+             */
+            cost_complete: boolean;
+            /**
+             * Estimated Cost Usd
+             * @description Priced calls only, estimated at call time from the price table then in force. Not a bill.
+             */
+            estimated_cost_usd: number;
+            /**
+             * Key
+             * @description `provider_model`: {provider, model}. `user`: {user_id}, where "" is no actor. `billing_subject`: {kind, id}, kind one of `organization | account | none` and id "" for `none`. Under multi-tenancy every `account` subject is one group with id null: an account's id is a user id, shown in standalone only.
+             */
+            key: {
+                [key: string]: string | null;
+            };
+            /**
+             * Rate Status
+             * @description `provider_model` groups only, null otherwise: how the RUNNING price table prices the model now. `zero_cost` is a declared-free self-hosted provider, not an unpriced one.
+             */
+            rate_status: ("priced" | "zero_cost" | "unpriced") | null;
+            tokens: components["schemas"]["LLMUsageTokens"];
+            /**
+             * Unpriced Calls
+             * @description Calls that had no price entry when made: left out of the cost
+             */
+            unpriced_calls: number;
+        };
+        /**
+         * LLMUsageReport
+         * @description `GET /admin/llm/usage`: the bound enterprise's LLM usage, from the ledger.
+         */
+        LLMUsageReport: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * By Day
+             * @description Every day in the window, zeros included
+             */
+            by_day: components["schemas"]["LLMUsageDay"][];
+            coverage: components["schemas"]["LLMUsageCoverage"];
+            /**
+             * Groups
+             * @description Shaped by `group_by`; largest token total first
+             */
+            groups: components["schemas"]["LLMUsageGroup"][];
+            scope: components["schemas"]["LLMUsageScope"];
+            totals: components["schemas"]["LLMUsageBucket"];
+            turns: components["schemas"]["LLMTurnSpendSummary"];
+            /**
+             * Unpriced
+             * @description Models the running price table cannot price that have unpriced calls in the window. Non-empty: cost is under-reported.
+             */
+            unpriced: components["schemas"]["LLMUnpricedModel"][];
+            window: components["schemas"]["LLMUsageWindow"];
+        };
+        /**
+         * LLMUsageScope
+         * @description Whose usage this is: the enterprise the request is bound to, only.
+         */
+        LLMUsageScope: {
+            /**
+             * Deployment
+             * @enum {string}
+             */
+            deployment: "standalone" | "cloud";
+            /** Enterprise Id */
+            enterprise_id: string;
+            /**
+             * Tenancy
+             * @description `multi`: the figures are this enterprise's only, never the deployment's. `single`: the enterprise is the whole deployment.
+             * @enum {string}
+             */
+            tenancy: "single" | "multi";
+        };
+        /**
+         * LLMUsageTokens
+         * @description Disjoint buckets: `total` is their sum.
+         */
+        LLMUsageTokens: {
+            /** Cache Read */
+            cache_read: number;
+            /** Cache Write */
+            cache_write: number;
+            /** Input */
+            input: number;
+            /** Output */
+            output: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * LLMUsageWindow
+         * @description Whole UTC days ending today, inclusive.
+         */
+        LLMUsageWindow: {
+            /**
+             * Days
+             * @description Days in the window
+             */
+            days: number;
+            /**
+             * From
+             * Format: date
+             * @description First day of the window (UTC)
+             */
+            from: string;
+            /**
+             * Timezone
+             * @default UTC
+             * @constant
+             */
+            timezone: "UTC";
+            /**
+             * To
+             * Format: date
+             * @description Last day of the window: today (UTC)
+             */
+            to: string;
+        };
+        /**
          * LinkCaseRequest
          * @description Request to link report to case closure.
          */
@@ -6181,7 +6609,7 @@ export interface components {
             role: "user" | "assistant" | "system";
             /**
              * Sources
-             * @description On an assistant row: the knowledge-base runbooks that turn's prompt carried, exactly as the live `TurnResponse.sources` returned them, `new_this_turn` included, and gated the same way for the reader making this request: an excerpt of a runbook the reader cannot open, or one with no `metadata.document_id`, is returned with empty `content`, null `confidence` and `metadata` of only `{"access": "restricted"}`. Null on a row whose prompt carried none (and on every user or system row).
+             * @description On an assistant row: the knowledge-base runbooks that turn's prompt carried — pre-fetched, or found for the user's question about the knowledge base (`metadata.trigger`) — exactly as the live `TurnResponse.sources` returned them, `new_this_turn` included, and gated the same way for the reader making this request: an excerpt of a runbook the reader cannot open, or one with no `metadata.document_id`, is returned with empty `content`, null `confidence` and `metadata` of only `{"access": "restricted"}`. Null on a row whose prompt carried none (and on every user or system row).
              */
             sources?: components["schemas"]["Source"][] | null;
             /**
@@ -7065,7 +7493,7 @@ export interface components {
             } | null;
             /**
              * New This Turn
-             * @description For a knowledge-base source in a turn's `sources`: true when this runbook excerpt was not in the prompt of the case's previous turn that carried knowledge-base context. That context stands in every prompt from the turn it is fetched until the next fetch replaces it, so a client shows the list where something is new rather than under every answer. Null on any other source.
+             * @description For a knowledge-base source in a turn's `sources`: true when this runbook excerpt was not in the prompt of the case's previous turn that carried pre-fetched knowledge-base context. That context stands in every prompt from the turn it is fetched until the next fetch replaces it, so a client shows the list where something is new rather than under every answer. Always true on a source whose `metadata.trigger` is `question` (the runbooks a lookup found for the user's own question about the knowledge base) or `kb_qa` (a section the assistant's own knowledge-base search answered from): those answer that turn. Null on any other source.
              */
             new_this_turn?: boolean | null;
             type: components["schemas"]["SourceType"];
@@ -7277,6 +7705,49 @@ export interface components {
             username: string;
         };
         /**
+         * TraceBackendStatus
+         * @description The LLM trace SDK's process policy, and its client's state (#2616 part c).
+         *
+         *     The first four are the record the process wrote when it configured the
+         *     SDK at startup. The last two are the serving worker's own: read from a
+         *     client that worker process has already built, never building one. Another
+         *     worker or replica holds its own client and buffer. An SDK whose internals
+         *     moved reads ``unknown`` and null, never ``disconnected`` or 0.
+         */
+        TraceBackendStatus: {
+            /**
+             * Capture Content
+             * @description Whether spans carry prompts and responses (OPIK_CAPTURE_CONTENT). False in every process this release starts: true is refused at startup until a retention bound for the trace store is verified (#2616 K0). An exception's message and traceback are not recorded either way, only its class.
+             */
+            capture_content: boolean;
+            /**
+             * Parked Messages
+             * @description Traces the serving worker process holds in the SDK's local replay database, unsent; null when it has built no client, its database is not open, or the SDK's internals could not be read. Other workers and replicas are not counted.
+             */
+            parked_messages: number | null;
+            /**
+             * Ping Interval S
+             * @description Seconds between the SDK's connection pings. After a failed send the SDK parks every later trace until a ping succeeds or a delete replays them, so this bounds how long a parked trace waits. Null when no trace backend is configured.
+             */
+            ping_interval_s: number | null;
+            /**
+             * Project
+             * @description The Opik project traces are written to and the case delete searches; null when configuration did not resolve one.
+             */
+            project: string | null;
+            /**
+             * Sentry Reporting
+             * @description Whether the trace SDK's crash reporting (Comet's Sentry) is active in this process. Off unless OPIK_SENTRY_ENABLE=true is set in the environment or .env.
+             */
+            sentry_reporting: boolean;
+            /**
+             * Server Connection
+             * @description The serving worker's SDK client's view of its backend: 'connected'; 'disconnected' after a failed send, while it parks traces locally; 'no_client' when that worker process has built none; 'unknown' when the SDK's internals could not be read. Other workers and replicas are not reported.
+             * @enum {string}
+             */
+            server_connection: "connected" | "disconnected" | "no_client" | "unknown";
+        };
+        /**
          * TurnResponse
          * @description Response for POST /cases/{id}/turns.
          */
@@ -7309,7 +7780,7 @@ export interface components {
             progress_transparency?: components["schemas"]["ProgressTransparencyInfo"] | null;
             /**
              * Sources
-             * @description Knowledge the engine put in front of the model for this turn: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED) that the prompt the model answered from actually carried, after the section budget. A pre-fetch that fires while the turn's response is applied first reaches the NEXT turn's prompt, and is listed there. The context stands in every prompt until a pre-fetch replaces it, so it repeats turn to turn; `new_this_turn` marks the excerpts the previous turn's prompt did not carry. Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when nothing was pre-fetched — including when the push is disabled. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary. The turn retrieves with the case driver's knowledge; each excerpt is checked against the requester when returned, and one of a runbook the requester cannot open (no longer shared with them, or never was), or one with no `metadata.document_id`, is returned redacted: `type` and `new_this_turn` kept, `content` empty, `confidence` null, and `metadata` of only `{"access": "restricted"}`.
+             * @description Knowledge the engine put in front of the model for this turn, as the prompt the model answered from actually carried it, after the section budget. Two origins, told apart by `metadata.trigger`. `symptom` / `root_cause`: the runbooks the KB pre-fetch admitted (the PUSH channel, governed by KB_PREFETCH_ENABLED). A pre-fetch that fires while the turn's response is applied (the case transitions, the root-cause edge) first reaches the NEXT turn's prompt, and is listed there; INQUIRY's symptom search runs before the prompt is built, so it reaches its own turn. The context stands in every prompt until a pre-fetch replaces it, so it repeats turn to turn; `new_this_turn` marks the excerpts the previous pre-fetched context did not carry. `question`: the runbooks a lookup found for the user's own question about the knowledge base on this turn — present whatever KB_PREFETCH_ENABLED says, and always `new_this_turn`. Each entry carries the matched excerpt as `content`, the retrieval score as `confidence`, and the runbook's `document_id`/`title` under `metadata` so a client can link to it. Empty when the prompt carried neither — the push disabled or nothing pre-fetched, and no question about the knowledge base. Runbooks the model fetched itself via the kb_qa tool are NOT represented: that tool returns a formatted answer string, so per-turn identity is not available at the tool boundary. The turn retrieves with the case driver's knowledge; each excerpt is checked against the requester when returned, and one of a runbook the requester cannot open (no longer shared with them, or never was), or one with no `metadata.document_id`, is returned redacted: `type` and `new_this_turn` kept, `content` empty, `confidence` null, and `metadata` of only `{"access": "restricted"}`.
              */
             sources?: components["schemas"]["Source"][];
             /** Suggested Actions */
@@ -8123,6 +8594,63 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_llm_usage_api_v1_admin_llm_usage_get: {
+        parameters: {
+            query?: {
+                /** @description Whole UTC days ending today, inclusive */
+                window?: "1d" | "7d" | "30d" | "90d";
+                /** @description What `groups` is keyed by */
+                group_by?: "provider_model" | "user" | "billing_subject";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMUsageReport"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a platform administrator, or the request is not scoped to an enterprise */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An unknown `window` or `group_by`, or `group_by=user` under multi-tenancy */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `DATABASE_UNAVAILABLE`: the usage store could not be read. Never answered as a zero-filled 200. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before retrying */
+                    "Retry-After"?: string;
+                    /** @description DATABASE_UNAVAILABLE */
+                    "x-error-code"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -9249,6 +9777,24 @@ export interface operations {
                     };
                 };
             };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9279,6 +9825,15 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CaseDetail"];
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9314,6 +9869,24 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description `x-error-code: CASE_TERMINAL`: the case is resolved or closed and read-only. */
             409: {
@@ -9407,6 +9980,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9443,6 +10025,24 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description `x-error-code: CASE_TERMINAL`: the case is already resolved or closed. Unlabelled, with `conflict_reason: concurrent_update`: the case changed while closing; reload and retry. */
             409: {
@@ -9488,6 +10088,15 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9554,6 +10163,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9582,6 +10200,24 @@ export interface operations {
                 headers: {
                     /** @description Request correlation ID */
                     "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -9629,9 +10265,11 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description No such case, or the caller cannot read it */
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
             404: {
                 headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -9680,9 +10318,11 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description No such case, or the caller cannot read it */
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
             404: {
                 headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -9719,6 +10359,15 @@ export interface operations {
                     "application/json": components["schemas"]["CaseEvidenceListResponse"];
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9752,6 +10401,15 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EvidenceDetailsResponse"];
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9791,6 +10449,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9828,6 +10504,15 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CaseMessagesResponse"];
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9891,6 +10576,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9924,6 +10618,15 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9960,6 +10663,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9993,6 +10714,15 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10030,6 +10760,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10058,6 +10797,15 @@ export interface operations {
             /** @description Successful Response */
             204: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. Without the label: the case is not shared with that team. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -10102,6 +10850,24 @@ export interface operations {
                     "application/json": components["schemas"]["TitleResponse"];
                 };
             };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10142,7 +10908,25 @@ export interface operations {
                     "application/json": components["schemas"]["TurnResponse"];
                 };
             };
-            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds, the longest the running turn can still hold its claim — an upper bound, not when it finishes; it may finish sooner); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered); `CASE_DELETE_IN_PROGRESS` (a delete of the case is running; nothing of the turn ran: reload the case, which is gone once the delete succeeds). */
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. */
+            403: {
+                headers: {
+                    /** @description Which refusal. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conflict. Told apart by `x-error-code`: `TURN_IN_PROGRESS` (a turn with this `Idempotency-Key` is still running: retry with the same key after `Retry-After` seconds, the longest the running turn can still hold its claim — an upper bound, not when it finishes; it may finish sooner); `IDEMPOTENCY_KEY_REUSE` (the key was used for a different turn); `IDEMPOTENCY_REPLAY_UNAVAILABLE` (the turn committed but its response can no longer be replayed: reload the case); `CASE_VERSION_CONFLICT` (another writer changed the case while this turn ran; nothing committed); `CASE_TERMINAL` (the case is resolved or closed and refuses new data, a status change or a file reclassification; a text-only question is still answered); `CASE_DELETE_IN_PROGRESS` (a delete of the case is running; nothing of the turn ran: reload the case, and while it reads `deleting: true` show it read-only and read it again until it is gone (404) or `deleting` clears). */
             409: {
                 headers: {
                     /** @description Seconds, on `TURN_IN_PROGRESS` only: the longest the running turn can still hold its claim (an upper bound, not when it finishes). */
@@ -10206,6 +10990,15 @@ export interface operations {
                     "application/json": components["schemas"]["CaseUIResponse_Inquiry"] | components["schemas"]["CaseUIResponse_Investigating"] | components["schemas"]["CaseUIResponse_Resolved"];
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10246,6 +11039,15 @@ export interface operations {
                     "application/json": components["schemas"]["UploadedFilesList"];
                 };
             };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10279,6 +11081,15 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UploadedFileDetailsResponse"];
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_FOUND`: the case does not exist, was deleted, or the caller cannot read it; the three are not told apart. A 404 for something inside the case (a file, evidence, a report) carries no `x-error-code`. */
+            404: {
+                headers: {
+                    /** @description Present when the CASE is what was not found. */
+                    "x-error-code"?: "CASE_NOT_FOUND";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11275,6 +12086,15 @@ export interface operations {
                     "application/json": components["schemas"]["ReportGenerationResponse"];
                 };
             };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. Unlabelled: the case belongs to another enterprise. */
+            403: {
+                headers: {
+                    /** @description Which refusal; absent for the enterprise check. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11343,6 +12163,15 @@ export interface operations {
                     "application/json": components["schemas"]["ReportResponse"];
                 };
             };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. Unlabelled: the case belongs to another enterprise. */
+            403: {
+                headers: {
+                    /** @description Which refusal; absent for the enterprise check. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11369,6 +12198,15 @@ export interface operations {
             /** @description Successful Response */
             204: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. Unlabelled: the case belongs to another enterprise. */
+            403: {
+                headers: {
+                    /** @description Which refusal; absent for the enterprise check. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -11408,6 +12246,15 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LinkCaseResponse"];
                 };
+            };
+            /** @description `x-error-code: CASE_NOT_DRIVER`: the caller reads the case but does not drive it, and this write is the driver's. Nothing was written. Unlabelled: the case belongs to another enterprise. */
+            403: {
+                headers: {
+                    /** @description Which refusal; absent for the enterprise check. */
+                    "x-error-code"?: "CASE_NOT_DRIVER";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11507,6 +12354,13 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description `metadata` nests deeper than 32 levels or holds a value that is not JSON. Nothing is created. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Session expired or not found (when resuming with client_id) */
             404: {
                 headers: {
@@ -11533,6 +12387,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description The session kept changing under this write; nothing was written. Retry after `Retry-After`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11637,6 +12498,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description The session kept changing under this write; nothing was written. Retry after `Retry-After`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     delete_session_api_v1_sessions__session_id__delete: {
@@ -11697,6 +12565,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description The session kept changing under this write; nothing was written. Retry after `Retry-After`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     session_heartbeat_api_v1_sessions__session_id__heartbeat_post: {
@@ -11727,6 +12602,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description The session kept changing under this write; nothing was written. Or the session service or store is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

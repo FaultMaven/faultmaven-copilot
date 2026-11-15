@@ -172,9 +172,9 @@ whichever case is open. `CopilotPanel` turns the notice into the toast ("Case
 Not Found" / "This case no longer exists." / "It may have been deleted in another
 window or on another device.") and tells the host through `onCaseChanged`; the
 Dashboard's re-read meets the same 404 and shows its not-found view. Copy ruled
-by the owner on 2026-11-05. Adopting #2806's contract (pin + types) is its own
-PR once it merges; the classifier reads the header, which the generated types
-do not carry, so nothing here waits on it. A case delete's own
+by the owner on 2026-11-05. Both labels are contract 15.0.0 (adopted, #400);
+the classifier reads the header, which the generated types do not carry. A
+case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`

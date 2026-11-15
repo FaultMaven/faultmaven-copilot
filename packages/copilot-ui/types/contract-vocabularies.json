@@ -35,7 +35,7 @@
       "value": "closed_rca_infeasible"
     },
     {
-      "meaning": "A verified mitigation relieved the symptom, and root-cause analysis was not pursued further.",
+      "meaning": "A mitigation relieved the symptom, as a re-check bound to the problem observed with no relapse seen after it, or as the user declared with no relapse seen after the declaration; root-cause analysis was deferred.",
       "value": "mitigation_sufficient"
     },
     {
@@ -43,7 +43,7 @@
       "value": "closed_restatement_held"
     },
     {
-      "meaning": "No more specific reason held: the problem could not be verified, no cause could be grounded in the evidence, or a cause was identified with no fix or verified mitigation on record.",
+      "meaning": "No more specific reason held: the problem could not be verified, no cause could be grounded in the evidence, or a cause was identified but no fix was confirmed to work, none was left documented to apply, and no mitigation was verified or declared stable without a relapse seen after it.",
       "value": "closed_insufficient_evidence"
     }
   ],
