@@ -335,7 +335,10 @@ function toUserCase(row: unknown): UserCase {
     enterprise_id: c.enterprise_id,  // Isolation tenant (ADR-017)
     organization_id: c.organization_id ?? null,  // Billing attribution only
     closure_reason: c.closure_reason ?? null,  // Terminal state field per commit b434152a
-    closed_at: c.closed_at ?? null  // Terminal state timestamp per commit b434152a
+    closed_at: c.closed_at ?? null,  // Terminal state timestamp per commit b434152a
+    // Only the single-case read carries it (14.15.0); a list row says nothing,
+    // so it gets no key rather than a `false` it was never told.
+    ...('deleting' in c ? { deleting: c.deleting === true } : {})
   };
 }
 

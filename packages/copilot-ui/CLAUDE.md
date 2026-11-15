@@ -140,7 +140,15 @@ case is running and nothing ran; both turn hooks handle it as `CaseTerminalError
 and also re-read the sidebar through `reloadDrivenCaseList` and tell the host
 through `onCaseChanged`, which re-reads the case (the Dashboard's page). Either
 read can land before the delete commits; one after it meets the 404 below and
-closes the case. For either code, both hooks write nothing once the session has
+closes the case. A read during the delete says `deleting: true` (contract
+14.15.0, #401): `readCaseBack` alone writes `deletingCaseIds` (lists carry no
+flag), the panel renders that case read-only with `CASE_DELETING_NOTICE`
+(`lib/cases/deleting.ts`) over any driver notice, and, while it is the open
+case, re-reads it on the contract's backoff (`nextDeletingReread`: 2 s doubling
+to 10 s, none starting past 60 s on the wall clock) until 404 or the flag
+clears; one chain per case, stopped by a session change, another case opening
+or the panel unmounting (`stopDeletingRereads`). Past the cap the flag stands
+until the next read (opening the case again). For either code, both hooks write nothing once the session has
 changed, as the success path); `CASE_VERSION_CONFLICT` and an unlabelled 409 →
 `CaseVersionConflictError`.
 

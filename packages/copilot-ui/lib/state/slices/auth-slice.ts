@@ -120,6 +120,7 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       pendingOperations: {},
       pinnedCases: new Set<string>(),
       writeDeniedCaseIds: {},
+      deletingCaseIds: {},
       activeCaseId: null,
       activeCase: null,
       hasUnsavedNewChat: true,

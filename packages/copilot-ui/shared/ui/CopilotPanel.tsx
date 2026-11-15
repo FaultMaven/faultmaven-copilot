@@ -29,6 +29,9 @@ import { applyCaseTitleChange } from "../../lib/state/case-title-change";
 import { titleChangeDeps } from "../../lib/state/case-title-deps";
 import { idMappingManager, pendingOpsManager } from "../../lib/optimistic";
 import { bumpEpoch } from "../../lib/state/session-epoch";
+import { CASE_DELETING_NOTICE } from "../../lib/cases/deleting";
+import { DRIVER_READ_ONLY_NOTICE } from "../../lib/cases/driver";
+import { isOptimisticId } from "../../lib/utils/data-integrity";
 import { createLogger } from "../../lib/utils/logger";
 import { notifyCaseChanged } from "./hooks/case-changed";
 import { getKnowledgeDocument } from "../../lib/api";
@@ -322,10 +325,23 @@ function CopilotPanelContent({
   const writeDenied = useAppStore((state) =>
     state.activeCaseId ? state.writeDeniedCaseIds[state.activeCaseId] === true : false,
   );
+  // A delete of the open case is running (contract 14.15.0, #401): nothing
+  // more can be added, whoever drives it. The flag is keyed by real id; the
+  // pointer may still be the optimistic one.
+  const deleting = useAppStore((state) => {
+    const id = state.activeCaseId;
+    if (!id) return false;
+    const realId = isOptimisticId(id) ? idMappingManager.getRealId(id) || id : id;
+    return state.deletingCaseIds[realId] === true;
+  });
+  // Re-reads of a case being deleted belong to this mount.
+  useEffect(() => () => useAppStore.getState().stopDeletingRereads(), []);
   const readOnly =
     hostReadOnly ||
     writeDenied ||
+    deleting ||
     (initialCase?.kind === 'existing' && initialCase.readOnly === true);
+  const readOnlyNotice = deleting ? CASE_DELETING_NOTICE : DRIVER_READ_ONLY_NOTICE;
 
   // --- Data Recovery ---
   //
@@ -608,6 +624,7 @@ function CopilotPanelContent({
           >
             <ContentArea
               readOnly={readOnly}
+              readOnlyNotice={readOnlyNotice}
               activeTab={activeTab}
               activeCaseId={activeCaseId || undefined}
               activeCase={activeCase}

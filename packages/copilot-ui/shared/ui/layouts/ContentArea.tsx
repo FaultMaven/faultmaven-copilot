@@ -39,6 +39,8 @@ export interface ContentAreaProps {
   // Chat callbacks
   /** Render the transcript without a way to add to it. */
   readOnly?: boolean;
+  /** Why it is read-only, shown where the composer would be. */
+  readOnlyNotice?: string;
   onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<QuerySubmitResult>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   onDocumentView?: (documentId: string) => void;
@@ -65,6 +67,7 @@ const ContentAreaComponent = ({
   hasUnsavedNewChat,
   failedOperations,
   readOnly,
+  readOnlyNotice,
   onQuerySubmit,
   onTurnSubmit,
   onDocumentView,
@@ -133,6 +136,7 @@ const ContentAreaComponent = ({
             submitting={submitting}
             sessionId={sessionId}
             readOnly={readOnly}
+            readOnlyNotice={readOnlyNotice}
             onQuerySubmit={onQuerySubmit}
             onTurnSubmit={onTurnSubmit}
             failedOperations={failedOperations}
@@ -175,6 +179,7 @@ const arePropsEqual = (prevProps: ContentAreaProps, nextProps: ContentAreaProps)
   // Re-render when the viewer's right to write changes (a case hydrated as
   // someone else's, a 403): the composer appears or goes with it.
   if (prevProps.readOnly !== nextProps.readOnly) return false;
+  if (prevProps.readOnlyNotice !== nextProps.readOnlyNotice) return false;
 
   // Re-render on loading state changes
   if (prevProps.loading !== nextProps.loading) return false;
