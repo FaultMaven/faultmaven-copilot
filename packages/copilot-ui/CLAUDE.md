@@ -552,4 +552,11 @@ close, reports); delete is the creator's.
   `metadata.access === 'restricted'` (`isRestrictedSource`,
   `lib/state/turn-sources.ts`) is a runbook this viewer may not open; it renders
   as "A runbook you don't have access to" — no "Source N", link, preview or
-  score — and still counts toward "N runbooks in context".
+  score — and still counts toward "N runbooks in context". Its trigger is
+  stripped with the rest, so the card lists it in a group of its own.
+- **Runbooks in context** (`InlineSourcesRenderer`): the card groups a turn's
+  `sources` by `metadata.trigger` — `question`, then `kb_qa`, then the
+  pre-fetched case context (`symptom` / `root_cause`, and any unknown
+  trigger) — with headings only when more than one group is present. It counts
+  distinct `document_id`s (a runbook gives up to two sections), and renders
+  each excerpt as markdown with headings demoted to bold lines.

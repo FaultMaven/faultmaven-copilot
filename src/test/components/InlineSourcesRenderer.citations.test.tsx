@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 
 import InlineSourcesRenderer from '@faultmaven/copilot-ui/shared/ui/components/InlineSourcesRenderer';
 import type { Source } from '@faultmaven/copilot-ui/lib/api';
@@ -81,6 +81,154 @@ describe('InlineSourcesRenderer — runbooks in context', () => {
   it('renders no list when there are no sources', () => {
     render(<InlineSourcesRenderer content="Done." sources={[]} />);
     expect(screen.queryByText(/in context/)).not.toBeInTheDocument();
+  });
+
+  // Up to two sections of one runbook reach a turn's list; the summary names runbooks.
+  it('counts runbooks, not sections', () => {
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[
+          kb(1, { content: 'First section.' }),
+          kb(1, { content: 'Second section.' }),
+          kb(2),
+        ]}
+      />
+    );
+
+    expect(screen.getByText('📚 2 runbooks in context')).toBeInTheDocument();
+    expect(screen.getByText('First section.')).toBeInTheDocument();
+    expect(screen.getByText('Second section.')).toBeInTheDocument();
+  });
+
+  it('counts one runbook in the singular, however many sections it gave', () => {
+    render(
+      <InlineSourcesRenderer content="Done." sources={[kb(1, { content: 'A.' }), kb(1, { content: 'B.' })]} />
+    );
+    expect(screen.getByText('📚 1 runbook in context')).toBeInTheDocument();
+  });
+});
+
+// Excerpts are the head of a runbook section, which is markdown — shaped as
+// the server stores them (`### Cause B: …\n**Statement:** …`).
+describe('InlineSourcesRenderer — a source excerpt', () => {
+  it('renders its markdown rather than the raw syntax', () => {
+    const { container } = render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[
+          kb(1, {
+            content:
+              '### Cause B: Container is OOM-killed\n**Statement:** The `memory` limit is too low.\n\n- check `kubectl describe`\n- raise the limit...',
+          }),
+        ]}
+      />
+    );
+    const card = container.querySelector('details') as HTMLElement;
+
+    expect(card).not.toHaveTextContent('###');
+    expect(card).not.toHaveTextContent('**');
+    expect(screen.getByText('Cause B: Container is OOM-killed')).toBeInTheDocument();
+    expect(screen.getByText('Statement:').tagName).toBe('STRONG');
+    expect(screen.getByText('memory').tagName).toBe('CODE');
+    expect(card.querySelectorAll('li li')).toHaveLength(2);
+  });
+
+  // An excerpt sits in a list item; its heading must not enter the page outline.
+  it('demotes its heading to a bold line', () => {
+    const { container } = render(
+      <InlineSourcesRenderer content="Done." sources={[kb(1, { content: '## Symptom Recognition\n\nText.' })]} />
+    );
+    const card = container.querySelector('details') as HTMLElement;
+
+    expect(card.querySelector('h1, h2, h3, h4, h5, h6')).toBeNull();
+    expect(screen.getByText('Symptom Recognition').tagName).toBe('P');
+  });
+
+  it('renders an excerpt cut inside a code fence without losing the text', () => {
+    render(<InlineSourcesRenderer content="Done." sources={[kb(1, { content: 'Run:\n\n```bash\nkubectl get po...' })]} />);
+    expect(screen.getByText(/kubectl get po/)).toBeInTheDocument();
+  });
+
+  it('renders no script from an excerpt', () => {
+    const { container } = render(
+      <InlineSourcesRenderer content="Done." sources={[kb(1, { content: 'A <script>alert(1)</script> b' })]} />
+    );
+    expect(container.querySelector('script')).toBeNull();
+  });
+});
+
+// One turn's list can hold the standing pre-fetched context beside what a
+// search found for this turn (`metadata.trigger`, contract 14.24.0 and the
+// `kb_qa` citation change).
+describe('InlineSourcesRenderer — sources grouped by how they reached the prompt', () => {
+  const withTrigger = (n: number, trigger: string): Source =>
+    kb(n, { metadata: { document_id: `doc-${n}`, title: `Runbook ${n}`, trigger } });
+
+  const sectionOf = (heading: string): HTMLElement =>
+    screen.getByRole('heading', { name: heading }).closest('section') as HTMLElement;
+
+  it('separates a question lookup and the assistant\'s search from the standing context', () => {
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[
+          withTrigger(1, 'symptom'),
+          withTrigger(2, 'root_cause'),
+          withTrigger(3, 'question'),
+          withTrigger(4, 'kb_qa'),
+        ]}
+      />
+    );
+
+    const headings = screen.getAllByRole('heading').map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Found for your question',
+      "From the assistant's knowledge-base search",
+      'Matched to this case',
+    ]);
+    expect(within(sectionOf('Found for your question')).getByText('Runbook 3')).toBeInTheDocument();
+    expect(
+      within(sectionOf("From the assistant's knowledge-base search")).getByText('Runbook 4')
+    ).toBeInTheDocument();
+    const caseGroup = sectionOf('Matched to this case');
+    expect(within(caseGroup).getByText('Runbook 1')).toBeInTheDocument();
+    expect(within(caseGroup).getByText('Runbook 2')).toBeInTheDocument();
+    expect(within(caseGroup).queryByText('Runbook 3')).toBeNull();
+  });
+
+  it('shows no heading when every source came one way', () => {
+    render(<InlineSourcesRenderer content="Done." sources={[withTrigger(1, 'question'), withTrigger(2, 'question')]} />);
+    expect(screen.queryByRole('heading')).toBeNull();
+  });
+
+  it('files a trigger it does not know, or none, with the case context', () => {
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[withTrigger(1, 'question'), withTrigger(2, 'some_future_trigger'), kb(3, { metadata: null })]}
+      />
+    );
+
+    const caseGroup = sectionOf('Matched to this case');
+    expect(within(caseGroup).getByText('Runbook 2')).toBeInTheDocument();
+    // The numbered fallback keeps the entry's place in the turn's list.
+    expect(within(caseGroup).getByText('Source 3')).toBeInTheDocument();
+  });
+
+  // The server strips a redacted entry's trigger with the rest of its metadata.
+  it('lists a runbook the viewer may not open in a group of its own, counted once per entry', () => {
+    const restricted: Source = {
+      type: 'knowledge_base',
+      content: '',
+      confidence: null,
+      metadata: { access: 'restricted' },
+    };
+    render(<InlineSourcesRenderer content="Done." sources={[withTrigger(1, 'question'), restricted, restricted]} />);
+
+    const group = sectionOf("Runbooks you don't have access to");
+    expect(within(group).getAllByText("A runbook you don't have access to")).toHaveLength(2);
+    expect(screen.getByText('📚 3 runbooks in context')).toBeInTheDocument();
   });
 });
 

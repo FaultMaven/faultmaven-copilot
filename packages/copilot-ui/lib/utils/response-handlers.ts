@@ -37,6 +37,7 @@ export function formatSource(source: Source): {
     emoji: sourceEmojis[source.type] ?? '📄',
     label: sourceLabels[source.type] ?? source.type,
     content: content,
-    confidence: source.confidence ? `${Math.round(source.confidence * 100)}%` : undefined
+    // A score of 0 is a score; only a missing one (null, or absent) shows none.
+    confidence: typeof source.confidence === 'number' ? `${Math.round(source.confidence * 100)}%` : undefined
   };
 }
