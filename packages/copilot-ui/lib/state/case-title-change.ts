@@ -20,7 +20,9 @@
  */
 
 import { ErrorClassifier } from '../errors/classifier';
-import { CaseTerminalError } from '../errors/types';
+import { CaseNotFoundError, CaseTerminalError } from '../errors/types';
+import { DRIVER_READ_ONLY_NOTICE } from '../cases/driver';
+import { isCaseWriteRefusal, type RefusedWriteReading } from './write-refused';
 
 export type TitleSource = 'user' | 'backend' | 'system';
 
@@ -37,7 +39,10 @@ export interface CaseTitleChangeDeps {
   persistTitle: (caseId: string, title: string) => Promise<void>;
   /**
    * The write failed. Handed the `CaseTerminalError` itself on a 409
-   * `CASE_TERMINAL`, so it can be shown as what it is; the raw error otherwise.
+   * `CASE_TERMINAL`, and a `CaseNotFoundError` for a case its read-back found
+   * gone, so each can be shown as what it is; otherwise an `Error` whose
+   * message says why (the driver notice for a case another account drives, the
+   * server's text for anything else).
    */
   onPersistError: (error: unknown) => void;
   /**
@@ -46,6 +51,12 @@ export interface CaseTitleChangeDeps {
    * it so. A retry of the rename can only meet the same refusal.
    */
   refreshCase: (caseId: string) => void;
+  /**
+   * Read the case back after a 403 or 404 (`readBackRefusedWrite`): only the
+   * row can tell a case that is gone from one another account drives, and it
+   * acts on whichever it is (the case closes, or leaves the sidebar).
+   */
+  readBackRefusal: (caseId: string) => Promise<RefusedWriteReading>;
   log?: { info: (msg: string, data?: unknown) => void; error: (msg: string, data?: unknown) => void };
 }
 
@@ -75,14 +86,9 @@ export async function applyCaseTitleChange(
   } catch (error) {
     deps.log?.error('Failed to update case title', { caseId, newTitle, error });
     const classified = ErrorClassifier.classify(error);
-    if (classified instanceof CaseTerminalError) {
-      deps.onPersistError(classified);
-      deps.refreshCase(caseId);
-    } else {
-      deps.onPersistError(error);
-    }
 
-    // Restore both maps to their exact pre-optimistic values.
+    // Restore both maps to their exact pre-optimistic values, before any
+    // read-back below: the title the user sees is the one the server holds.
     deps.setConversationTitles(prev => {
       const next = { ...prev };
       if (priorTitle === undefined) delete next[caseId];
@@ -95,5 +101,19 @@ export async function applyCaseTitleChange(
       else next[caseId] = priorSource;
       return next;
     });
+
+    if (classified instanceof CaseTerminalError) {
+      deps.onPersistError(classified);
+      deps.refreshCase(caseId);
+    } else if (isCaseWriteRefusal(error, classified)) {
+      // Gone, or handed to another driver (#384, faultmaven#2806): the row says
+      // which, and the toast says what it found.
+      const reading = await deps.readBackRefusal(caseId);
+      if (reading === 'gone') deps.onPersistError(new CaseNotFoundError('Case not found', error instanceof Error ? error : undefined));
+      else if (reading === 'driven_by_other') deps.onPersistError(new Error(DRIVER_READ_ONLY_NOTICE));
+      else deps.onPersistError(error);
+    } else {
+      deps.onPersistError(error);
+    }
   }
 }

@@ -340,16 +340,20 @@ function toUserCase(row: unknown): UserCase {
 }
 
 /**
- * A failure of a request on a route that names the case, read for that route:
- * a 404 there is the case lookup coming back empty, which the API answers
- * "Case not found or access denied" (the case was deleted, or this account can
- * no longer read it), so it becomes `CaseNotFoundError` (#384). Anything else is
- * returned as it was. Both error shapes carry the status: the client's enriched
- * `Error` (`status`) and an `HttpError` (its `status` alias).
+ * A failure of `GET /cases/{id}` or the turn route, read for that route, for a
+ * core that does not label its case 404s (before faultmaven#2806). There a 404
+ * is only ever the case lookup coming back empty, "Case not found or access
+ * denied" (the case was deleted, or this account can no longer read it), so an
+ * unlabelled one becomes `CaseNotFoundError` (#384). A labelled 404 is the
+ * classifier's (`CASE_NOT_FOUND` on any route); anything else is returned as
+ * it was. Both error shapes carry the status and the code: the client's
+ * enriched `Error` and an `HttpError`.
  */
 function asCaseRouteError(error: unknown): unknown {
-  const status = (error as { status?: unknown } | null)?.status;
-  if (error instanceof Error && status === 404) return new CaseNotFoundError(error.message, error);
+  const failure = error as { status?: unknown; headers?: Record<string, string> } | null;
+  if (error instanceof Error && failure?.status === 404 && !failure.headers?.['x-error-code']) {
+    return new CaseNotFoundError(error.message, error);
+  }
   return error;
 }
 
@@ -360,7 +364,9 @@ function asCaseRouteError(error: unknown): unknown {
  * page and is always a fresh read. It deliberately does not read or write the
  * case-list cache — it refreshes one case, not the sidebar's list slice.
  *
- * @throws {CaseNotFoundError} on a 404: the case is gone, or no longer readable.
+ * @throws {CaseNotFoundError} on an unlabelled 404 (a core before
+ *   faultmaven#2806); a labelled `CASE_NOT_FOUND` one is the classifier's.
+ *   Either way the case is gone, or no longer readable.
  */
 export async function getCase(caseId: string): Promise<UserCase> {
   const response = await authenticatedFetchWithRetry(
@@ -1015,7 +1021,9 @@ export async function generateCaseTitle(
     }
     if (!answer.ok) {
       const errorData: APIError = await answer.json().catch(() => ({}));
-      throw new Error(errorBodyText(errorData) || `Failed to generate case title: ${answer.status}`);
+      // With its status, as the client's own error carries it: a 404 or a 403
+      // here is read back by the caller (`readBackRefusedWrite`).
+      throw Object.assign(new Error(errorBodyText(errorData) || `Failed to generate case title: ${answer.status}`), { status: answer.status });
     }
     return answer;
   });

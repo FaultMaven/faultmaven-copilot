@@ -144,22 +144,33 @@ closes the case. For either code, both hooks write nothing once the session has
 changed, as the success path); `CASE_VERSION_CONFLICT` and an unlabelled 409 →
 `CaseVersionConflictError`.
 
-**A 404 on a route that names the case is `CaseNotFoundError`** (#384). `GET
-/cases/{id}` and the turn route look the case up first and answer "Case not
-found or access denied" once it is deleted (another window, another device, an
-operator) or no longer readable. The classifier sees only a status, so the case
-service reads it for those two routes (`asCaseRouteError` in `getCase` and
-`submitTurn`'s POST, not the async job's poll); any other 404 is still
-`ValidationError`. Both turn hooks handle it as `CaseTerminalError` (no failed op,
-no Retry; bubble "This case no longer exists, so your message wasn't added.")
-and read the case back. `refreshActiveCase` on a 404 closes the case if it is
-still the open one (no case open, `hasUnsavedNewChat` false, the persisted
-pointer removed) and raises `goneCaseNotice`, and reloads the sidebar through
-`reloadDrivenCaseList` whichever case is open. `CopilotPanel` turns the notice
-into the toast ("Case Not Found" / "This case no longer exists." / "It may have
-been deleted in another window or on another device.") and tells the host
-through `onCaseChanged`; the Dashboard's re-read meets the same 404 and shows
-its not-found view. Copy ruled by the owner on 2026-11-05. A case delete's own
+**A case that is gone is `CaseNotFoundError`** (#384). The API labels the 404
+of a case lookup that came back empty `x-error-code: CASE_NOT_FOUND`, on any
+route, and answers a driver-only write by a reader who does not drive the case
+403 `CASE_NOT_DRIVER` (faultmaven#2806). The classifier maps `CASE_NOT_FOUND`;
+any other 404 is still `ValidationError`, and a 403 is `PermissionError`. A core
+before #2806 labels neither, so the client keeps two readings for it:
+`asCaseRouteError` (`getCase`, `submitTurn`'s POST, not the job poll) reads an
+unlabelled 404 there as the case lookup, the only 404 those routes send; and a
+refused rename or title generation (`isCaseWriteRefusal`: a 403, a
+`CASE_NOT_FOUND`, or an unlabelled 404, which there also means "not the
+driver") is read back (`readBackRefusedWrite`, `lib/state/write-refused.ts`),
+which the turn 403 path shares. The row decides: `gone` (the case closes, see
+below), `driven_by_other` (marked denied, out of the sidebar, the driver
+notice), or `unexplained` (the server's text). Both turn hooks handle
+`CaseNotFoundError` as `CaseTerminalError` (no failed op, no Retry; bubble "This
+case no longer exists, so your message wasn't added.") and read the case back.
+`readCaseBack` (which `refreshActiveCase` wraps) reads errors through the
+classifier; on `CaseNotFoundError` it closes the case if it is still the open
+one (no case open, `hasUnsavedNewChat` false, the persisted pointer removed),
+raises `goneCaseNotice`, and reloads the sidebar through `reloadDrivenCaseList`
+whichever case is open. `CopilotPanel` turns the notice into the toast ("Case
+Not Found" / "This case no longer exists." / "It may have been deleted in another
+window or on another device.") and tells the host through `onCaseChanged`; the
+Dashboard's re-read meets the same 404 and shows its not-found view. Copy ruled
+by the owner on 2026-11-05. Adopting #2806's contract (pin + types) is its own
+PR once it merges; the classifier reads the header, which the generated types
+do not carry, so nothing here waits on it. A case delete's own
 refusals (14.14.0) clear nothing: 409 `CASE_WORK_IN_PROGRESS` →
 `CaseWorkInProgressError` (`Retry-After` carried in ms) and 503
 `CASE_DELETE_UNAVAILABLE` → `CaseDeleteUnavailableError`; `ConversationsList`

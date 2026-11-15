@@ -22,6 +22,7 @@ import { sourcesToShow } from '../turn-sources';
 import type { StoreState } from '../store';
 import { ownedStorage } from '../../owned-storage';
 import { CaseNotFoundError } from '../../errors/types';
+import { ErrorClassifier } from '../../errors/classifier';
 import { reloadDrivenCaseList } from '../case-list-reload';
 
 const log = createLogger('CasesSlice');
@@ -29,6 +30,14 @@ const log = createLogger('CasesSlice');
 // Case-level fields (state, closure_reason, closed_at) are deliberately NOT
 // read off `/messages` rows — the backend Message model never carries them.
 // The backend case row is the authoritative source (see refreshActiveCase).
+
+/** What a case read-back found (`readCaseBack`). */
+export type CaseReadBack =
+  | { kind: 'row'; row: UserCase }
+  /** 404: deleted, or no longer readable by this account. Closed if it was open. */
+  | { kind: 'gone' }
+  /** Nothing learnt: the read failed, the session changed, or there is no backend id yet. */
+  | { kind: 'unread' };
 
 export interface CasesSlice {
   activeCaseId: string | null;
@@ -87,13 +96,20 @@ export interface CasesSlice {
    */
   reloadCommittedTurn: (caseId: string, rowIds: readonly string[]) => Promise<boolean>;
   /**
-   * Resolves the row it read (for the case asked about, whichever is open now),
-   * or null. A 404 (`CaseNotFoundError`: the case was deleted elsewhere, or
-   * this account can no longer read it) also closes the case when it is the
-   * open one, raising `goneCaseNotice`, and reloads the sidebar past its
-   * cache, whichever case is open (#384).
+   * Read the case row back and apply it: `readCaseBack`'s row, or null when
+   * there is none (gone, failed, session changed, no backend id yet).
    */
   refreshActiveCase: (caseId: string) => Promise<UserCase | null>;
+  /**
+   * Reads the case row (for the case asked about, whichever is open now) and
+   * merges it into the open case. Says what it found: the row, `gone`, or
+   * `unread` (failed, session changed, no backend id yet). `gone` is a 404
+   * (`CaseNotFoundError`: deleted elsewhere, or no longer readable by this
+   * account); it also closes the case when it is the open one, raising
+   * `goneCaseNotice`, and reloads the sidebar past its cache, whichever case
+   * is open (#384).
+   */
+  readCaseBack: (caseId: string) => Promise<CaseReadBack>;
   reconcileActiveCaseState: () => Promise<void>;
 }
 
@@ -459,11 +475,11 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
       return get().fetchConversationDelta(caseId, { replacing: rowIds });
     },
 
-    refreshActiveCase: async (caseId) => {
+    readCaseBack: async (caseId) => {
       const resolvedCaseId = isOptimisticId(caseId)
         ? idMappingManager.getRealId(caseId) || caseId
         : caseId;
-      if (isOptimisticId(resolvedCaseId)) return null; // no backend row yet
+      if (isOptimisticId(resolvedCaseId)) return { kind: 'unread' }; // no backend row yet
 
       const epoch = getEpoch();
       try {
@@ -471,10 +487,10 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
         // ranked beyond the first list page would never be found there), and
         // no coupling to the sidebar's list cache.
         const row = await getCase(resolvedCaseId);
-        if (!row) return null;
+        if (!row) return { kind: 'unread' };
         if (epoch !== getEpoch()) {
           log.info('Session changed during case refresh — discarding', { caseId });
-          return null;
+          return { kind: 'unread' };
         }
 
         // A denial means "another account drives this case". A fresh row that
@@ -510,16 +526,18 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
           // id-mapping manager's job, not a side effect of hydration.
           return { activeCase: { ...current, ...row, case_id: current.case_id } };
         });
-        return row;
+        return { kind: 'row', row };
       } catch (error) {
-        if (error instanceof CaseNotFoundError) {
+        // Through the classifier: a labelled 404 (`CASE_NOT_FOUND`) is read
+        // there, an unlabelled one by `getCase` itself (a core before #2806).
+        if (ErrorClassifier.classify(error) instanceof CaseNotFoundError) {
           // The case is gone: deleted in another window, on another device or
           // by an operator, or no longer readable by this account (#384). Every
           // later write to it can only meet the same 404, so it is not left
           // open with a live composer. Closed only when it is still the open
           // case (the user may have moved on); either way its row leaves the
           // sidebar, past the cached page that still lists it.
-          if (epoch !== getEpoch()) return null;
+          if (epoch !== getEpoch()) return { kind: 'unread' };
           const ids = new Set([caseId, resolvedCaseId]);
           const state = get();
           const open =
@@ -531,14 +549,19 @@ export const createCasesSlice: StateCreator<StoreState, [], [], CasesSlice> = (s
             void get().setActiveCaseId(null);
           }
           void reloadDrivenCaseList(epoch);
-          return null;
+          return { kind: 'gone' };
         }
         // warn, not debug: this is the only recovery on the post-409 path and
         // the only source of closure metadata on case select, and debug logs
         // are dropped in production builds.
         log.warn('Active-case refresh failed', { caseId, error });
-        return null;
+        return { kind: 'unread' };
       }
+    },
+
+    refreshActiveCase: async (caseId) => {
+      const read = await get().readCaseBack(caseId);
+      return read.kind === 'row' ? read.row : null;
     },
 
     reconcileActiveCaseState: async () => {

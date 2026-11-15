@@ -21,6 +21,8 @@ import { CaseDeleteInProgressError, CaseNotFoundError } from '@faultmaven/copilo
 import { pendingOpsManager } from '@faultmaven/copilot-ui/lib/optimistic';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import { applyCaseTitleChange } from '@faultmaven/copilot-ui/lib/state/case-title-change';
+import { titleChangeDeps } from '@faultmaven/copilot-ui/lib/state/case-title-deps';
 import { createStubHost, hostWrapper } from '../support/host';
 
 const mockShowError = vi.fn();
@@ -223,5 +225,81 @@ describe('the read-back of a case that answers 404 (#384)', () => {
     const { row } = await refresh();
     expect(row).toMatchObject({ case_id: CASE });
     expect(useAppStore.getState()).toMatchObject({ activeCaseId: CASE, goneCaseNotice: null });
+  });
+});
+
+describe('the labelled 404 (faultmaven#2806) reads the same as the unlabelled one', () => {
+  it('a turn answered 404 CASE_NOT_FOUND: no Retry, the ruled bubble, the case closes', async () => {
+    turnAnswers = [wire(404, GONE, { 'x-error-code': 'CASE_NOT_FOUND' })];
+    readAnswer = () => wire(404, GONE, { 'x-error-code': 'CASE_NOT_FOUND' });
+    const run = PATHS[0].render();
+    await act(async () => { await run(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(700_000); });
+
+    expect(sent('POST', `${CASE_URL}/turns`)).toHaveLength(1);
+    expect(pendingOpsManager.getByStatus('failed')).toHaveLength(0);
+    expect(assistant()).toMatchObject({ response: BUBBLE, failed: false });
+    expect(useAppStore.getState()).toMatchObject({ activeCase: null, goneCaseNotice: { caseId: CASE } });
+  });
+});
+
+describe('a refused rename is read back (#384, faultmaven#2806)', () => {
+  const showError = vi.fn();
+  /** The PUT answers `put`; the read-back answers `readAnswer`. */
+  async function rename(put: ReturnType<typeof wire>) {
+    const base = fetchWithTimeout.getMockImplementation()!;
+    fetchWithTimeout.mockImplementation((url: string, init: RequestInit = {}) =>
+      (url === CASE_URL && init.method === 'PUT' ? Promise.resolve(put) : base(url, init)));
+    const reloads = useAppStore.getState().refreshSessions;
+    await act(async () => {
+      await applyCaseTitleChange(CASE, 'Renamed', 'user', titleChangeDeps(showError));
+    });
+    return () => useAppStore.getState().refreshSessions - reloads;
+  }
+  beforeEach(() => {
+    showError.mockClear();
+    useAppStore.setState({ currentUser: { id: 'u1', username: 'me', roles: [] } as never, writeDeniedCaseIds: {} });
+  });
+
+  it('an unlabelled 404 whose read-back 404s: the case is gone — closed, off the list, the ruled toast', async () => {
+    const reloads = await rename(wire(404, GONE));
+    expect(showError).toHaveBeenCalledTimes(1);
+    expect(showError.mock.calls[0][0]).toBeInstanceOf(CaseNotFoundError);
+    expect(useAppStore.getState()).toMatchObject({ activeCase: null, goneCaseNotice: { caseId: CASE } });
+    expect(reloads()).toBe(1);
+  });
+
+  it('an unlabelled 404 whose read-back names another driver: handed off — read-only, off the list, the driver notice', async () => {
+    readAnswer = () => wire(200, { ...ROW, driver_id: 'u2' });
+    const reloads = await rename(wire(404, GONE));
+    expect(showError).toHaveBeenCalledWith(expect.objectContaining({ message: "Only the case's driver can add to it." }));
+    expect(useAppStore.getState().writeDeniedCaseIds[CASE]).toBe(true);
+    expect(useAppStore.getState().activeCase?.case_id).toBe(CASE);
+    expect(useAppStore.getState().goneCaseNotice).toBeNull();
+    expect(reloads()).toBe(1);
+  });
+
+  it('403 CASE_NOT_DRIVER reads the same', async () => {
+    readAnswer = () => wire(200, { ...ROW, driver_id: 'u2' });
+    await rename(wire(403, { detail: 'Only the driver may rename this case.' }, { 'x-error-code': 'CASE_NOT_DRIVER' }));
+    expect(useAppStore.getState().writeDeniedCaseIds[CASE]).toBe(true);
+  });
+
+  it('a 404 whose read-back names the viewer as driver says what the server said', async () => {
+    readAnswer = () => wire(200, { ...ROW, driver_id: 'u1' });
+    await rename(wire(404, GONE));
+    expect(showError).toHaveBeenCalledWith(expect.objectContaining({ message: GONE.detail }));
+    expect(useAppStore.getState()).toMatchObject({ activeCaseId: CASE, goneCaseNotice: null, writeDeniedCaseIds: {} });
+  });
+});
+
+describe('a turn refused 403 whose read-back finds the case gone', () => {
+  it('the bubble says the case is gone, not the server’s permission text', async () => {
+    turnAnswers = [wire(403, { detail: 'Only the driver may add to this case.' }, { 'x-error-code': 'CASE_NOT_DRIVER' })];
+    const run = PATHS[0].render();
+    await act(async () => { await run(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(700_000); });
+    expect(assistant()).toMatchObject({ response: BUBBLE, failed: false });
+    expect(useAppStore.getState().activeCase).toBeNull();
   });
 });
