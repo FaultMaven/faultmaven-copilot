@@ -20,6 +20,9 @@ const log = createLogger('ConversationsList');
 
 const COLLAPSED_GROUPS_STORAGE_KEY = 'fm-copilot:collapsedCaseGroups';
 
+/** A load that failed for any reason but a rate limit, whatever the browser's text (#386). */
+const LIST_LOAD_FAILED = "Couldn't refresh the list.";
+
 const CASE_GROUP_KEYS = ['pinned', 'active', 'completed'] as const;
 type CaseGroupKey = typeof CASE_GROUP_KEYS[number];
 
@@ -90,7 +93,30 @@ export function ConversationsList({
 }: ConversationsListProps) {
   const [cases, setCases] = useState<RealCase[]>([]); // STRICT: Only real cases from backend
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Two texts, shown together (the notice first): the last load's own error,
+  // which stays until a load stores the list or is dismissed, and an action's
+  // notice (a failed delete), which goes on its own timer. Kept apart so the
+  // timer never edits the list's error, and Retry sits only beside a failed
+  // load (#388).
+  const [listError, setListError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // The one timer of the notice on screen. A new notice replaces it, so an
+  // earlier notice's timer never clears a later one, even with the same text.
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNotice = useCallback((text: string, ms: number) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => {
+      noticeTimer.current = null;
+      setNotice(null);
+    }, ms);
+  }, []);
+  const clearNotice = useCallback(() => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = null;
+    setNotice(null);
+  }, []);
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
   // Until the server's list is stored once, an empty list is not "no cases".
   const [hasLoaded, setHasLoaded] = useState(false);
   // How many server lists were stored: a failed delete's row goes back only
@@ -133,7 +159,7 @@ export function ConversationsList({
   const loadCases = async (): Promise<boolean> => {
     try {
       setLoading(true);
-      setError(null);
+      setListError(null);
       // The cases this user DRIVES (ADR-020 D8), never every case they can
       // read: the extension lists what it can write.
       const list = await getUserCases(SIDEBAR_CASE_LIST_QUERY);
@@ -176,14 +202,14 @@ export function ConversationsList({
         log.warn('Rate limited', { retryAfter });
         // Same renderer as the rate-limit toast: an hourly window read
         // "wait 3600 seconds" here while the toast said "about 60 minutes".
-        setError(`Rate limit reached. Please wait ${describeWait(retryAfter * 1000)} before refreshing.`);
+        setListError(`Rate limit reached. Please wait ${describeWait(retryAfter * 1000)} before refreshing.`);
 
         // Don't clear cases on rate limit - keep showing existing data
         // onCasesLoaded?.([]) - DON'T notify parent, keep existing state
       } else {
         // Any other failure keeps the list too, whatever the browser's text
         // (#386): the cases are still there, only this refresh failed.
-        setError("Couldn't refresh the list.");
+        setListError(LIST_LOAD_FAILED);
       }
       return false;
     } finally {
@@ -271,7 +297,7 @@ export function ConversationsList({
     const reinsert = () => removed && listsStored.current === storedBefore && setCases(prev =>
       (prev.some(c => c.case_id === caseId) ? prev : [...prev.slice(0, at), removed, ...prev.slice(at)]));
     // Reloads, then shows `message`. A reload that did not store the list keeps
-    // its own error after the message; after 5 s only the message goes.
+    // its own error, shown after the message; after 5 s only the message goes.
     const reloadAndSay = async (message: string): Promise<boolean> => {
       let listed = false;
       try {
@@ -279,8 +305,7 @@ export function ConversationsList({
       } catch (err) {
         log.warn('Failed to refresh cases after a failed delete', { error: err });
       }
-      setError(current => (!listed && current ? `${message} ${current}` : message));
-      setTimeout(() => setError(current => (current?.startsWith(message) ? current.slice(message.length + 1) || null : current)), 5000);
+      showNotice(message, 5000);
       return listed;
     };
     try {
@@ -382,8 +407,8 @@ export function ConversationsList({
         }, 3000);
 
         // Show user-friendly message
-        setError('This case was recently deleted or is already being processed. Refreshing...');
-        setTimeout(() => setError(null), 3000);
+        const duplicate = 'This case was recently deleted or is already being processed. Refreshing...';
+        showNotice(duplicate, 3000);
 
         return; // Don't restore UI or show error
       }
@@ -516,10 +541,19 @@ export function ConversationsList({
 
   return (
     <div className={`flex flex-col min-h-0 ${className}`}>
-      {error && (
+      {(notice || listError) && (
         <div className="flex-shrink-0 p-3 mx-3 mt-2 bg-fm-critical-bg border border-fm-critical-border rounded-lg">
-          <p className="text-xs text-fm-critical">{error}</p>
-          <button onClick={() => setError(null)} className="mt-1 text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
+          <p className="text-xs text-fm-critical">{[notice, listError].filter(Boolean).join(' ')}</p>
+          <div className="mt-1 flex gap-3">
+            {/* A failed load is the one error a new load can clear (#388). */}
+            {listError === LIST_LOAD_FAILED && (
+              <button type="button" onClick={() => { void loadCases(); }} className="text-xs text-fm-critical hover:text-fm-text-primary underline">Retry</button>
+            )}
+            {/* Before a list is stored, dismissing would leave a blank sidebar: the error is all there is. */}
+            {hasLoaded && (
+              <button type="button" onClick={() => { clearNotice(); setListError(null); }} className="text-xs text-fm-critical hover:text-fm-text-primary underline">Dismiss</button>
+            )}
+          </div>
         </div>
       )}
 
