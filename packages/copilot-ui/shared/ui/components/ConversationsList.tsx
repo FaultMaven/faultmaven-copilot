@@ -388,8 +388,10 @@ export function ConversationsList({
         return; // Don't restore UI or show error
       }
 
-      // Any other failure: the reload says whether the case is still there,
-      // and one that did not store the list puts the row back.
+      // Any other failure: the reload reads the server's list (`deleteCase`
+      // drops the cached page whatever the answer), so a list it stores says
+      // whether the case is still there; one that did not store the list puts
+      // the row back.
       const errorMessage = extractErrorMessage(e);
       log.error('Case deletion failed', { caseId, error: errorMessage });
       if (!(await reloadAndSay(`Failed to delete case: ${errorMessage}`))) reinsert();

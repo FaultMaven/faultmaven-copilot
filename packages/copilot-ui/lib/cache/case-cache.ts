@@ -219,6 +219,18 @@ export class CaseCacheManager {
      * `purgeOwnedStorage` removes the key as well.
      */
     fence(): void {
+        this.discard();
+    }
+
+    /**
+     * `invalidateCache` without waiting on the queue, for a caller that must
+     * not be held back by storage: the generation moves at once, so no page
+     * fetched before this can be stored, and the removal is queued, so a read
+     * asked for after it still never sees the dropped page. A case write that
+     * failed discards this way (`caseWrite`, #387): its failure reaches the
+     * caller even if a storage call never settles.
+     */
+    discard(): void {
         this.generation++;
         void this.serialized(() => this.removeSlot());
     }
