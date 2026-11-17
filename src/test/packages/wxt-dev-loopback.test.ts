@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InlineConfig, ViteDevServer } from 'vite';
 import { createServer as createWxtServer, type InlineConfig as WxtInlineConfig, type Logger } from 'wxt';
-import { admits, devBoundary, isLoopbackHost, isLoopbackHostHeader } from '../../../wxt.config';
+import { admits, devBoundary, isLoopbackHost, isLoopbackHostHeader } from '../../../dev-server-boundary';
 
 const TIMEOUT = 60_000;
 const repoRoot = process.cwd();

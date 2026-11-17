@@ -171,6 +171,9 @@ pnpm playground:build
 `playground/`, `packages/copilot-ui` and `node_modules`, and the dev server
 refuses every other file with a 403, the tool caches in `node_modules/.cache`
 included (`server.fs.deny`, fm#2630).
+The dev server answers only its own origin (loopback, or the machine's IP on
+`--host`), refusing other pages and other localhost apps, and opens the editor
+only for a loopback request (`dev-server-boundary.ts`, fm#2872).
 
 ## Theme
 

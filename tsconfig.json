@@ -35,6 +35,7 @@
     "playground/**/*.ts",
     "playground/**/*.tsx",
     "wxt.config.ts",       // Include your WXT config file
+    "dev-server-boundary.ts", // The dev servers' origin boundary (wxt.config.ts, playground/)
     "tailwind.config.cjs", // Include your Tailwind config
     "postcss.config.cjs"   // Include your PostCSS config
   ],
