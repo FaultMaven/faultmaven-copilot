@@ -1,5 +1,6 @@
 import { defineConfig } from 'wxt';
 import { createHash } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 
 /**
  * Browser families whose manifest this config targets today. Named once so the
@@ -89,17 +90,105 @@ function storeIdentity(browser: string): { key?: string } {
   return { key };
 }
 
+/**
+ * The extension's dev server is loopback-only (fm#2662). `wxt --host <addr>`
+ * binds it to the network, and WXT and Vite then trust every peer with every
+ * surface they expose: any file, through WXT's virtual entrypoint ids and
+ * Vite's `safeModulePaths`; server-side fetches through `/@id/url:`;
+ * `/__open-in-editor`; and a tokenless HMR WebSocket. LAN access to `wxt dev`
+ * was never a supported use, and the owner's ruling ends it.
+ *
+ * In order: without `--port`, WXT's `getPort` probe-binds the host before any
+ * hook runs, and a host this machine does not own, or a non-string one, fails
+ * closed there with WXT's own error. The `config:resolved` hook refuses a
+ * non-loopback `dev.server.host` (the gate). The plugin's `configResolved`
+ * refuses a non-loopback final `server.host` and a separate HMR server (its
+ * own server, port or host, or middleware mode), before anything binds. On the server, a non-loopback peer's socket
+ * is destroyed on `connection`, before any parsing; its request gets 403 and
+ * its upgrade is destroyed (backstops); and a server found bound off-loopback
+ * fails `wxt dev`. This keeps NETWORK peers out only: the developer's own
+ * browser is a loopback peer, and a page it visits is fm#2863.
+ */
+const LOOPBACK = new BlockList();
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK.addAddress('::1', 'ipv6');
+
+/** A peer or bound address in 127.0.0.0/8 or ::1 (IPv4-mapped included). */
+export function isLoopbackPeer(address: unknown): boolean {
+  if (typeof address !== 'string') return false;
+  const family = isIP(address);
+  return family !== 0 && LOOPBACK.check(address, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+/** A host that binds loopback only. Raw value, so a numeric host (`--host 0x7f000001 --port N`) is refused. */
+export function isLoopbackHost(host: unknown): boolean {
+  return host === 'localhost' || isLoopbackPeer(host);
+}
+
+const RUN_LOCALLY = 'Run `pnpm dev` without --host; on a remote box, forward the port with `ssh -L <port>:localhost:<port>`.';
+
+function loopbackOnlyError(problem: string, remedy = RUN_LOCALLY): Error {
+  return new Error(`[wxt.config] ${problem}: the extension's dev server is loopback-only (FaultMaven/faultmaven#2662). ${remedy}`);
+}
+
 export default defineConfig({
   srcDir: 'src',
   modules: [
     '@wxt-dev/module-react'
   ],
+  hooks: {
+    'config:resolved': (wxt) => {
+      const host = wxt.config.dev.server?.host;
+      if (host !== undefined && !isLoopbackHost(host)) throw loopbackOnlyError(`Refusing dev host ${JSON.stringify(host)}`);
+    },
+  },
   vite: () => ({
     // No aliases. The shared UI resolves as a workspace dependency
     // (@faultmaven/copilot-ui), the same way the Dashboard will resolve it, so
     // there is no path the extension can import it by that a second host
     // cannot.
     resolve: {},
+    plugins: [
+      {
+        name: 'faultmaven:loopback-peers-only',
+        configResolved({ command, server: { host, port, hmr, middlewareMode, ws } }) {
+          if (command !== 'serve') return;
+          if (host !== undefined && !isLoopbackHost(host)) {
+            throw loopbackOnlyError(`Refusing Vite server.host ${JSON.stringify(host)}`);
+          }
+          // Vite binds its own WebSocket server, on every interface, for these.
+          const ownHmr = typeof hmr === 'object' && (hmr.server || (hmr.port && hmr.port !== port) || (hmr.host && !isLoopbackHost(hmr.host)));
+          if (ownHmr || (middlewareMode && ws !== false)) {
+            const remedy = 'Remove server.middlewareMode and server.hmr.server, .port and .host: HMR shares the dev server.';
+            throw loopbackOnlyError('Refusing a separate HMR server', remedy);
+          }
+        },
+        configureServer(server) {
+          const http = server.httpServer;
+          http?.prependListener('connection', function refuseNetworkSockets(socket) {
+            if (!isLoopbackPeer(socket.remoteAddress)) socket.destroy();
+          });
+          server.middlewares.use(function refuseNetworkPeers(req, res, next) {
+            if (isLoopbackPeer(req.socket.remoteAddress)) return next();
+            res.statusCode = 403;
+            res.end();
+          });
+          http?.prependListener('upgrade', function refuseNetworkUpgrades(req, socket) {
+            if (!isLoopbackPeer(req.socket.remoteAddress)) socket.destroy();
+          });
+          http?.on('listening', function refuseOffLoopbackBind() {
+            const bound = http.address();
+            const address = typeof bound === 'object' ? bound?.address : bound;
+            if (isLoopbackPeer(address)) return;
+            const problem = `The dev server bound ${JSON.stringify(address)}, off loopback, and was closed`;
+            const causes = 'Look for a later `server.host` override (a hook or plugin), or a `localhost` that resolves off-loopback.';
+            // Vite's listen() rejects on this error, so `wxt dev` fails instead of running half-alive.
+            http.emit('error', loopbackOnlyError(problem, causes));
+            void server.close();
+          });
+        },
+      },
+    ],
   }),
   manifest: ({ browser }) => ({
     name: "__MSG_appName__",
