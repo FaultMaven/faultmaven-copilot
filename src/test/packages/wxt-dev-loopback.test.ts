@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InlineConfig, ViteDevServer } from 'vite';
 import { createServer as createWxtServer, type InlineConfig as WxtInlineConfig, type Logger } from 'wxt';
-import { isLoopbackHost, isOwnHost } from '../../../wxt.config';
+import { admits, devBoundary, isLoopbackHost, isLoopbackHostHeader } from '../../../wxt.config';
 
 const TIMEOUT = 60_000;
 const repoRoot = process.cwd();
@@ -88,9 +88,9 @@ async function startWxt(host: unknown, { onVite = () => {}, extend = () => {}, h
   }
 }
 
-async function withLoopbackServer(run: (vite: ViteDevServer, port: number) => Promise<void>) {
+async function withLoopbackServer(run: (vite: ViteDevServer, port: number) => Promise<void>, options: StartOptions = {}) {
   let vite: ViteDevServer | undefined;
-  const { wxt, port, cleanup } = await startWxt('127.0.0.1', { onVite: (s) => void (vite = s) });
+  const { wxt, port, cleanup } = await startWxt('127.0.0.1', { ...options, onVite: (s) => void (vite = s) });
   try {
     if (!vite) throw new Error('WXT created no Vite server');
     await vite.listen();
@@ -307,16 +307,18 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
           [MALFORMED[1]]: { Origin: MALFORMED[1] },
           'Host 0.0.0.0': { Host: `0.0.0.0:${port}` },
           'Host evil.example': { Host: `evil.example:${port}` },
+          'Host [::ffff:7f00:1]': { Host: `[::ffff:7f00:1]:${port}` },
+          'Host [::ffff:127.0.0.1]': { Host: `[::ffff:127.0.0.1]:${port}` },
+          'the other family\'s literal': { Origin: `http://[::1]:${port}` },
           chrome: { Origin: EXTENSION },
           firefox: { Origin: FIREFOX },
           'own localhost': { Origin: `http://localhost:${port}` },
           'own 127.0.0.1': { Origin: `http://127.0.0.1:${port}` },
-          'own [::1]': { Origin: `http://[::1]:${port}` },
           'no Origin': {},
         };
         const outcomes: Record<string, number | string> = {};
         for (const [label, headers] of Object.entries(rows)) outcomes[label] = await send(port, '/', { ...HMR_UPGRADE, ...headers });
-        const admitted = ['chrome', 'firefox', 'own localhost', 'own 127.0.0.1', 'own [::1]', 'no Origin'];
+        const admitted = ['chrome', 'firefox', 'own localhost', 'own 127.0.0.1', 'no Origin'];
         expect(outcomes).toEqual(Object.fromEntries(Object.keys(rows).map((l) => [l, admitted.includes(l) ? 101 : 'reset'])));
       }),
     TIMEOUT,
@@ -343,7 +345,10 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
             [MALFORMED[0]]: [{ Origin: MALFORMED[0] }],
             [MALFORMED[1]]: [{ Origin: MALFORMED[1] }],
             'Host 0.0.0.0': [{ Host: `0.0.0.0:${port}` }],
-            'Host evil.example': [{ Host: `evil.example:${port}` }],
+            // Vite's own host check admits IP literals, so the gate alone decides these.
+            'Host [::ffff:7f00:1]': [{ Host: `[::ffff:7f00:1]:${port}` }],
+            'Host [::ffff:127.0.0.1]': [{ Host: `[::ffff:127.0.0.1]:${port}` }],
+            'the other family\'s literal': [{ Origin: `http://[::1]:${port}` }],
             'no headers': [{}],
             none: [{ 'Sec-Fetch-Site': 'none' }],
             'same-origin': [{ 'Sec-Fetch-Site': 'same-origin' }],
@@ -395,6 +400,65 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
   );
 
   it(
+    'admits server.origin on its own host and port, and only with an admitted Origin',
+    () =>
+      withLoopbackServer(
+        async (_vite, port) => {
+          const own = 'http://dev.test:4000';
+          const rows: Record<string, Record<string, string>> = {
+            'its Host, its Origin': { Host: 'dev.test:4000', Origin: own },
+            'its Host, an extension Origin': { Host: 'dev.test:4000', Origin: EXTENSION },
+            'its Host, no Origin': { Host: 'dev.test:4000' },
+            'its Host, no Origin, none': { Host: 'dev.test:4000', 'Sec-Fetch-Site': 'none' },
+            'its host on the bound port': { Host: `dev.test:${port}`, Origin: own },
+            'its host with no port': { Host: 'dev.test', Origin: own },
+            'a loopback Host, its Origin': { Origin: own },
+          };
+          const outcomes: Record<string, [number, number | string]> = {};
+          for (const [label, headers] of Object.entries(rows)) {
+            outcomes[label] = [(await exchange(port, '/@vite/client', headers)).status, await send(port, '/', { ...HMR_UPGRADE, ...headers })];
+          }
+          const admitted = ['its Host, its Origin', 'its Host, an extension Origin', 'a loopback Host, its Origin'];
+          expect(outcomes).toEqual(Object.fromEntries(Object.keys(rows).map((l) => [l, admitted.includes(l) ? [200, 101] : [403, 'reset']])));
+        },
+        // Vite's own host check would refuse dev.test; a developer setting server.origin allows it too.
+        { extend: (c) => void Object.assign(c.server!, { origin: 'http://dev.test:4000', allowedHosts: ['dev.test'] }) },
+      ),
+    TIMEOUT,
+  );
+
+  it.each(['http://::1', 'dev.test:4000'])(
+    'ignores a server.origin of %j that is not an origin, and stays up',
+    (origin) =>
+      withLoopbackServer(
+        async (vite, port) => {
+          // The upgrade listener runs outside any request handler: a throw there would kill `wxt dev`.
+          expect(await send(port, '/', { ...HMR_UPGRADE, Origin: 'null' })).toBe('reset');
+          expect(await send(port, '/', { ...HMR_UPGRADE, Origin: EXTENSION })).toBe(101);
+          expect((await exchange(port, '/@vite/client', { Origin: 'null' })).status).toBe(403);
+          expect((await exchange(port, '/@vite/client')).status).toBe(200);
+          expect(vite.httpServer!.listening).toBe(true);
+        },
+        { extend: (c) => void (c.server!.origin = origin) },
+      ),
+    TIMEOUT,
+  );
+
+  it(
+    'logs at most 50 distinct refusals, each value truncated, then one notice',
+    () =>
+      withLoopbackServer(async (vite, port) => {
+        const warn = vi.spyOn(vite.config.logger, 'warn').mockImplementation(() => {});
+        for (let i = 0; i < 60; i++) await exchange(port, '/@vite/client', { Origin: `http://p${i}.example${'x'.repeat(1000)}` });
+        const warnings = warn.mock.calls.map(([message]) => message);
+        expect(warnings).toHaveLength(51);
+        expect(warnings.at(-1)).toMatch(/Further refused dev-server requests are not logged/);
+        expect(Math.max(...warnings.map((m) => m.length))).toBeLessThan(600);
+      }),
+    TIMEOUT,
+  );
+
+  it(
     'lets an extension socket, and not a foreign page, drive a content-script reload',
     async () => {
       const outDir = await mkdtemp(join(tmpdir(), 'wxt-dev-out-'));
@@ -430,26 +494,49 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
   );
 });
 
-describe('isOwnHost', () => {
+describe('isLoopbackHostHeader', () => {
   it.each([
     ['localhost:3000', true],
     ['LOCALHOST:3000', true],
     ['127.0.0.1:3000', true],
     ['127.0.0.2:3000', true],
     ['[::1]:3000', true],
-    ['app.dev.test:3000', true],
     ['localhost:3001', false],
     ['localhost', false],
     ['localhost.:3000', false],
+    ['127.1:3000', false],
     ['0.0.0.0:3000', false],
+    ['[::ffff:7f00:1]:3000', false],
+    ['[::ffff:127.0.0.1]:3000', false],
+    ['[0:0:0:0:0:0:0:1]:3000', false],
     ['evil.example:3000', false],
     ['evil@localhost:3000', false],
     ['localhost:3000/x', false],
-    ['[::]:3000', false],
     ['', false],
     [undefined, false],
   ])('%j -> %s', (host, expected) => {
-    expect(isOwnHost(host, 3000, 'http://app.dev.test:3000')).toBe(expected);
+    expect(isLoopbackHostHeader(host, 3000)).toBe(expected);
+  });
+});
+
+describe('devBoundary', () => {
+  it('owns localhost and the bound literal only, and server.origin on its own host and port', () => {
+    const v4 = devBoundary({ address: '127.0.0.1', port: 3000 }, 'http://dev.test:4000', () => {});
+    expect(v4 && [...v4.own]).toEqual(['http://localhost:3000', 'http://127.0.0.1:3000', 'http://dev.test:4000']);
+    expect(v4 && [...v4.configuredHosts]).toEqual(['dev.test:4000']);
+    const v6 = devBoundary({ address: '::1', port: 3000 }, 'https://dev.test', () => {});
+    expect(v6 && [...v6.own]).toEqual(['http://localhost:3000', 'http://[::1]:3000', 'https://dev.test']);
+    expect(v6 && [...v6.configuredHosts]).toEqual(['dev.test:443', 'dev.test']);
+    expect(devBoundary(null, undefined, () => {})).toBeNull();
+    expect(devBoundary('/tmp/pipe', undefined, () => {})).toBeNull();
+  });
+
+  it.each(['http://::1', 'dev.test:4000', 'not an origin'])('ignores server.origin %j, with one warning', (configured) => {
+    const warn = vi.fn();
+    const boundary = devBoundary({ address: '127.0.0.1', port: 3000 }, configured, warn);
+    expect(boundary && [...boundary.own]).toEqual(['http://localhost:3000', 'http://127.0.0.1:3000']);
+    expect(boundary && admits(boundary, 'localhost:3000', 'null', undefined)).toBe(false);
+    expect(warn.mock.calls).toEqual([[expect.stringMatching(/Ignoring server\.origin .*faultmaven#2863/)]]);
   });
 });
 
