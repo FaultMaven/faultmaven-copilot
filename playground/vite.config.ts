@@ -28,6 +28,7 @@ import tailwindcss from 'tailwindcss';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { devServerBoundary } from '../dev-server-boundary';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
@@ -40,7 +41,8 @@ const copilotUiPreset = require('@faultmaven/copilot-ui/tailwind-preset.cjs');
 
 export default defineConfig({
   root: here,
-  plugins: [react()],
+  // The origin boundary `wxt dev` installs (fm#2872), keeping the `--host` LAN opt-in below.
+  plugins: [devServerBoundary({ label: '[playground]', network: 'lan-opt-in', extensionOrigins: false }), react()],
   resolve: {
     alias: {
       // Deliberately empty. The proof consumes the shared UI as a PACKAGE, by
