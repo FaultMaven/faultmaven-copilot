@@ -1,5 +1,6 @@
 import { defineConfig } from 'wxt';
 import { createHash } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 
 /**
  * Browser families whose manifest this config targets today. Named once so the
@@ -89,17 +90,85 @@ function storeIdentity(browser: string): { key?: string } {
   return { key };
 }
 
+/**
+ * The extension's dev server is loopback-only (fm#2662). `wxt --host <addr>`
+ * binds it to the network, and WXT and Vite then trust every peer with every
+ * surface they expose: any file, through WXT's virtual entrypoint ids and
+ * Vite's `safeModulePaths`; server-side fetches through `/@id/url:`;
+ * `/__open-in-editor`; and a tokenless HMR WebSocket. LAN access to `wxt dev`
+ * was never a supported use, and the owner's ruling ends it. Three layers:
+ * the `config:resolved` hook refuses a configured non-loopback host before the
+ * server exists (the gate); the plugin below answers a non-loopback peer's
+ * request with 403 and destroys its WebSocket upgrade, and closes a server
+ * found bound off-loopback (e.g. a later `server.host` override, or a
+ * `localhost` that resolves elsewhere). A separate HMR port is not covered;
+ * nothing sets one. This keeps NETWORK peers out only: the developer's own
+ * browser is a loopback peer, and a page it visits is fm#2863.
+ */
+const LOOPBACK = new BlockList();
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK.addAddress('::1', 'ipv6');
+
+/** A peer or bound address in 127.0.0.0/8 or ::1 (IPv4-mapped included). */
+export function isLoopbackPeer(address: unknown): boolean {
+  if (typeof address !== 'string') return false;
+  const family = isIP(address);
+  return family !== 0 && LOOPBACK.check(address, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+/** A `dev.server.host` that binds loopback only. Raw value: `--host 0x7f000001` arrives as a number. */
+export function isLoopbackHost(host: unknown): boolean {
+  return host === 'localhost' || isLoopbackPeer(host);
+}
+
+function loopbackOnlyError(host: unknown): Error {
+  return new Error(
+    `[wxt.config] Refusing to serve on ${JSON.stringify(host)}: the extension's dev server is loopback-only ` +
+      '(FaultMaven/faultmaven#2662). Run `pnpm dev` without --host; on a remote box, forward the port with ' +
+      '`ssh -L <port>:localhost:<port>`.',
+  );
+}
+
 export default defineConfig({
   srcDir: 'src',
   modules: [
     '@wxt-dev/module-react'
   ],
+  hooks: {
+    'config:resolved': (wxt) => {
+      const host = wxt.config.dev.server?.host;
+      if (host !== undefined && !isLoopbackHost(host)) throw loopbackOnlyError(host);
+    },
+  },
   vite: () => ({
     // No aliases. The shared UI resolves as a workspace dependency
     // (@faultmaven/copilot-ui), the same way the Dashboard will resolve it, so
     // there is no path the extension can import it by that a second host
     // cannot.
     resolve: {},
+    plugins: [
+      {
+        name: 'faultmaven:loopback-peers-only',
+        configureServer(server) {
+          server.middlewares.use(function refuseNetworkPeers(req, res, next) {
+            if (isLoopbackPeer(req.socket.remoteAddress)) return next();
+            res.statusCode = 403;
+            res.end();
+          });
+          const http = server.httpServer;
+          http?.prependListener('upgrade', function refuseNetworkUpgrades(req, socket) {
+            if (!isLoopbackPeer(req.socket.remoteAddress)) socket.destroy();
+          });
+          http?.on('listening', function refuseOffLoopbackBind() {
+            const bound = http.address();
+            const address = typeof bound === 'object' ? bound?.address : bound;
+            if (isLoopbackPeer(address)) return;
+            server.config.logger.error(loopbackOnlyError(address).message);
+            void server.close();
+          });
+        },
+      },
+    ],
   }),
   manifest: ({ browser }) => ({
     name: "__MSG_appName__",
