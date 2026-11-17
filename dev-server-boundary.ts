@@ -56,9 +56,10 @@ import type { Plugin } from 'vite';
  * loopback `Host` on the bound port, with an admitted `Origin` or with
  * `Sec-Fetch-Site` `same-origin` (Vite's overlay) or `none` (an extension page
  * with host permission). A header-less request is refused: from a browser that
- * sends no Fetch Metadata, a foreign page's `<img>` is one. For `wxt dev` this
- * is the one change from fm#2863's boundary: an editor request on
- * `server.origin`'s host, or with no headers, is now refused (fm#2872).
+ * sends no Fetch Metadata, a foreign page's `<img>` is one. For `wxt dev` these
+ * are the two changes from fm#2863's boundary (fm#2872): an editor request on
+ * `server.origin`'s host, or with no headers, is now refused; and, as own
+ * origins are normalized, on port 80 `Origin: http://localhost` is now own.
  *
  * `wxt dev` keeps Vite's WebSocket token check off because WXT's own reload
  * clients (worker and extension pages) connect without one. Installed

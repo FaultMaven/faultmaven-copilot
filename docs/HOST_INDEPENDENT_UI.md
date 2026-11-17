@@ -177,7 +177,7 @@ port, so a forwarded port (Docker, `ssh -L`) works. On `--host` it admits any
 IP-literal `Host`, and there a request with no `Origin` is answered, since
 browsers send no Fetch Metadata to an IP address: a foreign page's request
 reaches it, but its read stays opaque. The editor (`/__open-in-editor`) opens
-only for a loopback request from the playground's own page.
+only for a loopback request from the playground's own page on its bound port.
 
 ## Theme
 
