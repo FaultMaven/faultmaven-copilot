@@ -325,7 +325,7 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
   );
 
   it(
-    'spawns the editor only for an extension, own-origin or header-less request, and logs each refusal once',
+    'spawns the editor only for an extension, own-origin, `none` or `same-origin` request, and logs each refusal once',
     async () => {
       const dir = await mkdtemp(join(tmpdir(), 'wxt-dev-editor-'));
       const editor = join(dir, 'editor.sh');
@@ -362,7 +362,8 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
             const { status } = await exchange(port, '/__open-in-editor?file=package.json:1:1', headers, method);
             outcomes[label] = [status, spawn.mock.calls.length - before];
           }
-          const admitted = ['no headers', 'none', 'same-origin', 'extension, cross-site', 'own-origin POST'];
+          // A header-less request is refused too (fm#2872): a foreign <img> is one where no Fetch Metadata is sent.
+          const admitted = ['none', 'same-origin', 'extension, cross-site', 'own-origin POST'];
           expect(outcomes).toEqual(Object.fromEntries(Object.keys(rows).map((l) => [l, admitted.includes(l) ? [200, 1] : [403, 0]])));
           // Each spawn ran: the stub logged one line per admitted row.
           await Promise.all(spawn.mock.results.map(({ value }) => (value as ChildProcess).exitCode === null && once(value as ChildProcess, 'exit')));

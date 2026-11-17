@@ -171,9 +171,13 @@ pnpm playground:build
 `playground/`, `packages/copilot-ui` and `node_modules`, and the dev server
 refuses every other file with a 403, the tool caches in `node_modules/.cache`
 included (`server.fs.deny`, fm#2630).
-The dev server answers only its own origin (loopback, or the machine's IP on
-`--host`), refusing other pages and other localhost apps, and opens the editor
-only for a loopback request (`dev-server-boundary.ts`, fm#2872).
+The dev server answers only its own origin, refusing other pages and other
+localhost apps (`dev-server-boundary.ts`, fm#2872). Its `Host` may carry any
+port, so a forwarded port (Docker, `ssh -L`) works. On `--host` it admits any
+IP-literal `Host`, and there a request with no `Origin` is answered, since
+browsers send no Fetch Metadata to an IP address: a foreign page's request
+reaches it, but its read stays opaque. The editor (`/__open-in-editor`) opens
+only for a loopback request from the playground's own page.
 
 ## Theme
 

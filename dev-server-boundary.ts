@@ -28,25 +28,37 @@ import type { Plugin } from 'vite';
  * is installed.
  *
  * The browser's pages are kept out by the origin boundary (fm#2863), on every
- * HTTP request and every upgrade, after any peer guards. The `Host` must be
- * exactly `localhost`, a dotted 127/8 literal or `[::1]` on the bound port,
- * or `server.origin`'s own host and port; that refuses `0.0.0.0`, IPv4-mapped
- * spellings and DNS rebinding. Then an `Origin` must be the extension's (when
- * `extensionOrigins`) or the server's own (`localhost` and the bound literal on
- * the bound port, and `server.origin`); without one, `Sec-Fetch-Site` must be
- * absent, `none` or `same-origin`, and the `Host` a loopback one. That admits
- * extension contexts, the server's own origin and loopback tools that send no
- * browser headers, and refuses every other page, another localhost port
- * included, with a logged 403 or a destroyed socket. What is own is computed on
- * each `listening`; a `server.origin` that does not parse as an origin is
- * ignored.
+ * HTTP request and every upgrade, after any peer guards. Under `loopback-only`
+ * the `Host` must be exactly `localhost`, a dotted 127/8 literal or `[::1]` on
+ * the bound port, or `server.origin`'s own host and port; that refuses
+ * `0.0.0.0`, IPv4-mapped spellings and DNS rebinding. Then an `Origin` must be
+ * the extension's (when `extensionOrigins`) or the server's own (`localhost`
+ * and the bound literal on the bound port, and `server.origin`); without one,
+ * `Sec-Fetch-Site` must be absent, `none` or `same-origin`, and the `Host` a
+ * loopback one. That admits extension contexts, the server's own origin and
+ * loopback tools that send no browser headers, and refuses every other page,
+ * another localhost port included, with a logged 403 or a destroyed socket.
+ * What is own is computed on each `listening`, as normalized origins (port 80
+ * names none); a `server.origin` that does not parse as an origin is ignored.
  *
- * Under `lan-opt-in` bound off loopback, any IP-literal `Host` on the bound
- * port is also admitted, and an `Origin` on it must be `http://<that Host>`.
- * Browsers send no `Sec-Fetch-*` to a LAN address, so there a header-less
- * request is admitted: on a LAN `Host` the boundary is `Host` + `Origin` only.
- * So `/__open-in-editor` is refused, in both modes, unless the peer and the
- * `Host` are both loopback.
+ * Under `lan-opt-in` the `Host` may carry any port, so a forwarded one (Docker
+ * `-p 8080:5174`, `ssh -L 9000:localhost:5174`, a devcontainer) is served: a
+ * loopback `Host` on any port, and, bound off loopback (`--host`), any
+ * IP-literal `Host` on any port, `0.0.0.0` and `[::ffff:127.0.0.1]` included.
+ * An `Origin`, when sent, must be `http://<that Host>` (normalized) or a
+ * loopback own one. Without one, a loopback `Host` keeps the `Sec-Fetch-Site`
+ * rule, and an IP-literal `Host` admits a header-less request: browsers send no
+ * Fetch Metadata to it. There the boundary is `Host` + `Origin` only: a foreign
+ * page's request is answered, but its read stays opaque (no CORS grant). DNS
+ * names stay refused.
+ *
+ * `/__open-in-editor`, in both modes, answers only a loopback peer on a
+ * loopback `Host` on the bound port, with an admitted `Origin` or with
+ * `Sec-Fetch-Site` `same-origin` (Vite's overlay) or `none` (an extension page
+ * with host permission). A header-less request is refused: from a browser that
+ * sends no Fetch Metadata, a foreign page's `<img>` is one. For `wxt dev` this
+ * is the one change from fm#2863's boundary: an editor request on
+ * `server.origin`'s host, or with no headers, is now refused (fm#2872).
  *
  * `wxt dev` keeps Vite's WebSocket token check off because WXT's own reload
  * clients (worker and extension pages) connect without one. Installed
@@ -91,12 +103,14 @@ export function isExtensionOrigin(origin: unknown): boolean {
 /** What the origin boundary admits, computed once per `listening`. */
 export interface DevBoundary {
   port: number;
-  /** `http://localhost:<port>`, the bound literal's origin, and a parseable `server.origin`. */
+  /** The origins of `localhost` and the bound literal on the bound port, and a parseable `server.origin`, normalized. */
   own: Set<string>;
   /** `server.origin`'s `Host` spellings: its host and port, the scheme's default when it names none. */
   configuredHosts: Set<string>;
   extensionOrigins: boolean;
-  /** `lan-opt-in` bound off loopback: an IP-literal `Host` on the port is admitted, with `Origin: http://<Host>`. */
+  /** `lan-opt-in`: a loopback `Host` on any port is admitted, with `Origin: http://<Host>` or an own one. */
+  anyPort: boolean;
+  /** `lan-opt-in` bound off loopback: so is any IP-literal `Host`, on any port. */
   lan: boolean;
 }
 
@@ -110,9 +124,10 @@ export function devBoundary(
   if (typeof bound !== 'object' || bound === null) return null;
   const { address, port } = bound as { address: unknown; port: unknown };
   if (typeof port !== 'number') return null;
-  const own = new Set([`http://localhost:${port}`]);
-  if (isIP(String(address)) === 4 && isLoopbackPeer(address)) own.add(`http://${address}:${port}`);
-  if (address === '::1') own.add(`http://[::1]:${port}`);
+  const originOf = (host: string) => new URL(`http://${host}:${port}`).origin;
+  const own = new Set([originOf('localhost')]);
+  if (isIP(String(address)) === 4 && isLoopbackPeer(address)) own.add(originOf(String(address)));
+  if (address === '::1') own.add(originOf('[::1]'));
   const configuredHosts = new Set<string>();
   if (configured !== undefined) {
     let url: URL | undefined;
@@ -129,8 +144,8 @@ export function devBoundary(
       warn(`${label} Ignoring server.origin ${JSON.stringify(configured)}: not an origin, so only loopback hosts reach the dev server (FaultMaven/faultmaven#2863).`);
     }
   }
-  const lan = network === 'lan-opt-in' && !isLoopbackPeer(address);
-  return { port, own, configuredHosts, extensionOrigins, lan };
+  const anyPort = network === 'lan-opt-in';
+  return { port, own, configuredHosts, extensionOrigins, anyPort, lan: anyPort && !isLoopbackPeer(address) };
 }
 
 /** Exactly `localhost`, a dotted 127/8 literal or `[::1]`, on `port`; never an IPv4-mapped or other IPv6 spelling. */
@@ -141,23 +156,36 @@ export function isLoopbackHostHeader(host: unknown, port: number): boolean {
   return name === 'localhost' || name === '[::1]' || (isIP(name) === 4 && isLoopbackPeer(name));
 }
 
-/** A dotted IPv4 or bracketed IPv6 literal `Host` on `port`: the origin a page served on it sends, else null. */
-export function ipHostOrigin(host: unknown, port: number): string | null {
-  const match = typeof host === 'string' ? /^(\[([\da-f:.]+)\]|[\d.]+)(?::(\d+))?$/.exec(host.toLowerCase()) : null;
-  if (!match || (match[3] ?? '80') !== String(port) || isIP(match[2] ?? match[1]) !== (match[2] ? 6 : 4)) return null;
-  return new URL(`http://${match[1]}:${port}`).origin;
+/**
+ * A loopback `Host` (`localhost`, a dotted 127/8 literal, `[::1]`) or, with `ipLiterals`, any dotted IPv4 or bracketed
+ * IPv6 literal, on any port: the normalized origin a page served on it sends, else null.
+ */
+export function servedOrigin(host: unknown, ipLiterals: boolean): string | null {
+  const match = typeof host === 'string' ? /^(localhost|\[([\da-f:.]+)\]|[\d.]+)(?::(\d+))?$/.exec(host.toLowerCase()) : null;
+  if (!match) return null;
+  const [, name, v6, port] = match;
+  const family = name === 'localhost' ? 0 : v6 !== undefined ? 6 : 4;
+  if (family !== 0 && isIP(v6 ?? name) !== family) return null;
+  const loopback = name === 'localhost' || name === '[::1]' || (family === 4 && isLoopbackPeer(name));
+  if (!loopback && !ipLiterals) return null;
+  try {
+    return new URL(`http://${name}${port === undefined ? '' : `:${port}`}`).origin;
+  } catch {
+    return null; // a port past 65535
+  }
 }
 
 /**
- * A loopback `Host` with the Origin rule; under the LAN opt-in, an IP-literal `Host` whose `Origin`, when sent, is
- * `http://<that Host>`; or `server.origin`'s own `Host` with an admitted `Origin` (never none).
+ * Under `lan-opt-in`, a loopback or (bound off loopback) IP-literal `Host` on any port, whose `Origin` is its own or an
+ * own one; else a loopback `Host` on the bound port with the Origin rule; or `server.origin`'s own `Host` with an
+ * admitted `Origin` (never none).
  */
 export function admits(boundary: DevBoundary | null, host: unknown, origin: unknown, secFetchSite: unknown): boolean {
   if (!boundary) return false;
   const { port, own, extensionOrigins } = boundary;
-  const served = boundary.lan ? ipHostOrigin(host, port) : null;
-  if (isLoopbackHostHeader(host, port)) return isAllowedRequest(origin, secFetchSite, own, extensionOrigins) || (served !== null && origin === served);
-  if (served !== null) return isAllowedRequest(origin, secFetchSite, new Set([served]), extensionOrigins);
+  const served = boundary.anyPort ? servedOrigin(host, boundary.lan) : null;
+  if (served !== null) return isAllowedRequest(origin, secFetchSite, own, extensionOrigins) || origin === served;
+  if (isLoopbackHostHeader(host, port)) return isAllowedRequest(origin, secFetchSite, own, extensionOrigins);
   const configured = typeof host === 'string' && boundary.configuredHosts.has(host.toLowerCase());
   return configured && origin !== undefined && isAllowedRequest(origin, secFetchSite, own, extensionOrigins);
 }
@@ -171,10 +199,15 @@ export function isAllowedRequest(origin: unknown, secFetchSite: unknown, own: Se
 /** Vite's editor launcher; connect matches its route case-insensitively, and under any base, so match anywhere. */
 const OPEN_IN_EDITOR = /\/__open-in-editor/i;
 
-/** The editor launcher answers only a loopback peer on a loopback `Host`, whatever its headers (fm#2872). */
+/**
+ * The editor launcher answers only an admitted request from a loopback peer on a loopback `Host` on the bound port,
+ * with an `Origin` or `Sec-Fetch-Site` `same-origin` or `none`: never a header-less one (fm#2872).
+ */
 export function admitsEditor(boundary: DevBoundary | null, req: IncomingMessage): boolean {
   if (!OPEN_IN_EDITOR.test(req.url ?? '')) return true;
-  return boundary !== null && isLoopbackPeer(req.socket.remoteAddress) && isLoopbackHostHeader(req.headers.host, boundary.port);
+  const { host, origin, 'sec-fetch-site': site } = req.headers;
+  if (!boundary || !isLoopbackPeer(req.socket.remoteAddress) || !isLoopbackHostHeader(host, boundary.port)) return false;
+  return admits(boundary, host, origin, site) && (origin !== undefined || site === 'same-origin' || site === 'none');
 }
 
 const RUN_LOCALLY = 'Run `pnpm dev` without --host; on a remote box, forward the port with `ssh -L <port>:localhost:<port>`.';
