@@ -8,18 +8,21 @@
  * port or host, or middleware mode) before anything binds, destroys a
  * non-loopback peer's socket before any parsing (its request and upgrade
  * guards are backstops), and fails `wxt dev` on a server found bound
- * off-loopback. Every server here is WXT's own, from the checkout's config,
- * on loopback.
+ * off-loopback. Behind those guards, an origin boundary refuses every browser
+ * page but the extension's and the server's own (fm#2863). Every server here
+ * is WXT's own, from the checkout's config, on loopback.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import childProcess, { type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InlineConfig, ViteDevServer } from 'vite';
 import { createServer as createWxtServer, type InlineConfig as WxtInlineConfig, type Logger } from 'wxt';
-import { isLoopbackHost } from '../../../wxt.config';
+import { isLoopbackHost, isOwnHost } from '../../../wxt.config';
 
 const TIMEOUT = 60_000;
 const repoRoot = process.cwd();
@@ -46,6 +49,8 @@ interface StartOptions {
   extend?: (config: InlineConfig) => void;
   /** Inline WXT hooks, merged over (and so replacing) the checkout's own of the same name. */
   hooks?: WxtInlineConfig['hooks'];
+  /** Further inline WXT config (an output directory, an entrypoint filter). */
+  inline?: WxtInlineConfig;
 }
 
 /**
@@ -55,11 +60,12 @@ interface StartOptions {
  * does not own fails closed there, in WXT. The test adds only a scratch cache,
  * no dependency scan and no warm-up.
  */
-async function startWxt(host: unknown, { onVite = () => {}, extend = () => {}, hooks = {} }: StartOptions = {}) {
+async function startWxt(host: unknown, { onVite = () => {}, extend = () => {}, hooks = {}, inline = {} }: StartOptions = {}) {
   const port = await freePort();
   const cacheDir = await mkdtemp(join(tmpdir(), 'wxt-dev-loopback-'));
   try {
     const wxt = await createWxtServer({
+      ...inline,
       root: repoRoot,
       logger: quiet,
       webExt: { disabled: true },
@@ -252,6 +258,199 @@ describe('wxt dev is loopback-only (fm#2662)', () => {
     },
     TIMEOUT,
   );
+});
+
+/** A raw HTTP exchange: status, headers and body. */
+function exchange(port: number, path: string, headers: Record<string, string> = {}, method = 'GET') {
+  return new Promise<{ status: number; headers: IncomingMessage['headers']; body: string }>((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, headers, method }, (res) => {
+      let body = '';
+      res.setEncoding('utf8').on('data', (chunk: string) => (body += chunk));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop';
+const FIREFOX = 'moz-extension://3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+const EVIL = 'http://evil.example';
+/** Malformed extension origins and a foreign one dressed as same-origin: each refused. */
+const MALFORMED = ['chrome-extension://x:1', 'chrome-extension://x/'];
+
+describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
+  it(
+    'installs the origin boundary second, behind the peer guards',
+    () =>
+      withLoopbackServer(async (vite) => {
+        expect(vite.middlewares.stack.slice(0, 2).map((layer) => (layer.handle as { name: string }).name))
+          .toEqual(['refuseNetworkPeers', 'refuseForeignRequests']);
+        expect(vite.httpServer!.listeners('upgrade').slice(0, 2).map((listener) => listener.name))
+          .toEqual(['refuseNetworkUpgrades', 'refuseForeignUpgrades']);
+      }),
+    TIMEOUT,
+  );
+
+  it(
+    'admits an upgrade only from the extension, its own origin or no Origin, on a loopback Host',
+    () =>
+      withLoopbackServer(async (_vite, port) => {
+        const rows: Record<string, Record<string, string>> = {
+          [EVIL]: { Origin: EVIL },
+          null: { Origin: 'null' },
+          'another localhost port': { Origin: 'http://localhost:3333' },
+          'a localhost subdomain': { Origin: `http://evil.localhost:${port}` },
+          https: { Origin: `https://localhost:${port}` },
+          'vite-ping from evil': { Origin: EVIL, 'Sec-WebSocket-Protocol': 'vite-ping' },
+          [MALFORMED[0]]: { Origin: MALFORMED[0] },
+          [MALFORMED[1]]: { Origin: MALFORMED[1] },
+          'Host 0.0.0.0': { Host: `0.0.0.0:${port}` },
+          'Host evil.example': { Host: `evil.example:${port}` },
+          chrome: { Origin: EXTENSION },
+          firefox: { Origin: FIREFOX },
+          'own localhost': { Origin: `http://localhost:${port}` },
+          'own 127.0.0.1': { Origin: `http://127.0.0.1:${port}` },
+          'own [::1]': { Origin: `http://[::1]:${port}` },
+          'no Origin': {},
+        };
+        const outcomes: Record<string, number | string> = {};
+        for (const [label, headers] of Object.entries(rows)) outcomes[label] = await send(port, '/', { ...HMR_UPGRADE, ...headers });
+        const admitted = ['chrome', 'firefox', 'own localhost', 'own 127.0.0.1', 'own [::1]', 'no Origin'];
+        expect(outcomes).toEqual(Object.fromEntries(Object.keys(rows).map((l) => [l, admitted.includes(l) ? 101 : 'reset'])));
+      }),
+    TIMEOUT,
+  );
+
+  it(
+    'spawns the editor only for an extension, own-origin or header-less request, and logs each refusal once',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'wxt-dev-editor-'));
+      const editor = join(dir, 'editor.sh');
+      await writeFile(editor, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${join(dir, 'log')}'\n`);
+      await chmod(editor, 0o755);
+      vi.stubEnv('LAUNCH_EDITOR', editor);
+      const spawn = vi.spyOn(childProcess, 'spawn');
+      try {
+        await withLoopbackServer(async (vite, port) => {
+          const warn = vi.spyOn(vite.config.logger, 'warn').mockImplementation(() => {});
+          const rows: Record<string, [Record<string, string>, string?]> = {
+            'cross-site': [{ 'Sec-Fetch-Site': 'cross-site' }],
+            'same-site': [{ 'Sec-Fetch-Site': 'same-site' }],
+            [EVIL]: [{ Origin: EVIL }],
+            null: [{ Origin: 'null' }],
+            'evil as same-origin': [{ Origin: EVIL, 'Sec-Fetch-Site': 'same-origin' }],
+            [MALFORMED[0]]: [{ Origin: MALFORMED[0] }],
+            [MALFORMED[1]]: [{ Origin: MALFORMED[1] }],
+            'Host 0.0.0.0': [{ Host: `0.0.0.0:${port}` }],
+            'Host evil.example': [{ Host: `evil.example:${port}` }],
+            'no headers': [{}],
+            none: [{ 'Sec-Fetch-Site': 'none' }],
+            'same-origin': [{ 'Sec-Fetch-Site': 'same-origin' }],
+            'extension, cross-site': [{ Origin: EXTENSION, 'Sec-Fetch-Site': 'cross-site' }],
+            'own-origin POST': [{ Origin: `http://localhost:${port}` }, 'POST'],
+          };
+          const outcomes: Record<string, [number, number]> = {};
+          for (const [label, [headers, method]] of Object.entries(rows)) {
+            const before = spawn.mock.calls.length;
+            // An existing file with a position, as the overlay sends: launch-editor skips a missing file.
+            const { status } = await exchange(port, '/__open-in-editor?file=package.json:1:1', headers, method);
+            outcomes[label] = [status, spawn.mock.calls.length - before];
+          }
+          const admitted = ['no headers', 'none', 'same-origin', 'extension, cross-site', 'own-origin POST'];
+          expect(outcomes).toEqual(Object.fromEntries(Object.keys(rows).map((l) => [l, admitted.includes(l) ? [200, 1] : [403, 0]])));
+          // Each spawn ran: the stub logged one line per admitted row.
+          await Promise.all(spawn.mock.results.map(({ value }) => (value as ChildProcess).exitCode === null && once(value as ChildProcess, 'exit')));
+          expect((await readFile(join(dir, 'log'), 'utf8')).trim().split('\n').length).toBe(admitted.length);
+
+          // Visible: a text body naming the issue, and one warning per distinct refused triple.
+          const refused = await exchange(port, '/__open-in-editor', { Origin: EVIL });
+          expect([refused.status, refused.headers['content-type'], refused.body]).toEqual([403, 'text/plain; charset=utf-8', expect.stringContaining('FaultMaven/faultmaven#2863')]);
+          await send(port, '/', { ...HMR_UPGRADE, Origin: 'http://localhost:3333' });
+          await send(port, '/', { ...HMR_UPGRADE, Origin: 'http://localhost:3333' });
+          const warnings = warn.mock.calls.map(([message]) => message);
+          expect(warnings).toHaveLength(Object.keys(rows).length - admitted.length + 1);
+          expect(warnings.every((m) => m.includes('FaultMaven/faultmaven#2863'))).toBe(true);
+          expect(warnings.at(-1)).toMatch(/Refused a dev-server upgrade for "\/" with .*localhost:3333/);
+        });
+      } finally {
+        spawn.mockRestore();
+        vi.unstubAllEnvs();
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'serves a module to the extension, and refuses it, with no CORS grant, to another localhost port',
+    () =>
+      withLoopbackServer(async (_vite, port) => {
+        const foreign = await exchange(port, '/@vite/client', { Origin: 'http://localhost:3333' });
+        expect([foreign.status, foreign.headers['access-control-allow-origin']]).toEqual([403, undefined]);
+        const extension = await exchange(port, '/@vite/client', { Origin: EXTENSION });
+        expect(extension.status).toBe(200);
+      }),
+    TIMEOUT,
+  );
+
+  it(
+    'lets an extension socket, and not a foreign page, drive a content-script reload',
+    async () => {
+      const outDir = await mkdtemp(join(tmpdir(), 'wxt-dev-out-'));
+      const inline = { outDir, filterEntrypoints: ['background', 'auth-bridge'] };
+      const { wxt, port, cleanup } = await startWxt('127.0.0.1', { inline });
+      const open = (origin: string) =>
+        new Promise<WebSocket>((resolve, reject) => {
+          // Node's WebSocket (undici) takes request headers; a browser's sets Origin itself.
+          const socket = new WebSocket(`ws://127.0.0.1:${port}/`, { protocols: ['vite-hmr'], headers: { Origin: origin } } as never);
+          socket.onopen = () => resolve(socket);
+          socket.onerror = () => reject(new Error(`refused: ${origin}`));
+        });
+      try {
+        await wxt.start();
+        await expect(open(EVIL)).rejects.toThrow(`refused: ${EVIL}`);
+        const worker = await open(EXTENSION);
+        const reload = new Promise<{ data: unknown }>((resolve) => {
+          worker.onmessage = ({ data }) => {
+            const message = JSON.parse(String(data));
+            if (message.event === 'wxt:reload-content-script') resolve(message);
+          };
+        });
+        worker.send(JSON.stringify({ type: 'custom', event: 'wxt:background-initialized' }));
+        expect((await reload).data).toMatchObject({ contentScript: { js: ['content-scripts/auth-bridge.js'] } });
+        worker.close();
+      } finally {
+        await wxt.stop();
+        await cleanup();
+        await rm(outDir, { recursive: true, force: true });
+      }
+    },
+    TIMEOUT * 2,
+  );
+});
+
+describe('isOwnHost', () => {
+  it.each([
+    ['localhost:3000', true],
+    ['LOCALHOST:3000', true],
+    ['127.0.0.1:3000', true],
+    ['127.0.0.2:3000', true],
+    ['[::1]:3000', true],
+    ['app.dev.test:3000', true],
+    ['localhost:3001', false],
+    ['localhost', false],
+    ['localhost.:3000', false],
+    ['0.0.0.0:3000', false],
+    ['evil.example:3000', false],
+    ['evil@localhost:3000', false],
+    ['localhost:3000/x', false],
+    ['[::]:3000', false],
+    ['', false],
+    [undefined, false],
+  ])('%j -> %s', (host, expected) => {
+    expect(isOwnHost(host, 3000, 'http://app.dev.test:3000')).toBe(expected);
+  });
 });
 
 describe('isLoopbackHost', () => {
