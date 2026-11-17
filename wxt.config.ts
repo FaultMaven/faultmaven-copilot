@@ -100,6 +100,20 @@ export default defineConfig({
     // there is no path the extension can import it by that a second host
     // cannot.
     resolve: {},
+    // `fs.allow` is what `wxt --host` exposes to the network (fm#2662, the
+    // playground's fm#2630): WXT roots the server at the checkout, and Vite's
+    // default allows all of it. Root-relative; the root `public/` and Vite's
+    // client are served without this check. The list also gates `wxt build`,
+    // `zip` and `prepare`: their entrypoint importer is a Vite server built
+    // from this factory, and it refuses an entrypoint outside the list.
+    server: {
+      fs: {
+        allow: ['src', 'packages/copilot-ui', 'node_modules'],
+        // Vite's default list, which an explicit `deny` replaces, plus the
+        // tool caches under node_modules. `.vite/deps` stays served.
+        deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/node_modules/.cache/**'],
+      },
+    },
   }),
   manifest: ({ browser }) => ({
     name: "__MSG_appName__",
