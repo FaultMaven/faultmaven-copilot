@@ -3,19 +3,21 @@
  * `pnpm dev` is `wxt`, and `wxt --host <addr>` binds its Vite server to the
  * network, where WXT and Vite trust every peer with every surface they expose
  * (fm#2662). `wxt.config.ts` keeps the server on loopback: its
- * `config:resolved` hook refuses a non-loopback host before the server
- * exists, and its plugin refuses a non-loopback peer's request and WebSocket
- * upgrade ahead of WXT and Vite, and closes a server found bound off-loopback.
- * Every server here is WXT's own, from the checkout's config, on loopback.
+ * `config:resolved` hook refuses a non-loopback host, and its plugin refuses
+ * a non-loopback final `server.host` or a separate HMR server before anything
+ * binds, destroys a non-loopback peer's socket before any parsing (its
+ * request and upgrade guards are backstops), and fails `wxt dev` on a server
+ * found bound off-loopback. Every server here is WXT's own, from the
+ * checkout's config, on loopback.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer as createHttpServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InlineConfig, ViteDevServer } from 'vite';
-import { createServer as createWxtServer, type Logger } from 'wxt';
+import { createServer as createWxtServer, type InlineConfig as WxtInlineConfig, type Logger } from 'wxt';
 import { isLoopbackHost } from '../../../wxt.config';
 
 const TIMEOUT = 60_000;
@@ -37,14 +39,24 @@ function freePort(): Promise<number> {
   });
 }
 
+interface StartOptions {
+  onVite?: (server: ViteDevServer) => void;
+  /** Applied to Vite's final config, as a later `vite:devServer:extendConfig` hook would. */
+  extend?: (config: InlineConfig) => void;
+  /** Inline WXT hooks, merged over (and so replacing) the checkout's own of the same name. */
+  hooks?: WxtInlineConfig['hooks'];
+}
+
 /**
  * WXT's own dev server from the checkout's config, with `dev.server.host` set
- * and an explicit port, so WXT's `getPort` never probe-binds the host. The
- * test adds only a scratch cache, no dependency scan and no warm-up.
+ * and an explicit port. That is not the CLI path: without `--port`, WXT's
+ * `getPort` probe-binds the host before any hook runs, and a host this machine
+ * does not own fails closed there, in WXT. The test adds only a scratch cache,
+ * no dependency scan and no warm-up.
  */
-async function startWxt(host: unknown, onVite: (server: ViteDevServer) => void = () => {}) {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'wxt-dev-loopback-'));
+async function startWxt(host: unknown, { onVite = () => {}, extend = () => {}, hooks = {} }: StartOptions = {}) {
   const port = await freePort();
+  const cacheDir = await mkdtemp(join(tmpdir(), 'wxt-dev-loopback-'));
   try {
     const wxt = await createWxtServer({
       root: repoRoot,
@@ -52,10 +64,12 @@ async function startWxt(host: unknown, onVite: (server: ViteDevServer) => void =
       webExt: { disabled: true },
       dev: { server: { host: host as string, port } },
       hooks: {
+        ...hooks,
         'vite:devServer:extendConfig': (config: InlineConfig) => {
           config.cacheDir = cacheDir;
           config.optimizeDeps = { ...config.optimizeDeps, noDiscovery: true, include: [] };
           config.server = { ...config.server, preTransformRequests: false };
+          extend(config);
           config.plugins = [...(config.plugins ?? []), { name: 'capture-server', configureServer: onVite }];
         },
       },
@@ -69,7 +83,7 @@ async function startWxt(host: unknown, onVite: (server: ViteDevServer) => void =
 
 async function withLoopbackServer(run: (vite: ViteDevServer, port: number) => Promise<void>) {
   let vite: ViteDevServer | undefined;
-  const { wxt, port, cleanup } = await startWxt('127.0.0.1', (s) => void (vite = s));
+  const { wxt, port, cleanup } = await startWxt('127.0.0.1', { onVite: (s) => void (vite = s) });
   try {
     if (!vite) throw new Error('WXT created no Vite server');
     await vite.listen();
@@ -80,9 +94,21 @@ async function withLoopbackServer(run: (vite: ViteDevServer, port: number) => Pr
   }
 }
 
-/** A raw request over node:http (the suite's setup replaces `fetch`); an upgrade resolves 101. */
-function send(port: number, path: string, headers: Record<string, string> = {}): Promise<number> {
-  return new Promise((resolve, reject) => {
+/** Refused outcomes of a start: its error message, or 'started'. */
+async function refusal(started: ReturnType<typeof startWxt>): Promise<string> {
+  return started.then(
+    async ({ wxt, cleanup }) => {
+      await wxt.stop();
+      await cleanup();
+      return 'started';
+    },
+    (error: Error) => error.message,
+  );
+}
+
+/** A raw request over node:http (the suite's setup replaces `fetch`); an upgrade resolves 101, a reset 'reset'. */
+function send(port: number, path: string, headers: Record<string, string> = {}): Promise<number | string> {
+  return new Promise((resolve) => {
     const req = httpRequest({ host: '127.0.0.1', port, path, headers }, (res) => {
       res.resume();
       resolve(res.statusCode ?? 0);
@@ -91,7 +117,7 @@ function send(port: number, path: string, headers: Record<string, string> = {}):
       socket.destroy();
       resolve(101);
     });
-    req.on('error', reject);
+    req.on('error', () => resolve('reset'));
     req.end();
   });
 }
@@ -111,15 +137,8 @@ describe('wxt dev is loopback-only (fm#2662)', () => {
   it.each(['0.0.0.0', '::', '192.168.1.5'])(
     'refuses to start on %s',
     async (host) => {
-      const outcome = await startWxt(host).then(
-        async ({ wxt, cleanup }) => {
-          await wxt.stop();
-          await cleanup();
-          return 'started';
-        },
-        (error: Error) => error.message,
-      );
-      expect(outcome).toMatch(/faultmaven#2662/);
+      const outcome = await refusal(startWxt(host));
+      expect(outcome).toMatch(/Refusing dev host .*faultmaven#2662/);
       expect(outcome).toContain('`pnpm dev`');
       expect(outcome).toContain('ssh -L');
     },
@@ -169,20 +188,65 @@ describe('wxt dev is loopback-only (fm#2662)', () => {
     TIMEOUT,
   );
 
+  it.each<[string, StartOptions, RegExp]>([
+    // An inline `config:resolved` replaces the checkout's gate; the plugin still refuses.
+    ['an inline hook over the gate', { hooks: { 'config:resolved': () => {} } }, /Refusing Vite server.host "192.168.1.5"/],
+    ['a later server.host', { extend: (c) => void (c.server!.host = '0.0.0.0') }, /Refusing Vite server.host "0.0.0.0"/],
+    ['hmr.port', { extend: (c) => void (c.server!.hmr = { port: 1 }) }, /separate HMR server/],
+    ['hmr.server', { extend: (c) => void (c.server!.hmr = { server: createHttpServer() }) }, /separate HMR server/],
+    ['hmr.host', { extend: (c) => void (c.server!.hmr = { host: '0.0.0.0' }) }, /separate HMR server/],
+  ])(
+    'refuses %s before anything binds',
+    async (_label, options, message) => {
+      const host = options.hooks ? '192.168.1.5' : '127.0.0.1';
+      const outcome = await refusal(startWxt(host, options));
+      expect(outcome).toMatch(message);
+      expect(outcome).toMatch(/faultmaven#2662/);
+    },
+    TIMEOUT,
+  );
+
   it(
-    'closes a server found bound off-loopback',
+    'destroys a network peer\'s socket on connection, before any parsing',
     () =>
       withLoopbackServer(async (vite, port) => {
         const http = vite.httpServer!;
-        const check = http.listeners('listening').find((fn) => fn.name === 'refuseOffLoopbackBind');
-        expect(check).toBeDefined();
-        const error = vi.spyOn(vite.config.logger, 'error').mockImplementation(() => {});
-        // The bind a later `server.host` override or an off-loopback `localhost` would produce.
-        vi.spyOn(http, 'address').mockReturnValue({ address: '0.0.0.0', family: 'IPv4', port });
-        check!.call(http);
-        expect(http.listening).toBe(false);
-        expect(error).toHaveBeenCalledWith(expect.stringContaining('faultmaven#2662'));
+        expect(http.listeners('connection')[0].name).toBe('refuseNetworkSockets');
+        let fromNetwork = true;
+        const reached = { request: 0, upgrade: 0 };
+        http.on('request', () => reached.request++);
+        http.on('upgrade', () => reached.upgrade++);
+        // Ahead of the guard: the socket reports a network peer's address.
+        http.prependListener('connection', (socket: Socket) => {
+          if (fromNetwork) Object.defineProperty(socket, 'remoteAddress', { value: '192.168.0.5' });
+        });
+        expect([await send(port, '/@vite/client'), await send(port, '/', HMR_UPGRADE)]).toEqual(['reset', 'reset']);
+        expect(reached).toEqual({ request: 0, upgrade: 0 });
+        fromNetwork = false;
+        expect([await send(port, '/@vite/client'), await send(port, '/', HMR_UPGRADE)]).toEqual([200, 101]);
+        expect(reached).toEqual({ request: 1, upgrade: 1 });
       }),
+    TIMEOUT,
+  );
+
+  it(
+    'fails `wxt dev` on a server found bound off-loopback',
+    async () => {
+      // The bind a `localhost` resolving off-loopback would produce; the real bind stays loopback.
+      const onVite = (vite: ViteDevServer) => {
+        const http = vite.httpServer!;
+        const real = http.address.bind(http);
+        vi.spyOn(http, 'address').mockImplementation(() => ({ ...(real() as AddressInfo), address: '0.0.0.0' }));
+      };
+      const { wxt, cleanup } = await startWxt('127.0.0.1', { onVite });
+      try {
+        await expect(wxt.start()).rejects.toThrow(/bound "0.0.0.0", off loopback, and was closed.*faultmaven#2662/);
+        expect(wxt.currentOutput).toBeUndefined();
+      } finally {
+        await wxt.stop();
+        await cleanup();
+      }
+    },
     TIMEOUT,
   );
 });
