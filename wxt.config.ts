@@ -1,5 +1,6 @@
 import { defineConfig } from 'wxt';
 import { createHash } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import { BlockList, isIP } from 'node:net';
 
 /**
@@ -107,7 +108,27 @@ function storeIdentity(browser: string): { key?: string } {
  * is destroyed on `connection`, before any parsing; its request gets 403 and
  * its upgrade is destroyed (backstops); and a server found bound off-loopback
  * fails `wxt dev`. This keeps NETWORK peers out only: the developer's own
- * browser is a loopback peer, and a page it visits is fm#2863.
+ * browser is a loopback peer.
+ *
+ * The browser's pages are kept out by an origin boundary (fm#2863), on every
+ * HTTP request and every upgrade, after the peer guards. The `Host` must be
+ * exactly `localhost`, a dotted 127/8 literal or `[::1]` on the bound port,
+ * or `server.origin`'s own host and port; that refuses `0.0.0.0`, IPv4-mapped
+ * spellings and DNS rebinding. Then an `Origin` must be the extension's or the
+ * server's own (`localhost` and the bound literal on the bound port, and
+ * `server.origin`); without one, `Sec-Fetch-Site` must be absent, `none` or
+ * `same-origin`, and the `Host` a loopback one. That admits extension
+ * contexts, the server's own origin and loopback tools that send no browser
+ * headers, and refuses every other page, another localhost port included,
+ * with a logged 403 or a destroyed socket. What is own is computed on each
+ * `listening`; a `server.origin` that does not parse as an origin is ignored.
+ * Vite's WebSocket token check stays off because WXT's own reload clients
+ * (worker and extension pages) connect without one. Installed extensions are
+ * trusted and pages are not: one with a localhost host permission already
+ * sends no `Origin` and `none`, and the dev id is path-derived, so no id is
+ * pinned. A sandboxed extension page (`Origin: null`) would be refused; the
+ * copilot has none. Measured in Chromium only:
+ * `pnpm dev:firefox` (`moz-extension://`) is unverified.
  */
 const LOOPBACK = new BlockList();
 LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4');
@@ -123,6 +144,69 @@ export function isLoopbackPeer(address: unknown): boolean {
 /** A host that binds loopback only. Raw value, so a numeric host (`--host 0x7f000001 --port N`) is refused. */
 export function isLoopbackHost(host: unknown): boolean {
   return host === 'localhost' || isLoopbackPeer(host);
+}
+
+/** `chrome-extension://<id>` or `moz-extension://<uuid>`: an origin, so no port and no path. */
+export function isExtensionOrigin(origin: unknown): boolean {
+  return typeof origin === 'string' && /^(?:chrome|moz)-extension:\/\/[^/:]+$/.test(origin);
+}
+
+/** What the origin boundary admits, computed once per `listening`. */
+export interface DevBoundary {
+  port: number;
+  /** `http://localhost:<port>`, the bound literal's origin, and a parseable `server.origin`. */
+  own: Set<string>;
+  /** `server.origin`'s `Host` spellings: its host and port, the scheme's default when it names none. */
+  configuredHosts: Set<string>;
+}
+
+/** Null (refuse all) unless bound to a port; a `server.origin` that is not an origin is ignored, with a warning. */
+export function devBoundary(bound: unknown, configured: unknown, warn: (message: string) => void): DevBoundary | null {
+  if (typeof bound !== 'object' || bound === null) return null;
+  const { address, port } = bound as { address: unknown; port: unknown };
+  if (typeof port !== 'number') return null;
+  const own = new Set([`http://localhost:${port}`]);
+  if (isIP(String(address)) === 4 && isLoopbackPeer(address)) own.add(`http://${address}:${port}`);
+  if (address === '::1') own.add(`http://[::1]:${port}`);
+  const configuredHosts = new Set<string>();
+  if (configured !== undefined) {
+    let url: URL | undefined;
+    try {
+      url = new URL(String(configured));
+    } catch {
+      url = undefined;
+    }
+    if (url && url.origin !== 'null') {
+      own.add(url.origin);
+      configuredHosts.add(`${url.hostname}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`);
+      if (!url.port) configuredHosts.add(url.hostname);
+    } else {
+      warn(`[wxt.config] Ignoring server.origin ${JSON.stringify(configured)}: not an origin, so only loopback hosts reach the dev server (FaultMaven/faultmaven#2863).`);
+    }
+  }
+  return { port, own, configuredHosts };
+}
+
+/** Exactly `localhost`, a dotted 127/8 literal or `[::1]`, on `port`; never an IPv4-mapped or other IPv6 spelling. */
+export function isLoopbackHostHeader(host: unknown, port: number): boolean {
+  const match = typeof host === 'string' ? /^(localhost|\[::1\]|[\d.]+)(?::(\d+))?$/.exec(host.toLowerCase()) : null;
+  if (!match || (match[2] ?? '80') !== String(port)) return false;
+  const name = match[1];
+  return name === 'localhost' || name === '[::1]' || (isIP(name) === 4 && isLoopbackPeer(name));
+}
+
+/** A loopback `Host` with the Origin rule, or `server.origin`'s own `Host` with an admitted `Origin` (never none). */
+export function admits(boundary: DevBoundary | null, host: unknown, origin: unknown, secFetchSite: unknown): boolean {
+  if (!boundary) return false;
+  if (isLoopbackHostHeader(host, boundary.port)) return isAllowedRequest(origin, secFetchSite, boundary.own);
+  const configured = typeof host === 'string' && boundary.configuredHosts.has(host.toLowerCase());
+  return configured && origin !== undefined && isAllowedRequest(origin, secFetchSite, boundary.own);
+}
+
+/** With an `Origin`, only the extension's or an own one; without, `Sec-Fetch-Site` absent, `none` or `same-origin`. */
+export function isAllowedRequest(origin: unknown, secFetchSite: unknown, own: Set<string>): boolean {
+  if (origin !== undefined) return isExtensionOrigin(origin) || (typeof origin === 'string' && own.has(origin));
+  return secFetchSite === undefined || secFetchSite === 'none' || secFetchSite === 'same-origin';
 }
 
 const RUN_LOCALLY = 'Run `pnpm dev` without --host; on a remote box, forward the port with `ssh -L <port>:localhost:<port>`.';
@@ -150,7 +234,7 @@ export default defineConfig({
     resolve: {},
     plugins: [
       {
-        name: 'faultmaven:loopback-peers-only',
+        name: 'faultmaven:dev-server-boundary',
         configResolved({ command, server: { host, port, hmr, middlewareMode, ws } }) {
           if (command !== 'serve') return;
           if (host !== undefined && !isLoopbackHost(host)) {
@@ -172,6 +256,38 @@ export default defineConfig({
             if (isLoopbackPeer(req.socket.remoteAddress)) return next();
             res.statusCode = 403;
             res.end();
+          });
+          // The origin boundary (fm#2863), computed on each `listening` (configureServer runs before listen), so a
+          // request does no syscall and no parse. Until then, everything is refused.
+          let boundary: DevBoundary | null = null;
+          http?.on('listening', function computeDevBoundary() {
+            boundary = devBoundary(http.address(), server.config.server.origin, (m) => server.config.logger.warn(m));
+          });
+          const warned = new Set<string>();
+          const clip = (value: unknown) => (typeof value === 'string' && value.length > 200 ? `${value.slice(0, 200)}…` : value);
+          const isForeign = (req: IncomingMessage, kind: string) => {
+            const { host, origin, 'sec-fetch-site': site } = req.headers;
+            if (admits(boundary, host, origin, site)) return false;
+            const triple = JSON.stringify({ host: clip(host), origin: clip(origin), 'sec-fetch-site': clip(site) });
+            // Page-chosen values: log the first 50 distinct triples, then say once that the rest are not logged.
+            if (warned.has(triple) || warned.size > 50) return true;
+            warned.add(triple);
+            server.config.logger.warn(
+              warned.size > 50
+                ? '[wxt.config] Further refused dev-server requests are not logged (FaultMaven/faultmaven#2863).'
+                : `[wxt.config] Refused a dev-server ${kind} for ${JSON.stringify(clip(req.url))} with ${triple}: only the extension and the server's own origin reach it (FaultMaven/faultmaven#2863).`,
+              { timestamp: true },
+            );
+            return true;
+          };
+          server.middlewares.use(function refuseForeignRequests(req, res, next) {
+            if (!isForeign(req, 'request')) return next();
+            res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Refused: this dev server answers only the extension and its own origin (FaultMaven/faultmaven#2863).\n');
+          });
+          // Prepended in reverse, so the peer guard runs first and this second, both ahead of Vite's.
+          http?.prependListener('upgrade', function refuseForeignUpgrades(req, socket) {
+            if (isForeign(req, 'upgrade')) socket.destroy();
           });
           http?.prependListener('upgrade', function refuseNetworkUpgrades(req, socket) {
             if (!isLoopbackPeer(req.socket.remoteAddress)) socket.destroy();
