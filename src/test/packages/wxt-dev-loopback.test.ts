@@ -4,11 +4,12 @@
  * network, where WXT and Vite trust every peer with every surface they expose
  * (fm#2662). `wxt.config.ts` keeps the server on loopback: its
  * `config:resolved` hook refuses a non-loopback host, and its plugin refuses
- * a non-loopback final `server.host` or a separate HMR server before anything
- * binds, destroys a non-loopback peer's socket before any parsing (its
- * request and upgrade guards are backstops), and fails `wxt dev` on a server
- * found bound off-loopback. Every server here is WXT's own, from the
- * checkout's config, on loopback.
+ * a non-loopback final `server.host` or a separate HMR server (its own server,
+ * port or host, or middleware mode) before anything binds, destroys a
+ * non-loopback peer's socket before any parsing (its request and upgrade
+ * guards are backstops), and fails `wxt dev` on a server found bound
+ * off-loopback. Every server here is WXT's own, from the checkout's config,
+ * on loopback.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -195,6 +196,8 @@ describe('wxt dev is loopback-only (fm#2662)', () => {
     ['hmr.port', { extend: (c) => void (c.server!.hmr = { port: 1 }) }, /separate HMR server/],
     ['hmr.server', { extend: (c) => void (c.server!.hmr = { server: createHttpServer() }) }, /separate HMR server/],
     ['hmr.host', { extend: (c) => void (c.server!.hmr = { host: '0.0.0.0' }) }, /separate HMR server/],
+    // A loopback hmr, so only middleware mode (Vite's own HMR server, on every interface) refuses it.
+    ['middleware mode', { extend: (c) => void Object.assign(c.server!, { middlewareMode: true, hmr: { port: c.server!.port, host: '127.0.0.1' } }) }, /separate HMR server/],
   ])(
     'refuses %s before anything binds',
     async (_label, options, message) => {

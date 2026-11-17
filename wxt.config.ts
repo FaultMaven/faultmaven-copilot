@@ -102,8 +102,8 @@ function storeIdentity(browser: string): { key?: string } {
  * hook runs, and a host this machine does not own, or a non-string one, fails
  * closed there with WXT's own error. The `config:resolved` hook refuses a
  * non-loopback `dev.server.host` (the gate). The plugin's `configResolved`
- * refuses a non-loopback final `server.host` and a separate HMR server, port
- * or host, before anything binds. On the server, a non-loopback peer's socket
+ * refuses a non-loopback final `server.host` and a separate HMR server (its
+ * own server, port or host, or middleware mode), before anything binds. On the server, a non-loopback peer's socket
  * is destroyed on `connection`, before any parsing; its request gets 403 and
  * its upgrade is destroyed (backstops); and a server found bound off-loopback
  * fails `wxt dev`. This keeps NETWORK peers out only: the developer's own
@@ -151,14 +151,16 @@ export default defineConfig({
     plugins: [
       {
         name: 'faultmaven:loopback-peers-only',
-        configResolved({ command, server: { host, port, hmr } }) {
+        configResolved({ command, server: { host, port, hmr, middlewareMode, ws } }) {
           if (command !== 'serve') return;
           if (host !== undefined && !isLoopbackHost(host)) {
             throw loopbackOnlyError(`Refusing Vite server.host ${JSON.stringify(host)}`);
           }
           // Vite binds its own WebSocket server, on every interface, for these.
-          if (typeof hmr === 'object' && (hmr.server || (hmr.port && hmr.port !== port) || (hmr.host && !isLoopbackHost(hmr.host)))) {
-            throw loopbackOnlyError('Refusing a separate HMR server', 'Remove server.hmr.server, .port and .host: HMR shares the dev server.');
+          const ownHmr = typeof hmr === 'object' && (hmr.server || (hmr.port && hmr.port !== port) || (hmr.host && !isLoopbackHost(hmr.host)));
+          if (ownHmr || (middlewareMode && ws !== false)) {
+            const remedy = 'Remove server.middlewareMode and server.hmr.server, .port and .host: HMR shares the dev server.';
+            throw loopbackOnlyError('Refusing a separate HMR server', remedy);
           }
         },
         configureServer(server) {
