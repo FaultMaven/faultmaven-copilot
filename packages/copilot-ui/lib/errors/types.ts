@@ -15,6 +15,9 @@ type StackTraceCapturer = {
  * so a name derived from the class would not survive it (faultmaven#2341).
  */
 export abstract class UserFacingError extends Error {
+  /** The class's own name, by literal; abstract so a subclass cannot omit it. */
+  abstract readonly name: string;
+
   /** User-friendly title for the error */
   abstract readonly userTitle: string;
 
