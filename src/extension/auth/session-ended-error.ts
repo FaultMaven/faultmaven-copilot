@@ -22,6 +22,8 @@
 import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 export class SessionEndedError extends AuthenticationError {
+  readonly name: string = 'SessionEndedError';
+
   /**
    * @param judgedAccessToken the access token of the chain this verdict is
    *   about. The act-site hands it to the teardown, which stands down if a

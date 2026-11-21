@@ -842,6 +842,39 @@ describe('useDataUpload — a submission that never reached a case says what was
     expect(shown().userAction).toBe('Send again to retry.');
   });
 
+  // Past the session gate the cause reaches `notSentError` itself
+  // (faultmaven#2167): the case create's catch, and the bottom catch for a
+  // throw before the turn is dispatched.
+  const atCaseCreate = (cause: Error) => (api.createCase as any).mockRejectedValue(cause);
+  const beforeDispatch = (cause: Error) => {
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    vi.spyOn(pendingOpsManager, 'add').mockImplementationOnce(() => { throw cause; });
+  };
+  const pastTheGate = [['case creation', atCaseCreate], ['a throw before dispatch', beforeDispatch]] as const;
+
+  it.each(pastTheGate)('%s: a session being refreshed says not sent, with no sign-in advice', async (_at, inject) => {
+    inject(new SessionExpiredError());
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(shown().userMessage).toBe(
+      'Your message and 1 file (app.log) were not sent. Your session has expired. Your input is still in the message box.',
+    );
+    expect(shown().userAction).toBe('Send again to retry.');
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  it.each(pastTheGate)('%s: another account signed in shows that notice itself (#350)', async (_at, inject) => {
+    const cause = new SessionSwitchedError();
+    inject(cause);
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect(mockShowError.mock.calls[0][0]).toBe(cause);
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
   // #132: a sign-out while the ensure ran ends the submission there.
   it('sends nothing when the session ended during the ensure', async () => {
     const refreshSession = vi.fn(async () => {

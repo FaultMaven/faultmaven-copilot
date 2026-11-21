@@ -15,7 +15,7 @@
  * error status says "were not added".
  */
 import { ErrorClassifier } from '../errors/classifier';
-import { NetworkError, ProviderTimedOutError, TimeoutError, TurnInProgressError, TurnNotSentError, TurnTimedOutError } from '../errors/types';
+import { AuthenticationError, NetworkError, ProviderTimedOutError, TimeoutError, TurnInProgressError, TurnNotSentError, TurnTimedOutError, type UserFacingError } from '../errors/types';
 
 /** Statuses a gateway answers on the API's behalf; the turn may still commit. */
 const GATEWAY_STATUSES = new Set([502, 504]);
@@ -114,15 +114,21 @@ export function unsentAttachmentsNotice(
  * What the user is told when a submission never reached a case. The input never
  * left the browser, so the wording is definite whatever became of the case; the
  * composer still holds it.
+ *
+ * It advises sign-in only for an `AuthenticationError` cause or when the caller
+ * asks, never for a session being refreshed (`SessionExpiredError`). A cause
+ * classified as a notice is returned as that notice, never as a resend error
+ * (faultmaven#2167).
  */
 export function notSentError(
   unsent: UnsentTurn,
   reason: string,
   cause?: unknown,
   options: { signIn?: boolean } = {},
-): TurnNotSentError {
+): UserFacingError {
   const classified = cause !== undefined ? ErrorClassifier.classify(cause) : undefined;
-  const signIn = options.signIn || classified?.category === 'authentication';
+  if (classified?.category === 'notice') return classified;
+  const signIn = options.signIn || classified instanceof AuthenticationError;
   const notice = unsentAttachmentsNotice(unsent, { beforeSend: true })
     ?? (unsent.hasQuery ? 'Your message was not sent.' : 'Your submission was not sent.');
   const detail = classified ? classified.userMessage : reason;
