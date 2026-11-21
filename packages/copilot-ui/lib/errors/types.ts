@@ -13,9 +13,12 @@ type StackTraceCapturer = {
  * Every subclass, in this package or a host, names itself by literal
  * (`readonly name: string = 'ClassName'`): a minified build renames classes,
  * so a name derived from the class would not survive it (faultmaven#2341).
+ * tsc enforces it only on a direct subclass. A subclass of a concrete class
+ * compiles without one and inherits its parent's name, so it must declare its
+ * own literal (as `SessionEndedError` does).
  */
 export abstract class UserFacingError extends Error {
-  /** The class's own name, by literal; abstract so a subclass cannot omit it. */
+  /** The class's own name, by literal; abstract so a direct subclass cannot omit it. */
   abstract readonly name: string;
 
   /** User-friendly title for the error */
