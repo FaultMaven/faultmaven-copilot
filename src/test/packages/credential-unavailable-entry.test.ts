@@ -5,16 +5,17 @@
  * SENT (faultmaven#1460).
  *
  * Sent with no bearer instead, its 401 read as an expired session: "Sign in
- * first" in a host that was still signed in (faultmaven-dashboard#257). The
+ * first" in a host that was still signed in (faultmaven-dashboard#257); it
+ * now reads as signed out (faultmaven#2167). The
  * Dashboard reaches the package through its entry alone, so the entry exports
  * the very class `getAuthHeaders` checks with `instanceof`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as entry from '@faultmaven/copilot-ui';
 import {
+  AuthenticationError,
   CredentialUnavailableError,
   NetworkError,
-  SessionExpiredError,
   TimeoutError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
@@ -78,15 +79,18 @@ describe('CredentialUnavailableError from a host', () => {
   });
 
   // The positive controls: any other throw keeps the not-signed-in path, a
-  // `NetworkError` or `TimeoutError` that is not this class included.
+  // `NetworkError` or `TimeoutError` that is not this class included. Its 401
+  // is signed out (faultmaven#2167) and moves no epoch.
   it.each([
     ['a plain Error', () => new Error('signed out')],
     ['a NetworkError', () => new NetworkError('offline')],
     ['a TimeoutError', () => new TimeoutError('timed out')],
   ])('%s still sends the request, with no bearer', async (_label, error) => {
     hostThrowing(error);
+    const before = getEpoch();
 
-    await expect(authenticatedFetch(CASES, { method: 'POST' })).rejects.toBeInstanceOf(SessionExpiredError);
+    await expect(authenticatedFetch(CASES, { method: 'POST' })).rejects.toBeInstanceOf(AuthenticationError);
+    expect(getEpoch()).toBe(before);
     expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
     expect(fetchWithTimeout.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
   });

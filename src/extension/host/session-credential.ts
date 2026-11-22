@@ -28,7 +28,8 @@ const log = createLogger('SessionCredential');
  * TokenManager reports; this acts. `null` from it means "nothing usable right
  * now", and the stored credential says which kind (faultmaven#1460): none
  * stored is signed out, so a plain error sends the request out header-less and
- * its 401 keeps the stored session and mints nothing (#99); one KEPT through a
+ * its 401 is `AuthenticationError`, keeping the stored session and minting
+ * nothing (faultmaven#2167); one KEPT through a
  * failed refresh throws `CredentialUnavailableError`, and the request is not
  * sent; so does a storage read that failed (`readOrRefuse`). None of these
  * tears anything down. `SessionEndedError`
@@ -111,7 +112,7 @@ async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<st
       throw new SessionSwitchedError();
     }
     // Kept, with nothing to present now: not sent, so its 401 cannot read as
-    // an expired session.
+    // signed out.
     if (!credential) throw new CredentialUnavailableError('No usable access token right now; the session is kept');
     return credential.accessToken;
   } catch (error) {
@@ -123,9 +124,8 @@ async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<st
       // The rethrow is load-bearing: `SessionEndedError` extends the package's
       // `AuthenticationError`, which `getAuthHeaders` propagates instead of
       // swallowing. So the request is never sent and the caller gets an error
-      // whose recovery is a sign-in prompt — where swallowing it produced a
-      // header-less request, a doomed `POST /sessions`, and "session expired,
-      // retrying" for a session that is not coming back.
+      // whose recovery is a sign-in prompt — where swallowing it would send a
+      // header-less request the server can only refuse.
       //
       // JUDGED (copilot#346): the verdict is about the credential it was read
       // with, and the user it belonged to. If that user's session now holds a

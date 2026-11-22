@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prepareBody, authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
+import { prepareBody, authenticatedFetch, authenticatedFetchWithRetry } from '@faultmaven/copilot-ui/lib/api/client';
 import { AuthenticationError, SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
 import { getAuthHeaders } from '@faultmaven/copilot-ui/lib/api/fetch-utils';
+import { refreshSession } from '@faultmaven/copilot-ui/lib/api/session-core';
+import { submitTurn } from '@faultmaven/copilot-ui/lib/api/services/case-service';
+import { notSentError } from '@faultmaven/copilot-ui/lib/state/unsent-attachments';
 
 // --- Mocks for the authenticatedFetch catch-path test ---
 // The hard-401 teardown is the HOST's now: the client reports a rejected
@@ -24,6 +27,13 @@ const fetchWithTimeout = vi.fn();
 vi.mock('@faultmaven/copilot-ui/lib/utils/fetch-timeout', () => ({
   fetchWithTimeout: (...args: any[]) => fetchWithTimeout(...args)
 }));
+// The server's answer to a request with no credential.
+const headerLess401 = {
+  ok: false,
+  status: 401,
+  headers: { get: () => null },
+  json: async () => ({ detail: 'Authentication required. Please log in to access this resource.' })
+} as any;
 // The synchronous fence handleAuthError raises once the host has ENDED the
 // session, so an in-flight writer whose continuation is already queued skips its
 // post-await writes instead of repopulating state that is about to be cleared.
@@ -135,27 +145,103 @@ describe('authenticatedFetch — error branding', () => {
     expect(bumpEpoch).not.toHaveBeenCalled();
   });
 
-  // Regression: issue #99 — a 401 on a request that carried NO Authorization
-  // header (getAuthHeaders returned none during a transient refresh outage that
-  // deliberately preserved the tokens) must NOT trigger the hard-auth teardown
-  // that destroys the still-valid refresh_token. Nor does it clear the session:
-  // that sent the retry to mint one with no credential (faultmaven#1460).
+  // A 401 on a request that carried NO Authorization header (the host had no
+  // credential and no transient reason: signed out) must NOT trigger the
+  // hard-auth teardown, which is the host's (#99). Nor does it clear the
+  // session: that sent the retry to mint one with no credential
+  // (faultmaven#1460). It is signed out, `AuthenticationError`
+  // (faultmaven#2167), and moves no epoch.
   it('keeps the credential and the session on a 401 when no Authorization header was sent (#99)', async () => {
     (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' }); // no credential attached
-    fetchWithTimeout.mockResolvedValue({
-      ok: false,
-      status: 401,
-      headers: { get: () => null },
-      // The server's body for a request with no credential.
-      json: async () => ({ detail: 'Authentication required. Please log in to access this resource.' })
-    } as any);
+    fetchWithTimeout.mockResolvedValue(headerLess401);
 
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(
-      SessionExpiredError
+      AuthenticationError
     );
     // The refresh_token-destroying teardown must NOT have run.
     expect(onUnauthorized).not.toHaveBeenCalled();
     expect(clearPersistedSessionIf).not.toHaveBeenCalled();
+    expect(bumpEpoch).not.toHaveBeenCalled();
+  });
+});
+
+// faultmaven#2167: a request sent with no stored credential is signed out, not
+// a session being refreshed. `SessionExpiredError` is the server's session
+// verdict only.
+describe('authenticatedFetchWithRetry — a header-less 401 is signed out (faultmaven#2167)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Fails on 5309cfa: SessionExpiredError, a refresh and a second fetch.
+  it('rejects with AuthenticationError, keeps the credential and the session, and neither refreshes nor retries', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ 'X-Session-Id': 'S1' });
+    fetchWithTimeout.mockResolvedValue(headerLess401);
+
+    const failure = await authenticatedFetchWithRetry('/api/v1/whatever').catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(AuthenticationError);
+    expect((failure as Error).name).toBe('AuthenticationError');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(clearPersistedSessionIf).not.toHaveBeenCalled();
+    expect(clearSession).not.toHaveBeenCalled();
+    expect(bumpEpoch).not.toHaveBeenCalled();
+    expect(refreshSession).not.toHaveBeenCalled();
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  // Must not change: the server's session verdict clears the session the
+  // request carried and refreshes once.
+  it('a SESSION_EXPIRED 401 still clears the session and refreshes once', async () => {
+    (getAuthHeaders as any).mockResolvedValue({ Authorization: 'Bearer live-token', 'X-Session-Id': 'S1' });
+    fetchWithTimeout.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+      json: async () => ({ code: 'SESSION_EXPIRED' })
+    } as any);
+
+    await expect(authenticatedFetchWithRetry('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
+
+    expect(clearPersistedSessionIf).toHaveBeenCalledWith('S1');
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(fetchWithTimeout).toHaveBeenCalledTimes(2);
+  });
+
+  // Fails on 5309cfa: the wrapper refreshed and polled the job a second time.
+  it('the async-turn poll stops on it: one GET of the job, no refresh', async () => {
+    (getAuthHeaders as any).mockResolvedValue({});
+    const JOB = 'http://localhost:8090/api/v1/jobs/job-1';
+    fetchWithTimeout.mockImplementation(async (url: string) => {
+      if (url === JOB) return headerLess401;
+      if (url.endsWith('/turns')) {
+        return {
+          ok: true,
+          status: 202,
+          headers: { get: (k: string) => (k === 'Location' ? '/api/v1/jobs/job-1' : null) },
+          json: async () => ({})
+        };
+      }
+      // The capabilities probe: refused, so the turn takes the fallback timing.
+      return { ok: false, status: 404, headers: { get: () => null }, json: async () => ({}) };
+    });
+
+    await expect(submitTurn('case-123', { query: 'why?' })).rejects.toBeInstanceOf(AuthenticationError);
+
+    expect(fetchWithTimeout.mock.calls.filter(([url]) => url === JOB)).toHaveLength(1);
+    expect(refreshSession).not.toHaveBeenCalled();
+  });
+
+  // Must not change (green on 5309cfa through the category rule): the error
+  // this path raises gets the sign-in advice.
+  it('its error, as the cause of a submission not sent, advises sign-in', async () => {
+    (getAuthHeaders as any).mockResolvedValue({});
+    fetchWithTimeout.mockResolvedValue(headerLess401);
+    const cause = await authenticatedFetchWithRetry('/api/v1/cases').catch((e: unknown) => e);
+
+    const shown = notSentError({ attachments: [], hasQuery: true }, 'The case could not be created.', cause);
+
+    expect(shown.userAction).toBe('Sign in first, then send again.');
   });
 });
 

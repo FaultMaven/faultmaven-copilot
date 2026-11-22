@@ -7,6 +7,7 @@ import { useAppStore } from '@faultmaven/copilot-ui/lib/state/store';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
 import { createStubHost, hostWrapper } from '../support/host';
 import { setHostStore } from '@faultmaven/copilot-ui/lib/host-store';
+import { AuthenticationError, SessionExpiredError, SessionSwitchedError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 const mockShowError = vi.fn();
 
@@ -420,6 +421,48 @@ describe('useMessageSubmission', () => {
     expect(shown.userMessage).toContain('Your message was not sent.');
     expect(shown.userMessage).toContain('still in the message box');
     expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  // faultmaven#2167: the case create's failure is the cause `notSentError` reads.
+  it('a session being refreshed at case creation says not sent, with no sign-in advice', async () => {
+    useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+    const { result } = render();
+    (api.createCase as any).mockRejectedValue(new SessionExpiredError());
+
+    let outcome: any;
+    await act(async () => { outcome = await result.current.handleQuerySubmit('test query'); });
+
+    expect(outcome).toEqual({ sent: false });
+    const shown = mockShowError.mock.calls[0][0] as { userMessage: string; userAction: string };
+    expect(shown.userMessage).toBe('Your message was not sent. Your session has expired. Your input is still in the message box.');
+    expect(shown.userAction).toBe('Send again to retry.');
+  });
+
+  // Must not change: signed out advises sign-in.
+  it('signed out at case creation says not sent, with sign-in advice', async () => {
+    useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+    const { result } = render();
+    (api.createCase as any).mockRejectedValue(new AuthenticationError('No credential is stored: signed out'));
+
+    let outcome: any;
+    await act(async () => { outcome = await result.current.handleQuerySubmit('test query'); });
+
+    expect(outcome).toEqual({ sent: false });
+    expect((mockShowError.mock.calls[0][0] as { userAction: string }).userAction).toBe('Sign in first, then send again.');
+  });
+
+  it('another account signed in at case creation shows that notice itself (#350)', async () => {
+    useAppStore.setState({ activeCaseId: null, hasUnsavedNewChat: true, conversations: {} });
+    const { result } = render();
+    const cause = new SessionSwitchedError();
+    (api.createCase as any).mockRejectedValue(cause);
+
+    let outcome: any;
+    await act(async () => { outcome = await result.current.handleQuerySubmit('test query'); });
+
+    expect(outcome).toEqual({ sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect(mockShowError.mock.calls[0][0]).toBe(cause);
   });
 
   it('a query that is dispatched reports sent: true (#312)', async () => {

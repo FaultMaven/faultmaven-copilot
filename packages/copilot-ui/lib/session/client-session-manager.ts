@@ -5,7 +5,7 @@ import { createLogger } from '../utils/logger';
 import { getAuthHeaders } from '../api/fetch-utils';
 import { fetchWithTimeout } from '../utils/fetch-timeout';
 import { errorBodyText } from '../errors/error-body';
-import { CredentialUnavailableError, SessionExpiredError } from '../errors/types';
+import { AuthenticationError, CredentialUnavailableError } from '../errors/types';
 import { handleAuthError } from '../api/auth-verdict';
 
 const log = createLogger('ClientSessionManager');
@@ -143,7 +143,9 @@ export class ClientSessionManager {
       // Read per send: after a 'refreshed' verdict this is the renewed bearer.
       const authHeaders = (await getAuthHeaders()) as Record<string, string>;
       const bearer = (authHeaders['Authorization'] ?? '').replace(/^Bearer\s+/i, '');
-      if (!bearer) throw new SessionExpiredError('No credential to mint a session with');
+      // Signed out: the host had no credential and no transient reason
+      // (faultmaven#2167).
+      if (!bearer) throw new AuthenticationError('No credential to mint a session with');
       const response = await fetchWithTimeout(`${apiUrl}/api/v1/sessions`, {
         method: 'POST',
         headers: { ...authHeaders },

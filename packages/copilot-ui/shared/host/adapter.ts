@@ -157,13 +157,13 @@ export interface HostSession {
    *     (`ApiTransport.accessToken` gives the figures). The
    *     heartbeat is not sent either, so a session idle past the server's TTL
    *     lapses, and the first beat after the outage re-ensures it.
-   *   - anything else — the host cannot say why (in practice, not signed in).
-   *     The request goes out header-less, and its 401 keeps both the
-   *     credential and the stored session and mints nothing (#99). The
-   *     session mint itself is not sent without a bearer (faultmaven#1460).
+   *   - anything else — signed out. The request goes out header-less, and
+   *     its 401 is `AuthenticationError`, keeping both the credential and the
+   *     stored session and minting nothing (faultmaven#2167). The session
+   *     mint itself is not sent without a bearer (faultmaven#1460).
    *
-   * A host that throws none of the three keeps the old behaviour exactly; the
-   * distinction is opt-in.
+   * A plain throw means signed out; a host throws `CredentialUnavailableError`
+   * for anything transient.
    */
   accessToken(): Promise<string>;
   /**

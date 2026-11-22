@@ -8,16 +8,17 @@
  * verdict, and during logout's own authenticated call.
  *
  * With the two distinguishable, TokenManager reports and the host acts:
- * `null` stays the transient answer (#99 — the request goes out header-less
- * when nothing is stored, and is not sent while a credential is kept,
- * faultmaven#1460), and this says the session is over.
+ * `null` means nothing usable right now: with nothing stored, signed out (the
+ * request goes out header-less and its 401 is `AuthenticationError`,
+ * faultmaven#2167); with a credential kept, transient (the request is not
+ * sent, faultmaven#1460). This says the session is over.
  *
  * Extends the SHARED `AuthenticationError` on purpose. That is the package's
  * existing vocabulary for "this session is over, sign in again" — category
  * `authentication`, recovery `show_modal` — and it is what lets `getAuthHeaders`
  * tell a dead chain from a renewal blip without knowing anything about the
- * extension. A host that throws a plain error keeps the old behaviour, so the
- * distinction is opt-in and the Dashboard host is unaffected.
+ * extension. A plain throw from a host means signed out; a host throws
+ * `CredentialUnavailableError` for anything transient.
  */
 import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 

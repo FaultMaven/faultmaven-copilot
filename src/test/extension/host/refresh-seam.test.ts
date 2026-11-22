@@ -59,7 +59,6 @@ import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
 import {
   AuthenticationError,
   CredentialUnavailableError,
-  SessionExpiredError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
@@ -133,7 +132,7 @@ describe('401 → host → refresh → retry, across the real seam', () => {
 
   // The access token spent and the refresh endpoint down (faultmaven#1460).
   // The credential is kept, so the request is not sent: sent with no bearer,
-  // its 401 read as an expired session, "Sign in first".
+  // its 401 would read as signed out, the sign-in prompt (faultmaven#2167).
   it('keeps the session through a transient refresh failure, and sends nothing', async () => {
     vi.useFakeTimers();
     Object.assign(store, {
@@ -173,7 +172,7 @@ describe('401 → host → refresh → retry, across the real seam', () => {
       ({ ok: false, status: 401, headers: new Headers(), json: async () => ({}), text: async () => '{}' }),
     ) as unknown as typeof fetch;
 
-    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(AuthenticationError);
 
     const calls = vi.mocked(global.fetch).mock.calls;
     expect(calls.map(([url]) => String(url))).toEqual(['/api/v1/whatever']);
@@ -373,7 +372,7 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     }) as unknown as typeof fetch;
 
     // The verdict reaches the CALLER, rather than being swallowed into a
-    // header-less request whose 401 reads as a transient one, credential kept.
+    // header-less request the server can only refuse.
     // `SessionEndedError` extends the package's `AuthenticationError`, which is
     // the vocabulary `getAuthHeaders` branches on.
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(

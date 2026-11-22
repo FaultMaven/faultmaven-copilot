@@ -7,8 +7,8 @@ This file holds the rules that constrain code *inside* the package.
 ## Requests
 
 - `authenticatedFetch` / `authenticatedFetchWithRetry` (`lib/api/client.ts`).
-  On a `401 SESSION_EXPIRED`, or a 401 on a request sent with no credential,
-  the retry variant retries once after `refreshSession()` with no owner, which
+  On a `401 SESSION_EXPIRED` the retry variant retries once after
+  `refreshSession()` with no owner, which
   waits for any session ensure in flight and **mints nothing**. Only the
   session slice mints, through `refreshSession(owner)` (`lib/api/session-core.ts`)
   for the panel's user (faultmaven#1460): never without a bearer,
@@ -36,8 +36,10 @@ This file holds the rules that constrain code *inside* the package.
 - **The host's reason for no token** (`accessToken()`, `lib/api/fetch-utils.ts`):
   `AuthenticationError`, `SessionSwitchedError` and `CredentialUnavailableError`
   (the session is kept, with no credential right now) propagate and the
-  request is not sent. Any other throw sends it with no bearer, the
-  not-signed-in path (faultmaven#1460).
+  request is not sent. Any other throw means signed out: it sends the request
+  with no bearer, and its 401 is `AuthenticationError`, not retried, with
+  nothing cleared and no epoch moved (faultmaven#1460, faultmaven#2167). A host
+  throws `CredentialUnavailableError` for anything transient.
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as
@@ -97,7 +99,8 @@ This file holds the rules that constrain code *inside* the package.
 
 `UserFacingError` subclasses carry `userTitle` / `userMessage` / `userAction`,
 `category`, `recovery` and `getDisplayOptions()`. Recovery per class
-(`types.ts`): `SessionExpiredError` auto_retry_with_delay · `AuthenticationError`
+(`types.ts`): `SessionExpiredError` auto_retry_with_delay (a transient refresh
+only; a header-less 401 is `AuthenticationError`) · `AuthenticationError`
 show_modal · `PermissionError` graceful_degradation · `NetworkError`
 retry_with_backoff (its subclass `CredentialUnavailableError` is a 401 the host
 answered `'unavailable'`: no sign-out, no epoch move; one renewal per request

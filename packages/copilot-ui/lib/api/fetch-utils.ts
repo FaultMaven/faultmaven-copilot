@@ -17,28 +17,30 @@ const log = createLogger('FetchUtils');
  * Authorization + X-Session-Id, where the host can supply them.
  *
  * A MISSING Authorization header means the host could not say why it has no
- * credential: in practice, not signed in. `client.ts` answers a 401 on a
- * header-less request by keeping both the credential and the stored session
- * and minting nothing, rather than by a hard teardown (#99). `accessToken()`
- * throws when the host cannot produce one, and any throw but the three below
- * is caught here and turned into exactly that state.
+ * credential. A plain throw from `accessToken()` means signed out; a host
+ * throws `CredentialUnavailableError` for anything transient. `client.ts`
+ * answers a 401 on a header-less request with `AuthenticationError`, keeping
+ * both the credential and the stored session and minting nothing
+ * (faultmaven#2167). `accessToken()` throws when the host cannot produce one,
+ * and any throw but the three below is caught here and turned into exactly
+ * that state.
  *
  * ⚠️ THREE EXCEPTIONS, each a host saying WHY, and each propagates so the
  * request is never sent:
  *
- * - `AuthenticationError`: the session is OVER. Swallowed, it produced a
- *   header-less request whose 401 took the transient path, a "session expired,
- *   retrying" where the honest answer is a sign-in prompt. The caller gets an
- *   error whose recovery is `show_modal`.
+ * - `AuthenticationError`: the session is OVER. Swallowed, it would send a
+ *   header-less request the server can only refuse. The caller gets an error
+ *   whose recovery is `show_modal`.
  * - `SessionSwitchedError`: the host's stored session is another user's, and
  *   the request, built for the previous one, must not go out at all.
  * - `CredentialUnavailableError`: the session is KEPT, but there is no
  *   credential right now (a token expired while its renewal endpoint is down).
- *   Swallowed, the request went out header-less and its 401 read as an expired
- *   session: "Sign in first" in a host still signed in (faultmaven#1460). The
- *   caller gets a `NetworkError` and retries; the epoch does not move.
+ *   Swallowed, the request would go out header-less and its 401 would read as
+ *   signed out: the sign-in prompt in a host still signed in
+ *   (faultmaven#1460, faultmaven#2167). The caller gets a `NetworkError` and
+ *   retries; the epoch does not move.
  *
- * Opt-in: a host that throws anything else keeps the old behaviour exactly.
+ * A host that throws anything else is read as signed out.
  */
 export async function getAuthHeaders(): Promise<HeadersInit> {
   const transport = getApiTransport();
@@ -56,16 +58,17 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     // It is not sent.
     if (error instanceof SessionSwitchedError) throw error;
     // The session is kept, with no credential right now (faultmaven#1460).
-    // Header-less, its 401 would read as an expired session. It is not sent.
+    // Header-less, its 401 would read as signed out. It is not sent.
     if (error instanceof CredentialUnavailableError) throw error;
-    // See the note above: header-less is the not-signed-in path, not an error
-    // to surface here.
+    // See the note above: a plain throw means signed out, and header-less is
+    // the not-signed-in path, not an error to surface here.
     //
     // The mint never goes out header-less: `ClientSessionManager.createSession`
     // refuses to send without a bearer, and `client.ts` answers a header-less
-    // 401 without clearing the session or minting. That is what lets the
-    // server require auth on `POST /api/v1/sessions` (faultmaven#1460) with no
-    // mint -> 401 -> re-mint loop. Other requests still go out header-less.
+    // 401 with `AuthenticationError`, without clearing the session or minting.
+    // That is what lets the server require auth on `POST /api/v1/sessions`
+    // (faultmaven#1460) with no mint -> 401 -> re-mint loop. Other requests
+    // still go out header-less.
     log.warn('No access token available - the request goes out unauthenticated', error);
   }
 

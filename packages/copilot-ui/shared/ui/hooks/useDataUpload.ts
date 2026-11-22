@@ -32,9 +32,7 @@ import {
   type UnsentTurn,
 } from '../../../lib/state/unsent-attachments';
 import {
-  AuthenticationError,
   DuplicateUploadNotice,
-  SessionExpiredError,
   PASTED_TEXT_LABEL,
   PAGE_CAPTURE_LABEL,
   IdempotencyKeyReuseError,
@@ -392,13 +390,12 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
           // A NOTICE is shown whole (#350): another account signed in, and
           // nothing was sent or ended.
           showError(classified);
-        } else if (ensureError instanceof AuthenticationError || ensureError instanceof SessionExpiredError) {
-          // Ended, or a mint with no credential: the host could not say why,
-          // which means nothing is stored, since a host that keeps the session
-          // throws `CredentialUnavailableError` (the `else` below,
-          // faultmaven#1460). The question path shows the same.
-          showError(notSentError(unsent, 'You are signed out.', ensureError, { signIn: true }));
         } else {
+          // `notSentError` advises sign-in for an `AuthenticationError` cause:
+          // the session ended, or the mint had no credential, which means
+          // nothing is stored, since a host that keeps the session throws
+          // `CredentialUnavailableError` (faultmaven#1460, faultmaven#2167).
+          // The question path shows the same.
           showError(notSentError(unsent, generic, ensureError));
         }
         return {
