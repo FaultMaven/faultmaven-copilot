@@ -1,16 +1,26 @@
 // src/lib/errors/types.ts
 
-/**
- * Base error class for all user-facing errors in FaultMaven Copilot
- * Extends Error with user-friendly messaging and recovery strategies
- */
 import type { AttachmentOrigin } from '../api/formatters';
 
 type StackTraceCapturer = {
   captureStackTrace?: (targetObject: object, constructorOpt?: unknown) => void;
 };
 
+/**
+ * Base error class for all user-facing errors in FaultMaven Copilot
+ * Extends Error with user-friendly messaging and recovery strategies
+ *
+ * Every subclass, in this package or a host, names itself by literal
+ * (`readonly name: string = 'ClassName'`): a minified build renames classes,
+ * so a name derived from the class would not survive it (faultmaven#2341).
+ * tsc enforces it only on a direct subclass. A subclass of a concrete class
+ * compiles without one and inherits its parent's name, so it must declare its
+ * own literal (as `SessionEndedError` does).
+ */
 export abstract class UserFacingError extends Error {
+  /** The class's own name, by literal; abstract so a direct subclass cannot omit it. */
+  abstract readonly name: string;
+
   /** User-friendly title for the error */
   abstract readonly userTitle: string;
 
@@ -34,7 +44,6 @@ export abstract class UserFacingError extends Error {
 
   constructor(message: string, originalError?: Error, context?: ErrorContext) {
     super(message);
-    this.name = this.constructor.name;
     this.originalError = originalError;
     this.context = context;
 
@@ -130,6 +139,7 @@ export interface ErrorAction {
  * Session expiration error for automatic session refresh
  */
 export class SessionExpiredError extends UserFacingError {
+  readonly name: string = 'SessionExpiredError';
   readonly userTitle = 'Session Expired';
   readonly userMessage = 'Your session has expired.';
   readonly userAction = 'We are refreshing your session...';
@@ -154,6 +164,7 @@ export class SessionExpiredError extends UserFacingError {
  * Authentication error (401)
  */
 export class AuthenticationError extends UserFacingError {
+  readonly name: string = 'AuthenticationError';
   readonly userTitle = 'Session Expired';
   readonly userMessage = 'Your session has expired.';
   readonly userAction = 'Please sign in again to continue.';
@@ -201,6 +212,7 @@ export class AuthenticationError extends UserFacingError {
  * this repository reaches it through the package entry.
  */
 export class SessionSwitchedError extends UserFacingError {
+  readonly name: string = 'SessionSwitchedError';
   readonly userTitle = 'Signed in as another account';
   readonly userMessage = 'Another account signed in on this browser, so this was not sent.';
   readonly userAction = 'Nothing was sent as the other account, and no one was signed out.';
@@ -209,7 +221,6 @@ export class SessionSwitchedError extends UserFacingError {
 
   constructor() {
     super('The stored session belongs to a different user than this request was built for');
-    this.name = 'SessionSwitchedError';
   }
 
   getDisplayOptions(): ErrorDisplayOptions {
@@ -236,6 +247,7 @@ export class SessionSwitchedError extends UserFacingError {
  * the user continue with the rest of the app.
  */
 export class PermissionError extends UserFacingError {
+  readonly name: string = 'PermissionError';
   readonly userTitle = 'Access Denied';
   readonly userMessage = "You don't have permission to perform this action.";
   readonly userAction =
@@ -257,6 +269,7 @@ export class PermissionError extends UserFacingError {
  * Network/connection error
  */
 export class NetworkError extends UserFacingError {
+  readonly name: string = 'NetworkError';
   readonly userTitle = 'Connection Problem';
   readonly userMessage = 'Unable to reach FaultMaven server.';
   readonly userAction = 'Please check your connection and try again.';
@@ -287,10 +300,9 @@ export class NetworkError extends UserFacingError {
  * package entry.
  */
 export class CredentialUnavailableError extends NetworkError {
+  readonly name: string = 'CredentialUnavailableError';
   constructor(message = 'The credential could not be renewed right now', originalError?: Error) {
     super(message, originalError);
-    // Named here: a minified build renames the class, and `constructor.name` with it.
-    this.name = 'CredentialUnavailableError';
   }
 }
 
@@ -298,6 +310,7 @@ export class CredentialUnavailableError extends NetworkError {
  * Timeout error
  */
 export class TimeoutError extends UserFacingError {
+  readonly name: string = 'TimeoutError';
   readonly userTitle: string = 'Request Timed Out';
   readonly userMessage: string = 'The server took too long to respond.';
   readonly userAction: string = 'Please try again. If this continues, the server may be experiencing issues.';
@@ -327,6 +340,7 @@ export class TimeoutError extends UserFacingError {
  * keyed-turn policy retries it at most once and the copy says why.
  */
 export class TurnTimedOutError extends TimeoutError {
+  readonly name: string = 'TurnTimedOutError';
   readonly userTitle: string = 'Message Took Too Long';
   readonly userMessage: string = 'FaultMaven ran out of time on this message, and nothing was saved.';
   readonly userAction: string = 'Sending it again will probably run out of time too. Try a smaller question or less data, or split it up.';
@@ -338,6 +352,7 @@ export class TurnTimedOutError extends TimeoutError {
  * again, honoured by `resilientOperation` as a `ServerDirectedWait`.
  */
 export class ProviderTimedOutError extends TimeoutError implements ServerDirectedWait {
+  readonly name: string = 'ProviderTimedOutError';
   readonly userTitle: string = 'AI Provider Timed Out';
   readonly userMessage: string = 'The AI provider did not answer in time, and nothing was saved.';
   readonly userAction: string = 'Try again in a moment.';
@@ -354,6 +369,7 @@ export class ProviderTimedOutError extends TimeoutError implements ServerDirecte
  * Server error (500, 502, 503, 504)
  */
 export class ServerError extends UserFacingError {
+  readonly name: string = 'ServerError';
   readonly userTitle = 'Server Error';
   readonly userMessage = 'FaultMaven server encountered an error.';
   readonly userAction = 'Try again in a few minutes. If this continues, contact support.';
@@ -380,6 +396,7 @@ export class ServerError extends UserFacingError {
  * Validation error (400, 422)
  */
 export class ValidationError extends UserFacingError {
+  readonly name: string = 'ValidationError';
   readonly userTitle = 'Invalid Input';
   readonly userMessage: string;
   readonly userAction = 'Please check your input and try again.';
@@ -471,6 +488,7 @@ export function describeWait(ms: number): string {
  * Rate limiting error (429)
  */
 export class RateLimitError extends UserFacingError implements ServerDirectedWait {
+  readonly name: string = 'RateLimitError';
   readonly userTitle = 'Too Many Requests';
   readonly userMessage = "You're sending requests too quickly.";
   readonly userAction: string;
@@ -529,6 +547,7 @@ export class RateLimitError extends UserFacingError implements ServerDirectedWai
  * conflict will recur until the local state catches up.
  */
 export class CaseVersionConflictError extends UserFacingError {
+  readonly name: string = 'CaseVersionConflictError';
   readonly userTitle = 'Case Was Updated';
   readonly userMessage =
     'The case state changed while we were processing your message. ' +
@@ -592,6 +611,7 @@ export const TURN_IN_PROGRESS_DEFAULT_WAIT_MS = 2_000;
  * may still commit, and a retry under the same key then returns its reply.
  */
 export class TurnInProgressError extends UserFacingError implements ServerDirectedWait {
+  readonly name: string = 'TurnInProgressError';
   readonly userTitle = 'Still Working';
   readonly userMessage = 'FaultMaven is still working on this message.';
   readonly userAction = 'Retry in a moment to get its reply.';
@@ -624,6 +644,7 @@ export class TurnInProgressError extends UserFacingError implements ServerDirect
  * new logical turn and goes out under a fresh key (`rotateIdempotencyKey`).
  */
 export class IdempotencyKeyReuseError extends UserFacingError {
+  readonly name: string = 'IdempotencyKeyReuseError';
   readonly userTitle = 'Message Not Sent';
   readonly userMessage = "This message couldn't be sent: its request ID was already used for a different message.";
   readonly userAction = 'Retry sends it as a new message.';
@@ -649,6 +670,7 @@ export class IdempotencyKeyReuseError extends UserFacingError {
  * local pair is dropped only once that read has merged.
  */
 export class TurnReplayUnavailableError extends UserFacingError {
+  readonly name: string = 'TurnReplayUnavailableError';
   readonly userTitle = 'Reply Unavailable';
   readonly userMessage = "Your message was saved, but its reply can't be shown.";
   readonly userAction = 'Its reply is being loaded from the case.';
@@ -681,6 +703,7 @@ export class TurnReplayUnavailableError extends UserFacingError {
  * (`refreshActiveCase`) so the panel shows the case closed.
  */
 export class CaseTerminalError extends UserFacingError {
+  readonly name: string = 'CaseTerminalError';
   readonly userTitle = 'Case Is Closed';
   readonly userMessage = 'This case is closed and read-only.';
   readonly userAction = 'You can still ask questions about it.';
@@ -706,6 +729,7 @@ export class CaseTerminalError extends UserFacingError {
  * copy quotes no wait. Never auto-retried.
  */
 export class CaseWorkInProgressError extends UserFacingError {
+  readonly name: string = 'CaseWorkInProgressError';
   readonly userTitle = 'Case Not Deleted';
   readonly userMessage = "This case can't be deleted while FaultMaven is still working on it.";
   readonly userAction = 'Try again in a moment.';
@@ -729,6 +753,7 @@ export class CaseWorkInProgressError extends UserFacingError {
  * delete cleared nothing. Never auto-retried.
  */
 export class CaseDeleteUnavailableError extends UserFacingError {
+  readonly name: string = 'CaseDeleteUnavailableError';
   readonly userTitle = 'Case Not Deleted';
   readonly userMessage = "This case couldn't be deleted just now.";
   readonly userAction = 'Try again in a moment.';
@@ -746,6 +771,7 @@ export class CaseDeleteUnavailableError extends UserFacingError {
  * `CaseTerminalError`, no retry and no Retry; the caller reads the case back.
  */
 export class CaseDeleteInProgressError extends UserFacingError {
+  readonly name: string = 'CaseDeleteInProgressError';
   readonly userTitle = 'Case Is Being Deleted';
   readonly userMessage = "This case is being deleted, so your message wasn't added.";
   readonly userAction = 'The case is being reloaded.';
@@ -774,6 +800,7 @@ export class CaseDeleteInProgressError extends UserFacingError {
  * panel shows this class's toast.
  */
 export class CaseNotFoundError extends UserFacingError {
+  readonly name: string = 'CaseNotFoundError';
   /** The copy, readable without an instance (ruled by the owner, 2026-11-05). */
   static readonly USER_MESSAGE = 'This case no longer exists.';
   /** What a refused turn's bubble says. */
@@ -802,6 +829,7 @@ export class CaseNotFoundError extends UserFacingError {
  * is sorted.
  */
 export class QuotaExhaustedError extends UserFacingError {
+  readonly name: string = 'QuotaExhaustedError';
   readonly userTitle = 'AI Provider Out of Credits';
   readonly userMessage =
     "⚠️ FaultMaven's AI provider is out of quota or credits, so the " +
@@ -843,6 +871,7 @@ export interface DuplicateUpload {
  * new files, a paste or a question that were stored.
  */
 export class DuplicateUploadNotice extends UserFacingError {
+  readonly name: string = 'DuplicateUploadNotice';
   readonly userTitle = 'Already in the case';
   readonly userMessage: string;
   readonly userAction: string;
@@ -899,6 +928,7 @@ function duplicateUploadMessage(duplicates: readonly DuplicateUpload[]): string 
  * Optimistic update rollback error
  */
 export class OptimisticUpdateError extends UserFacingError {
+  readonly name: string = 'OptimisticUpdateError';
   readonly userTitle = 'Action Failed';
   readonly userMessage: string;
   readonly userAction = 'Click retry to try again.';
@@ -931,6 +961,7 @@ export class OptimisticUpdateError extends UserFacingError {
  * Unknown/unclassified error
  */
 export class UnknownError extends UserFacingError {
+  readonly name: string = 'UnknownError';
   readonly userTitle = 'Unexpected Error';
   readonly userMessage = 'Something went wrong.';
   readonly userAction = 'Please try again or contact support if this continues.';
@@ -953,6 +984,7 @@ export class UnknownError extends UserFacingError {
  * Persistent, because the user must be aware and send it again.
  */
 export class TurnNotSentError extends UserFacingError {
+  readonly name: string = 'TurnNotSentError';
   readonly userTitle = 'Not sent';
   readonly userMessage: string;
   readonly userAction: string;

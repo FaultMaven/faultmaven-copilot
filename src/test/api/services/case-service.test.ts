@@ -6,6 +6,7 @@ import vocabularies from '@faultmaven/copilot-ui/types/contract-vocabularies.jso
 import * as client from '@faultmaven/copilot-ui/lib/api/client';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
 import { CaseNotFoundError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 
 // Mock client
 vi.mock('@faultmaven/copilot-ui/lib/api/client', () => ({
@@ -788,6 +789,38 @@ describe('Case Service', () => {
       ).rejects.toMatchObject({ name: 'AbortError' });
       // POST + exactly one poll — polling must not continue after the abort.
       expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
+    });
+
+    // The extension's subclass names itself (faultmaven#2341), so the poll's
+    // terminal check reads the name it read before a minified build: not one
+    // of the names it stops on, so the poll asks again, as on main.
+    it('a SessionEndedError on a poll meets the same terminal check, whatever its class is called', async () => {
+      const original = Object.getOwnPropertyDescriptor(SessionEndedError, 'name')!;
+      Object.defineProperty(SessionEndedError, 'name', { value: 'x', configurable: true });
+      vi.useFakeTimers();
+      try {
+        const ended = new SessionEndedError('revoked', 'token-a');
+        const turn = { agent_response: 'ok', turn_number: 1, milestones_completed: [], case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: [] };
+        (client.authenticatedFetchWithRetry as any)
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 202,
+            headers: { get: (k: string) => (k === 'Location' ? '/api/v1/jobs/job-1' : null) },
+            json: vi.fn().mockResolvedValue({})
+          })
+          .mockRejectedValueOnce(ended)
+          .mockResolvedValueOnce(mockResponse({ status: 'completed', result: turn }));
+
+        const pending = caseService.submitTurn('case-123', { query: 'test' });
+        await vi.runAllTimersAsync();
+
+        expect(ended.name).toBe('SessionEndedError');
+        await expect(pending).resolves.toMatchObject({ agent_response: 'ok' });
+        expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+        Object.defineProperty(SessionEndedError, 'name', original);
+      }
     });
   });
 
