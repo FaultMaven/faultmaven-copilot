@@ -44,8 +44,8 @@ This file holds the rules that constrain code *inside* the package.
   nothing cleared and no epoch moved (faultmaven#1460, faultmaven#2167). A host
   throws `CredentialUnavailableError` for anything transient. `getAuthHeaders`
   marks it `phase: 'before_send'`: a keyed turn retries it under its deadline,
-  outside the attempt count, and the poll waits it out, both on
-  `credentialWaitMs` (faultmaven#2348).
+  outside the attempt count, until the server accepts the turn, and the poll
+  waits it out, both on `credentialWaitMs` (faultmaven#2348).
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as
@@ -81,7 +81,8 @@ This file holds the rules that constrain code *inside* the package.
   upper bound on the claim; `maxDelay` keeps the backoff from outgrowing it). A
   `CredentialUnavailableError` raised before sending (`phase: 'before_send'`)
   is retried under the deadline, spaced by `credentialWaitMs`, outside the
-  attempt count; any other one, a 504 with an unknown code and everything else
+  attempt count, until the turn is accepted (202, `onAccepted`); after that
+  one, any other one, a 504 with an unknown code and everything else
   keep their default decision and attempt count. The retry replays a committed turn (200,
   `X-Idempotency-Replayed`), so it is reconciled like a first answer. The
   timings are derived, not policy (contract 12.4.0, `lib/utils/turn-timing.ts`):
@@ -121,7 +122,8 @@ duplicated; or the host's `accessToken()` throwing it for a kept session with
 no credential now: nothing sent, one host read per attempt, which renews once
 in the Dashboard and runs a 3-POST refresh ladder in the extension, so 3 or 9
 per action, and for a keyed turn one read per credential wait within its
-deadline: about 14 over the 660 s fallback, so 14 or 42) ·
+deadline: about 14 over the 660 s fallback before a 202, about 16 for an outage
+after one (the POST, about 13 polls, 2 capped re-sends), so up to 16 or 48) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `CaseWorkInProgressError`, `CaseDeleteUnavailableError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·

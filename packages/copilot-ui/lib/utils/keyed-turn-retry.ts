@@ -27,8 +27,9 @@
  * A `CredentialUnavailableError` raised before the request was sent (its
  * `phase` is `'before_send'`: the host keeps the session but has no credential
  * right now) is retried under the same deadline, spaced by `credentialWaitMs`,
- * and is not counted among the attempts below (faultmaven#2348). Any other
- * `CredentialUnavailableError` keeps the attempt count.
+ * and is not counted among the attempts below (faultmaven#2348), until the
+ * server accepts the turn (`onAccepted`, at its 202): from then on every one,
+ * like any other `CredentialUnavailableError`, keeps the attempt count.
  *
  * Everything else keeps the decision it has without this policy
  * (`defaultRetryDecision`) and the attempt count it had (`DEFAULT_MAX_ATTEMPTS`),
@@ -96,13 +97,17 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
 export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
   ResilientOperationOptions<unknown>,
   'retryOptions' | 'deadlineMs' | 'waitFor'
-> {
+> & { onAccepted: () => void } {
   let serverTimeoutRetried = false;
   let otherRetries = 0;
   let credentialWaits = 0;
-  const notSent = (error: unknown) => error instanceof CredentialUnavailableError && error.phase === 'before_send';
+  let accepted = false;
+  const notSent = (error: unknown) =>
+    !accepted && error instanceof CredentialUnavailableError && error.phase === 'before_send';
 
   return {
+    // The turn was accepted (202): it never draws on the deadline path again.
+    onAccepted: () => { accepted = true; },
     deadlineMs: timing.deadlineMs,
     waitFor: (classified) => (notSent(classified) ? credentialWaitMs(credentialWaits++) : null),
     retryOptions: {
@@ -126,7 +131,7 @@ export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
 
         const classified = ErrorClassifier.classify(error);
         if (classified instanceof TurnInProgressError) return true;
-        // No credential right now and nothing sent: waited out under the deadline, not the cap below.
+        // No credential right now, nothing sent, turn not accepted: waited out under the deadline, not the cap below.
         if (notSent(classified)) return true;
 
         // The key makes the request idempotent, as the callers already declare.

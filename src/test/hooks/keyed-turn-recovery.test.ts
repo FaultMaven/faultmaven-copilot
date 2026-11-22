@@ -701,6 +701,54 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       expect(turnPosts()).toHaveLength(1);
     });
 
+    it.each(['message', 'upload'] as const)('%s path: an outage that starts after the 202: 16 host reads, the body POSTed once', async (path) => {
+      const JOB = `${BASE}/api/v1/jobs/job-1`;
+      outage = (read) => read >= 2; // the POST reads first
+      routeWire([async () => wire(202, {}, { Location: '/api/v1/jobs/job-1' })]);
+      const routed = fetchWithTimeout.getMockImplementation()!;
+      fetchWithTimeout.mockImplementation(async (url: string, init?: RequestInit) =>
+        url === JOB ? wire(200, { status: 'processing' }) : routed(url, init));
+
+      if (path === 'message') {
+        await submit();
+      } else {
+        const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+        await act(async () => {
+          void result.current.handleTurnSubmit({ query: 'why is the pool exhausted?' });
+        });
+      }
+      await advance(1_000_000);
+
+      // The POST, 13 polls to 555 s, then the 2 capped re-sends: an accepted
+      // turn does not go back on the deadline path (faultmaven#2348).
+      expect(reads).toBe(16);
+      expect(turnPosts()).toHaveLength(1);
+      expect(mockShowError).toHaveBeenCalledTimes(1);
+    });
+
+    it('upload path: a 202 after the POST waited 75 s is polled only to the turn deadline', async () => {
+      const JOB = `${BASE}/api/v1/jobs/job-1`;
+      outage = (read) => read <= 4;
+      routeWire([async () => wire(202, {}, { Location: '/api/v1/jobs/job-1' })]);
+      const routed = fetchWithTimeout.getMockImplementation()!;
+      fetchWithTimeout.mockImplementation(async (url: string, init?: RequestInit) =>
+        url === JOB ? wire(200, { status: 'processing' }) : routed(url, init));
+      const file = new File(['ERROR x'], 'app.log', { type: 'text/plain' });
+      const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
+      let settled = false;
+      await act(async () => {
+        void result.current
+          .handleTurnSubmit({ query: '', files: [file], inputType: 'file', queryIsGenerated: true })
+          .then(() => { settled = true; });
+        // The 662 s deadline, not 75 s + 600 s.
+        await vi.advanceTimersByTimeAsync(665_000);
+      });
+
+      expect(settled).toBe(true);
+      expect(rows().some((r) => r.failed)).toBe(true);
+      expect(turnPosts()).toHaveLength(1);
+    });
+
     it('the 202 poll: one host read per credential wait, no re-POST', async () => {
       const JOB = `${BASE}/api/v1/jobs/job-1`;
       outage = (read) => read >= 2 && read <= 5; // the POST reads first

@@ -802,6 +802,8 @@ export async function getCaseConversation(
  * @param options.deadlineLeftMs - Time left on the caller's keyed-turn deadline;
  *   a 202 is polled for at most that (counted from this call) or
  *   `POLL_MAX_TOTAL_MS`, whichever is less
+ * @param options.onAccepted - Called when the server accepts the turn (202),
+ *   before its poll starts
  * @returns TurnResponse with agent response, turn number, and attachment results
  *
  * @example
@@ -826,7 +828,7 @@ export async function getCaseConversation(
 export async function submitTurn(
   caseId: string,
   request: TurnRequest,
-  options?: { signal?: AbortSignal; idempotencyKey?: string; deadlineLeftMs?: number }
+  options?: { signal?: AbortSignal; idempotencyKey?: string; deadlineLeftMs?: number; onAccepted?: () => void }
 ): Promise<TurnResponse> {
   const calledAt = Date.now();
   const signal = options?.signal;
@@ -915,6 +917,7 @@ export async function submitTurn(
   if (response.status === 202) {
     const location = response.headers.get('Location');
     if (!location) throw new Error('Missing Location header for async turn');
+    options?.onAccepted?.();
     const jobUrl = new URL(location, await getApiTransport().baseUrl()).toString();
     let delay = POLL_INITIAL_MS;
     // Budget is measured as WALL-CLOCK from the first poll, counting both the

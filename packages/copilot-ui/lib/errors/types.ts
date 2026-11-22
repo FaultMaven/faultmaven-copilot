@@ -304,8 +304,8 @@ export class CredentialUnavailableError extends NetworkError {
   /**
    * Where it arose, set by copilot-ui where it knows (faultmaven#2348):
    * `'before_send'` by `getAuthHeaders`, which read no credential from the host
-   * and sent nothing (a keyed turn waits it out under its deadline, and so does
-   * the async-turn poll); `'unavailable_after_401'` by the host's `'unavailable'`
+   * and sent nothing (a keyed turn waits it out under its deadline until the
+   * server accepts it, and the async-turn poll waits it out); `'unavailable_after_401'` by the host's `'unavailable'`
    * verdict on a request that went out (the poll waits it out; a keyed turn
    * keeps its retry cap); `'other'` for the rest (a renewed credential or a
    * session mint refused), which ends the poll and keeps the cap.
