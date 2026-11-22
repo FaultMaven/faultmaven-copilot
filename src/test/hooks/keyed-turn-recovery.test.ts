@@ -559,21 +559,28 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       });
     });
 
-    it('a 202 turn whose poll is refused stops after one renewal', async () => {
+    // A renewal blip inside the poll budget is waited out (faultmaven#2348):
+    // one renewal per poll, no re-POST, no manual Retry.
+    it('a 202 turn whose polls are refused for a while completes once the host renews', async () => {
       const JOB = `${BASE}/api/v1/jobs/job-1`;
-      fetchWithTimeout.mockImplementation(async (url: string, init: RequestInit = {}) => {
-        if (url === TURNS_URL && init.method === 'POST') return wire(202, {}, { Location: '/api/v1/jobs/job-1' });
-        if (url === JOB) return refused();
-        throw new Error(`unrouted ${url}`);
+      routeWire([async () => wire(202, {}, { Location: '/api/v1/jobs/job-1' })]);
+      const routed = fetchWithTimeout.getMockImplementation()!;
+      let polls = 0;
+      fetchWithTimeout.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url !== JOB) return routed(url, init);
+        polls += 1;
+        return polls <= 5 ? refused() : wire(200, { status: 'completed', result: TURN_RESPONSE });
       });
-      let outcome: unknown;
-      submitTurn(CASE, { query: 'why?' }).catch((error: unknown) => { outcome = error; });
 
+      await submit();
       await advance(60_000);
 
-      expect(onUnauthorized).toHaveBeenCalledTimes(1);
-      expect(fetchWithTimeout.mock.calls.filter(([url]) => url === JOB)).toHaveLength(1);
-      expect(outcome).toBeInstanceOf(CredentialUnavailableError);
+      expect(polls).toBe(6);
+      expect(onUnauthorized).toHaveBeenCalledTimes(5);
+      expect(turnPosts()).toHaveLength(1);
+      expect(responses().map((r) => r.response)).toEqual(['The pool is exhausted.']);
+      expect(rows().some((r) => r.loading || r.failed)).toBe(false);
+      expect(mockShowError).not.toHaveBeenCalled();
     });
 
     it('upload path: an ambiguous attempt, then a refused one, says the file "may not have been added"', async () => {
@@ -582,7 +589,8 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
       await act(async () => {
         const pending = result.current.handleTurnSubmit({ query: '', files: [file], inputType: 'file', queryIsGenerated: true });
-        await vi.advanceTimersByTimeAsync(60_000);
+        // A refused attempt is retried under the turn's deadline (faultmaven#2348).
+        await vi.advanceTimersByTimeAsync(700_000);
         await pending;
       });
 

@@ -5,7 +5,12 @@ import * as caseService from '@faultmaven/copilot-ui/lib/api/services/case-servi
 import vocabularies from '@faultmaven/copilot-ui/types/contract-vocabularies.json';
 import * as client from '@faultmaven/copilot-ui/lib/api/client';
 import { caseCacheManager } from '@faultmaven/copilot-ui/lib/cache/case-cache';
-import { CaseNotFoundError } from '@faultmaven/copilot-ui/lib/errors/types';
+import {
+  AuthenticationError,
+  CaseNotFoundError,
+  CredentialUnavailableError,
+  SessionExpiredError,
+} from '@faultmaven/copilot-ui/lib/errors/types';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 
 // Mock client
@@ -821,6 +826,48 @@ describe('Case Service', () => {
         vi.useRealTimers();
         Object.defineProperty(SessionEndedError, 'name', original);
       }
+    });
+  });
+
+  // A credential the host cannot renew for a moment is waited out within the
+  // poll budget; a definitive auth end still stops the poll (faultmaven#2348).
+  describe('a 202 turn whose poll has no credential right now', () => {
+    const accepted = () => ({
+      ok: true,
+      status: 202,
+      headers: { get: (k: string) => (k === 'Location' ? '/api/v1/jobs/job-1' : null) },
+      json: vi.fn().mockResolvedValue({}),
+    });
+    const fetchMock = () => client.authenticatedFetchWithRetry as any;
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      fetchMock().mockReset();
+    });
+
+    it('still ends at the poll budget when the host never renews', async () => {
+      fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValue(new CredentialUnavailableError());
+
+      const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+
+      expect(((await caught) as Error).message).toBe('Async turn polling timed out after 600s');
+    });
+
+    it.each([
+      ['AuthenticationError', () => new AuthenticationError('revoked')],
+      ['SessionExpiredError', () => new SessionExpiredError()],
+    ])('an %s on a poll ends the turn at once', async (_name, make) => {
+      const ended = make();
+      fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValueOnce(ended);
+
+      const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+
+      expect(await caught).toBe(ended);
+      expect(fetchMock()).toHaveBeenCalledTimes(2);
     });
   });
 

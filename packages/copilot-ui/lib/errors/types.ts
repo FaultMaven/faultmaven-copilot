@@ -291,8 +291,9 @@ export class NetworkError extends UserFacingError {
  * The host could not renew a rejected credential now and has not ended the
  * session (`AuthOutcome` `'unavailable'`, faultmaven#1460), or a request or
  * mint was refused again with no verdict to say the session ended. `NetworkError`'s copy
- * and recovery, as ruled. Its own class so a loop that would only ask the host
- * to renew again on every iteration (the async-turn poll) stops at once.
+ * and recovery, as ruled. Its own class so a turn can wait it out within its own
+ * budget rather than an attempt count: the async-turn poll keeps polling on its
+ * backoff, and a keyed turn retries it under its deadline (faultmaven#2348).
  *
  * A host also THROWS it from `accessToken()` when it still holds the session
  * but has no credential right now; `getAuthHeaders` propagates it, so the

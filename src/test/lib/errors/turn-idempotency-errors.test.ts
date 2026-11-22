@@ -5,10 +5,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ErrorClassifier } from '@faultmaven/copilot-ui/lib/errors/classifier';
 import {
+  AuthenticationError,
   CaseVersionConflictError,
+  CredentialUnavailableError,
   IdempotencyKeyReuseError,
   RateLimitError,
   ProviderTimedOutError,
+  SessionExpiredError,
   TimeoutError,
   TurnInProgressError,
   TurnTimedOutError,
@@ -355,6 +358,51 @@ describe('ErrorClassifier — coded 504s (contract 12.4.0)', () => {
     expect(classified).toBeInstanceOf(TimeoutError);
     expect(classified).not.toBeInstanceOf(TurnTimedOutError);
     expect(classified).not.toBeInstanceOf(ProviderTimedOutError);
+  });
+});
+
+// The host keeps the session but has no credential right now (faultmaven#2348).
+describe('the keyed-turn policy for a credential the host cannot produce right now', () => {
+  it('retries it past the other-error cap, and that cap still holds for a network error', () => {
+    const { shouldRetry } = keyedTurnRetryPolicy(deriveTurnTiming(undefined)).retryOptions!;
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      expect(shouldRetry!(new CredentialUnavailableError(), attempt)).toBe(true);
+    }
+    const network = () => new TypeError('Failed to fetch');
+    expect([7, 8, 9].map((attempt) => shouldRetry!(network(), attempt))).toEqual([true, true, false]);
+  });
+
+  it('leaves the other auth decisions as they were: AuthenticationError terminal, SessionExpiredError under the cap', () => {
+    const { shouldRetry } = keyedTurnRetryPolicy(deriveTurnTiming(undefined)).retryOptions!;
+    expect(shouldRetry!(new AuthenticationError('revoked'), 1)).toBe(false);
+    expect([2, 3, 4].map((attempt) => shouldRetry!(new SessionExpiredError(), attempt))).toEqual([true, true, false]);
+  });
+
+  it('waits it out under the deadline, then surfaces it', async () => {
+    vi.useFakeTimers();
+    try {
+      const timing = deriveTurnTiming(30); // 180 s deadline
+      const run = (operation: () => Promise<string>) =>
+        resilientOperation({ operation, context: { operation: 'message_submission' }, idempotent: true, ...keyedTurnRetryPolicy(timing) });
+
+      const blip = vi.fn<() => Promise<string>>();
+      for (let i = 0; i < 5; i += 1) blip.mockRejectedValueOnce(new CredentialUnavailableError());
+      blip.mockResolvedValueOnce('answered');
+      const answered = run(blip);
+      await vi.runAllTimersAsync();
+      await expect(answered).resolves.toBe('answered');
+      expect(blip).toHaveBeenCalledTimes(6);
+
+      const startedAt = Date.now();
+      const outage = vi.fn<() => Promise<string>>().mockRejectedValue(new CredentialUnavailableError());
+      const caught = run(outage).catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+      expect(await caught).toBeInstanceOf(CredentialUnavailableError);
+      expect(Date.now() - startedAt).toBeLessThan(timing.deadlineMs);
+      expect(Date.now() - startedAt).toBeGreaterThan(timing.deadlineMs - 10_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

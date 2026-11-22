@@ -102,9 +102,10 @@ export interface ApiTransport {
    *                ("Connection Problem", `retry_with_backoff`). The cost is
    *                one renewal per request attempt, times the caller's own
    *                retries: `resilientOperation` within its attempt budget (3
-   *                by default, a keyed turn's included), a query's one retry,
-   *                and the session ensure on its backoff (15 s doubling to
-   *                60 s). The async-turn poll stops on it. Nothing is
+   *                by default; a keyed turn's, within its deadline), a query's
+   *                one retry, and the session ensure on its backoff (15 s
+   *                doubling to 60 s). The async-turn poll renews once per
+   *                backoff step, within its budget. Nothing is
    *                duplicated: a 401 committed nothing (faultmaven#1460). A
    *                host that cannot tell a transient failure from a
    *                definitive one never answers it.

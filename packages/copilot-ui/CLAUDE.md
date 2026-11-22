@@ -32,7 +32,8 @@ This file holds the rules that constrain code *inside* the package.
   moves nothing. The mint takes the same verdict (`lib/api/auth-verdict.ts`).
   A request or mint refused again with no `'ended'` verdict (a 401 on the
   retry after `'refreshed'`) throws the same error, never a sign-out. The
-  async-turn poll stops on it rather than renewing per poll.
+  async-turn poll waits it out on its backoff within `POLL_MAX_TOTAL_MS`, and
+  a keyed turn retries it under its deadline (faultmaven#2348).
 - **The host's reason for no token** (`accessToken()`, `lib/api/fetch-utils.ts`):
   `AuthenticationError`, `SessionSwitchedError` and `CredentialUnavailableError`
   (the session is kept, with no credential right now) propagate and the
@@ -69,9 +70,10 @@ This file holds the rules that constrain code *inside* the package.
   input likely exhausts the ceiling again at full LLM cost; the user's manual
   Retry stays), `LLM_TIMEOUT` is retried once after its `Retry-After`. A 409
   `TURN_IN_PROGRESS` is polled every min(`Retry-After`, 5 s) (the header is an
-  upper bound on the claim; `maxDelay` keeps the backoff from outgrowing it); a
-  504 with an unknown code and everything else keep their default decision and
-  attempt count. The retry replays a committed turn (200,
+  upper bound on the claim; `maxDelay` keeps the backoff from outgrowing it). A
+  `CredentialUnavailableError` is retried under the deadline on that backoff,
+  outside the attempt count; a 504 with an unknown code and everything else keep
+  their default decision and attempt count. The retry replays a committed turn (200,
   `X-Idempotency-Replayed`), so it is reconciled like a first answer. The
   timings are derived, not policy (contract 12.4.0, `lib/utils/turn-timing.ts`):
   request timeout = `limits.turnResponseBoundSeconds` (from `/meta/capabilities`;
@@ -104,8 +106,8 @@ only; a header-less 401 is `AuthenticationError`) · `AuthenticationError`
 show_modal · `PermissionError` graceful_degradation · `NetworkError`
 retry_with_backoff (its subclass `CredentialUnavailableError` is a 401 the host
 answered `'unavailable'`: no sign-out, no epoch move; one renewal per request
-attempt, times the caller's retries — `resilientOperation`'s attempt budget, a
-query's one retry — and nothing is duplicated; or the host's `accessToken()`
+attempt, times the caller's retries — `resilientOperation`'s attempt budget (a
+keyed turn's deadline), a query's one retry — and nothing is duplicated; or the host's `accessToken()`
 throwing it for a kept session with no credential now: nothing sent, one host
 read per attempt, which renews once in the Dashboard and runs a 3-POST refresh
 ladder in the extension, so 3 or 9 per action) ·

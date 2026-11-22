@@ -937,13 +937,13 @@ export async function submitTurn(
         // A transient failure on a SINGLE poll (5xx / network blip during a pod
         // rollout) must not abandon the whole async turn — the background job may
         // still complete well within the budget. Keep polling; only a definitive
-        // failure (4xx, or a terminal auth/session error) aborts. So does a
-        // credential the host could not renew: each further poll would only
-        // ask it to renew again (faultmaven#1460).
-        const terminal =
-          err instanceof CredentialUnavailableError ||
-          err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
-        if (!terminal && isRetryableError(err)) {
+        // failure (4xx, or a terminal auth/session error) aborts. A credential
+        // the host cannot renew right now is waited out the same way: the next
+        // poll asks the host to renew at most once per backoff step, so a
+        // renewal outage shorter than the budget does not fail a turn the
+        // server accepted (faultmaven#1460, faultmaven#2348).
+        const terminal = err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
+        if (err instanceof CredentialUnavailableError || (!terminal && isRetryableError(err))) {
           await abortableDelay(delay, signal);
           delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
           continue;

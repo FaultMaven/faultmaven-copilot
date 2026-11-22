@@ -24,6 +24,10 @@
  * `Retry-After`, within the deadline. A 504 with a code this
  * build does not know keeps the default decision (no automatic retry).
  *
+ * A `CredentialUnavailableError` (the host keeps the session but cannot produce
+ * a credential right now) is retried under the same deadline, spaced by the
+ * backoff, and is not counted among the attempts below (faultmaven#2348).
+ *
  * Everything else keeps the decision it has without this policy
  * (`defaultRetryDecision`) and the attempt count it had (`DEFAULT_MAX_ATTEMPTS`),
  * so a network blip or a 429 is not retried for eleven minutes. `TimeoutError`
@@ -32,7 +36,7 @@
  */
 
 import { ErrorClassifier } from '../errors/classifier';
-import { TurnInProgressError, TURN_IN_PROGRESS_POLL_MS } from '../errors/types';
+import { CredentialUnavailableError, TurnInProgressError, TURN_IN_PROGRESS_POLL_MS } from '../errors/types';
 import type { HttpError } from '../errors/http-error';
 import { defaultRetryDecision, type ResilientOperationOptions } from './resilient-operation';
 import { capabilitiesManager } from '../capabilities';
@@ -107,6 +111,8 @@ export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
 
         const classified = ErrorClassifier.classify(error);
         if (classified instanceof TurnInProgressError) return true;
+        // No credential right now: waited out under the deadline, not the cap below.
+        if (classified instanceof CredentialUnavailableError) return true;
 
         // The key makes the request idempotent, as the callers already declare.
         if (!defaultRetryDecision(classified, { idempotent: true })) return false;
