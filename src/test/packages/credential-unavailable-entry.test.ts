@@ -5,7 +5,8 @@
  * SENT (faultmaven#1460).
  *
  * Sent with no bearer instead, its 401 read as an expired session: "Sign in
- * first" in a host that was still signed in (faultmaven-dashboard#257). The
+ * first" in a host that was still signed in (faultmaven-dashboard#257); it
+ * now reads as signed out (faultmaven#2167). The
  * Dashboard reaches the package through its entry alone, so the entry exports
  * the very class `getAuthHeaders` checks with `instanceof`.
  */

@@ -53,16 +53,17 @@ export interface ApiTransport {
    *                backoff (15 s doubling to 60 s: at most 3 in its first
    *                minute, then about 1 a minute); the heartbeat one per beat
    *                (10 min). A read costs the host's renewal. The Dashboard's
-   *                is one attempt: 3 per action (header-less: one read and
-   *                one request sent). The extension's is TokenManager's
-   *                3-attempt ladder: 9 refresh POSTs per action (header-less:
-   *                3, plus 1 request), up to about 2.5 min before the toast
+   *                is one attempt: 3 per action. The extension's is
+   *                TokenManager's 3-attempt ladder: 9 refresh POSTs per
+   *                action, up to about 2.5 min before the toast
    *                if the endpoint hangs; the ensure about 9 in its first
    *                minute, then about 3 a minute per panel; the heartbeat 3
    *                per beat. A beat not sent refreshes
    *                no server TTL, so a session idle past it (30 min by default)
    *                lapses, and the first beat after the outage answers 404 and
-   *                re-ensures at once.
+   *                re-ensures at once. A plain throw instead is no cheaper
+   *                choice for a kept session: it signs the user out, the
+   *                blocking sign-in modal with no retry (below).
    *
    * Any other throw means signed out: the request goes out with no bearer,
    * and its 401 is the not-signed-in path, `AuthenticationError`, with nothing

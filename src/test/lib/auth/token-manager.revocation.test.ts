@@ -216,8 +216,9 @@ describe('TokenManager — refresh against a revoked token', () => {
  *
  * TokenManager discovers that a session is over — it presents the refresh token
  * and hears the backend refuse it — but it does not end one. It answers `null`
- * for "nothing usable right now" (transient: the request goes out header-less,
- * keeping the credential and the session) and throws SessionEndedError for
+ * for "nothing usable right now" (with nothing stored the request goes out
+ * header-less, and its 401 is `AuthenticationError` and is not retried,
+ * faultmaven#2167; with a credential kept it is not sent) and throws SessionEndedError for
  * "definitively dead". The host acts on the latter, in ExtensionApp.accessToken().
  *
  * Collapsing both into `null` is what forced the teardown to live in here,
@@ -330,9 +331,10 @@ describe('TokenManager — reports a dead chain, does not act on it', () => {
   it('outage protection is DURABLE, not one call deep', async () => {
     // The hole this closes. An earlier version special-cased the outage in the
     // post-ladder arm, so the preserved session was ruled `dead` by the very
-    // next credential read — including the one inside the failing request's own
-    // recovery path (header-less 401 → refreshSession → createSession →
-    // getAuthHeaders → here, which now refuses to mint without a bearer). The
+    // next credential read — including the one a recovery path made right
+    // after (refreshSession → createSession → getAuthHeaders → here, which now
+    // refuses to mint without a bearer; a header-less 401 is now
+    // `AuthenticationError` and is not retried, faultmaven#2167). The
     // protection lasted exactly one call.
     await seedSession({
       expires_at: Date.now() - 1000,

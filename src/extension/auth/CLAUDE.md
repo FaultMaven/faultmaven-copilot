@@ -86,13 +86,14 @@ matters — refreshability is decided before an unmeasurable expiry is ruled on:
   **`dead` means only: nothing to present, and nothing to present it with.**
 
 **TokenManager reports; it never ends a session.** `getValidAccessToken()`
-answers a token, or `null` meaning *nothing usable right now* (transient; a
-later call retries), or throws `SessionEndedError`
+answers a token, or `null` meaning *nothing usable right now* (nothing
+stored: signed out; a credential kept: transient, a later call retries), or
+throws `SessionEndedError`
 (`session-ended-error.ts`), which extends the package's `AuthenticationError`.
 That inheritance is the contract: `getAuthHeaders` propagates it (as it does
 `SessionSwitchedError` and `CredentialUnavailableError`) and swallows every
-other throw into a header-less request, so a dead session never
-becomes a "session expired, retrying" — the request is not sent and the caller
+other throw into a header-less request, so a dead session is never
+sent header-less — the request is not sent and the caller
 gets an error whose recovery is a sign-in prompt. A plain throw means signed out;
 a host throws `CredentialUnavailableError` for anything transient.
 The act-site reads `null` beside the stored credential (`peekCredential`,

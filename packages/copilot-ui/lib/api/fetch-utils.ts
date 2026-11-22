@@ -28,17 +28,17 @@ const log = createLogger('FetchUtils');
  * ⚠️ THREE EXCEPTIONS, each a host saying WHY, and each propagates so the
  * request is never sent:
  *
- * - `AuthenticationError`: the session is OVER. Swallowed, it produced a
- *   header-less request whose 401 took the transient path, a "session expired,
- *   retrying" where the honest answer is a sign-in prompt. The caller gets an
- *   error whose recovery is `show_modal`.
+ * - `AuthenticationError`: the session is OVER. Swallowed, it would send a
+ *   header-less request the server can only refuse, and skip the host's
+ *   teardown. The caller gets an error whose recovery is `show_modal`.
  * - `SessionSwitchedError`: the host's stored session is another user's, and
  *   the request, built for the previous one, must not go out at all.
  * - `CredentialUnavailableError`: the session is KEPT, but there is no
  *   credential right now (a token expired while its renewal endpoint is down).
- *   Swallowed, the request went out header-less and its 401 read as an expired
- *   session: "Sign in first" in a host still signed in (faultmaven#1460). The
- *   caller gets a `NetworkError` and retries; the epoch does not move.
+ *   Swallowed, the request would go out header-less and its 401 would read as
+ *   signed out: the sign-in prompt in a host still signed in
+ *   (faultmaven#1460, faultmaven#2167). The caller gets a `NetworkError` and
+ *   retries; the epoch does not move.
  *
  * A host that throws anything else is read as signed out.
  */
@@ -58,7 +58,7 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     // It is not sent.
     if (error instanceof SessionSwitchedError) throw error;
     // The session is kept, with no credential right now (faultmaven#1460).
-    // Header-less, its 401 would read as an expired session. It is not sent.
+    // Header-less, its 401 would read as signed out. It is not sent.
     if (error instanceof CredentialUnavailableError) throw error;
     // See the note above: a plain throw means signed out, and header-less is
     // the not-signed-in path, not an error to surface here.

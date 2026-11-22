@@ -147,7 +147,8 @@ token expired while its renewal endpoint is down) throws
 `CredentialUnavailableError`, also exported by the entry. Nothing is sent, and
 the user sees a connection problem rather than a sign-in prompt
 (faultmaven#1460). Any other throw sends the request with no bearer: the
-not-signed-in path.
+not-signed-in path. A plain throw from `accessToken()` means signed out; a host
+throws `CredentialUnavailableError` for anything transient (faultmaven#2167).
 
 The transport's `onUnauthorized` is called with the bearer the rejected request
 carried. A host that tears down on a 401 should end only that credential's

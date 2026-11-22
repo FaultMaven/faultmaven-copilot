@@ -850,7 +850,7 @@ describe('useDataUpload — a submission that never reached a case says what was
   // nothing is stored, since a host that keeps the session says so with
   // `CredentialUnavailableError` (faultmaven#1460). The question path's copy.
   it('a mint with no credential says not sent, with sign-in advice', async () => {
-    failEnsure(new SessionExpiredError('No credential to mint a session with'));
+    failEnsure(new AuthenticationError('No credential to mint a session with'));
     const outcome = await submit({ files: [file('app.log')], query: 'why?' });
 
     expect(outcome).toMatchObject({ success: false, sent: false });

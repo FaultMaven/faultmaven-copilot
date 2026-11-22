@@ -112,7 +112,7 @@ async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<st
       throw new SessionSwitchedError();
     }
     // Kept, with nothing to present now: not sent, so its 401 cannot read as
-    // an expired session.
+    // signed out.
     if (!credential) throw new CredentialUnavailableError('No usable access token right now; the session is kept');
     return credential.accessToken;
   } catch (error) {
@@ -124,9 +124,9 @@ async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<st
       // The rethrow is load-bearing: `SessionEndedError` extends the package's
       // `AuthenticationError`, which `getAuthHeaders` propagates instead of
       // swallowing. So the request is never sent and the caller gets an error
-      // whose recovery is a sign-in prompt — where swallowing it produced a
-      // header-less request, a doomed `POST /sessions`, and "session expired,
-      // retrying" for a session that is not coming back.
+      // whose recovery is a sign-in prompt — where swallowing it would send a
+      // header-less request, and a doomed `POST /sessions`, for a session that
+      // is not coming back, with the teardown below skipped.
       //
       // JUDGED (copilot#346): the verdict is about the credential it was read
       // with, and the user it belonged to. If that user's session now holds a
