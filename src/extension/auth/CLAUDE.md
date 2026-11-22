@@ -93,12 +93,13 @@ That inheritance is the contract: `getAuthHeaders` propagates it (as it does
 `SessionSwitchedError` and `CredentialUnavailableError`) and swallows every
 other throw into a header-less request, so a dead session never
 becomes a "session expired, retrying" — the request is not sent and the caller
-gets an error whose recovery is a sign-in prompt. A host that throws anything else
-keeps the old behaviour (the Dashboard host is unaffected).
+gets an error whose recovery is a sign-in prompt. A plain throw means signed out;
+a host throws `CredentialUnavailableError` for anything transient.
 The act-site reads `null` beside the stored credential (`peekCredential`,
 faultmaven#1460). None stored is signed out: a plain throw, so the request goes
-out header-less and its 401 keeps the stored session and mints nothing (the
-session mint itself is never sent header-less). One KEPT through a failed
+out header-less and its 401 is `AuthenticationError`, keeping the stored
+session and minting nothing (faultmaven#2167; the session mint itself is never
+sent header-less). One KEPT through a failed
 refresh throws `CredentialUnavailableError`: nothing is sent, and the panel
 shows a connection problem, never "Sign in first". So does a storage read that
 FAILS in either call: TokenManager throws nothing else but its verdict, and a

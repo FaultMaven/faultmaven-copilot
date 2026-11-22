@@ -5,7 +5,7 @@ import { AuthState, getUserCases, createCase } from '@faultmaven/copilot-ui/lib/
 // directly, which is what the extension itself does.
 import { getCurrentUser, logoutAuth } from '../../extension/auth/auth-service';
 import { authManager } from '../../extension/auth/auth-manager';
-import { AuthenticationError, SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 // Build-time constants only. Where the API lives is the host's answer, which
 // this file installs below.
@@ -497,10 +497,9 @@ describe('Authentication API', () => {
       expect(mockBrowserStorage.local.remove).not.toHaveBeenCalledWith(['authState']);
     });
 
-    // #99: a 401 on a header-less request (no token attached — transient refresh
-    // outage that preserved the tokens) is a transient condition, not a hard
-    // auth failure. It must NOT run the full teardown, and it mints nothing
-    // (faultmaven#1460).
+    // #99: a 401 on a header-less request (no token attached) must NOT run the
+    // full teardown, and it mints nothing (faultmaven#1460). Nothing stored is
+    // signed out (faultmaven#2167).
     it('does NOT tear down auth on a 401 when no credential was attached (#99)', async () => {
       // No stored token; a stored session.
       mockBrowserStorage.local.get.mockResolvedValue({ sessionId: 's1' });
@@ -511,9 +510,8 @@ describe('Authentication API', () => {
         json: { detail: 'Authentication required. Please log in to access this resource.' }
       }));
 
-      // The transient answer, not the host's verdict: the retry wrapper
-      // retries once and the retry 401s the same way.
-      await expect(getCurrentUser()).rejects.toBeInstanceOf(SessionExpiredError);
+      // Signed out, not the host's verdict: the retry wrapper does not retry it.
+      await expect(getCurrentUser()).rejects.toBeInstanceOf(AuthenticationError);
       // Nothing is cleared: neither the credential nor the session.
       expect(mockBrowserStorage.local.remove).not.toHaveBeenCalled();
     });

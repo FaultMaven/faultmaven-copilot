@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clientSessionManager } from '@faultmaven/copilot-ui/lib/session/client-session-manager';
 import type { AuthState } from '@faultmaven/copilot-ui/lib/api/types';
-import { SessionExpiredError } from '@faultmaven/copilot-ui/lib/errors/types';
+import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 
 // Mock browser environment
 const { mockBrowser } = vi.hoisted(() => {
@@ -166,7 +166,7 @@ describe('JWT Token in Session Creation', () => {
     });
 
     await expect(clientSessionManager.createSession('some-user')).rejects.toBeInstanceOf(
-      SessionExpiredError,
+      AuthenticationError,
     );
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -282,7 +282,7 @@ describe('JWT Token in Session Creation', () => {
     //    the mint is not sent at all (faultmaven#1460). REMOVING the row is
     //    `reconcileSession()`'s job, covered in test/api/auth.test.ts — this
     //    asserts only that the transport never treats the row as a credential.
-    await expect(attempt).rejects.toBeInstanceOf(SessionExpiredError);
+    await expect(attempt).rejects.toBeInstanceOf(AuthenticationError);
     const sessionCall = (global.fetch as any).mock.calls.find(
       ([url]: [string]) => url === 'http://localhost:8000/api/v1/sessions'
     );

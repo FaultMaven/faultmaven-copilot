@@ -16,8 +16,8 @@
  * existing vocabulary for "this session is over, sign in again" — category
  * `authentication`, recovery `show_modal` — and it is what lets `getAuthHeaders`
  * tell a dead chain from a renewal blip without knowing anything about the
- * extension. A host that throws a plain error keeps the old behaviour, so the
- * distinction is opt-in and the Dashboard host is unaffected.
+ * extension. A plain throw from a host means signed out; a host throws
+ * `CredentialUnavailableError` for anything transient.
  */
 import { AuthenticationError } from '@faultmaven/copilot-ui/lib/errors/types';
 

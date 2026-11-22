@@ -14,6 +14,9 @@ import {
   SessionSwitchedError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import { bumpEpoch } from '@faultmaven/copilot-ui/lib/state/session-epoch';
+import { authenticatedFetchWithRetry } from '@faultmaven/copilot-ui/lib/api/client';
+import { setApiTransport } from '@faultmaven/copilot-ui/lib/api/transport';
+import { ErrorClassifier } from '@faultmaven/copilot-ui/lib/errors/classifier';
 
 const okTurnResponse = {
   agent_response: 'Analyzed.',
@@ -111,6 +114,48 @@ describe('useDataUpload — error surfacing regression guard', () => {
     // And the existing contract with UnifiedInputBar stays intact.
     expect(submissionResult?.success).toBe(false);
     expect(submissionResult?.message).toBeTruthy();
+  });
+
+  // faultmaven#2167 (A1): a turn sent with no stored credential is signed
+  // out, so its 401 is shown as `AuthenticationError`'s modal, the sign-in
+  // prompt, through the real request path. On 5309cfa it was
+  // `SessionExpiredError`'s "We are refreshing your session..." toast.
+  it('a turn sent with no credential shows the sign-in modal', async () => {
+    setApiTransport({
+      baseUrl: async () => 'http://localhost:8090',
+      accessToken: async () => { throw new Error('No access token available right now.'); },
+      sessionId: async () => 'session-123',
+      clearSession: async () => {},
+      onUnauthorized: () => 'ended' as const,
+    });
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      json: async () => ({ detail: 'Authentication required. Please log in to access this resource.' }),
+    } as unknown as Response);
+    (api.submitTurn as any).mockImplementation(() =>
+      authenticatedFetchWithRetry('http://localhost:8090/api/v1/cases/case-123/turns', { method: 'POST' }),
+    );
+
+    try {
+      const { result } = render();
+      await act(async () => {
+        await result.current.handleTurnSubmit({ query: 'diagnose this' });
+      });
+
+      expect(mockShowError).toHaveBeenCalledTimes(1);
+      const shown = ErrorClassifier.classify(mockShowError.mock.calls[0][0]);
+      expect(shown).toBeInstanceOf(AuthenticationError);
+      expect(shown.userAction).toBe('Please sign in again to continue.');
+      expect((shown as AuthenticationError).getDisplayOptions()).toMatchObject({
+        displayType: 'modal',
+        blocking: true,
+        actions: [expect.objectContaining({ label: 'Sign In' })],
+      });
+    } finally {
+      vi.mocked(global.fetch).mockReset();
+    }
   });
 
   it('uses opt_ optimistic IDs for the user and AI messages (data-integrity rule)', async () => {
@@ -840,6 +885,49 @@ describe('useDataUpload — a submission that never reached a case says what was
     expect(outcome).toMatchObject({ success: false, sent: false });
     expect(shown().userMessage).toContain('Unable to reach FaultMaven server');
     expect(shown().userAction).toBe('Send again to retry.');
+  });
+
+  // Past the session gate the cause reaches `notSentError` itself
+  // (faultmaven#2167): the case create's catch, and the bottom catch for a
+  // throw before the turn is dispatched.
+  const atCaseCreate = (cause: Error) => (api.createCase as any).mockRejectedValue(cause);
+  const beforeDispatch = (cause: Error) => {
+    (api.createCase as any).mockResolvedValue({ case_id: 'case-new', state: 'inquiry' });
+    vi.spyOn(pendingOpsManager, 'add').mockImplementationOnce(() => { throw cause; });
+  };
+  const pastTheGate = [['case creation', atCaseCreate], ['a throw before dispatch', beforeDispatch]] as const;
+
+  it.each(pastTheGate)('%s: a session being refreshed says not sent, with no sign-in advice', async (_at, inject) => {
+    inject(new SessionExpiredError());
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(shown().userMessage).toBe(
+      'Your message and 1 file (app.log) were not sent. Your session has expired. Your input is still in the message box.',
+    );
+    expect(shown().userAction).toBe('Send again to retry.');
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  // Must not change: signed out advises sign-in.
+  it.each(pastTheGate)('%s: signed out says not sent, with sign-in advice', async (_at, inject) => {
+    inject(new AuthenticationError('No credential is stored: signed out'));
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(shown().userAction).toBe('Sign in first, then send again.');
+    expect(api.submitTurn).not.toHaveBeenCalled();
+  });
+
+  it.each(pastTheGate)('%s: another account signed in shows that notice itself (#350)', async (_at, inject) => {
+    const cause = new SessionSwitchedError();
+    inject(cause);
+    const outcome = await submit({ files: [file('app.log')], query: 'why?' });
+
+    expect(outcome).toMatchObject({ success: false, sent: false });
+    expect(mockShowError).toHaveBeenCalledTimes(1);
+    expect(mockShowError.mock.calls[0][0]).toBe(cause);
+    expect(api.submitTurn).not.toHaveBeenCalled();
   });
 
   // #132: a sign-out while the ensure ran ends the submission there.

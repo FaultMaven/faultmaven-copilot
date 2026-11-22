@@ -40,7 +40,8 @@ export interface LogoutOutcome {
  * Uses `authenticatedFetchWithRetry`, not the bare `authenticatedFetch`, which
  * throws on a session-expired or header-less 401: this is read for display
  * (see AccountRow), and a swallowed rejection would show nothing. The retry
- * wrapper retries those once. It mints no replacement session
+ * wrapper retries a session-expired one once; a header-less one is signed out
+ * (`AuthenticationError`) and is not retried. It mints no replacement session
  * (faultmaven#1460): a session-expired 401 clears the session id the request
  * carried from storage, and the session slice's next heartbeat mints the next
  * one for the panel's user.

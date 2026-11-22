@@ -84,36 +84,41 @@ describe('a 401 on a request sent with no credential mints nothing', () => {
   const requests = () =>
     fetchWithTimeout.mock.calls.filter(([url]) => url === `${API}/api/v1/cases`);
 
-  it('keeps an owned session: the request is retried once, and nothing is minted', async () => {
+  // Signed out (faultmaven#2167): not retried, since no refresh recovers it.
+  it('keeps an owned session: the request is not retried, and nothing is minted', async () => {
     Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
 
     await expect(authenticatedFetchWithRetry(`${API}/api/v1/cases`)).rejects.toBeInstanceOf(
-      SessionExpiredError,
+      AuthenticationError,
     );
 
-    expect(requests()).toHaveLength(2);
+    expect(requests()).toHaveLength(1);
     expect(mints()).toHaveLength(0);
     expect(stub.data.sessionId).toBe('s1');
   });
 
-  it('with nothing stored, retries once, and nothing is minted', async () => {
+  it('with nothing stored, is not retried, and nothing is minted', async () => {
     await expect(authenticatedFetchWithRetry(`${API}/api/v1/cases`)).rejects.toBeInstanceOf(
-      SessionExpiredError,
+      AuthenticationError,
     );
 
-    expect(requests()).toHaveLength(2);
+    expect(requests()).toHaveLength(1);
     expect(mints()).toHaveLength(0);
   });
 });
 
 describe('the mint', () => {
+  // Signed out (faultmaven#2167), and no epoch moves.
   it('is not sent without a bearer, and keeps the client id', async () => {
     token = null;
     const clearClientId = vi.spyOn(clientSessionManager, 'clearClientId');
+    const before = getEpoch();
 
     await expect(clientSessionManager.createSessionWithRecovery('u1')).rejects.toBeInstanceOf(
-      SessionExpiredError,
+      AuthenticationError,
     );
+
+    expect(getEpoch()).toBe(before);
 
     expect(fetchWithTimeout).not.toHaveBeenCalled();
     expect(clearClientId).not.toHaveBeenCalled();
@@ -376,7 +381,7 @@ describe('the session slice', () => {
     await init();
 
     await expect(authenticatedFetchWithRetry(`${API}/api/v1/cases`)).rejects.toBeInstanceOf(
-      SessionExpiredError,
+      AuthenticationError,
     );
 
     expect(mints()).toHaveLength(0);
@@ -415,6 +420,25 @@ describe('the session slice: its timers and its owner', () => {
     await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
 
     expect(mints()).toHaveLength(1);
+  });
+
+  // Must not change (faultmaven#2167): the heartbeat does not go through the
+  // request wrapper, so a header-less beat's 401 stays swallowed.
+  it("swallows a header-less heartbeat's 401: the session is kept and no epoch moves", async () => {
+    Object.assign(stub.data, { sessionId: 's1', sessionUserId: 'u1' });
+    token = null;
+    fetchWithTimeout.mockResolvedValue(reply(401));
+    await init();
+    const before = getEpoch();
+
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+
+    expect(heartbeats()).toHaveLength(1);
+    expect(bearerOf(heartbeats()[0])).toBeUndefined();
+    expect(stub.data.sessionId).toBe('s1');
+    expect(useAppStore.getState().sessionId).toBe('s1');
+    expect(getEpoch()).toBe(before);
+    expect(mints()).toHaveLength(0);
   });
 
   it("drops a dead heartbeat's session under the session lock", async () => {

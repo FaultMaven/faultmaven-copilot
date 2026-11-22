@@ -28,7 +28,8 @@ const log = createLogger('SessionCredential');
  * TokenManager reports; this acts. `null` from it means "nothing usable right
  * now", and the stored credential says which kind (faultmaven#1460): none
  * stored is signed out, so a plain error sends the request out header-less and
- * its 401 keeps the stored session and mints nothing (#99); one KEPT through a
+ * its 401 is `AuthenticationError`, keeping the stored session and minting
+ * nothing (faultmaven#2167); one KEPT through a
  * failed refresh throws `CredentialUnavailableError`, and the request is not
  * sent; so does a storage read that failed (`readOrRefuse`). None of these
  * tears anything down. `SessionEndedError`

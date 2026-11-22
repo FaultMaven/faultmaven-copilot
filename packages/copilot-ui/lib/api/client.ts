@@ -1,4 +1,4 @@
-import { CredentialUnavailableError, SessionExpiredError, UserFacingError } from '../errors/types';
+import { AuthenticationError, CredentialUnavailableError, SessionExpiredError, UserFacingError } from '../errors/types';
 import { getAuthHeaders } from './fetch-utils';
 import { clearPersistedSessionIf, refreshSession } from './session-core';
 import { handleAuthError } from './auth-verdict';
@@ -67,9 +67,8 @@ async function handleSessionExpired(sentSessionId?: string): Promise<void> {
  * Wrapper for authenticated fetch with automatic session refresh on expiration
  *
  * Session Expiration Handling (Option C):
- * 1. If backend returns 401 with SESSION_EXPIRED error code, or the request
- *    went out with no credential
- * 2. Clear the stale session_id from storage (the expiry case only)
+ * 1. If backend returns 401 with SESSION_EXPIRED error code
+ * 2. Clear the stale session_id from storage
  * 3. refreshSession() with no owner waits for any session ensure in flight and
  *    mints nothing: minting is the session slice's, for the panel's user
  *    (faultmaven#1460)
@@ -163,11 +162,10 @@ export async function authenticatedFetch(
 
     // Did we actually attach a credential? getAuthHeaders returns no
     // Authorization header when the host could not produce a token and could
-    // not say why: in practice, not signed in. A 401 on such a header-less
-    // request means "we had no token", not "the token is invalid" (see #99). A
-    // host that KEPT the session through a renewal outage says so with
-    // `CredentialUnavailableError`, and that request is never sent
-    // (faultmaven#1460).
+    // not say why, which the transport contract reads as signed out
+    // (`ApiTransport.accessToken`). A host that KEPT the session through a
+    // renewal outage says so with `CredentialUnavailableError`, and that
+    // request is never sent (faultmaven#1460).
     const sentAuthKey = Object.keys(mergedHeaders).find(
       (k) => k.toLowerCase() === 'authorization' && !!(mergedHeaders as any)[k]
     );
@@ -202,14 +200,16 @@ export async function authenticatedFetch(
         throw new SessionExpiredError('Session expired'); // Fallback in case handleSessionExpired doesn't throw
       }
 
-      // We sent no credential, so the 401 is about that, not about the token
-      // or the session. Both stay: a renewal blip must not destroy the
-      // credential the next request could have used (#99), and the session is
-      // not what was refused. The retry wrapper retries once and mints
-      // nothing (faultmaven#1460).
+      // We sent no credential: the host had none to give and no transient
+      // reason, and the transport contract makes that signed out, the
+      // not-signed-in path (`ApiTransport.accessToken`). So the sign-in
+      // prompt, not a refresh: the retry wrapper does not retry it, since no
+      // refresh can recover it (faultmaven#2167). It clears and mints
+      // nothing, and moves no epoch: the host, not this request, ends a
+      // session, and the stored session is not what was refused.
       if (!sentAuthHeader) {
-        log.warn('401 on a request with no Authorization header — treating as transient (token and session preserved), not a hard auth failure');
-        throw new SessionExpiredError('No credential was sent');
+        log.warn('401 on a request with no Authorization header — signed out (token and session preserved)');
+        throw new AuthenticationError('No credential is stored: signed out');
       }
 
       // A 401 on a request that DID carry a credential. Whether that ends the

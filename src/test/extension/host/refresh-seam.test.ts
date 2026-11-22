@@ -59,7 +59,6 @@ import { authenticatedFetch } from '@faultmaven/copilot-ui/lib/api/client';
 import {
   AuthenticationError,
   CredentialUnavailableError,
-  SessionExpiredError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import type { HostSession } from '@faultmaven/copilot-ui/shared/host';
 
@@ -173,7 +172,7 @@ describe('401 → host → refresh → retry, across the real seam', () => {
       ({ ok: false, status: 401, headers: new Headers(), json: async () => ({}), text: async () => '{}' }),
     ) as unknown as typeof fetch;
 
-    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(SessionExpiredError);
+    await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(AuthenticationError);
 
     const calls = vi.mocked(global.fetch).mock.calls;
     expect(calls.map(([url]) => String(url))).toEqual(['/api/v1/whatever']);
