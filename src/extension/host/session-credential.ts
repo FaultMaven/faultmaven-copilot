@@ -125,8 +125,7 @@ async function readOnce(forUserId: string | null, mayRetry: boolean): Promise<st
       // `AuthenticationError`, which `getAuthHeaders` propagates instead of
       // swallowing. So the request is never sent and the caller gets an error
       // whose recovery is a sign-in prompt — where swallowing it would send a
-      // header-less request, and a doomed `POST /sessions`, for a session that
-      // is not coming back, with the teardown below skipped.
+      // header-less request the server can only refuse.
       //
       // JUDGED (copilot#346): the verdict is about the credential it was read
       // with, and the user it belonged to. If that user's session now holds a

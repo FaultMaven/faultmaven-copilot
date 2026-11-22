@@ -29,8 +29,8 @@ const log = createLogger('FetchUtils');
  * request is never sent:
  *
  * - `AuthenticationError`: the session is OVER. Swallowed, it would send a
- *   header-less request the server can only refuse, and skip the host's
- *   teardown. The caller gets an error whose recovery is `show_modal`.
+ *   header-less request the server can only refuse. The caller gets an error
+ *   whose recovery is `show_modal`.
  * - `SessionSwitchedError`: the host's stored session is another user's, and
  *   the request, built for the previous one, must not go out at all.
  * - `CredentialUnavailableError`: the session is KEPT, but there is no

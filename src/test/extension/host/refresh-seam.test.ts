@@ -372,8 +372,7 @@ describe('401 → host → refresh → retry, across the real seam', () => {
     }) as unknown as typeof fetch;
 
     // The verdict reaches the CALLER, rather than being swallowed into a
-    // header-less request whose 401 is `AuthenticationError`, not retried
-    // (faultmaven#2167), with the teardown below skipped.
+    // header-less request the server can only refuse.
     // `SessionEndedError` extends the package's `AuthenticationError`, which is
     // the vocabulary `getAuthHeaders` branches on.
     await expect(authenticatedFetch('/api/v1/whatever')).rejects.toBeInstanceOf(

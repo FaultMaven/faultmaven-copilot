@@ -62,8 +62,8 @@ export interface ApiTransport {
    *                no server TTL, so a session idle past it (30 min by default)
    *                lapses, and the first beat after the outage answers 404 and
    *                re-ensures at once. A plain throw instead is no cheaper
-   *                choice for a kept session: it signs the user out, the
-   *                blocking sign-in modal with no retry (below).
+   *                choice for a kept session: it reads as signed out: the
+   *                blocking sign-in modal, with no retry (below).
    *
    * Any other throw means signed out: the request goes out with no bearer,
    * and its 401 is the not-signed-in path, `AuthenticationError`, with nothing
