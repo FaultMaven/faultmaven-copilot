@@ -49,7 +49,9 @@ export async function handleAuthError(rejectedBearer: string): Promise<'refreshe
   // ambiguous, and a received 401 here would make it read as not added.
   if (outcome === 'unavailable') {
     log.warn('Host could not renew the credential after a 401; the session continues');
-    throw new CredentialUnavailableError();
+    const unavailable = new CredentialUnavailableError();
+    unavailable.phase = 'unavailable_after_401';
+    throw unavailable;
   }
 
   // Ended. Fence THIS context's in-flight writers now, before the purge

@@ -32,15 +32,20 @@ This file holds the rules that constrain code *inside* the package.
   moves nothing. The mint takes the same verdict (`lib/api/auth-verdict.ts`).
   A request or mint refused again with no `'ended'` verdict (a 401 on the
   retry after `'refreshed'`) throws the same error, never a sign-out. The
-  async-turn poll waits it out on its backoff within `POLL_MAX_TOTAL_MS`, and
-  a keyed turn retries it under its deadline (faultmaven#2348).
+  async-turn poll waits out the `'unavailable'` verdict on `credentialWaitMs`
+  (5 s doubling to 60 s, ±20 %) within its budget, and ends with it when the
+  budget runs out; the re-refusal ends the poll at once. A keyed turn keeps
+  its retry cap for both (faultmaven#2348).
 - **The host's reason for no token** (`accessToken()`, `lib/api/fetch-utils.ts`):
   `AuthenticationError`, `SessionSwitchedError` and `CredentialUnavailableError`
   (the session is kept, with no credential right now) propagate and the
   request is not sent. Any other throw means signed out: it sends the request
   with no bearer, and its 401 is `AuthenticationError`, not retried, with
   nothing cleared and no epoch moved (faultmaven#1460, faultmaven#2167). A host
-  throws `CredentialUnavailableError` for anything transient.
+  throws `CredentialUnavailableError` for anything transient. `getAuthHeaders`
+  marks it `phase: 'before_send'`: a keyed turn retries it under its deadline,
+  outside the attempt count, and the poll waits it out, both on
+  `credentialWaitMs` (faultmaven#2348).
 - `prepareBody()` (`lib/api/client.ts`) serializes every service body and turns
   `undefined` into `null`. `null` tells the backend "this field is empty"; a
   field absent from the object is truly missing (partial update). Type fields as
@@ -51,13 +56,16 @@ This file holds the rules that constrain code *inside* the package.
 - 202 polling (`lib/api/services/case-service.ts`, `VITE_POLL_*`):
   `POLL_MAX_TOTAL_MS` is a **wall-clock** budget from the first poll, counting
   request time and sleeps. Never go back to `elapsed += delay`: it counted only
-  sleeps, so a stalled poll made the ceiling unbounded.
+  sleeps, so a stalled poll made the ceiling unbounded. A keyed turn's poll
+  budget is the smaller of it and the time left on the turn's deadline, which
+  the hooks pass as `deadlineLeftMs`.
 - `resilientOperation` (`lib/utils/resilient-operation.ts`): non-idempotent
   writes pass `idempotent: false` and are not auto-retried on `network`
   failures (an ambiguous POST may already have committed). `deadlineMs` is a
   wall-clock bound counting in-request time (the `POLL_MAX_TOTAL_MS` rule),
-  enforced in `retryWithBackoff` on the wait it actually sleeps,
-  max(backoff, `Retry-After`), from the one `retryDelay` that computes it
+  enforced in `retryWithBackoff` on the wait it actually sleeps (the
+  caller's `waitFor` when it names one, else max(backoff, `Retry-After`)),
+  from the one `retryDelay` that computes it
   (never sleep in `onRetry`: that wait escapes the bound, #324); a
   `retryOptions.shouldRetry` override replaces the default decision, so one
   that adds cases calls `defaultRetryDecision` for the rest.
@@ -71,9 +79,10 @@ This file holds the rules that constrain code *inside* the package.
   Retry stays), `LLM_TIMEOUT` is retried once after its `Retry-After`. A 409
   `TURN_IN_PROGRESS` is polled every min(`Retry-After`, 5 s) (the header is an
   upper bound on the claim; `maxDelay` keeps the backoff from outgrowing it). A
-  `CredentialUnavailableError` is retried under the deadline on that backoff,
-  outside the attempt count; a 504 with an unknown code and everything else keep
-  their default decision and attempt count. The retry replays a committed turn (200,
+  `CredentialUnavailableError` raised before sending (`phase: 'before_send'`)
+  is retried under the deadline, spaced by `credentialWaitMs`, outside the
+  attempt count; any other one, a 504 with an unknown code and everything else
+  keep their default decision and attempt count. The retry replays a committed turn (200,
   `X-Idempotency-Replayed`), so it is reconciled like a first answer. The
   timings are derived, not policy (contract 12.4.0, `lib/utils/turn-timing.ts`):
   request timeout = `limits.turnResponseBoundSeconds` (from `/meta/capabilities`;
@@ -106,11 +115,13 @@ only; a header-less 401 is `AuthenticationError`) · `AuthenticationError`
 show_modal · `PermissionError` graceful_degradation · `NetworkError`
 retry_with_backoff (its subclass `CredentialUnavailableError` is a 401 the host
 answered `'unavailable'`: no sign-out, no epoch move; one renewal per request
-attempt, times the caller's retries — `resilientOperation`'s attempt budget (a
-keyed turn's deadline), a query's one retry — and nothing is duplicated; or the host's `accessToken()`
-throwing it for a kept session with no credential now: nothing sent, one host
-read per attempt, which renews once in the Dashboard and runs a 3-POST refresh
-ladder in the extension, so 3 or 9 per action) ·
+attempt, times the caller's retries — `resilientOperation`'s attempt budget, a
+query's one retry, the async-turn poll's credential waits — and nothing is
+duplicated; or the host's `accessToken()` throwing it for a kept session with
+no credential now: nothing sent, one host read per attempt, which renews once
+in the Dashboard and runs a 3-POST refresh ladder in the extension, so 3 or 9
+per action, and for a keyed turn one read per credential wait within its
+deadline: about 14 over the 660 s fallback, so 14 or 42) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `CaseWorkInProgressError`, `CaseDeleteUnavailableError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·

@@ -572,8 +572,12 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
         return polls <= 5 ? refused() : wire(200, { status: 'completed', result: TURN_RESPONSE });
       });
 
+      vi.spyOn(Math, 'random').mockReturnValue(0.5); // no jitter
       await submit();
-      await advance(60_000);
+      // Credential waits of 5, 10, 20, 40 and 60 s: the sixth poll at 135 s.
+      await advance(134_000);
+      expect(polls).toBe(5);
+      await advance(2_000);
 
       expect(polls).toBe(6);
       expect(onUnauthorized).toHaveBeenCalledTimes(5);
@@ -589,11 +593,13 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       const { result } = renderHook(() => useDataUpload(), { wrapper: hostWrapper(stub.host) });
       await act(async () => {
         const pending = result.current.handleTurnSubmit({ query: '', files: [file], inputType: 'file', queryIsGenerated: true });
-        // A refused attempt is retried under the turn's deadline (faultmaven#2348).
-        await vi.advanceTimersByTimeAsync(700_000);
+        await vi.advanceTimersByTimeAsync(60_000);
         await pending;
       });
 
+      // Refused after it was sent: the 2-retry cap, not the deadline, so the
+      // file is not re-sent for eleven minutes (faultmaven#2348).
+      expect(turnPosts()).toHaveLength(4);
       expect(onUnauthorized).toHaveBeenCalled();
       const failed = rows().find((r) => r.failed);
       expect(failed?.response).toContain('may not have been added');
@@ -629,6 +635,92 @@ describe('keyed turn recovery (contract 12.2.0)', () => {
       } finally {
         await useAppStore.getState().clearSession();
       }
+    });
+  });
+
+  // The extension's real path: the host's accessToken() throws, so nothing is
+  // sent; the turn waits it out under its deadline (faultmaven#2348).
+  describe('a host whose accessToken() has no credential right now', () => {
+    let reads = 0;
+    let outage: (read: number) => boolean = () => false;
+    beforeEach(() => {
+      reads = 0;
+      vi.spyOn(Math, 'random').mockReturnValue(0.5); // no jitter
+      setApiTransport({
+        baseUrl: async () => BASE,
+        accessToken: async () => {
+          reads += 1;
+          if (outage(reads)) throw new CredentialUnavailableError('No usable access token right now; the session is kept');
+          return 'test-token';
+        },
+        sessionId: async () => null,
+        clearSession: async () => undefined,
+        onUnauthorized: async () => 'ended' as const,
+      });
+    });
+
+    it('the turn POST: one host read per credential wait, then sent once', async () => {
+      outage = (read) => read <= 4;
+      routeWire([async () => replay()]);
+      await submit();
+      await advance(74_000);
+      expect(turnPosts()).toHaveLength(0);
+      await advance(2_000);
+
+      expect(turnPosts()).toHaveLength(1);
+      expect(responses().map((r) => r.response)).toEqual(['The pool is exhausted.']);
+      expect(mockShowError).not.toHaveBeenCalled();
+    });
+
+    it('the turn POST, through the whole deadline: 14 host reads, nothing sent, the connection copy', async () => {
+      outage = () => true;
+      routeWire([async () => replay()]);
+      await submit();
+      await advance(700_000);
+
+      // 0, 5, 15, 35, 75 s, then every 60 s to 615 s: the next would cross 662 s.
+      expect(reads).toBe(14);
+      expect(fetchWithTimeout).not.toHaveBeenCalled();
+      const shown = mockShowError.mock.calls[0][0] as UserFacingError;
+      expect(shown.userMessage).toContain('Unable to reach FaultMaven server');
+    });
+
+    it('a 202 after the POST waited 75 s is polled only to the turn deadline, not 600 s more', async () => {
+      const JOB = `${BASE}/api/v1/jobs/job-1`;
+      outage = (read) => read <= 4;
+      routeWire([async () => wire(202, {}, { Location: '/api/v1/jobs/job-1' })]);
+      const routed = fetchWithTimeout.getMockImplementation()!;
+      fetchWithTimeout.mockImplementation(async (url: string, init?: RequestInit) =>
+        url === JOB ? wire(200, { status: 'processing' }) : routed(url, init));
+
+      await submit();
+      // The 662 s deadline, not 75 s + 600 s.
+      await advance(665_000);
+
+      expect(mockShowError).toHaveBeenCalledTimes(1);
+      expect(turnPosts()).toHaveLength(1);
+    });
+
+    it('the 202 poll: one host read per credential wait, no re-POST', async () => {
+      const JOB = `${BASE}/api/v1/jobs/job-1`;
+      outage = (read) => read >= 2 && read <= 5; // the POST reads first
+      routeWire([async () => wire(202, {}, { Location: '/api/v1/jobs/job-1' })]);
+      const routed = fetchWithTimeout.getMockImplementation()!;
+      fetchWithTimeout.mockImplementation(async (url: string, init?: RequestInit) =>
+        url === JOB ? wire(200, { status: 'completed', result: TURN_RESPONSE }) : routed(url, init));
+
+      const jobPolls = () => fetchWithTimeout.mock.calls.filter(([url]) => url === JOB).length;
+      await submit();
+      // Four reads refused, 5 + 10 + 20 + 40 s apart: the first poll goes out at 75 s.
+      await advance(74_000);
+      expect(jobPolls()).toBe(0);
+      expect(reads).toBe(5);
+      await advance(2_000);
+
+      expect(jobPolls()).toBe(1);
+      expect(turnPosts()).toHaveLength(1);
+      expect(responses().map((r) => r.response)).toEqual(['The pool is exhausted.']);
+      expect(mockShowError).not.toHaveBeenCalled();
     });
   });
 

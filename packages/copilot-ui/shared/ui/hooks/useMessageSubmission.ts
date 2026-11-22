@@ -170,6 +170,7 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
         intentData: intent ? { ...intent } : undefined,
       };
       const timing = await turnTimingFor(turnRequest);
+      const startedAt = Date.now();
       const response = await resilientOperation({
         operation: async () => {
           log.info('Starting background query submission', { query: query.substring(0, 50), caseId });
@@ -182,6 +183,8 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
             // ...unless an IDEMPOTENCY_KEY_REUSE refusal rotated it: the retry of a
             // changed request is a new logical turn (`idempotencyKeyFor`).
             idempotencyKey: idempotencyKeyFor(aiMessageId),
+            // A 202 is polled no longer than the keyed deadline has left.
+            deadlineLeftMs: timing.deadlineMs - (Date.now() - startedAt),
           });
           log.info('Turn submitted successfully', { turnNumber: response.turn_number });
 

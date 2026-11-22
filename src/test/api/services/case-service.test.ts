@@ -829,8 +829,9 @@ describe('Case Service', () => {
     });
   });
 
-  // A credential the host cannot renew for a moment is waited out within the
-  // poll budget; a definitive auth end still stops the poll (faultmaven#2348).
+  // A credential the host cannot produce, or renew after a 401, is waited out
+  // within the poll budget; a definitive auth end still stops the poll
+  // (faultmaven#2348).
   describe('a 202 turn whose poll has no credential right now', () => {
     const accepted = () => ({
       ok: true,
@@ -838,28 +839,51 @@ describe('Case Service', () => {
       headers: { get: (k: string) => (k === 'Location' ? '/api/v1/jobs/job-1' : null) },
       json: vi.fn().mockResolvedValue({}),
     });
+    const unavailable = (phase: CredentialUnavailableError['phase']) =>
+      Object.assign(new CredentialUnavailableError(), { phase });
     const fetchMock = () => client.authenticatedFetchWithRetry as any;
+    const polls = () => fetchMock().mock.calls.length - 1;
     beforeEach(() => {
       vi.useFakeTimers();
+      vi.spyOn(Math, 'random').mockReturnValue(0.5); // no jitter
     });
     afterEach(() => {
       vi.useRealTimers();
+      vi.mocked(Math.random).mockRestore();
       fetchMock().mockReset();
     });
 
-    it('still ends at the poll budget when the host never renews', async () => {
-      fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValue(new CredentialUnavailableError());
+    it.each(['before_send', 'unavailable_after_401'] as const)(
+      'an outage (%s) past the budget: one poll per credential wait, then that error, not the timeout',
+      async (phase) => {
+        const last = unavailable(phase);
+        fetchMock().mockResolvedValueOnce(accepted()).mockImplementation(async () => {
+          throw polls() < 13 ? unavailable(phase) : last;
+        });
 
-      const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
+        const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
+
+        // 0, 5, 15, 35, 75 s, then every 60 s to 555 s: a wait from there would cross 600 s.
+        expect(polls()).toBe(13);
+        expect(await caught).toBe(last);
+      },
+    );
+
+    it('polls no longer than the time left on the keyed deadline', async () => {
+      fetchMock().mockResolvedValueOnce(accepted()).mockResolvedValue(mockResponse({ status: 'processing' }));
+
+      const caught = caseService.submitTurn('case-123', { query: 'test' }, { deadlineLeftMs: 30_000 }).catch((e: unknown) => e);
       await vi.runAllTimersAsync();
 
-      expect(((await caught) as Error).message).toBe('Async turn polling timed out after 600s');
+      expect(((await caught) as Error).message).toBe('Async turn polling timed out after 30s');
     });
 
     it.each([
-      ['AuthenticationError', () => new AuthenticationError('revoked')],
-      ['SessionExpiredError', () => new SessionExpiredError()],
-    ])('an %s on a poll ends the turn at once', async (_name, make) => {
+      ['an AuthenticationError', () => new AuthenticationError('revoked')],
+      ['a SessionExpiredError', () => new SessionExpiredError()],
+      ['a renewed credential refused', () => new CredentialUnavailableError('The renewed credential was refused')],
+    ])('%s on a poll ends the turn at once', async (_name, make) => {
       const ended = make();
       fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValueOnce(ended);
 
@@ -867,7 +891,7 @@ describe('Case Service', () => {
       await vi.runAllTimersAsync();
 
       expect(await caught).toBe(ended);
-      expect(fetchMock()).toHaveBeenCalledTimes(2);
+      expect(polls()).toBe(1);
     });
   });
 

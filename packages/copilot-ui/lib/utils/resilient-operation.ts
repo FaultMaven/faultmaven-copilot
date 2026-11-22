@@ -51,6 +51,13 @@ export interface ResilientOperationOptions<T> {
    * override has said yes, so an override cannot outlive it.
    */
   deadlineMs?: number;
+
+  /**
+   * The wait before retrying a classified error, when the caller decides it
+   * (a keyed turn's credential wait); `null` keeps the wait below. Judged
+   * against `deadlineMs` like any other.
+   */
+  waitFor?: (classifiedError: UserFacingError) => number | null;
 }
 
 /**
@@ -98,7 +105,7 @@ export function defaultRetryDecision(
 export async function resilientOperation<T>(
   options: ResilientOperationOptions<T>
 ): Promise<T> {
-  const { operation, context, retryOptions = {}, onError, onFailure, idempotent = true, deadlineMs } = options;
+  const { operation, context, retryOptions = {}, onError, onFailure, idempotent = true, deadlineMs, waitFor } = options;
 
   const performOperation = async () => {
     return await operation();
@@ -146,6 +153,8 @@ export async function resilientOperation<T>(
       // an honest wait into a guaranteed refusal.
       retryDelay: (error, _attempt, backoffDelay) => {
         const classified = ErrorClassifier.classify(error, context);
+        const own = waitFor?.(classified);
+        if (own != null) return own;
         return hasServerDirectedWait(classified)
           ? Math.max(backoffDelay, classified.retryAfterMs)
           : backoffDelay;

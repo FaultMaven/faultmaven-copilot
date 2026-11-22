@@ -24,9 +24,11 @@
  * `Retry-After`, within the deadline. A 504 with a code this
  * build does not know keeps the default decision (no automatic retry).
  *
- * A `CredentialUnavailableError` (the host keeps the session but cannot produce
- * a credential right now) is retried under the same deadline, spaced by the
- * backoff, and is not counted among the attempts below (faultmaven#2348).
+ * A `CredentialUnavailableError` raised before the request was sent (its
+ * `phase` is `'before_send'`: the host keeps the session but has no credential
+ * right now) is retried under the same deadline, spaced by `credentialWaitMs`,
+ * and is not counted among the attempts below (faultmaven#2348). Any other
+ * `CredentialUnavailableError` keeps the attempt count.
  *
  * Everything else keeps the decision it has without this policy
  * (`defaultRetryDecision`) and the attempt count it had (`DEFAULT_MAX_ATTEMPTS`),
@@ -46,6 +48,15 @@ import type { TurnTiming } from './turn-timing';
 
 /** The attempt count every other recovery keeps (`resilientOperation`'s default). */
 export const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * The wait before the `step`th (from 0) retry for a credential the host could
+ * not produce: 5 s, doubling to at most 60 s, ±20 % jitter so tabs in one
+ * outage do not ask the host's renewal endpoint in step (faultmaven#2348).
+ */
+export function credentialWaitMs(step: number): number {
+  return Math.min(5_000 * 2 ** step, 60_000) * (0.8 + 0.4 * Math.random());
+}
 
 /** The coded 504 that is retried automatically, once. `REQUEST_TIMEOUT` is deliberately absent. */
 const RETRIED_ONCE_504_CODE = 'LLM_TIMEOUT';
@@ -79,17 +90,21 @@ export function turnTimeoutKind(error: unknown): TurnTimeout | null {
  *
  * The waits between attempts are the server's: a `TURN_IN_PROGRESS` 409 is
  * polled within its `Retry-After` (an upper bound on the claim) and an
- * `LLM_TIMEOUT` 504 waits its `Retry-After`.
+ * `LLM_TIMEOUT` 504 waits its `Retry-After`. A credential wait is
+ * `credentialWaitMs`.
  */
 export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
   ResilientOperationOptions<unknown>,
-  'retryOptions' | 'deadlineMs'
+  'retryOptions' | 'deadlineMs' | 'waitFor'
 > {
   let serverTimeoutRetried = false;
   let otherRetries = 0;
+  let credentialWaits = 0;
+  const notSent = (error: unknown) => error instanceof CredentialUnavailableError && error.phase === 'before_send';
 
   return {
     deadlineMs: timing.deadlineMs,
+    waitFor: (classified) => (notSent(classified) ? credentialWaitMs(credentialWaits++) : null),
     retryOptions: {
       // The deadline is the bound, not the count.
       maxAttempts: Number.POSITIVE_INFINITY,
@@ -111,8 +126,8 @@ export function keyedTurnRetryPolicy(timing: TurnTiming): Pick<
 
         const classified = ErrorClassifier.classify(error);
         if (classified instanceof TurnInProgressError) return true;
-        // No credential right now: waited out under the deadline, not the cap below.
-        if (classified instanceof CredentialUnavailableError) return true;
+        // No credential right now and nothing sent: waited out under the deadline, not the cap below.
+        if (notSent(classified)) return true;
 
         // The key makes the request idempotent, as the callers already declare.
         if (!defaultRetryDecision(classified, { idempotent: true })) return false;

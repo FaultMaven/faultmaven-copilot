@@ -291,9 +291,8 @@ export class NetworkError extends UserFacingError {
  * The host could not renew a rejected credential now and has not ended the
  * session (`AuthOutcome` `'unavailable'`, faultmaven#1460), or a request or
  * mint was refused again with no verdict to say the session ended. `NetworkError`'s copy
- * and recovery, as ruled. Its own class so a turn can wait it out within its own
- * budget rather than an attempt count: the async-turn poll keeps polling on its
- * backoff, and a keyed turn retries it under its deadline (faultmaven#2348).
+ * and recovery, as ruled. Its own class, and its `phase`, so a turn can tell a
+ * credential worth waiting for from one that was refused (faultmaven#2348).
  *
  * A host also THROWS it from `accessToken()` when it still holds the session
  * but has no credential right now; `getAuthHeaders` propagates it, so the
@@ -302,6 +301,16 @@ export class NetworkError extends UserFacingError {
  */
 export class CredentialUnavailableError extends NetworkError {
   readonly name: string = 'CredentialUnavailableError';
+  /**
+   * Where it arose, set by copilot-ui where it knows (faultmaven#2348):
+   * `'before_send'` by `getAuthHeaders`, which read no credential from the host
+   * and sent nothing (a keyed turn waits it out under its deadline, and so does
+   * the async-turn poll); `'unavailable_after_401'` by the host's `'unavailable'`
+   * verdict on a request that went out (the poll waits it out; a keyed turn
+   * keeps its retry cap); `'other'` for the rest (a renewed credential or a
+   * session mint refused), which ends the poll and keeps the cap.
+   */
+  phase: 'before_send' | 'unavailable_after_401' | 'other' = 'other';
   constructor(message = 'The credential could not be renewed right now', originalError?: Error) {
     super(message, originalError);
   }

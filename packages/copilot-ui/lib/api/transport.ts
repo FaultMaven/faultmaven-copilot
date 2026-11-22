@@ -49,13 +49,17 @@ export interface ApiTransport {
    *                moves the epoch, and the caller sees the `NetworkError`
    *                copy. Each attempt makes one host read and sends no
    *                request: per action, up to `resilientOperation`'s 3
-   *                attempts, 1 s and 2 s apart; the session ensure on its
+   *                attempts, 1 s and 2 s apart; a keyed turn and its poll,
+   *                one per credential wait (5 s doubling to 60 s, ±20 %)
+   *                within the turn's deadline, about 14 over the 660 s
+   *                fallback (faultmaven#2348); the session ensure on its
    *                backoff (15 s doubling to 60 s: at most 3 in its first
    *                minute, then about 1 a minute); the heartbeat one per beat
    *                (10 min). A read costs the host's renewal. The Dashboard's
-   *                is one attempt: 3 per action. The extension's is
-   *                TokenManager's 3-attempt ladder: 9 refresh POSTs per
-   *                action, up to about 2.5 min before the toast
+   *                is one attempt: 3 per action, about 14 per keyed turn.
+   *                The extension's is TokenManager's 3-attempt ladder: 9
+   *                refresh POSTs per action, about 42 per keyed turn, up to
+   *                about 2.5 min before the toast
    *                if the endpoint hangs; the ensure about 9 in its first
    *                minute, then about 3 a minute per panel; the heartbeat 3
    *                per beat. A beat not sent refreshes
@@ -102,10 +106,11 @@ export interface ApiTransport {
    *                ("Connection Problem", `retry_with_backoff`). The cost is
    *                one renewal per request attempt, times the caller's own
    *                retries: `resilientOperation` within its attempt budget (3
-   *                by default; a keyed turn's, within its deadline), a query's
-   *                one retry, and the session ensure on its backoff (15 s
-   *                doubling to 60 s). The async-turn poll renews once per
-   *                backoff step, within its budget. Nothing is
+   *                by default, a keyed turn's included), a query's one retry,
+   *                and the session ensure on its backoff (15 s doubling to
+   *                60 s). The async-turn poll asks once per credential wait
+   *                (5 s doubling to 60 s, ±20 %) within its budget: about 13
+   *                over 600 s (faultmaven#2348). Nothing is
    *                duplicated: a 401 committed nothing (faultmaven#1460). A
    *                host that cannot tell a transient failure from a
    *                definitive one never answers it.

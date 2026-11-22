@@ -363,13 +363,21 @@ describe('ErrorClassifier — coded 504s (contract 12.4.0)', () => {
 
 // The host keeps the session but has no credential right now (faultmaven#2348).
 describe('the keyed-turn policy for a credential the host cannot produce right now', () => {
-  it('retries it past the other-error cap, and that cap still holds for a network error', () => {
+  const unavailable = (phase: CredentialUnavailableError['phase']) =>
+    Object.assign(new CredentialUnavailableError(), { phase });
+
+  it('retries one raised before sending past the other-error cap, and that cap still holds', () => {
     const { shouldRetry } = keyedTurnRetryPolicy(deriveTurnTiming(undefined)).retryOptions!;
     for (let attempt = 1; attempt <= 6; attempt += 1) {
-      expect(shouldRetry!(new CredentialUnavailableError(), attempt)).toBe(true);
+      expect(shouldRetry!(unavailable('before_send'), attempt)).toBe(true);
     }
     const network = () => new TypeError('Failed to fetch');
     expect([7, 8, 9].map((attempt) => shouldRetry!(network(), attempt))).toEqual([true, true, false]);
+  });
+
+  it.each(['unavailable_after_401', 'other'] as const)('keeps the 2-retry cap for one whose phase is %s', (phase) => {
+    const { shouldRetry } = keyedTurnRetryPolicy(deriveTurnTiming(undefined)).retryOptions!;
+    expect([1, 2, 3].map((attempt) => shouldRetry!(unavailable(phase), attempt))).toEqual([true, true, false]);
   });
 
   it('leaves the other auth decisions as they were: AuthenticationError terminal, SessionExpiredError under the cap', () => {
@@ -378,29 +386,54 @@ describe('the keyed-turn policy for a credential the host cannot produce right n
     expect([2, 3, 4].map((attempt) => shouldRetry!(new SessionExpiredError(), attempt))).toEqual([true, true, false]);
   });
 
-  it('waits it out under the deadline, then surfaces it', async () => {
+  it('spaces the waits 5 s doubling to 60 s, and stops at the deadline with the error', async () => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // no jitter
     try {
       const timing = deriveTurnTiming(30); // 180 s deadline
-      const run = (operation: () => Promise<string>) =>
-        resilientOperation({ operation, context: { operation: 'message_submission' }, idempotent: true, ...keyedTurnRetryPolicy(timing) });
-
-      const blip = vi.fn<() => Promise<string>>();
-      for (let i = 0; i < 5; i += 1) blip.mockRejectedValueOnce(new CredentialUnavailableError());
-      blip.mockResolvedValueOnce('answered');
-      const answered = run(blip);
-      await vi.runAllTimersAsync();
-      await expect(answered).resolves.toBe('answered');
-      expect(blip).toHaveBeenCalledTimes(6);
-
       const startedAt = Date.now();
-      const outage = vi.fn<() => Promise<string>>().mockRejectedValue(new CredentialUnavailableError());
-      const caught = run(outage).catch((e: unknown) => e);
+      const at: number[] = [];
+      const outage = vi.fn(async (): Promise<string> => {
+        at.push(Date.now() - startedAt);
+        throw unavailable('before_send');
+      });
+      const caught = resilientOperation({
+        operation: outage,
+        context: { operation: 'message_submission' },
+        idempotent: true,
+        ...keyedTurnRetryPolicy(timing),
+      }).catch((e: unknown) => e);
       await vi.runAllTimersAsync();
+
       expect(await caught).toBeInstanceOf(CredentialUnavailableError);
-      expect(Date.now() - startedAt).toBeLessThan(timing.deadlineMs);
-      expect(Date.now() - startedAt).toBeGreaterThan(timing.deadlineMs - 10_000);
+      // A 60 s wait from 135 s would reach the 180 s deadline.
+      expect(at).toEqual([0, 5_000, 15_000, 35_000, 75_000, 135_000]);
     } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  });
+
+  it('jitters each wait by up to 20 %', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const startedAt = Date.now();
+      const operation = vi
+        .fn<() => Promise<string>>()
+        .mockRejectedValueOnce(unavailable('before_send'))
+        .mockResolvedValueOnce('answered');
+      const result = resilientOperation({
+        operation,
+        context: { operation: 'message_submission' },
+        idempotent: true,
+        ...keyedTurnRetryPolicy(deriveTurnTiming(undefined)),
+      });
+      await vi.runAllTimersAsync();
+      await expect(result).resolves.toBe('answered');
+      expect(Date.now() - startedAt).toBe(4_000);
+    } finally {
+      vi.restoreAllMocks();
       vi.useRealTimers();
     }
   });
