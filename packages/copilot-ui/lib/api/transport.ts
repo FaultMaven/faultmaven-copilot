@@ -56,14 +56,15 @@ export interface ApiTransport {
    *                (the POST, about 13 polls, 2 capped re-sends), about 20
    *                when the outage spans the 202 (the poll starts its own
    *                wait sequence), about 23 if a capped re-send gets
-   *                through and is polled again (faultmaven#2348); the
+   *                through and is polled again, about 26 if both do
+   *                (faultmaven#2348); the
    *                session ensure on its
    *                backoff (15 s doubling to 60 s: at most 3 in its first
    *                minute, then about 1 a minute); the heartbeat one per beat
    *                (10 min). A read costs the host's renewal. The Dashboard's
-   *                is one attempt: 3 per action, up to about 23 per keyed
+   *                is one attempt: 3 per action, up to about 26 per keyed
    *                turn. The extension's is TokenManager's 3-attempt ladder: 9
-   *                refresh POSTs per action, up to about 69 per keyed turn, up to
+   *                refresh POSTs per action, up to about 78 per keyed turn, up to
    *                about 2.5 min before the toast
    *                if the endpoint hangs; the ensure about 9 in its first
    *                minute, then about 3 a minute per panel; the heartbeat 3
