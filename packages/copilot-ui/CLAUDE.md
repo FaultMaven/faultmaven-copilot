@@ -122,12 +122,12 @@ duplicated; or the host's `accessToken()` throwing it for a kept session with
 no credential now: nothing sent, one host read per attempt, which renews once
 in the Dashboard and runs a 3-POST refresh ladder in the extension, so 3 or 9
 per action, and for a keyed turn one read per credential wait within its
-deadline: about 14 over the 660 s fallback before a 202, about 16 for an outage
-after one (the POST, about 13 polls, 2 capped re-sends), about 20 when the
-outage spans the 202 (the poll starts its own wait sequence), about 23 if a
-capped re-send gets through and is polled again, about 26 if both do; so up
-to about 26 or 78 under the fallback deadline, and more under a published
-bound's longer one) ·
+deadline: about 14 over the 660 s fallback with no upload before a 202, about
+16 for an outage after one (the POST, about 13 polls, 2 capped re-sends), about
+20 when the outage spans the 202 (the poll starts its own wait sequence), about
+23 if a capped re-send gets through and is polled again, about 26 if both do;
+so up to about 26 or 78 over the 660 s fallback with no upload; another
+deadline fits more reads or fewer) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `CaseWorkInProgressError`, `CaseDeleteUnavailableError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·
