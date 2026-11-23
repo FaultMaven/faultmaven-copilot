@@ -126,7 +126,8 @@ deadline: about 14 over the 660 s fallback before a 202, about 16 for an outage
 after one (the POST, about 13 polls, 2 capped re-sends), about 20 when the
 outage spans the 202 (the poll starts its own wait sequence), about 23 if a
 capped re-send gets through and is polled again, about 26 if both do; so up
-to about 26 or 78) ·
+to about 26 or 78 under the fallback deadline, and more under a published
+bound's longer one) ·
 `TimeoutError`, `ServerError`, `CaseVersionConflictError`,
 `CaseWorkInProgressError`, `CaseDeleteUnavailableError`,
 `UnknownError` manual_retry · `ValidationError` user_fix_required ·

@@ -63,8 +63,9 @@ export interface ApiTransport {
    *                minute, then about 1 a minute); the heartbeat one per beat
    *                (10 min). A read costs the host's renewal. The Dashboard's
    *                is one attempt: 3 per action, up to about 26 per keyed
-   *                turn. The extension's is TokenManager's 3-attempt ladder: 9
-   *                refresh POSTs per action, up to about 78 per keyed turn, up to
+   *                turn under the fallback deadline. The extension's is
+   *                TokenManager's 3-attempt ladder: 9 refresh POSTs per action,
+   *                up to about 78 per keyed turn under it, up to
    *                about 2.5 min before the toast
    *                if the endpoint hangs; the ensure about 9 in its first
    *                minute, then about 3 a minute per panel; the heartbeat 3

@@ -154,7 +154,7 @@ export interface HostSession {
    *     copy and retries (faultmaven#1460). Each attempt costs one call here,
    *     with its renewal (one attempt in the Dashboard, a 3-POST refresh
    *     ladder in the extension: 3 or 9 per action, up to about 26 or 78 for
-   *     a keyed turn), and no request
+   *     a keyed turn under the fallback deadline), and no request
    *     (`ApiTransport.accessToken` gives the figures). The
    *     heartbeat is not sent either, so a session idle past the server's TTL
    *     lapses, and the first beat after the outage re-ensures it.
