@@ -64,14 +64,14 @@ export interface ApiTransport {
    *                is one attempt: 3 per action, up to about 26 per keyed
    *                turn over the 660 s fallback with no upload. The extension's
    *                is TokenManager's 3-attempt ladder: 9 refresh POSTs per
-   *                action, up to about 78 per keyed turn over that fallback, up
-   *                to about 2.5 min before the toast
+   *                action, up to about 78 per keyed turn over that fallback (each
+   *                keyed-turn count is one read per credential wait within the
+   *                turn's deadline, so another deadline (`deriveTurnTiming`,
+   *                lib/utils/turn-timing.ts: a published bound, an upload) fits
+   *                more reads or fewer), up to about 2.5 min before the toast
    *                if the endpoint hangs; the ensure about 9 in its first
    *                minute, then about 3 a minute per panel; the heartbeat 3
-   *                per beat. Each count is one read per credential wait within
-   *                the turn's deadline, so another deadline (`deriveTurnTiming`,
-   *                lib/utils/turn-timing.ts: a published bound, an upload) fits
-   *                more reads or fewer. A beat not sent refreshes
+   *                per beat. A beat not sent refreshes
    *                no server TTL, so a session idle past it (30 min by default)
    *                lapses, and the first beat after the outage answers 404 and
    *                re-ensures at once. A plain throw instead is no cheaper
