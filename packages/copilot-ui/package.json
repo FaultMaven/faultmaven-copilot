@@ -9,6 +9,7 @@
   "files": [
     "config.ts",
     "contract.ts",
+    "deleting.ts",
     "index.ts",
     "lib",
     "mermaid-config.ts",

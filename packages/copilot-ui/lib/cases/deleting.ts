@@ -11,7 +11,7 @@
  * delete found the case live and nothing read it again.
  */
 
-/** The line shown where the composer would be. Copy pending the owner's sign-off. */
+/** The line shown where the composer would be. The owner's ruled sentence (faultmaven#2341). */
 export const CASE_DELETING_NOTICE = 'This case is being deleted, so nothing more can be added to it.';
 
 /** First re-read, after this long. */

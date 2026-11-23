@@ -22,6 +22,8 @@
     // code's own terms now, and leaving "node" out is what keeps them so.
     "types": ["vite/client"]
   },
-  "include": ["index.ts", "config.ts", "lib/**/*.ts", "shared/**/*.ts", "shared/**/*.tsx", "types/**/*.ts"],
+  // The root modules are named: a door no other included file imports would
+  // otherwise escape the strict options above.
+  "include": ["index.ts", "config.ts", "contract.ts", "turn-label.ts", "deleting.ts", "mermaid-config.ts", "lib/**/*.ts", "shared/**/*.ts", "shared/**/*.tsx", "types/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
