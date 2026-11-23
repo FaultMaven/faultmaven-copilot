@@ -42,6 +42,7 @@ packages/copilot-ui/          # @faultmaven/copilot-ui — the shared UI package
 ├── index.ts                  # The supported entry for a host
 ├── contract.ts               # Cross-repo handshake names
 ├── turn-label.ts             # The turn-label rules, without the entry
+├── deleting.ts               # The deleting notice and re-read schedule, without the entry
 ├── mermaid-config.ts         # MERMAID_CONFIG, the mermaid site config MermaidDiagram passes; a host's own
 │                             # initializer should pass it too (the Dashboard's switches in fm#2119 Part B)
 ├── shared/
