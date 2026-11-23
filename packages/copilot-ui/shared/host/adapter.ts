@@ -153,7 +153,8 @@ export interface HostSession {
    *     sent, nothing moves the epoch, and the caller sees the `NetworkError`
    *     copy and retries (faultmaven#1460). Each attempt costs one call here,
    *     with its renewal (one attempt in the Dashboard, a 3-POST refresh
-   *     ladder in the extension: 3 or 9 per action), and no request
+   *     ladder in the extension: 3 or 9 per action, up to about 26 or 78 for
+   *     a keyed turn), and no request
    *     (`ApiTransport.accessToken` gives the figures). The
    *     heartbeat is not sent either, so a session idle past the server's TTL
    *     lapses, and the first beat after the outage re-ensures it.

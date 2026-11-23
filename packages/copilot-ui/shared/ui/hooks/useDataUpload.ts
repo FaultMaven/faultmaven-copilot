@@ -128,6 +128,8 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
     let turnResponse: TurnResponse;
     try {
       const timing = await turnTimingFor(turnRequest);
+      const startedAt = Date.now();
+      const { onAccepted, ...policy } = keyedTurnRetryPolicy(timing);
       turnResponse = await resilientOperation({
         operation: async () => {
           return await submitTurn(targetCaseId, turnRequest, {
@@ -136,6 +138,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
             // retried without submitting a second turn (backend dedupes), unless
             // an IDEMPOTENCY_KEY_REUSE refusal rotated it (`idempotencyKeyFor`).
             idempotencyKey: idempotencyKeyFor(aiMessageId),
+            // A 202 is polled no longer than the keyed deadline has left.
+            deadlineLeftMs: timing.deadlineMs - (Date.now() - startedAt),
+            onAccepted,
           });
         },
         context: {
@@ -153,7 +158,7 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
         idempotent: true,
         // A keyed turn also recovers a lost response (client timeout, gateway
         // 504) and waits out TURN_IN_PROGRESS, under one wall-clock deadline.
-        ...keyedTurnRetryPolicy(timing),
+        ...policy,
       });
     } catch (error) {
       // Caller-initiated cancellation (hook unmounted): return silently. Don't

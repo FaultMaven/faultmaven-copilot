@@ -58,8 +58,12 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
     // It is not sent.
     if (error instanceof SessionSwitchedError) throw error;
     // The session is kept, with no credential right now (faultmaven#1460).
-    // Header-less, its 401 would read as signed out. It is not sent.
-    if (error instanceof CredentialUnavailableError) throw error;
+    // Header-less, its 401 would read as signed out. It is not sent, which
+    // the error records: a keyed turn may wait it out (faultmaven#2348).
+    if (error instanceof CredentialUnavailableError) {
+      error.phase = 'before_send';
+      throw error;
+    }
     // See the note above: a plain throw means signed out, and header-less is
     // the not-signed-in path, not an error to surface here.
     //

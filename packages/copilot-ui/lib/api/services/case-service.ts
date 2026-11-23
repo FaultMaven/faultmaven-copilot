@@ -4,7 +4,7 @@ import { ClosureReason, Message, UserCase, UserCaseState } from "../../../types/
 import contractVocabularies from "../../../types/contract-vocabularies.json";
 import { authenticatedFetchWithRetry, prepareBody } from "../client";
 import { createLogger } from "../../utils/logger";
-import { turnTimingFor } from "../../utils/keyed-turn-retry";
+import { credentialWaitMs, turnTimingFor } from "../../utils/keyed-turn-retry";
 import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
@@ -799,6 +799,11 @@ export async function getCaseConversation(
  *
  * @param caseId - Target case ID
  * @param request - Turn request with optional query, files, pasted content, and intent
+ * @param options.deadlineLeftMs - Time left on the caller's keyed-turn deadline;
+ *   a 202 is polled for at most that (counted from this call) or
+ *   `POLL_MAX_TOTAL_MS`, whichever is less
+ * @param options.onAccepted - Called when the server accepts the turn (202),
+ *   before its poll starts
  * @returns TurnResponse with agent response, turn number, and attachment results
  *
  * @example
@@ -823,8 +828,9 @@ export async function getCaseConversation(
 export async function submitTurn(
   caseId: string,
   request: TurnRequest,
-  options?: { signal?: AbortSignal; idempotencyKey?: string }
+  options?: { signal?: AbortSignal; idempotencyKey?: string; deadlineLeftMs?: number; onAccepted?: () => void }
 ): Promise<TurnResponse> {
+  const calledAt = Date.now();
   const signal = options?.signal;
   const idempotencyKey = options?.idempotencyKey;
   if (signal?.aborted) throw createAbortError();
@@ -911,6 +917,7 @@ export async function submitTurn(
   if (response.status === 202) {
     const location = response.headers.get('Location');
     if (!location) throw new Error('Missing Location header for async turn');
+    options?.onAccepted?.();
     const jobUrl = new URL(location, await getApiTransport().baseUrl()).toString();
     let delay = POLL_INITIAL_MS;
     // Budget is measured as WALL-CLOCK from the first poll, counting both the
@@ -920,7 +927,10 @@ export async function submitTurn(
     // budget and the real ceiling was effectively unbounded (many multiples of
     // POLL_MAX_TOTAL_MS). Using Date.now() bounds the loop to the intended wall.
     const startedAt = Date.now();
-    while (Date.now() - startedAt <= POLL_MAX_TOTAL_MS) {
+    // Never past the keyed turn's deadline: the POST may have spent it waiting.
+    const budgetMs = Math.max(0, Math.min(POLL_MAX_TOTAL_MS, (options?.deadlineLeftMs ?? Infinity) - (startedAt - calledAt)));
+    let credentialWaits = 0;
+    while (Date.now() - startedAt <= budgetMs) {
       // Caller cancelled (e.g. the side panel unmounted) — stop polling now
       // rather than continuing to hammer the job endpoint for up to 10 minutes.
       if (signal?.aborted) throw createAbortError();
@@ -937,9 +947,21 @@ export async function submitTurn(
         // A transient failure on a SINGLE poll (5xx / network blip during a pod
         // rollout) must not abandon the whole async turn — the background job may
         // still complete well within the budget. Keep polling; only a definitive
-        // failure (4xx, or a terminal auth/session error) aborts. So does a
-        // credential the host could not renew: each further poll would only
-        // ask it to renew again (faultmaven#1460).
+        // failure (4xx, or a terminal auth/session error) aborts.
+        //
+        // A credential the host could not produce before the poll was sent, or
+        // could not renew after its 401, is waited out on its own spacing
+        // (`credentialWaitMs`), one host read per wait, so an outage shorter
+        // than the budget does not fail a turn the server accepted. One that
+        // outlasts it ends the turn with that error, not the timeout. Any other
+        // `CredentialUnavailableError` (a renewed credential refused) ends it
+        // (faultmaven#1460, faultmaven#2348).
+        if (err instanceof CredentialUnavailableError && err.phase !== 'other') {
+          const wait = credentialWaitMs(credentialWaits++);
+          if (Date.now() - startedAt + wait > budgetMs) throw err;
+          await abortableDelay(wait, signal);
+          continue;
+        }
         const terminal =
           err instanceof CredentialUnavailableError ||
           err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
@@ -956,7 +978,7 @@ export async function submitTurn(
       await abortableDelay(delay, signal);
       delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
     }
-    throw new Error(`Async turn polling timed out after ${Math.round(POLL_MAX_TOTAL_MS / 1000)}s`);
+    throw new Error(`Async turn polling timed out after ${Math.round(budgetMs / 1000)}s`);
   }
 
   if (!response.ok) {
@@ -982,7 +1004,8 @@ function createAbortError(): Error {
 }
 
 /** setTimeout wrapped so a mid-backoff cancellation resolves immediately with
- *  an AbortError instead of waiting out the (up to 10s) delay. */
+ *  an AbortError instead of waiting out the delay (up to 10 s, or 72 s for a
+ *  credential wait). */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
