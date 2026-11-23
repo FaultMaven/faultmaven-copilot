@@ -51,21 +51,24 @@ export interface ApiTransport {
    *                request: per action, up to `resilientOperation`'s 3
    *                attempts, 1 s and 2 s apart; a keyed turn and its poll,
    *                one per credential wait (5 s doubling to 60 s, ±20 %)
-   *                within the turn's deadline, about 14 over the 660 s
-   *                fallback before a 202, about 16 for an outage after one
-   *                (the POST, about 13 polls, 2 capped re-sends), about 20
-   *                when the outage spans the 202 (the poll starts its own
-   *                wait sequence), about 23 if a capped re-send gets
-   *                through and is polled again, about 26 if both do
-   *                (faultmaven#2348); the
+   *                within the turn's deadline, about 14 over the 660 s fallback
+   *                with no upload before a 202, about 16 for an outage after one
+   *                (the POST, about 13 polls, 2 capped re-sends), about 20 when
+   *                the outage spans the 202 (the poll starts its own wait
+   *                sequence), about 23 if a capped re-send gets through and is
+   *                polled again, about 26 if both do (faultmaven#2348); the
    *                session ensure on its
    *                backoff (15 s doubling to 60 s: at most 3 in its first
    *                minute, then about 1 a minute); the heartbeat one per beat
    *                (10 min). A read costs the host's renewal. The Dashboard's
    *                is one attempt: 3 per action, up to about 26 per keyed
-   *                turn. The extension's is TokenManager's 3-attempt ladder: 9
-   *                refresh POSTs per action, up to about 78 per keyed turn, up to
-   *                about 2.5 min before the toast
+   *                turn over the 660 s fallback with no upload. The extension's
+   *                is TokenManager's 3-attempt ladder: 9 refresh POSTs per
+   *                action, up to about 78 per keyed turn over that fallback (each
+   *                keyed-turn count is one read per credential wait within the
+   *                turn's deadline, so another deadline (`deriveTurnTiming`,
+   *                lib/utils/turn-timing.ts: a published bound, an upload) fits
+   *                more reads or fewer), up to about 2.5 min before the toast
    *                if the endpoint hangs; the ensure about 9 in its first
    *                minute, then about 3 a minute per panel; the heartbeat 3
    *                per beat. A beat not sent refreshes
