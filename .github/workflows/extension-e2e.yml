@@ -1,7 +1,7 @@
 name: Extension E2E Tests
 on:
   workflow_dispatch:                    # Manual trigger
-  # Deliberately UNFILTERED, unlike the push trigger below.
+  # Both triggers are deliberately UNFILTERED.
   #
   # This workflow could not gate anything until now: with no `pull_request`
   # trigger it never reported on a pull request, so it could not be a required
@@ -15,17 +15,16 @@ on:
   # only safe when the context always arrives.
   pull_request:
     branches: [main]
+  # The push run is the only one that tests main as merged: a pull request is
+  # not required to be up to date with main, so its run may have tested an
+  # older base. A `paths:` list here answered "can this change what the suite
+  # sees?" by proxy and failed OPEN: dependency and lockfile changes (the
+  # bundle and Playwright both come from them), playwright.config.ts, wxt.config.ts
+  # and this file all fell outside it, and a path nobody remembers to add later
+  # would too. scripts/extension-digest.mjs refuses a path allowlist for the
+  # same reason.
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      # The shared UI, which is most of what the panel renders. Absent until
-      # now, so a change confined to the package — the regression FIX for #251
-      # is one — reached main without this suite ever running on it.
-      - 'packages/**'
-      - 'public/**'
-      - 'manifest.json'
-      - 'e2e/**'
   schedule:
     - cron: '0 6 * * 1'                # Weekly Monday 6am UTC
 
