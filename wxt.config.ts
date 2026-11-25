@@ -1,6 +1,7 @@
 import { defineConfig } from 'wxt';
 import { createHash } from 'node:crypto';
 import { devServerBoundary, isLoopbackHost, loopbackOnlyError } from './dev-server-boundary';
+import { withDevServerSocket } from './dev-csp';
 
 /**
  * Browser families whose manifest this config targets today. Named once so the
@@ -99,6 +100,13 @@ export default defineConfig({
     'config:resolved': (wxt) => {
       const host = wxt.config.dev.server?.host;
       if (host !== undefined && !isLoopbackHost(host)) throw loopbackOnlyError('[wxt.config]', `Refusing dev host ${JSON.stringify(host)}`);
+    },
+    // `pnpm dev` only: admit the dev server's WebSocket (fm#2871). See `content_security_policy` below.
+    'build:manifestGenerated': (wxt, manifest) => {
+      const csp = manifest.content_security_policy;
+      if (wxt.config.command !== 'serve' || !csp || typeof csp !== 'object' || typeof csp.extension_pages !== 'string') return;
+      // No server (WxtVitest) is no origin, which the helper leaves unchanged.
+      csp.extension_pages = withDevServerSocket(csp.extension_pages, wxt.server?.origin ?? '');
     },
   },
   vite: () => ({
@@ -257,6 +265,16 @@ export default defineConfig({
     // The specific origin is set by the user in Settings; this CSP allows
     // the fetch without requiring a manifest permission for every possible
     // self-hosted domain.
+    //
+    // `pnpm dev` (WXT's `serve`) also needs the dev server's WebSocket, for
+    // Vite's HMR client in extension pages and WXT's reload client in the
+    // worker; `ws:` is neither `http:` nor `https:`. The `build:manifestGenerated`
+    // hook above adds exactly the configured dev server origin's source
+    // (`ws://localhost:3000`, `wss:` for https), the origin WXT puts in
+    // `script-src` and its clients dial; a build gets this string unchanged.
+    // Known limits: `127.0.0.1` is not admitted (Vite dials it only as a
+    // fallback under `--host 127.0.0.1`), nor is an IPv6-literal origin
+    // (`[::1]`), which no CSP host-source can name.
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }
