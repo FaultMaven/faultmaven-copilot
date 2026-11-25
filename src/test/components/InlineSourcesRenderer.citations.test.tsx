@@ -267,7 +267,8 @@ describe('InlineSourcesRenderer — sources grouped by how they reached the prom
   });
 
   // The server strips a redacted entry's trigger with the rest of its metadata.
-  it('lists a runbook the viewer may not open in a group of its own, counted once per entry', () => {
+  // A core older than 16.2.0 sends no runbook number, so each entry is its own.
+  it('lists a runbook the viewer may not open in a group of its own, once per entry from an older core', () => {
     const restricted: Source = {
       type: 'knowledge_base',
       content: '',
@@ -323,5 +324,82 @@ describe('InlineSourcesRenderer — a runbook the viewer may not open', () => {
     expect(screen.queryByRole('button', { name: /Open runbook/ })).toBeNull();
     expect(screen.queryByText('Leaked')).toBeNull();
     expect(screen.queryByText(/Knowledge Base/)).toBeNull();
+  });
+});
+
+// Contract 16.2.0 (fm#2824): redacted entries sharing `metadata.runbook` are
+// sections of one hidden runbook, counted and listed once.
+describe('InlineSourcesRenderer — hidden runbooks counted by their runbook number', () => {
+  const restricted = (runbook?: unknown, extra: Record<string, unknown> = {}): Source => ({
+    type: 'knowledge_base',
+    content: '',
+    confidence: null,
+    metadata: runbook === undefined ? { access: 'restricted', ...extra } : { access: 'restricted', runbook, ...extra },
+  });
+  const header = (count: number): string => `📚 ${count === 1 ? '1 runbook' : `${count} runbooks`} in context`;
+  const restrictedLines = (): number => screen.queryAllByText("A runbook you don't have access to").length;
+
+  it.each<[string, Source[], number]>([
+    ['two sections of one hidden runbook', [restricted(1), restricted(1)], 1],
+    ['two hidden runbooks', [restricted(1), restricted(2), restricted(1)], 2],
+    ['two entries from an older core, no number', [restricted(), restricted()], 2],
+    ['numbered and unnumbered entries mixed', [restricted(1), restricted(), restricted(1), restricted()], 3],
+  ])('%s', (_name, sources, hidden) => {
+    render(<InlineSourcesRenderer content="Done." sources={sources} />);
+
+    expect(screen.getByText(header(hidden))).toBeInTheDocument();
+    // The restricted lines are exactly the hidden share of the header's count.
+    expect(restrictedLines()).toBe(hidden);
+  });
+
+  it('counts a visible runbook and a hidden one as two', () => {
+    render(<InlineSourcesRenderer content="Done." sources={[kb(1), restricted(1), kb(1), restricted(1)]} />);
+
+    expect(screen.getByText(header(2))).toBeInTheDocument();
+    expect(restrictedLines()).toBe(1);
+  });
+
+  it("never matches a hidden runbook's number to a visible runbook's document id", () => {
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[kb(1, { metadata: { document_id: '1', title: 'Runbook one' } }), restricted(1)]}
+      />
+    );
+
+    expect(screen.getByText(header(2))).toBeInTheDocument();
+    expect(restrictedLines()).toBe(1);
+  });
+
+  it('keeps a hidden runbook apart from the visible runbook whose sections surround it', () => {
+    render(<InlineSourcesRenderer content="Done." sources={[kb(1), restricted(1), kb(1)]} />);
+
+    expect(screen.getByText(header(2))).toBeInTheDocument();
+    expect(screen.getAllByText('Runbook 1')).toHaveLength(2);
+    expect(restrictedLines()).toBe(1);
+  });
+
+  it.each([0, -1, 1.5, '1', null, NaN, Infinity, true, 2 ** 53, 2 ** 53 + 1])(
+    'counts one per entry when the number is not a safe integer of at least 1 (%s)',
+    (n) => {
+      render(<InlineSourcesRenderer content="Done." sources={[restricted(n), restricted(n)]} />);
+
+      expect(screen.getByText(header(2))).toBeInTheDocument();
+      expect(restrictedLines()).toBe(2);
+    }
+  );
+
+  it('never groups hidden entries by a stray document id', () => {
+    const stray = { document_id: 'doc-1' };
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[kb(1), restricted(undefined, stray), restricted(undefined, stray), restricted(3, stray)]}
+      />
+    );
+
+    // doc-1 visible, two unnumbered hidden entries, and runbook 3: four.
+    expect(screen.getByText(header(4))).toBeInTheDocument();
+    expect(restrictedLines()).toBe(3);
   });
 });
