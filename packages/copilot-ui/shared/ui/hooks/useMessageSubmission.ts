@@ -10,6 +10,7 @@ import {
   submitTurn,
   TurnRequest,
   TurnIntent,
+  QuerySource,
   createCase,
   CreateCaseRequest
 } from '../../../lib/api';
@@ -154,7 +155,8 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
     userMessageId: string,
     aiMessageId: string,
     presentAtSend: ReadonlySet<string>,
-    intent?: TurnIntent
+    intent: TurnIntent | undefined,
+    source: QuerySource
   ) => {
     const controller = new AbortController();
     inFlightControllers.current.add(controller);
@@ -166,6 +168,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
     try {
       const turnRequest: TurnRequest = {
         query: query.trim(),
+        // Kept on every retry: the server fingerprints it with the key, so a
+        // resend that changed it would be refused as a different request.
+        querySource: source,
         intentType: intent?.type,
         intentData: intent ? { ...intent } : undefined,
       };
@@ -349,7 +354,7 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
 
           const plan = getRecoveryPlan(error, {
             onRetry: async () => {
-              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, presentAtSend, intent);
+              await submitOptimisticQueryInBackground(query, caseId, userMessageId, aiMessageId, presentAtSend, intent, source);
             },
             onLogout: () => {}
           });
@@ -414,7 +419,15 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
     }
   };
 
-  const handleQuerySubmit = async (query: string, intent?: TurnIntent): Promise<QuerySubmitResult> => {
+  /**
+   * `source` says who wrote `query` (`QuerySource`): the composer's typed text
+   * is `typed`, the default; a suggestion or status change is `chosen`.
+   */
+  const handleQuerySubmit = async (
+    query: string,
+    intent?: TurnIntent,
+    source: QuerySource = 'typed'
+  ): Promise<QuerySubmitResult> => {
     if (!query.trim()) return { sent: true };
 
     if (submitting) {
@@ -570,14 +583,14 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
       },
       retryFn: async () => {
         log.debug('Retrying message submission');
-        await submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, presentAtSend, intent);
+        await submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, presentAtSend, intent, source);
       },
       createdAt: Date.now()
     };
 
     pendingOpsManager.add(pendingOperation);
 
-    submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, presentAtSend, intent);
+    submitOptimisticQueryInBackground(query, targetCaseId!, userMessageId, aiMessageId, presentAtSend, intent, source);
     return { sent: true };
   };
 

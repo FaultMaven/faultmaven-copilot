@@ -8,7 +8,7 @@ import {
   type ComposerHandle,
 } from './UnifiedInputBar';
 import { OptimisticConversationItem, PendingOperation } from '../../../lib/optimistic';
-import { UserCase, TurnIntent } from '../../../lib/api';
+import { UserCase, TurnIntent, QuerySource } from '../../../lib/api';
 import { createLogger } from '../../../lib/utils/logger';
 import { DRIVER_READ_ONLY_NOTICE } from '../../../lib/cases/driver';
 
@@ -21,7 +21,7 @@ interface ChatInterfaceProps {
   loading: boolean;
   submitting: boolean;
   sessionId: string | null;
-  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<QuerySubmitResult>;
+  onQuerySubmit: (query: string, intent?: TurnIntent, source?: QuerySource) => Promise<QuerySubmitResult>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   failedOperations: PendingOperation[];
   onRetryFailedOperation: (opId: string) => void;

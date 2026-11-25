@@ -512,6 +512,9 @@ export function useDataUpload(onCaseChanged?: (caseId: string) => void) {
 
       if (payload.query?.trim()) {
         turnRequest.query = payload.query.trim();
+        // The auto-query for an empty box is this client's text, not the
+        // user's. The retry reuses this request, so it keeps the source.
+        if (payload.queryIsGenerated) turnRequest.querySource = 'generated';
       }
 
       if (payload.pastedContent?.trim()) {

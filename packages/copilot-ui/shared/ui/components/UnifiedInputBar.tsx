@@ -118,7 +118,8 @@ export interface UnifiedInputBarProps {
   // Callbacks
   /**
    * A query-only submission. When it resolves `{ sent: false }` (no case could
-   * be created, no session) the typed text is put back in the box.
+   * be created, no session) the typed text is put back in the box. It names no
+   * query source: the text was typed, which is what an absent source means.
    */
   onQuerySubmit: (query: string) => void | Promise<QuerySubmitResult | void>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;

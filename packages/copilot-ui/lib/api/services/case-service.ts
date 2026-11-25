@@ -844,6 +844,9 @@ export async function submitTurn(
 
   const form = new FormData();
   if (hasQuery) form.append('query', request.query!.trim());
+  // Sent only when it is not `typed`: the server reads an absent field as
+  // `typed`, so a typed turn's request is the one it always was.
+  if (request.querySource && request.querySource !== 'typed') form.append('query_source', request.querySource);
   if (hasPasted) form.append('pasted_content', request.pastedContent!);
   if (request.intentType) form.append('intent_type', request.intentType);
   if (request.intentData) form.append('intent_data', JSON.stringify(request.intentData));
