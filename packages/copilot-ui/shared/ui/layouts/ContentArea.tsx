@@ -41,7 +41,8 @@ export interface ContentAreaProps {
   readOnly?: boolean;
   /** Why it is read-only, shown where the composer would be. */
   readOnlyNotice?: string;
-  onQuerySubmit: (query: string, intent?: TurnIntent, source?: QuerySource) => Promise<QuerySubmitResult>;
+  /** `source` is required: the transcript sends `chosen`, the composer `typed` (faultmaven#2717). */
+  onQuerySubmit: (query: string, intent: TurnIntent | undefined, source: QuerySource) => Promise<QuerySubmitResult>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   onDocumentView?: (documentId: string) => void;
   onNewChat: () => void;

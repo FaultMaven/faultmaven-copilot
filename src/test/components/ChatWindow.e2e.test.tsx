@@ -101,7 +101,7 @@ describe('ChatInterface e2e', () => {
     await user.type(textarea as HTMLElement, 'hello{enter}');
 
     // Verify the onQuerySubmit was called
-    expect(mockQuerySubmit).toHaveBeenCalledWith('hello');
+    expect(mockQuerySubmit).toHaveBeenCalledWith('hello', undefined, 'typed');
 
     // Simulate the parent component updating the conversation state
     rerender(

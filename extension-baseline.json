@@ -27,7 +27,7 @@
   },
   "package": {
     "fileCount": 125,
-    "sha256": "f719f36f5c03a112ddfeee85b3fc72990ef975e75a7c671e69b7620295cd080b"
+    "sha256": "a8999df022e1ab5c50f77d2f67b943cff894bc489401944ae387e526b2161b15"
   },
   "iconSources": {
     "fileCount": 8,
@@ -175,7 +175,7 @@
     "chunks/requirementDiagram-EQYSW5RA-BwDOC1Ca.js": "06b260e28834f53f26acd1fe84bc95355c708c09d5c7f14006bc310b5ce3da11",
     "chunks/sankeyDiagram-SY24JHO5-Dfte7GOO.js": "615eb2f719ecb73db9c99f9c124fc8fedd9e2ecdb903b8c1b60b9f292787f099",
     "chunks/sequenceDiagram-BLEHNHQU-Bz7Qtv2_.js": "7d3d7e1ca1732545dec7b283fae298a454c03d43680a37ca7f5cc9bb4ba279f5",
-    "chunks/sidepanel_manual-DXPRnMdN.js": "ec4391db60efe0a1ab109d0d57fc6b3f8d26ac784396e2734ef15bdcfe233bad",
+    "chunks/sidepanel_manual-yfMRn53_.js": "0bfee56b42e6102af50eb776aaa62c7d99ad1ceac617f777f84698c78306bd52",
     "chunks/sizeCapture-INFHLROL-BnaWAdFo.js": "cd8409a8d5904ac68dadd2dffab595eb2a943cf43f713c85aea648305a4887d9",
     "chunks/stateDiagram-v2-A6IESKWZ-DyWu25so.js": "dfed344d0ec5d887b2fa033b412b062634c14af000fc637f5523006bd3640756",
     "chunks/swimlanes-B3ENRKFQ-Bk21Bz7N.js": "d30aca50dddc8f4b51c97c4c5f0bf100e39d0f08493c20d9774486f33cb042b4",
@@ -198,6 +198,6 @@
     "icon/square-transparent.svg": "504f459953845d3846d2af4f40d7e4b745e68858fb92b62734077d82f3fce3d1",
     "manifest.json": "90f3939292a7b4a021ba759c1b86ced2482ff7179f00cf4868068e1860f2daa7",
     "options.html": "72224be1a8ab00684330af305ec4967b6b329fefeb6a266869c0809bea381c6c",
-    "sidepanel_manual.html": "97d0b69f97ef35d8d194078adc1ec4db812d1700c635a671ffa874b958705979"
+    "sidepanel_manual.html": "2319076a5b378a6dd3bf0848a6401c14daa82764043dcf6aa5960cd7d5a12ac4"
   }
 }

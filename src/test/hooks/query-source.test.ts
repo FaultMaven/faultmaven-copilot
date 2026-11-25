@@ -88,7 +88,7 @@ describe('query source on the turn request (faultmaven#2717)', () => {
   describe('a query-only turn', () => {
     const render = () => renderHook(() => useMessageSubmission(), { wrapper: hostWrapper(stub.host) });
 
-    it('says typed for text typed into the box (no source given)', async () => {
+    it('says typed when the caller names no source (the default)', async () => {
       (api.submitTurn as ReturnType<typeof vi.fn>).mockResolvedValue(okTurnResponse);
       const { result } = render();
 

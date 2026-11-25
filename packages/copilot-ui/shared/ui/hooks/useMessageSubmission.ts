@@ -420,8 +420,9 @@ export function useMessageSubmission(onCaseChanged?: (caseId: string) => void) {
   };
 
   /**
-   * `source` says who wrote `query` (`QuerySource`): the composer's typed text
-   * is `typed`, the default; a suggestion or status change is `chosen`.
+   * `source` says who wrote `query` (`QuerySource`): the composer passes
+   * `typed`, a suggestion or status change `chosen`. Every panel caller names
+   * it; the default serves direct callers of the hook.
    */
   const handleQuerySubmit = async (
     query: string,

@@ -21,7 +21,8 @@ interface ChatInterfaceProps {
   loading: boolean;
   submitting: boolean;
   sessionId: string | null;
-  onQuerySubmit: (query: string, intent?: TurnIntent, source?: QuerySource) => Promise<QuerySubmitResult>;
+  /** `source` is required: the transcript sends `chosen`, the composer `typed` (faultmaven#2717). */
+  onQuerySubmit: (query: string, intent: TurnIntent | undefined, source: QuerySource) => Promise<QuerySubmitResult>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   failedOperations: PendingOperation[];
   onRetryFailedOperation: (opId: string) => void;
