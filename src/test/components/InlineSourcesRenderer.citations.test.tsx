@@ -359,6 +359,18 @@ describe('InlineSourcesRenderer — hidden runbooks counted by their runbook num
     expect(restrictedLines()).toBe(1);
   });
 
+  it("never matches a hidden runbook's number to a visible runbook's document id", () => {
+    render(
+      <InlineSourcesRenderer
+        content="Done."
+        sources={[kb(1, { metadata: { document_id: '1', title: 'Runbook one' } }), restricted(1)]}
+      />
+    );
+
+    expect(screen.getByText(header(2))).toBeInTheDocument();
+    expect(restrictedLines()).toBe(1);
+  });
+
   it('keeps a hidden runbook apart from the visible runbook whose sections surround it', () => {
     render(<InlineSourcesRenderer content="Done." sources={[kb(1), restricted(1), kb(1)]} />);
 
@@ -367,12 +379,15 @@ describe('InlineSourcesRenderer — hidden runbooks counted by their runbook num
     expect(restrictedLines()).toBe(1);
   });
 
-  it.each([0, -1, 1.5, '1', null])('counts one per entry when the number is not an integer of at least 1 (%s)', (n) => {
-    render(<InlineSourcesRenderer content="Done." sources={[restricted(n), restricted(n)]} />);
+  it.each([0, -1, 1.5, '1', null, NaN, Infinity, true, 2 ** 53, 2 ** 53 + 1])(
+    'counts one per entry when the number is not a safe integer of at least 1 (%s)',
+    (n) => {
+      render(<InlineSourcesRenderer content="Done." sources={[restricted(n), restricted(n)]} />);
 
-    expect(screen.getByText(header(2))).toBeInTheDocument();
-    expect(restrictedLines()).toBe(2);
-  });
+      expect(screen.getByText(header(2))).toBeInTheDocument();
+      expect(restrictedLines()).toBe(2);
+    }
+  );
 
   it('never groups hidden entries by a stray document id', () => {
     const stray = { document_id: 'doc-1' };

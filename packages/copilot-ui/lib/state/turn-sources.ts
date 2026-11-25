@@ -67,12 +67,12 @@ export function isRestrictedSource(source: Source): boolean {
 /**
  * A redacted source's runbook number (contract 16.2.0, fm#2824): redacted
  * entries of one list sharing it are sections of one runbook. Null when not
- * redacted or not an integer ≥ 1 (a core before 16.2.0 sends none).
+ * redacted or not a safe integer ≥ 1 (a core before 16.2.0 sends none).
  */
 export function restrictedRunbookKey(source: Source): number | null {
   if (!isRestrictedSource(source)) return null;
   const value: unknown = source.metadata?.runbook;
-  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : null;
 }
 
 /** Shown in place of a runbook the viewer may not open. */

@@ -578,13 +578,15 @@ close, reports); delete is the creator's.
   stripped with the rest, so the card lists it in a group of its own. Its
   `metadata.runbook` (contract 16.2.0, `restrictedRunbookKey`) numbers the
   hidden runbooks within that one list: entries sharing it are counted and
-  listed once; an entry without it (an older core) counts as its own.
+  listed once; an entry without a valid one (an older core) counts as its own.
 - **Runbooks in context** (`InlineSourcesRenderer`): the card groups a turn's
   `sources` by `metadata.trigger` — `question`, then `kb_qa`, then the
   pre-fetched case context (`symptom` / `root_cause`, and any unknown
   trigger) — as labelled groups (not headings), labels shown only when more
-  than one group is present. It counts distinct `document_id`s (a runbook
-  gives up to two sections). Each excerpt renders as markdown with headings
+  than one group is present. It counts runbooks by one identity
+  (`runbookIdentity`): a visible entry by its `document_id` (a runbook gives up
+  to two sections), a hidden one by its `metadata.runbook` (one per entry
+  without a valid one). Each excerpt renders as markdown with headings
   demoted to bold lines, absolute http(s) links opened in a new tab (a
   followed link would replace the side panel or the Dashboard page), relative
   links as text, and no images.

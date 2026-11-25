@@ -112,9 +112,12 @@ describe('restrictedRunbookKey', () => {
     expect(restrictedRunbookKey(redacted(7))).toBe(7);
   });
 
-  it.each([0, -1, 1.5, '1', null, undefined])('is null for a number that is not an integer of at least 1 (%s)', (n) => {
-    expect(restrictedRunbookKey(redacted(n))).toBeNull();
-  });
+  it.each([0, -1, 1.5, '1', null, undefined, NaN, Infinity, true, 2 ** 53, 2 ** 53 + 1])(
+    'is null for a number that is not a safe integer of at least 1 (%s)',
+    (n) => {
+      expect(restrictedRunbookKey(redacted(n))).toBeNull();
+    }
+  );
 
   it('is read only from a redacted entry', () => {
     expect(restrictedRunbookKey({ ...kb('doc-1', true), metadata: { document_id: 'doc-1', runbook: 1 } })).toBeNull();
