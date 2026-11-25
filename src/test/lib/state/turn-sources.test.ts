@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { isRestrictedSource, rowsBefore, sourcesToShow } from '@faultmaven/copilot-ui/lib/state/turn-sources';
+import {
+  isRestrictedSource,
+  restrictedRunbookKey,
+  rowsBefore,
+  sourcesToShow,
+} from '@faultmaven/copilot-ui/lib/state/turn-sources';
 import type { ConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
 import type { Source } from '@faultmaven/copilot-ui/lib/api';
 
@@ -93,5 +98,26 @@ describe('isRestrictedSource', () => {
 
   it('a context that arrives redacted is still kept where it is new', () => {
     expect(sourcesToShow([redacted])).toEqual([redacted]);
+  });
+});
+
+// Contract 16.2.0 (fm#2824): a redacted entry's per-list runbook number.
+describe('restrictedRunbookKey', () => {
+  const redacted = (runbook: unknown): Source => ({
+    type: 'knowledge_base', content: '', confidence: null, metadata: { access: 'restricted', runbook },
+  });
+
+  it('is the number on a redacted entry', () => {
+    expect(restrictedRunbookKey(redacted(1))).toBe(1);
+    expect(restrictedRunbookKey(redacted(7))).toBe(7);
+  });
+
+  it.each([0, -1, 1.5, '1', null, undefined])('is null for a number that is not an integer of at least 1 (%s)', (n) => {
+    expect(restrictedRunbookKey(redacted(n))).toBeNull();
+  });
+
+  it('is read only from a redacted entry', () => {
+    expect(restrictedRunbookKey({ ...kb('doc-1', true), metadata: { document_id: 'doc-1', runbook: 1 } })).toBeNull();
+    expect(restrictedRunbookKey({ ...redacted(1), type: 'web_search' })).toBeNull();
   });
 });

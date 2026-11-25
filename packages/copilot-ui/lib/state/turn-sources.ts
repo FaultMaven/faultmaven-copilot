@@ -54,13 +54,25 @@ export function sourcesToShow(
  * (ADR-020 D9), so a reader can find a runbook in a turn's context that they
  * cannot open themselves: the server keeps the entry, so the count of what
  * the model had stays true, and strips it to `content` "", `confidence` null
- * and `metadata` `{"access": "restricted"}` — no title, no document id.
+ * and `metadata` `{"access": "restricted", "runbook": n}` — no title, no
+ * document id, no trigger (`restrictedRunbookKey` reads `n`).
  *
  * It names no runbook, so it is never a link, a "Source N" or a preview; it
  * renders as "A runbook you don't have access to".
  */
 export function isRestrictedSource(source: Source): boolean {
   return source.type === 'knowledge_base' && source.metadata?.access === 'restricted';
+}
+
+/**
+ * A redacted source's runbook number (contract 16.2.0, fm#2824): redacted
+ * entries of one list sharing it are sections of one runbook. Null when not
+ * redacted or not an integer ≥ 1 (a core before 16.2.0 sends none).
+ */
+export function restrictedRunbookKey(source: Source): number | null {
+  if (!isRestrictedSource(source)) return null;
+  const value: unknown = source.metadata?.runbook;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
 /** Shown in place of a runbook the viewer may not open. */

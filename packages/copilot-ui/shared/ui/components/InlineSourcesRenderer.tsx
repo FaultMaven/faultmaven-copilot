@@ -6,7 +6,7 @@ import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
 import { cleanResponseText } from '../../../lib/utils/text-processor';
 import { formatSource } from '../../../lib/utils/response-handlers';
-import { isRestrictedSource, RESTRICTED_SOURCE_LABEL } from '../../../lib/state/turn-sources';
+import { isRestrictedSource, restrictedRunbookKey, RESTRICTED_SOURCE_LABEL } from '../../../lib/state/turn-sources';
 import { MermaidDiagram } from './MermaidDiagram';
 
 interface InlineSourcesRendererProps {
@@ -40,7 +40,7 @@ interface SourcesInContextProps {
  * nothing to the reply's outline.
  *
  * The count is of runbooks, not entries: a runbook can contribute two
- * sections (`runbookCount`).
+ * sections (`runbookCount`); a hidden runbook is listed once (`runbookIdentity`).
  */
 const SourcesInContext: React.FC<SourcesInContextProps> = memo(({ sources, onDocumentView }) => {
   const groups = useMemo(() => groupSources(sources), [sources]);
@@ -91,8 +91,8 @@ SourcesInContext.displayName = 'SourcesInContext';
  *   trigger this client does not know, which a server can only have added as
  *   another kind of context;
  * - `restricted`: a runbook the viewer may not open. The server strips its
- *   metadata to `{"access": "restricted"}`, trigger included, so which channel
- *   carried it is not known here.
+ *   metadata to `{"access": "restricted", "runbook": n}`, trigger included, so
+ *   which channel carried it is not known here.
  */
 type SourceGroup = 'question' | 'kb_qa' | 'case' | 'restricted';
 
@@ -126,8 +126,14 @@ interface IndexedSource {
 
 function groupSources(sources: Source[]): { group: SourceGroup; entries: IndexedSource[] }[] {
   const byGroup = new Map<SourceGroup, Omit<IndexedSource, 'number'>[]>();
+  const restricted = new Set<string>();
   sources.forEach((source, index) => {
     const group = sourceGroup(source);
+    if (group === 'restricted') {
+      const identity = runbookIdentity(source, index);
+      if (restricted.has(identity)) return;
+      restricted.add(identity);
+    }
     byGroup.set(group, [...(byGroup.get(group) ?? []), { source, index }]);
   });
   let shown = 0;
@@ -141,20 +147,23 @@ function groupSources(sources: Source[]): { group: SourceGroup; entries: Indexed
 }
 
 /**
- * How many runbooks the list names: entries sharing a `document_id` are
- * sections of one runbook. An entry with no id — a redacted one, or one whose
- * metadata is missing — cannot be matched to another and counts as its own,
- * so two redacted sections of one runbook count as two.
+ * Which runbook the entry at `index` is a section of, for the count and the
+ * restricted lines alike: a redacted entry by its runbook number only (never a
+ * stray `document_id`), any other by its `document_id`, and one with neither
+ * (an older core, missing metadata) as its own.
  */
-function runbookCount(sources: Source[]): number {
-  const ids = new Set<string>();
-  let unmatched = 0;
-  for (const source of sources) {
-    const id = isRestrictedSource(source) ? null : sourceDocumentId(source);
-    if (id) ids.add(id);
-    else unmatched += 1;
+function runbookIdentity(source: Source, index: number): string {
+  if (isRestrictedSource(source)) {
+    const key = restrictedRunbookKey(source);
+    return key === null ? `entry:${index}` : `restricted:${key}`;
   }
-  return ids.size + unmatched;
+  const id = sourceDocumentId(source);
+  return id ? `document:${id}` : `entry:${index}`;
+}
+
+/** How many runbooks the list names (`runbookIdentity`). */
+function runbookCount(sources: Source[]): number {
+  return new Set(sources.map(runbookIdentity)).size;
 }
 
 /** `metadata` is an open object in the contract; read a key only when it is a non-empty string. */
