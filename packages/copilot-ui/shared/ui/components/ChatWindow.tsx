@@ -5,6 +5,7 @@ import {
   getStatusChangeMessage,
   QueryIntent,
   TurnIntent,
+  QuerySource,
   IntentType,
   formatFileSize,
   attachmentOrigin,
@@ -43,7 +44,8 @@ interface ChatWindowProps {
   className?: string;
 
   // Action callbacks
-  onQuerySubmit: (query: string, intent?: TurnIntent) => void;
+  /** Every submit from the transcript is one the user chose, never typed: `source` is required. */
+  onQuerySubmit: (query: string, intent: TurnIntent | undefined, source: QuerySource) => void;
   /**
    * Opens the composer's data box holding `prefill` (#328). Absent where the
    * composer takes no data: the data-box action is then informational.
@@ -225,7 +227,7 @@ const ChatWindowComponent = function ChatWindow({
     };
 
     log.debug('Calling onQuerySubmit', { message, intent });
-    onQuerySubmit(message, intent);
+    onQuerySubmit(message, intent, 'chosen');
   }, [activeCase, fullCaseData, onQuerySubmit]);
 
   // handleViewAnalysis removed — case header handles evidence display.
@@ -465,7 +467,7 @@ const ChatWindowComponent = function ChatWindow({
                             onClickableSuggestion={(payload, type, intent) => {
                               // RUN copies inside the card; only DECIDE submits.
                               if (type === 'DECIDE') {
-                                onQuerySubmit(payload, intent);
+                                onQuerySubmit(payload, intent, 'chosen');
                               }
                             }}
                             onOpenDataBox={onOpenDataBox}

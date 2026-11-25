@@ -181,11 +181,22 @@ export type TurnIntent = QueryIntent | SuggestionIntent;
 // ============================================================
 
 /**
+ * Who wrote a turn's `query` (contract 15.18.0, `query_source`, faultmaven#2717):
+ * `typed` the user typed it into the message box, `chosen` the user picked it
+ * (a suggestion, a status change), `generated` this client wrote it (the
+ * auto-query for an attachment sent with an empty box). The server searches
+ * only a `typed` query for system output to offer back as data.
+ */
+export type QuerySource = 'typed' | 'chosen' | 'generated';
+
+/**
  * Request payload for unified turn submission.
  * At least one of query, files, or pastedContent must be provided.
  */
 export interface TurnRequest {
   query?: string;
+  /** Absent means `typed`, which is also what the server assumes when the field is not sent. */
+  querySource?: QuerySource;
   files?: File[];
   pastedContent?: string;
   intentType?: string;

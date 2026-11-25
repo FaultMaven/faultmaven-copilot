@@ -99,8 +99,9 @@ describe('ChatWindow — confirmation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Yes, mark as resolved' }));
     await userEvent.click(screen.getByRole('button', { name: 'Not yet' }));
 
-    expect(onQuerySubmit).toHaveBeenNthCalledWith(1, 'Yes, mark it resolved.', confirmIntent);
-    expect(onQuerySubmit).toHaveBeenNthCalledWith(2, 'Not yet.', declineIntent);
+    // A card is a query the user chose, never one they typed (faultmaven#2717).
+    expect(onQuerySubmit).toHaveBeenNthCalledWith(1, 'Yes, mark it resolved.', confirmIntent, 'chosen');
+    expect(onQuerySubmit).toHaveBeenNthCalledWith(2, 'Not yet.', declineIntent, 'chosen');
     // Exactly the server's object, not a rebuild that happens to compare equal today.
     expect(onQuerySubmit.mock.calls[0][1]).toBe(confirmIntent);
     expect(onQuerySubmit.mock.calls[1][1]).toBe(declineIntent);

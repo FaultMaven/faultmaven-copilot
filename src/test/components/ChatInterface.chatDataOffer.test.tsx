@@ -36,7 +36,7 @@ import { suggestionFromResponse } from '@faultmaven/copilot-ui/lib/state/turn-it
 import type { SuggestedAction } from '@faultmaven/copilot-ui/lib/api/types';
 import type { UserCase } from '@faultmaven/copilot-ui/types/case';
 import type { OptimisticConversationItem } from '@faultmaven/copilot-ui/lib/optimistic';
-import type { TurnIntent } from '@faultmaven/copilot-ui/lib/api';
+import type { QuerySource, TurnIntent } from '@faultmaven/copilot-ui/lib/api';
 import type {
   QuerySubmitResult,
   TurnPayload,
@@ -103,7 +103,7 @@ const conversationWith = (suggestedActions: SuggestedAction[]): OptimisticConver
 ];
 
 const stub = createStubHost();
-let onQuerySubmit: Mock<(query: string, intent?: TurnIntent) => Promise<QuerySubmitResult>>;
+let onQuerySubmit: Mock<(query: string, intent?: TurnIntent, source?: QuerySource) => Promise<QuerySubmitResult>>;
 let onTurnSubmit: Mock<(payload: TurnPayload) => Promise<TurnSubmitResult>>;
 
 function renderChat({
@@ -252,7 +252,8 @@ describe('the chat-data offer (#328)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Yes, save it as data' }));
 
       expect(onQuerySubmit).toHaveBeenCalledTimes(1);
-      expect(onQuerySubmit).toHaveBeenCalledWith('Save that output as data.', SAVE_INTENT);
+      // Chosen, not typed: the server never searches a chosen query for output to offer back (faultmaven#2717).
+      expect(onQuerySubmit).toHaveBeenCalledWith('Save that output as data.', SAVE_INTENT, 'chosen');
       expect(onTurnSubmit).not.toHaveBeenCalled();
       expect(screen.queryByLabelText('Paste data content')).toBeNull();
     });

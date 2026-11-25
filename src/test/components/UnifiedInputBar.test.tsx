@@ -104,7 +104,7 @@ describe('UnifiedInputBar — a multi-line paste goes to the textpad (#327)', ()
     expect(screen.queryByText(/Large text detected/i)).not.toBeInTheDocument();
     fireEvent.keyDown(box(), { key: 'Enter', shiftKey: false });
     await waitFor(() => expect(mockQuerySubmit).toHaveBeenCalledTimes(1));
-    expect(mockQuerySubmit).toHaveBeenCalledWith(typed);
+    expect(mockQuerySubmit).toHaveBeenCalledWith(typed, undefined, 'typed');
     expect(mockTurnSubmit).not.toHaveBeenCalled();
   });
 
@@ -394,7 +394,7 @@ describe('UnifiedInputBar — a multi-line paste goes to the textpad (#327)', ()
     await Promise.resolve();
 
     // Question mode submission goes through onQuerySubmit
-    expect(mockQuerySubmit).toHaveBeenCalledWith('why is my service down?');
+    expect(mockQuerySubmit).toHaveBeenCalledWith('why is my service down?', undefined, 'typed');
     // Should NOT also fire the unified turn path
     expect(mockTurnSubmit).not.toHaveBeenCalled();
   });
@@ -446,7 +446,7 @@ describe('UnifiedInputBar — #337 review: undo, the open textpad and the length
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
     fireEvent.change(textpad(), { target: { value: '' } });
     send();
-    await waitFor(() => expect(query).toHaveBeenCalledWith('why?'));
+    await waitFor(() => expect(query).toHaveBeenCalledWith('why?', undefined, 'typed'));
     expect(turn).not.toHaveBeenCalled();
   });
 
@@ -468,7 +468,7 @@ describe('UnifiedInputBar — #337 review: undo, the open textpad and the length
     fireEvent.click(putBack());
     expect(screen.queryByText(/Pasted context/)).not.toBeInTheDocument();
     send();
-    await waitFor(() => expect(query).toHaveBeenCalledWith(lines(3)));
+    await waitFor(() => expect(query).toHaveBeenCalledWith(lines(3), undefined, 'typed'));
     expect(turn).not.toHaveBeenCalled();
   });
 
@@ -613,7 +613,7 @@ describe('UnifiedInputBar — a closed case sends nothing it will refuse (#318)'
     fireEvent.click(putBack());
     send();
     await waitFor(() => expect(q).toHaveBeenCalledTimes(1));
-    expect(q).toHaveBeenCalledWith(lines(threshold));
+    expect(q).toHaveBeenCalledWith(lines(threshold), undefined, 'typed');
     expect(t).not.toHaveBeenCalled();
   });
 

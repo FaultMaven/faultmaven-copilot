@@ -16,7 +16,7 @@ import { ChatInterface } from '../components/ChatInterface';
 import { createLogger } from '../../../lib/utils/logger';
 
 const log = createLogger('ContentArea');
-import type { UserCase, TurnIntent } from '../../../lib/api';
+import type { UserCase, TurnIntent, QuerySource } from '../../../lib/api';
 import type { OptimisticConversationItem } from '../../../lib/optimistic';
 import type { TurnPayload, TurnSubmitResult, QuerySubmitResult } from '../components/UnifiedInputBar';
 
@@ -41,7 +41,8 @@ export interface ContentAreaProps {
   readOnly?: boolean;
   /** Why it is read-only, shown where the composer would be. */
   readOnlyNotice?: string;
-  onQuerySubmit: (query: string, intent?: TurnIntent) => Promise<QuerySubmitResult>;
+  /** `source` is required: the transcript sends `chosen`, the composer `typed` (faultmaven#2717). */
+  onQuerySubmit: (query: string, intent: TurnIntent | undefined, source: QuerySource) => Promise<QuerySubmitResult>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
   onDocumentView?: (documentId: string) => void;
   onNewChat: () => void;

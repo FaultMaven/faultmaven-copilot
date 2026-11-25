@@ -131,6 +131,33 @@ describe('Intent-Based Turn System', () => {
     });
   });
 
+  // faultmaven#2717 (contract 15.18.0): who wrote the query. The server reads an
+  // absent field as `typed`, so only the other two are sent.
+  describe('query_source', () => {
+    const fetchMock = vi.mocked(client.authenticatedFetchWithRetry);
+    const sentForm = () => fetchMock.mock.calls[0][1]!.body as FormData;
+
+    it.each(['chosen', 'generated'] as const)('sends query_source=%s', async (querySource) => {
+      fetchMock.mockResolvedValue(mockTurnResponse() as unknown as Response);
+
+      await caseService.submitTurn('case-123', { query: 'Yes, mark it resolved.', querySource });
+
+      expect(sentForm().getAll('query_source')).toEqual([querySource]);
+    });
+
+    it('sends no query_source for a typed query, or one with no source', async () => {
+      fetchMock.mockResolvedValue(mockTurnResponse() as unknown as Response);
+
+      await caseService.submitTurn('case-123', { query: 'why?', querySource: 'typed' });
+      await caseService.submitTurn('case-123', { query: 'why?' });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const [, init] of fetchMock.mock.calls) {
+        expect((init!.body as FormData).has('query_source')).toBe(false);
+      }
+    });
+  });
+
   describe('File Attachments with Intent', () => {
     it('should include both files and intent in FormData', async () => {
       (client.authenticatedFetchWithRetry as any).mockResolvedValue(

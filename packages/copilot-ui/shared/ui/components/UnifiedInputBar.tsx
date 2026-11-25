@@ -36,6 +36,7 @@ import {
 import { isSameComposerCase } from '../../../lib/state/composer-case';
 import { onLazyCaseClaimed } from '../../../lib/state/lazy-case';
 import { PasteDataScratchpad } from './PasteDataScratchpad';
+import type { QuerySource, TurnIntent } from '../../../lib/api/types';
 
 const log = createLogger('UnifiedInputBar');
 import { INPUT_LIMITS } from '../layouts/constants';
@@ -118,9 +119,14 @@ export interface UnifiedInputBarProps {
   // Callbacks
   /**
    * A query-only submission. When it resolves `{ sent: false }` (no case could
-   * be created, no session) the typed text is put back in the box.
+   * be created, no session) the typed text is put back in the box. The box
+   * sends what was typed, so it names the source `typed`.
    */
-  onQuerySubmit: (query: string) => void | Promise<QuerySubmitResult | void>;
+  onQuerySubmit: (
+    query: string,
+    intent: TurnIntent | undefined,
+    source: QuerySource
+  ) => void | Promise<QuerySubmitResult | void>;
   onTurnSubmit: (payload: TurnPayload) => Promise<TurnSubmitResult>;
 
   /**
@@ -423,7 +429,7 @@ export function UnifiedInputBar({
       setValidationError(null);
       const generation = resetGenerationRef.current;
       const stopListening = listenForOwnClaims();
-      const pending = onQuerySubmit(query);
+      const pending = onQuerySubmit(query, undefined, 'typed');
       setInput("");
       // Restore the text if the submission never reached the server, unless the
       // user has already started typing something else, or has opened another
