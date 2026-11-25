@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { withDevServerSocket } from '../../../dev-csp';
 // WXT's own derivation of the URL its reload clients dial (`__DEV_SERVER_ORIGIN__`).
-// Not a package export, so it is read from the file the dev build runs.
+// Not a package export, so it is read from the file the dev build runs: a WXT
+// bump re-verifies the pin below against the new derivation.
 import { devServerGlobals } from '../../../node_modules/wxt/dist/core/builders/vite/plugins/devServerGlobals';
 
 // Stub `wxt` as src/test/support/manifest.ts explains: the config is under
@@ -24,10 +25,18 @@ const SANDBOX = "script-src 'self' http://localhost:3000; sandbox allow-scripts 
 
 type Hook = (wxt: unknown, manifest: { content_security_policy?: { extension_pages?: string; sandbox?: string } }) => void;
 
-async function hooks(): Promise<Record<string, unknown>> {
+interface Config {
+  hooks: Record<string, unknown>;
+  vite: (env: unknown) => { server?: { hmr?: unknown } };
+}
+
+async function loadConfig(): Promise<Config> {
   vi.resetModules();
-  const config = (await import('../../../wxt.config')).default as { hooks: Record<string, unknown> };
-  return config.hooks;
+  return (await import('../../../wxt.config')).default as unknown as Config;
+}
+
+async function hooks(): Promise<Record<string, unknown>> {
+  return (await loadConfig()).hooks;
 }
 
 async function runHook(command: 'serve' | 'build', origin: string | undefined, extensionPages = SERVE_CSP) {
@@ -59,9 +68,21 @@ describe('withDevServerSocket', () => {
     expect(connectSrc(withDevServerSocket(PROD, 'https://dev.example:443'))).toEqual(["'self'", 'http:', 'https:', 'wss://dev.example']);
   });
 
-  it('adds connect-src to a CSP without one', () => {
-    expect(withDevServerSocket("script-src 'self';", 'http://localhost:3000')).toBe("script-src 'self'; connect-src ws://localhost:3000;");
-    expect(withDevServerSocket("script-src 'self'", 'http://localhost:3000')).toBe("script-src 'self'; connect-src ws://localhost:3000");
+  it('leaves a CSP with neither connect-src nor default-src unchanged: it admits every connection', () => {
+    expect(withDevServerSocket("script-src 'self'; object-src 'self';", 'http://localhost:3000')).toBe("script-src 'self'; object-src 'self';");
+  });
+
+  it("without connect-src, adds one holding default-src's sources and the socket", () => {
+    expect(withDevServerSocket("default-src 'self' https:; script-src 'self';", 'http://localhost:3000')).toBe(
+      "default-src 'self' https:; script-src 'self'; connect-src 'self' https: ws://localhost:3000;",
+    );
+    expect(withDevServerSocket("default-src 'none'", 'http://localhost:3000')).toBe("default-src 'none'; connect-src ws://localhost:3000");
+  });
+
+  it("replaces a connect-src of only 'none' with the socket", () => {
+    expect(withDevServerSocket("script-src 'self'; connect-src 'none';", 'http://localhost:3000')).toBe(
+      "script-src 'self'; connect-src ws://localhost:3000;",
+    );
   });
 
   it('is idempotent', () => {
@@ -69,8 +90,8 @@ describe('withDevServerSocket', () => {
     expect(withDevServerSocket(once, 'http://localhost:3000')).toBe(once);
   });
 
-  it('returns the CSP unchanged for an unparseable or non-http(s) origin', () => {
-    for (const origin of ['', 'localhost:3000x', 'not a url', 'ws://localhost:3000', 'file:///tmp', 'chrome-extension://abc']) {
+  it('returns the CSP unchanged for an unparseable, non-http(s) or IPv6-literal origin', () => {
+    for (const origin of ['', 'localhost:3000x', 'not a url', 'ws://localhost:3000', 'file:///tmp', 'chrome-extension://abc', 'http://[::1]:3000']) {
       expect(withDevServerSocket(PROD, origin), origin).toBe(PROD);
     }
   });
@@ -78,7 +99,10 @@ describe('withDevServerSocket', () => {
 
 describe("wxt.config.ts's build:manifestGenerated hook", () => {
   it('keeps the config:resolved loopback gate beside it', async () => {
-    expect(typeof (await hooks())['config:resolved']).toBe('function');
+    const gate = (await hooks())['config:resolved'] as (wxt: unknown) => void;
+    const at = (host: string) => () => gate({ config: { dev: { server: { host } } } });
+    expect(at('0.0.0.0')).toThrow(/Refusing dev host/);
+    expect(at('localhost')).not.toThrow();
   });
 
   it('in serve, adds the dev server socket to connect-src only', async () => {
@@ -97,6 +121,13 @@ describe("wxt.config.ts's build:manifestGenerated hook", () => {
 
   it('in serve with no server origin (WxtVitest), leaves the CSP unchanged', async () => {
     expect((await runHook('serve', undefined)).extension_pages).toBe(SERVE_CSP);
+  });
+
+  it('sets no server.hmr host or port, so Vite\'s client dials the origin its page was served from', async () => {
+    const hmr = (await loadConfig()).vite({}).server?.hmr;
+    for (const key of ['host', 'port', 'clientPort']) {
+      expect(typeof hmr === 'object' && hmr !== null && key in hmr, key).toBe(false);
+    }
   });
 
   it('admits the origin WXT dials', async () => {

@@ -103,10 +103,10 @@ export default defineConfig({
     },
     // `pnpm dev` only: admit the dev server's WebSocket (fm#2871). See `content_security_policy` below.
     'build:manifestGenerated': (wxt, manifest) => {
-      const origin = wxt.server?.origin;
       const csp = manifest.content_security_policy;
-      if (wxt.config.command !== 'serve' || !origin || typeof csp !== 'object' || typeof csp.extension_pages !== 'string') return;
-      csp.extension_pages = withDevServerSocket(csp.extension_pages, origin);
+      if (wxt.config.command !== 'serve' || !csp || typeof csp !== 'object' || typeof csp.extension_pages !== 'string') return;
+      // No server (WxtVitest) is no origin, which the helper leaves unchanged.
+      csp.extension_pages = withDevServerSocket(csp.extension_pages, wxt.server?.origin ?? '');
     },
   },
   vite: () => ({
@@ -272,8 +272,9 @@ export default defineConfig({
     // hook above adds exactly the configured dev server origin's source
     // (`ws://localhost:3000`, `wss:` for https), the origin WXT puts in
     // `script-src` and its clients dial; a build gets this string unchanged.
-    // Known limit: `127.0.0.1` is not admitted (Vite dials it only as a
-    // fallback under `--host 127.0.0.1`).
+    // Known limits: `127.0.0.1` is not admitted (Vite dials it only as a
+    // fallback under `--host 127.0.0.1`), nor is an IPv6-literal origin
+    // (`[::1]`), which no CSP host-source can name.
     content_security_policy: {
       "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http: https:;"
     }
