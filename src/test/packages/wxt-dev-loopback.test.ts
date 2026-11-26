@@ -75,9 +75,11 @@ async function startWxt(host: unknown, { onVite = () => {}, extend = () => {}, h
         'vite:devServer:extendConfig': (config: InlineConfig) => {
           config.cacheDir = cacheDir;
           config.optimizeDeps = { ...config.optimizeDeps, noDiscovery: true, include: [] };
-          // No test drives a file reload, and a watched checkout races WXT's reloader against `stop()` (fm#3109).
-          config.server = { ...config.server, preTransformRequests: false, watch: null };
+          config.server = { ...config.server, preTransformRequests: false };
           extend(config);
+          // After `extend`, so none can undo it: no test drives a file reload, and a watched checkout
+          // races WXT's reloader against `stop()` (fm#3109).
+          config.server = { ...config.server, watch: null };
           config.plugins = [...(config.plugins ?? []), { name: 'capture-server', configureServer: onVite }];
         },
       },
@@ -465,7 +467,8 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
     async () => {
       const outDir = await mkdtemp(join(tmpdir(), 'wxt-dev-out-'));
       const inline = { outDir, filterEntrypoints: ['background', 'auth-bridge'] };
-      const { wxt, port, cleanup } = await startWxt('127.0.0.1', { inline });
+      let vite: ViteDevServer | undefined;
+      const { wxt, port, cleanup } = await startWxt('127.0.0.1', { inline, onVite: (s) => void (vite = s) });
       const open = (origin: string) =>
         new Promise<WebSocket>((resolve, reject) => {
           // Node's WebSocket (undici) takes request headers; a browser's sets Origin itself.
@@ -475,6 +478,8 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
         });
       try {
         await wxt.start();
+        // `start()` registers WXT's file reloader on this watcher; it must watch nothing (fm#3109).
+        expect({ watch: vite?.config.server.watch, watched: wxt.watcher.getWatched() }).toEqual({ watch: null, watched: {} });
         await expect(open(EVIL)).rejects.toThrow(`refused: ${EVIL}`);
         const worker = await open(EXTENSION);
         const reload = new Promise<{ data: unknown }>((resolve) => {
@@ -507,7 +512,7 @@ describe('the test servers (fm#3109)', () => {
         const probe = await mkdtemp(join(repoRoot, '.wxt-watch-probe-'));
         try {
           await writeFile(join(probe, 'change.ts'), '');
-          // Past WXT's 800 ms watch debounce.
+          // Time for chokidar to deliver the write; WXT's reloader acts on the first event (leading-edge debounce).
           await new Promise((resolve) => setTimeout(resolve, 1_000));
           expect({ watched: vite.watcher.getWatched(), events }).toEqual({ watched: {}, events: [] });
         } finally {
