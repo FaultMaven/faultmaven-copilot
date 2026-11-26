@@ -967,8 +967,9 @@ export async function submitTurn(
         }
         // The class decides (faultmaven#2976): every `AuthenticationError`
         // subclass (a host's `SessionEndedError`) and a switched account end the
-        // poll. No name check could add a case: `client.ts` rethrows a
-        // `UserFacingError` as-is and renames any other error `NetworkError`.
+        // poll. No name check could add a case: `client.ts` renames a
+        // status-less error that is not a `UserFacingError` to `NetworkError`,
+        // so no auth name survives to the poll.
         const terminal =
           err instanceof AuthenticationError || err instanceof SessionExpiredError ||
           err instanceof CredentialUnavailableError || err instanceof SessionSwitchedError;
