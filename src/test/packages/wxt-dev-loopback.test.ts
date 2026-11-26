@@ -75,7 +75,8 @@ async function startWxt(host: unknown, { onVite = () => {}, extend = () => {}, h
         'vite:devServer:extendConfig': (config: InlineConfig) => {
           config.cacheDir = cacheDir;
           config.optimizeDeps = { ...config.optimizeDeps, noDiscovery: true, include: [] };
-          config.server = { ...config.server, preTransformRequests: false };
+          // No test drives a file reload, and a watched checkout races WXT's reloader against `stop()` (fm#3109).
+          config.server = { ...config.server, preTransformRequests: false, watch: null };
           extend(config);
           config.plugins = [...(config.plugins ?? []), { name: 'capture-server', configureServer: onVite }];
         },
@@ -492,6 +493,28 @@ describe('wxt dev refuses foreign origins and hosts (fm#2863)', () => {
       }
     },
     TIMEOUT * 2,
+  );
+});
+
+describe('the test servers (fm#3109)', () => {
+  it(
+    'watch no files, so a write in the checkout cannot schedule a WXT reload',
+    () =>
+      withLoopbackServer(async (vite) => {
+        // WXT's file reloader listens on this watcher, and a reload it schedules races `wxt.stop()`.
+        const events: string[] = [];
+        vite.watcher.on('all', (_event, path: string) => events.push(path));
+        const probe = await mkdtemp(join(repoRoot, '.wxt-watch-probe-'));
+        try {
+          await writeFile(join(probe, 'change.ts'), '');
+          // Past WXT's 800 ms watch debounce.
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          expect({ watched: vite.watcher.getWatched(), events }).toEqual({ watched: {}, events: [] });
+        } finally {
+          await rm(probe, { recursive: true, force: true });
+        }
+      }),
+    TIMEOUT,
   );
 });
 
