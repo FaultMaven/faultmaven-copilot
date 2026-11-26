@@ -10,6 +10,7 @@ import {
   CaseNotFoundError,
   CredentialUnavailableError,
   SessionExpiredError,
+  SessionSwitchedError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 
@@ -797,17 +798,15 @@ describe('Case Service', () => {
     });
 
     // Flipped deliberately (faultmaven#2976): this test pinned that a
-    // SessionEndedError kept the poll asking, because the terminal check read
-    // class names and the subclass names itself 'SessionEndedError'
-    // (faultmaven#2341). A session that has ended cannot be polled back to life,
-    // so the check now reads the class: any AuthenticationError subclass stops
-    // the poll, whatever a minified build calls its class.
-    it('a SessionEndedError on a poll stops it, whatever its class is called', async () => {
-      const original = Object.getOwnPropertyDescriptor(SessionEndedError, 'name')!;
-      Object.defineProperty(SessionEndedError, 'name', { value: 'x', configurable: true });
+    // SessionEndedError kept the poll asking. The terminal check read the
+    // instance's `name`, and the subclass's literal 'SessionEndedError'
+    // (faultmaven#2341) was not in its list. A session that has ended cannot be
+    // polled back to life, so the check now reads the class: the instance here
+    // carries another name, and only `instanceof AuthenticationError` stops it.
+    it('a SessionEndedError on a poll stops it, whatever name it carries', async () => {
       vi.useFakeTimers();
       try {
-        const ended = new SessionEndedError('revoked', 'token-a');
+        const ended = Object.assign(new SessionEndedError('revoked', 'token-a'), { name: 'x' });
         (client.authenticatedFetchWithRetry as any)
           .mockResolvedValueOnce({
             ok: true,
@@ -820,13 +819,11 @@ describe('Case Service', () => {
         const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
         await vi.runAllTimersAsync();
 
-        expect(ended.name).toBe('SessionEndedError');
         expect(await caught).toBe(ended);
         // POST + the one poll that met the error, and no other.
         expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
       } finally {
         vi.useRealTimers();
-        Object.defineProperty(SessionEndedError, 'name', original);
       }
     });
   });
@@ -885,10 +882,7 @@ describe('Case Service', () => {
       ['an AuthenticationError', () => new AuthenticationError('revoked')],
       ['a SessionExpiredError', () => new SessionExpiredError()],
       ['a renewed credential refused', () => new CredentialUnavailableError('The renewed credential was refused')],
-      // The class decides, not the name the instance carries.
-      ['a SessionEndedError under another name', () => Object.assign(new SessionEndedError('revoked', 'token-a'), { name: 'x' })],
-      // Class identity lost crossing a context boundary: the name decides.
-      ['an error named SessionEndedError', () => ({ name: 'SessionEndedError', message: 'Session ended: revoked' })],
+      ['a switched account', () => new SessionSwitchedError()],
     ])('%s on a poll ends the turn at once', async (_name, make) => {
       const ended = make();
       fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValueOnce(ended);

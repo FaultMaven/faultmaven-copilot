@@ -279,10 +279,10 @@ export async function authenticatedFetch(
 
     // Already-classified errors (AuthenticationError, SessionExpiredError, …
     // thrown from the auth/session branches above) must propagate with their
-    // real name/category intact. Rebranding them as 'NetworkError' below would
-    // make a hard 401 look retryable — the async-turn poll loop keys its
-    // terminal check on err.name, so a mislabelled auth failure would be
-    // retried instead of aborted.
+    // real class and category intact. Rebranding them as 'NetworkError' below
+    // would make a hard 401 look retryable — the async-turn poll loop decides
+    // its terminal check by class (`instanceof AuthenticationError` and its
+    // siblings), so a rewrapped auth failure would be retried instead of aborted.
     if (error instanceof UserFacingError) {
       throw error;
     }

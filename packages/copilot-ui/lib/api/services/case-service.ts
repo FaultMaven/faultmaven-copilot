@@ -9,7 +9,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
-import { AuthenticationError, CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound, SessionExpiredError } from "../../errors/types";
+import { AuthenticationError, CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound, SessionExpiredError, SessionSwitchedError } from "../../errors/types";
 import {
   APIError,
   CaseUpdateRequest,
@@ -965,14 +965,13 @@ export async function submitTurn(
           await abortableDelay(wait, signal);
           continue;
         }
-        // Any authentication failure ends the poll: the class decides, so every
-        // `AuthenticationError` subclass (a host's `SessionEndedError`) stops it.
-        // The names cover an error whose class identity was lost crossing an
-        // extension context boundary (faultmaven#2976).
+        // The class decides (faultmaven#2976): every `AuthenticationError`
+        // subclass (a host's `SessionEndedError`) and a switched account end the
+        // poll. No name check could add a case: `client.ts` rethrows a
+        // `UserFacingError` as-is and renames any other error `NetworkError`.
         const terminal =
           err instanceof AuthenticationError || err instanceof SessionExpiredError ||
-          err instanceof CredentialUnavailableError ||
-          ['AuthenticationError', 'SessionExpiredError', 'SessionEndedError'].includes(err?.name);
+          err instanceof CredentialUnavailableError || err instanceof SessionSwitchedError;
         if (!terminal && isRetryableError(err)) {
           await abortableDelay(delay, signal);
           delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
