@@ -6,6 +6,8 @@ node_modules/
 .wxt/
 *.wxt.d.ts
 output/
+# Scratch probe of wxt-dev-loopback.test.ts (fm#3109), left only by a killed run
+.wxt-watch-probe-*/
 
 # Vite cache
 node_modules/.vite/
