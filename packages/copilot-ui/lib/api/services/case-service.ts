@@ -9,7 +9,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
-import { CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound } from "../../errors/types";
+import { AuthenticationError, CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound, SessionExpiredError, SessionSwitchedError } from "../../errors/types";
 import {
   APIError,
   CaseUpdateRequest,
@@ -965,9 +965,14 @@ export async function submitTurn(
           await abortableDelay(wait, signal);
           continue;
         }
+        // The class decides (faultmaven#2976): every `AuthenticationError`
+        // subclass (a host's `SessionEndedError`) and a switched account end the
+        // poll. No name check could add a case: `client.ts` renames a
+        // status-less error that is not a `UserFacingError` to `NetworkError`,
+        // so no auth name survives to the poll.
         const terminal =
-          err instanceof CredentialUnavailableError ||
-          err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
+          err instanceof AuthenticationError || err instanceof SessionExpiredError ||
+          err instanceof CredentialUnavailableError || err instanceof SessionSwitchedError;
         if (!terminal && isRetryableError(err)) {
           await abortableDelay(delay, signal);
           delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);

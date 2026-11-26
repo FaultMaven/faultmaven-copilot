@@ -10,6 +10,7 @@ import {
   CaseNotFoundError,
   CredentialUnavailableError,
   SessionExpiredError,
+  SessionSwitchedError,
 } from '@faultmaven/copilot-ui/lib/errors/types';
 import { SessionEndedError } from '../../../extension/auth/session-ended-error';
 
@@ -796,16 +797,16 @@ describe('Case Service', () => {
       expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
     });
 
-    // The extension's subclass names itself (faultmaven#2341), so the poll's
-    // terminal check reads the name it read before a minified build: not one
-    // of the names it stops on, so the poll asks again, as on main.
-    it('a SessionEndedError on a poll meets the same terminal check, whatever its class is called', async () => {
-      const original = Object.getOwnPropertyDescriptor(SessionEndedError, 'name')!;
-      Object.defineProperty(SessionEndedError, 'name', { value: 'x', configurable: true });
+    // Flipped deliberately (faultmaven#2976): this test pinned that a
+    // SessionEndedError kept the poll asking. The terminal check read the
+    // instance's `name`, and the subclass's literal 'SessionEndedError'
+    // (faultmaven#2341) was not in its list. A session that has ended cannot be
+    // polled back to life, so the check now reads the class: the instance here
+    // carries another name, and only `instanceof AuthenticationError` stops it.
+    it('a SessionEndedError on a poll stops it, whatever name it carries', async () => {
       vi.useFakeTimers();
       try {
-        const ended = new SessionEndedError('revoked', 'token-a');
-        const turn = { agent_response: 'ok', turn_number: 1, milestones_completed: [], case_state: 'inquiry', progress_made: false, is_stuck: false, attachments_processed: [] };
+        const ended = Object.assign(new SessionEndedError('revoked', 'token-a'), { name: 'x' });
         (client.authenticatedFetchWithRetry as any)
           .mockResolvedValueOnce({
             ok: true,
@@ -813,18 +814,16 @@ describe('Case Service', () => {
             headers: { get: (k: string) => (k === 'Location' ? '/api/v1/jobs/job-1' : null) },
             json: vi.fn().mockResolvedValue({})
           })
-          .mockRejectedValueOnce(ended)
-          .mockResolvedValueOnce(mockResponse({ status: 'completed', result: turn }));
+          .mockRejectedValueOnce(ended);
 
-        const pending = caseService.submitTurn('case-123', { query: 'test' });
+        const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
         await vi.runAllTimersAsync();
 
-        expect(ended.name).toBe('SessionEndedError');
-        await expect(pending).resolves.toMatchObject({ agent_response: 'ok' });
-        expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(3);
+        expect(await caught).toBe(ended);
+        // POST + the one poll that met the error, and no other.
+        expect(client.authenticatedFetchWithRetry).toHaveBeenCalledTimes(2);
       } finally {
         vi.useRealTimers();
-        Object.defineProperty(SessionEndedError, 'name', original);
       }
     });
   });
@@ -883,6 +882,7 @@ describe('Case Service', () => {
       ['an AuthenticationError', () => new AuthenticationError('revoked')],
       ['a SessionExpiredError', () => new SessionExpiredError()],
       ['a renewed credential refused', () => new CredentialUnavailableError('The renewed credential was refused')],
+      ['a switched account', () => new SessionSwitchedError()],
     ])('%s on a poll ends the turn at once', async (_name, make) => {
       const ended = make();
       fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValueOnce(ended);
@@ -892,6 +892,21 @@ describe('Case Service', () => {
 
       expect(await caught).toBe(ended);
       expect(polls()).toBe(1);
+    });
+
+    it.each([
+      ['a 503', () => Object.assign(new Error('Service Unavailable'), { status: 503 })],
+      ['a network failure', () => new TypeError('Failed to fetch')],
+    ])('%s on a poll keeps polling', async (_name, make) => {
+      const turn = { agent_response: 'ok', turn_number: 1 };
+      fetchMock().mockResolvedValueOnce(accepted()).mockRejectedValueOnce(make())
+        .mockResolvedValueOnce(mockResponse({ status: 'completed', result: turn }));
+
+      const caught = caseService.submitTurn('case-123', { query: 'test' }).catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+
+      expect(await caught).toMatchObject({ agent_response: 'ok' });
+      expect(polls()).toBe(2);
     });
   });
 
