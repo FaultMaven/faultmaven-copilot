@@ -9,7 +9,7 @@ import { caseCacheManager } from "../../cache/case-cache";
 import { createHttpErrorFromResponse } from "../../errors/http-error";
 import { errorBodyText } from "../../errors/error-body";
 import { isRetryableError } from "../../utils/retry";
-import { CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound } from "../../errors/types";
+import { AuthenticationError, CaseNotFoundError, CredentialUnavailableError, isUnlabelledNotFound, SessionExpiredError } from "../../errors/types";
 import {
   APIError,
   CaseUpdateRequest,
@@ -965,9 +965,14 @@ export async function submitTurn(
           await abortableDelay(wait, signal);
           continue;
         }
+        // Any authentication failure ends the poll: the class decides, so every
+        // `AuthenticationError` subclass (a host's `SessionEndedError`) stops it.
+        // The names cover an error whose class identity was lost crossing an
+        // extension context boundary (faultmaven#2976).
         const terminal =
+          err instanceof AuthenticationError || err instanceof SessionExpiredError ||
           err instanceof CredentialUnavailableError ||
-          err?.name === 'AuthenticationError' || err?.name === 'SessionExpiredError';
+          ['AuthenticationError', 'SessionExpiredError', 'SessionEndedError'].includes(err?.name);
         if (!terminal && isRetryableError(err)) {
           await abortableDelay(delay, signal);
           delay = Math.min(Math.floor(delay * POLL_BACKOFF), POLL_MAX_MS);
